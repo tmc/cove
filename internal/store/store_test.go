@@ -172,6 +172,44 @@ func TestReachableFromVMsUsesStoredManifest(t *testing.T) {
 	}
 }
 
+func TestReachableFromImagesUsesStoredManifest(t *testing.T) {
+	s := New(t.TempDir())
+	blobDigest := testDigest([]byte("blob"))
+	manifest := ociimage.Manifest{
+		SchemaVersion: 2,
+		MediaType:     ociimage.MediaTypeImageManifest,
+		Layers: []ociimage.Descriptor{{
+			MediaType: ociimage.MediaTypeLayer,
+			Size:      4,
+			Digest:    blobDigest,
+		}},
+	}
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("Marshal(): %v", err)
+	}
+	manifestDigest := testDigest(data)
+	if err := s.StoreManifest(manifestDigest, data); err != nil {
+		t.Fatalf("StoreManifest(): %v", err)
+	}
+	imageDir := filepath.Join(t.TempDir(), "macos", "latest")
+	if err := os.MkdirAll(imageDir, 0755); err != nil {
+		t.Fatalf("MkdirAll(): %v", err)
+	}
+	imageManifest := []byte(`{"name":"macos","tag":"latest","source_manifest_digest":"` + manifestDigest + `"}`)
+	if err := os.WriteFile(filepath.Join(imageDir, "manifest.json"), imageManifest, 0644); err != nil {
+		t.Fatalf("WriteFile(): %v", err)
+	}
+
+	reachable, err := s.ReachableFromImages(filepath.Dir(filepath.Dir(imageDir)))
+	if err != nil {
+		t.Fatalf("ReachableFromImages(): %v", err)
+	}
+	if !reachable[blobDigest] {
+		t.Fatalf("reachable[%s] = false", blobDigest)
+	}
+}
+
 func TestStoreManifestRejectsInvalidDigest(t *testing.T) {
 	s := New(t.TempDir())
 	if err := s.StoreManifest("sha256:not-a-real-digest", []byte("{}")); err == nil {

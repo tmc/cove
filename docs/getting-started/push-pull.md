@@ -68,7 +68,11 @@ Garbage collect unreferenced blobs with:
 cove store gc
 ```
 
-GC takes an exclusive `~/.vz/store/gc.lock`. Pulls take the same lock in shared mode, so GC cannot delete in-flight blobs. GC also keeps blobs modified within the last hour, which protects recently interrupted pulls before their provenance graph is complete.
+GC takes an exclusive `~/.vz/store/gc.lock`. Pulls take the same lock in shared
+mode, so GC cannot delete in-flight blobs. GC also treats VM
+`disk.provenance`, image `source_manifest_digest`, and build-cache metadata as
+roots. Blobs modified within the last hour are kept, which protects recently
+interrupted pulls before their provenance graph is complete.
 
 ## Push
 
@@ -156,6 +160,11 @@ cat ~/.vz/vms/<name>/disk.provenance
 ```
 
 `disk.provenance` records the source manifest digest. It's written only after a successful atomic rename, so its presence is a proof that the disk image is complete and verified at pull time.
+
+If that VM is promoted with `cove image build`, the digest is recorded in the
+image manifest as `source_manifest_digest`. Image-backed forks restore the same
+digest to the child VM's `disk.provenance`, which keeps the registry chain
+visible across pull -> build -> fork -> build workflows.
 
 > [!NOTE]
 > In v0.1 `disk.provenance` is unsigned and informational only. A local attacker with write access to the VM directory can edit it. Ed25519-signed provenance (embedded in aux storage) lands in v0.2.

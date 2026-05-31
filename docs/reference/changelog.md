@@ -68,6 +68,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `fork_created` metrics now carry fork source, child, materialization mode,
   disk reuse, cleanup intent, verification, and limitation fields, and
   `cove runs show` plus GitHub summaries fold them into fork summaries.
+- Local images built from pulled VMs now retain the pulled registry manifest
+  digest as `source_manifest_digest`; image forks restore it to child
+  `disk.provenance`, run summaries expose it, and store GC treats those image
+  manifests as content-store roots.
 - `--net egress:<domain,ip,cidr...>` now records a custom per-run egress
   allowlist in `network.log` and `cove network audit`, giving CI and agent
   runs an explicit network intent artifact while Virtualization.framework NAT

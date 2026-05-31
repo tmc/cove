@@ -73,6 +73,9 @@ func VerifyImage(ref imagestore.Ref, opts imageVerifyOptions) imageVerifyReport 
 	coveStatus, coveDetail := verifyImageCoveCommit(manifest)
 	report.addCheck("cove commit", coveStatus, coveDetail)
 
+	provenanceStatus, provenanceDetail := verifyImageSourceManifest(manifest)
+	report.addCheck("source manifest", provenanceStatus, provenanceDetail)
+
 	if opts.NewerThan > 0 {
 		freshStatus, freshDetail := verifyImageFreshness(manifest, opts)
 		report.addCheck("freshness", freshStatus, freshDetail)
@@ -199,6 +202,33 @@ func verifyImageFreshness(manifest *imagestore.Manifest, opts imageVerifyOptions
 		return imageVerifyFail, fmt.Sprintf("image age %s exceeds %s", age.Round(time.Second), opts.NewerThan)
 	}
 	return imageVerifyPass, fmt.Sprintf("image age %s within %s", age.Round(time.Second), opts.NewerThan)
+}
+
+func verifyImageSourceManifest(manifest *imagestore.Manifest) (imageVerifyStatus, string) {
+	digest := strings.TrimSpace(manifest.SourceManifestDigest)
+	if digest == "" {
+		return imageVerifyInfo, "not recorded"
+	}
+	if !validSHA256Digest(digest) {
+		return imageVerifyWarn, fmt.Sprintf("invalid digest %q", digest)
+	}
+	return imageVerifyPass, digest
+}
+
+func validSHA256Digest(digest string) bool {
+	const prefix = "sha256:"
+	if !strings.HasPrefix(digest, prefix) || len(digest) != len(prefix)+64 {
+		return false
+	}
+	for _, r := range digest[len(prefix):] {
+		switch {
+		case r >= '0' && r <= '9':
+		case r >= 'a' && r <= 'f':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func (r *imageVerifyReport) addCheck(name string, status imageVerifyStatus, detail string) {

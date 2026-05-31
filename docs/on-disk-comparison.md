@@ -37,9 +37,10 @@ delegates the disk/runtime work to `tart` or `vetu`.
    disk read-only and stores all writes in host RAM, so reset is shutdown and the
    dirty state disappears. APFS CoW clones are useful, but they still leave dirty
    blocks to clean up; this RAM-backed disposable mode is distinct. Run evidence
-   now records fork source, child, materialization mode, disk reuse, cleanup
-   intent, verification, and limitations in `fork_created` metrics and derived
-   `runs show` / GitHub summaries.
+   now records fork source, optional registry source manifest digest, child,
+   materialization mode, disk reuse, cleanup intent, verification, and
+   limitations in `fork_created` metrics and derived `runs show` / GitHub
+   summaries.
 
 2. **Live quota caps.** cove caps the VM directory with APFS quotas and discovers
    whether the host OS still supports the `diskutil apfs setQuota` verb. tart and
@@ -64,9 +65,12 @@ delegates the disk/runtime work to `tart` or `vetu`.
    annotate the result with the base manifest. Pulls can resume interrupted
    downloads, reuse an already-materialized base disk where the manifest proves
    it is the right parent, and cache materialized registry bases for repeated
-   builds and child pulls. Builds can also import and export cove build-cache
-   artifacts as OCI images, so cache entries and block-delta blobs can move
-   between runners through the same private registry path as images.
+   builds and child pulls. Local images built from pulled VMs preserve the
+   source registry manifest digest, image forks restore it to child
+   `disk.provenance`, and store GC treats those image manifests as roots.
+   Builds can also import and export cove build-cache artifacts as OCI images,
+   so cache entries and block-delta blobs can move between runners through the
+   same private registry path as images.
 
 5. **Image-aware, drainable fleet placement.** cove is not orchard's controller,
    but its fleet CLI now understands image locality, operator drain intent, and

@@ -28,6 +28,8 @@ func imageTestEnvWithStdout(out *bytes.Buffer) commandEnv {
 	return env
 }
 
+const imageTestManifestDigest = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+
 // stageMacOSVMForImage writes a stopped VM directory with the minimal
 // files BuildImage needs: disk.img, aux.img, hw.model, machine.id.
 // Mirrors stageParentVMForEphemeralFork in fork_ephemeral_test.go but
@@ -152,6 +154,9 @@ func TestBuildImage_HappyPath(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	src := "img-src"
 	srcDir := stageMacOSVMForImage(t, src)
+	if err := os.WriteFile(filepath.Join(srcDir, "disk.provenance"), []byte(imageTestManifestDigest+"\n"), 0o644); err != nil {
+		t.Fatalf("write disk.provenance: %v", err)
+	}
 
 	ref, err := ParseImageRef("my-snap")
 	if err != nil {
@@ -185,6 +190,9 @@ func TestBuildImage_HappyPath(t *testing.T) {
 	}
 	if manifest.BuildRecipe == "" {
 		t.Error("manifest.BuildRecipe is empty")
+	}
+	if manifest.SourceManifestDigest != imageTestManifestDigest {
+		t.Errorf("manifest.SourceManifestDigest = %q, want %q", manifest.SourceManifestDigest, imageTestManifestDigest)
 	}
 	if manifest.BuiltAt.IsZero() {
 		t.Error("manifest.BuiltAt is zero")
@@ -234,6 +242,9 @@ func TestBuildImage_HappyPath(t *testing.T) {
 	}
 	if got.CoveCommit != manifest.CoveCommit || got.AgentCommit != manifest.AgentCommit {
 		t.Fatalf("loaded provenance = %q/%q, want %q/%q", got.CoveCommit, got.AgentCommit, manifest.CoveCommit, manifest.AgentCommit)
+	}
+	if got.SourceManifestDigest != imageTestManifestDigest {
+		t.Fatalf("loaded SourceManifestDigest = %q, want %q", got.SourceManifestDigest, imageTestManifestDigest)
 	}
 
 	// Source VM unchanged.
@@ -396,6 +407,30 @@ func TestMaterializeImage_FreshIdentity(t *testing.T) {
 	}
 	if cfg.ParentImage != "base:1" {
 		t.Errorf("child ParentImage = %q, want base:1", cfg.ParentImage)
+	}
+}
+
+func TestMaterializeImageWritesSourceProvenance(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	srcDir := stageMacOSVMForImage(t, "src")
+	if err := os.WriteFile(filepath.Join(srcDir, "disk.provenance"), []byte(imageTestManifestDigest+"\n"), 0o644); err != nil {
+		t.Fatalf("write disk.provenance: %v", err)
+	}
+	ref, _ := ParseImageRef("base:1")
+	if _, err := BuildImage(BuildImageOptions{SourceVM: "src", Ref: ref}); err != nil {
+		t.Fatalf("BuildImage: %v", err)
+	}
+
+	childDir, err := MaterializeImage(MaterializeImageOptions{Ref: ref, ChildName: "worker-provenance"})
+	if err != nil {
+		t.Fatalf("MaterializeImage: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(childDir, "disk.provenance"))
+	if err != nil {
+		t.Fatalf("read child disk.provenance: %v", err)
+	}
+	if string(data) != imageTestManifestDigest+"\n" {
+		t.Fatalf("child provenance = %q, want %q", string(data), imageTestManifestDigest+"\n")
 	}
 }
 

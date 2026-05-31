@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/tmc/cove/internal/bytefmt"
+	"github.com/tmc/cove/internal/imagestore"
 	"github.com/tmc/cove/internal/store"
 	"github.com/tmc/cove/internal/vmconfig"
 )
@@ -47,6 +48,13 @@ func handleStoreGC(env commandEnv, args []string) error {
 		return err
 	}
 	for digest := range buildReachable {
+		reachable[digest] = true
+	}
+	imageReachable, err := s.ReachableFromImages(imagestore.BaseDir())
+	if err != nil {
+		return err
+	}
+	for digest := range imageReachable {
 		reachable[digest] = true
 	}
 	res, err := s.GCWithOptions(reachable, store.GCOptions{

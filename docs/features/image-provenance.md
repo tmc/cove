@@ -7,9 +7,17 @@
 - `agent_features`
 - `build_recipe`
 - `source_image`
+- `source_manifest_digest`
 - `built_at`
 - `default_network`
 - `default_sandbox`
+
+When the source VM came from `cove pull`, Tart pull, or Lume pull,
+`disk.provenance` is copied into `source_manifest_digest`. Image-backed forks
+write that digest back to the child VM's `disk.provenance`, so a later
+`cove image build` keeps the registry manifest chain. `cove store gc` also
+treats local image manifests with `source_manifest_digest` as roots for the
+local OCI content store.
 
 `cove image verify <ref>` checks that:
 
@@ -18,6 +26,7 @@
 - the disk size matches the manifest
 - the image advertises `execattach.v3`
 - the image was built by the current `cove` binary or a compatible version
+- the optional source registry manifest digest is well-formed when present
 
 Output is `PASS`, `WARN`, or `FAIL`. Use `--strict` to turn a missing
 `execattach.v3` feature into `FAIL`.

@@ -289,6 +289,40 @@ func (s Store) ReachableFromVMs(vmsDir string) (map[string]bool, error) {
 	return reachable, nil
 }
 
+func (s Store) ReachableFromImages(imagesDir string) (map[string]bool, error) {
+	reachable := map[string]bool{}
+	err := filepath.WalkDir(imagesDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		if d.IsDir() || filepath.Base(path) != "manifest.json" {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		var manifest struct {
+			SourceManifestDigest string `json:"source_manifest_digest"`
+		}
+		if err := json.Unmarshal(data, &manifest); err != nil {
+			return fmt.Errorf("parse image manifest %s: %w", path, err)
+		}
+		digest := strings.TrimSpace(manifest.SourceManifestDigest)
+		if digest == "" {
+			return nil
+		}
+		return s.markManifest(reachable, digest)
+	})
+	if os.IsNotExist(err) {
+		return reachable, nil
+	}
+	return reachable, err
+}
+
 func (s Store) ReachableFromBuildCache() (map[string]bool, error) {
 	reachable := map[string]bool{}
 	root := filepath.Join(s.Dir, "build-cache")

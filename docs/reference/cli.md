@@ -708,7 +708,7 @@ cove image rm <name[:tag]>
 |------------|-------------|
 | `build -from <vm> -tag <ref>` | Snapshot a stopped VM into the image store. The disk is APFS-clonefiled (no copy). vmstate is excluded; cold-boot only. |
 | `list [-json]` | Show stored images with size + creation time + source VM. `-json` emits a JSON array; empty output is `[]`. |
-| `inspect <ref> [-json]` | Print manifest (size, sha256, base image, created-at, hw.model fingerprint) plus the live downstream fork list. `-json` emits a stable schema for tooling. With `-remote <registry/ref:tag\|digest>...`, fetch only registry metadata and summarize cove-native, Tart, Lume, or cove image-store artifacts before pulling, including index/list resolution, selected platform, pull plan, and verification posture. Add `-verify-blobs` to HEAD every remote config/layer descriptor and report missing blobs without downloading disk content. Multiple remote refs are inspected as a batch; `-json` emits an array only in batch mode. |
+| `inspect <ref> [-json]` | Print manifest (size, sha256, base image, source manifest digest, created-at, hw.model fingerprint) plus the live downstream fork list. `-json` emits a stable schema for tooling. With `-remote <registry/ref:tag\|digest>...`, fetch only registry metadata and summarize cove-native, Tart, Lume, or cove image-store artifacts before pulling, including index/list resolution, selected platform, pull plan, and verification posture. Add `-verify-blobs` to HEAD every remote config/layer descriptor and report missing blobs without downloading disk content. Multiple remote refs are inspected as a batch; `-json` emits an array only in batch mode. |
 | `verify <ref> [-strict] [-json] [-quiet] [-newer-than D]` | Check freshness, provenance, and layout. Warns on stale or legacy manifests; `-strict` turns missing `execattach.v3` into a failure; `-quiet` prints only on failure for CI; `-newer-than` fails stale images such as `24h` or `7d`. |
 | `push <ref> <file> [-gzip]` | Tar an image directory to a single file (atomic temp + rename). `-gzip` compresses; the load side sniffs `.gz` / `.tgz` automatically. Pass `-` as the file to stream the tarball to stdout (refuses a TTY). |
 | `load <file> [-tag <ref>] [-force]` | Extract a tarball into the image store. Tar entries are restricted to `manifest.json`, `disk.img`, `aux.img`, `hw.model`, `machine.id` (TypeReg only); zip-slip / symlink / oversize entries are refused before any filesystem write. `-tag` rewrites the manifest's name+tag on import; `-force` overwrites an existing ref. `ParentImage` is **not** preserved across hosts -- a loaded image becomes a fresh root for forks on the destination. Pass `-` as the file to read the tarball from stdin (refuses a TTY); gzip framing is auto-detected via magic bytes. |
@@ -746,7 +746,7 @@ cove store gc [-dry-run]
 
 | Command | Description |
 |---------|-------------|
-| `gc [-dry-run]` | Garbage collect unreachable store blobs. GC takes an exclusive store lock and keeps blobs modified within the last hour so concurrent or recently interrupted pulls are not collected. `-dry-run` prints candidate deletion totals without deleting blobs. |
+| `gc [-dry-run]` | Garbage collect unreachable store blobs. GC takes an exclusive store lock, keeps blobs modified within the last hour, and treats VM `disk.provenance`, local image `source_manifest_digest`, and build-cache metadata as roots. `-dry-run` prints candidate deletion totals without deleting blobs. |
 
 ```bash
 cove store gc -dry-run

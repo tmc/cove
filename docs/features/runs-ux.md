@@ -69,10 +69,10 @@ and the operator should pass more characters from the run id.
 ## Fork Summary
 
 When a run contains a `fork_created` event, `runs show` folds it into a short
-fork summary with the source image or VM, child name/path, materialization mode,
-disk reuse, ephemeral/keep cleanup intent, verification status, fork duration,
-and any limitation. GitHub summary exports include the same derived fork
-section.
+fork summary with the source image or VM, optional source registry manifest
+digest, child name/path, materialization mode, disk reuse, ephemeral/keep
+cleanup intent, verification status, fork duration, and any limitation. GitHub
+summary exports include the same derived fork section.
 
 The raw `fork_created` event remains in `runs show --json` and
 `cove runs export <id> --format json`. The derived summary is available in

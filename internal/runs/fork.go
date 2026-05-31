@@ -12,18 +12,19 @@ const forkCreatedEvent = "fork_created"
 
 // ForkSummary is a derived view over fork_created events.
 type ForkSummary struct {
-	SourceKind   string `json:"source_kind,omitempty"`
-	SourceRef    string `json:"source_ref,omitempty"`
-	ChildName    string `json:"child_name,omitempty"`
-	ChildPath    string `json:"child_path,omitempty"`
-	Mode         string `json:"mode,omitempty"`
-	DiskReuse    string `json:"disk_reuse,omitempty"`
-	Ephemeral    *bool  `json:"ephemeral,omitempty"`
-	Keep         *bool  `json:"keep,omitempty"`
-	Cleanup      string `json:"cleanup,omitempty"`
-	Verification string `json:"verification,omitempty"`
-	Limitation   string `json:"limitation,omitempty"`
-	DurationMS   int64  `json:"duration_ms,omitempty"`
+	SourceKind           string `json:"source_kind,omitempty"`
+	SourceRef            string `json:"source_ref,omitempty"`
+	SourceManifestDigest string `json:"source_manifest_digest,omitempty"`
+	ChildName            string `json:"child_name,omitempty"`
+	ChildPath            string `json:"child_path,omitempty"`
+	Mode                 string `json:"mode,omitempty"`
+	DiskReuse            string `json:"disk_reuse,omitempty"`
+	Ephemeral            *bool  `json:"ephemeral,omitempty"`
+	Keep                 *bool  `json:"keep,omitempty"`
+	Cleanup              string `json:"cleanup,omitempty"`
+	Verification         string `json:"verification,omitempty"`
+	Limitation           string `json:"limitation,omitempty"`
+	DurationMS           int64  `json:"duration_ms,omitempty"`
 }
 
 func summarizeFork(events []metrics.Event) *ForkSummary {
@@ -41,18 +42,19 @@ func summarizeFork(events []metrics.Event) *ForkSummary {
 			sourceKind = inferForkSourceKind(sourceRef)
 		}
 		next := ForkSummary{
-			SourceKind:   sourceKind,
-			SourceRef:    sourceRef,
-			ChildName:    extraString(e.Extra, "child_name"),
-			ChildPath:    extraString(e.Extra, "child_path"),
-			Mode:         extraString(e.Extra, "mode"),
-			DiskReuse:    extraString(e.Extra, "disk_reuse"),
-			Ephemeral:    extraBoolPtr(e.Extra, "ephemeral"),
-			Keep:         extraBoolPtr(e.Extra, "keep"),
-			Cleanup:      extraString(e.Extra, "cleanup"),
-			Verification: extraString(e.Extra, "verification"),
-			Limitation:   extraString(e.Extra, "limitation"),
-			DurationMS:   e.DurationMS,
+			SourceKind:           sourceKind,
+			SourceRef:            sourceRef,
+			SourceManifestDigest: extraString(e.Extra, "source_manifest_digest"),
+			ChildName:            extraString(e.Extra, "child_name"),
+			ChildPath:            extraString(e.Extra, "child_path"),
+			Mode:                 extraString(e.Extra, "mode"),
+			DiskReuse:            extraString(e.Extra, "disk_reuse"),
+			Ephemeral:            extraBoolPtr(e.Extra, "ephemeral"),
+			Keep:                 extraBoolPtr(e.Extra, "keep"),
+			Cleanup:              extraString(e.Extra, "cleanup"),
+			Verification:         extraString(e.Extra, "verification"),
+			Limitation:           extraString(e.Extra, "limitation"),
+			DurationMS:           e.DurationMS,
 		}
 		s = &next
 	}
@@ -65,6 +67,7 @@ func summarizeFork(events []metrics.Event) *ForkSummary {
 func (s *ForkSummary) empty() bool {
 	return s.SourceKind == "" &&
 		s.SourceRef == "" &&
+		s.SourceManifestDigest == "" &&
 		s.ChildName == "" &&
 		s.ChildPath == "" &&
 		s.Mode == "" &&
@@ -104,6 +107,9 @@ func forkSummaryRows(s *ForkSummary) []forkSummaryRow {
 	var rows []forkSummaryRow
 	if source := forkSourceValue(s.SourceKind, s.SourceRef); source != "" {
 		rows = append(rows, forkSummaryRow{Name: "source", Value: source})
+	}
+	if s.SourceManifestDigest != "" {
+		rows = append(rows, forkSummaryRow{Name: "source_manifest_digest", Value: s.SourceManifestDigest})
 	}
 	if s.ChildName != "" {
 		rows = append(rows, forkSummaryRow{Name: "child", Value: s.ChildName})

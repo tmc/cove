@@ -108,7 +108,7 @@ func runImageForkFromWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 	if cfg.Ephemeral {
 		cleanup = forkCleanupMode(cfg.EphemeralForkKeep)
 	}
-	bundle.EmitMetricEvent("fork_created", forkStarted, "ok", map[string]any{
+	extra := map[string]any{
 		"source_kind":  "image",
 		"source_ref":   ref.String(),
 		"child_name":   childName,
@@ -119,7 +119,11 @@ func runImageForkFromWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 		"keep":         cfg.EphemeralForkKeep,
 		"cleanup":      cleanup,
 		"verification": string(verification.Verdict),
-	})
+	}
+	if manifest.SourceManifestDigest != "" {
+		extra["source_manifest_digest"] = manifest.SourceManifestDigest
+	}
+	bundle.EmitMetricEvent("fork_created", forkStarted, "ok", extra)
 
 	vmName = childName
 	vmDir = childPath

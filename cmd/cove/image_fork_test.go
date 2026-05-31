@@ -126,7 +126,10 @@ func TestRunBadImageForkFromDoesNotCreateRunBundle(t *testing.T) {
 
 func TestRunExistingImageForkFromStillCreatesRunBundle(t *testing.T) {
 	home := withTempHome(t)
-	stageMacOSVMForImage(t, "src-existing-image")
+	srcDir := stageMacOSVMForImage(t, "src-existing-image")
+	if err := os.WriteFile(filepath.Join(srcDir, "disk.provenance"), []byte(imageTestManifestDigest+"\n"), 0o644); err != nil {
+		t.Fatalf("write disk.provenance: %v", err)
+	}
 	ref, err := ParseImageRef("existing-image:v1")
 	if err != nil {
 		t.Fatalf("ParseImageRef: %v", err)
@@ -160,14 +163,15 @@ func TestRunExistingImageForkFromStillCreatesRunBundle(t *testing.T) {
 	}
 	wantVerification := string(VerifyImage(ref, imageVerifyOptions{}).Verdict)
 	for key, want := range map[string]any{
-		"source_kind":  "image",
-		"source_ref":   ref.String(),
-		"mode":         "image-materialized",
-		"disk_reuse":   "clonefile",
-		"ephemeral":    true,
-		"keep":         false,
-		"cleanup":      "remove-on-stop",
-		"verification": wantVerification,
+		"source_kind":            "image",
+		"source_ref":             ref.String(),
+		"mode":                   "image-materialized",
+		"disk_reuse":             "clonefile",
+		"ephemeral":              true,
+		"keep":                   false,
+		"cleanup":                "remove-on-stop",
+		"verification":           wantVerification,
+		"source_manifest_digest": imageTestManifestDigest,
 	} {
 		if got := fork.Extra[key]; got != want {
 			t.Fatalf("fork extra %s = %#v, want %#v", key, got, want)

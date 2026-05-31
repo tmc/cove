@@ -14,7 +14,10 @@ import (
 
 func TestInspectImage_Manifest(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	stageMacOSVMForImage(t, "src")
+	srcDir := stageMacOSVMForImage(t, "src")
+	if err := os.WriteFile(filepath.Join(srcDir, "disk.provenance"), []byte(imageTestManifestDigest+"\n"), 0o644); err != nil {
+		t.Fatalf("write disk.provenance: %v", err)
+	}
 	ref, err := ParseImageRef("base:1")
 	if err != nil {
 		t.Fatalf("ParseImageRef: %v", err)
@@ -59,11 +62,21 @@ func TestInspectImage_Manifest(t *testing.T) {
 	if out.CoveCommit == "" || out.AgentCommit == "" {
 		t.Fatalf("provenance incomplete: cove=%q agent=%q", out.CoveCommit, out.AgentCommit)
 	}
+	if out.SourceManifestDigest != imageTestManifestDigest {
+		t.Fatalf("SourceManifestDigest = %q, want %q", out.SourceManifestDigest, imageTestManifestDigest)
+	}
 	if !strings.Contains(out.BuildRecipe, "cove image build") {
 		t.Fatalf("BuildRecipe = %q, want build command", out.BuildRecipe)
 	}
 	if out.ForkCount != 0 || len(out.Forks) != 0 {
 		t.Errorf("ForkCount/Forks = %d/%v, want 0/[]", out.ForkCount, out.Forks)
+	}
+	var buf bytes.Buffer
+	if err := writeInspectText(&buf, out); err != nil {
+		t.Fatalf("writeInspectText: %v", err)
+	}
+	if !strings.Contains(buf.String(), "source manifest: "+imageTestManifestDigest) {
+		t.Fatalf("inspect text missing source manifest:\n%s", buf.String())
 	}
 }
 

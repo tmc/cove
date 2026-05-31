@@ -12,24 +12,25 @@ import (
 
 // Manifest is the on-disk schema for an image's manifest.json.
 type Manifest struct {
-	SchemaVersion  int              `json:"schemaVersion"`
-	Name           string           `json:"name"`
-	Tag            string           `json:"tag"`
-	OSType         string           `json:"osType,omitempty"`
-	SourceVM       string           `json:"sourceVM,omitempty"`
-	BaseImage      string           `json:"baseImage,omitempty"`
-	CoveCommit     string           `json:"cove_commit,omitempty"`
-	AgentCommit    string           `json:"agent_commit,omitempty"`
-	AgentFeatures  []string         `json:"agent_features,omitempty"`
-	BuildRecipe    string           `json:"build_recipe,omitempty"`
-	SourceImage    string           `json:"source_image,omitempty"`
-	BuiltAt        time.Time        `json:"built_at,omitempty"`
-	DefaultNetwork string           `json:"default_network,omitempty"`
-	DefaultSandbox string           `json:"default_sandbox,omitempty"`
-	DiskSHA256     string           `json:"diskSHA256"`
-	DiskSize       int64            `json:"diskSize"`
-	CreatedAt      time.Time        `json:"createdAt"`
-	SourceConfig   *vmconfig.Config `json:"sourceConfig,omitempty"`
+	SchemaVersion        int              `json:"schemaVersion"`
+	Name                 string           `json:"name"`
+	Tag                  string           `json:"tag"`
+	OSType               string           `json:"osType,omitempty"`
+	SourceVM             string           `json:"sourceVM,omitempty"`
+	BaseImage            string           `json:"baseImage,omitempty"`
+	CoveCommit           string           `json:"cove_commit,omitempty"`
+	AgentCommit          string           `json:"agent_commit,omitempty"`
+	AgentFeatures        []string         `json:"agent_features,omitempty"`
+	BuildRecipe          string           `json:"build_recipe,omitempty"`
+	SourceImage          string           `json:"source_image,omitempty"`
+	SourceManifestDigest string           `json:"source_manifest_digest,omitempty"`
+	BuiltAt              time.Time        `json:"built_at,omitempty"`
+	DefaultNetwork       string           `json:"default_network,omitempty"`
+	DefaultSandbox       string           `json:"default_sandbox,omitempty"`
+	DiskSHA256           string           `json:"diskSHA256"`
+	DiskSize             int64            `json:"diskSize"`
+	CreatedAt            time.Time        `json:"createdAt"`
+	SourceConfig         *vmconfig.Config `json:"sourceConfig,omitempty"`
 }
 
 // Entry is a row in an image listing.

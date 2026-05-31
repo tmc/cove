@@ -79,16 +79,17 @@ func TestRenderShow(t *testing.T) {
 	root := t.TempDir()
 	events := []metrics.Event{
 		event("fork_created", "ok", 10, map[string]any{
-			"source_kind":  "image",
-			"source_ref":   "macos-ci:latest",
-			"child_name":   "macos-ci-run-1",
-			"child_path":   "/tmp/macos-ci-run-1",
-			"mode":         "image-materialized",
-			"disk_reuse":   "clonefile",
-			"ephemeral":    true,
-			"keep":         false,
-			"cleanup":      "remove-on-stop",
-			"verification": "PASS",
+			"source_kind":            "image",
+			"source_ref":             "macos-ci:latest",
+			"source_manifest_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+			"child_name":             "macos-ci-run-1",
+			"child_path":             "/tmp/macos-ci-run-1",
+			"mode":                   "image-materialized",
+			"disk_reuse":             "clonefile",
+			"ephemeral":              true,
+			"keep":                   false,
+			"cleanup":                "remove-on-stop",
+			"verification":           "PASS",
 		}),
 		event("vm_create", "ok", 20, nil),
 		event("network_policy", "ok", 22, map[string]any{
@@ -135,7 +136,7 @@ func TestRenderShow(t *testing.T) {
 	if show.Failure.Class != "vm_start" || show.Failure.Reason != "boot failed" {
 		t.Fatalf("failure = %+v", show.Failure)
 	}
-	if show.Fork == nil || show.Fork.SourceKind != "image" || show.Fork.SourceRef != "macos-ci:latest" || show.Fork.ChildName != "macos-ci-run-1" || show.Fork.Ephemeral == nil || !*show.Fork.Ephemeral {
+	if show.Fork == nil || show.Fork.SourceKind != "image" || show.Fork.SourceRef != "macos-ci:latest" || show.Fork.SourceManifestDigest == "" || show.Fork.ChildName != "macos-ci-run-1" || show.Fork.Ephemeral == nil || !*show.Fork.Ephemeral {
 		t.Fatalf("fork = %+v", show.Fork)
 	}
 	if show.Resource == nil || show.Resource.SampleCount != 1 || show.Resource.TopGuestProcess == nil || show.Resource.TopGuestProcess.Command != "xcodebuild" {
@@ -157,6 +158,7 @@ func TestRenderShow(t *testing.T) {
 		"Failure: vm_start: boot failed",
 		"Fork:",
 		"source: image macos-ci:latest",
+		"source_manifest_digest: sha256:2222222222222222222222222222222222222222222222222222222222222222",
 		"child: macos-ci-run-1",
 		"child_path: /tmp/macos-ci-run-1",
 		"mode: image-materialized",

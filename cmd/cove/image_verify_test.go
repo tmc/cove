@@ -40,6 +40,9 @@ func TestVerifyImagePassesOnFreshImage(t *testing.T) {
 	if report.Manifest.CoveCommit == "" || report.Manifest.AgentCommit == "" {
 		t.Fatalf("manifest provenance incomplete: %#v", report.Manifest)
 	}
+	if got := imageVerifyCheckStatus(report, "source manifest"); got != imageVerifyInfo {
+		t.Fatalf("source manifest check = %s, want INFO (%#v)", got, report.Checks)
+	}
 	if !strings.Contains(report.Checks[0].Name, "manifest") {
 		t.Fatalf("first check = %#v, want manifest", report.Checks[0])
 	}
@@ -54,6 +57,32 @@ func TestVerifyImagePassesOnFreshImage(t *testing.T) {
 	}
 	if roundTrip.Verdict != imageVerifyPass || roundTrip.Ref != ref.String() {
 		t.Fatalf("round-trip report = %#v", roundTrip)
+	}
+}
+
+func TestVerifyImageReportsSourceManifestDigest(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	srcDir := stageMacOSVMForImage(t, "src")
+	if err := os.WriteFile(filepath.Join(srcDir, "disk.provenance"), []byte(imageTestManifestDigest+"\n"), 0o644); err != nil {
+		t.Fatalf("write disk.provenance: %v", err)
+	}
+	ref, err := ParseImageRef("pulled:v1")
+	if err != nil {
+		t.Fatalf("ParseImageRef: %v", err)
+	}
+	if _, err := BuildImage(BuildImageOptions{SourceVM: "src", Ref: ref}); err != nil {
+		t.Fatalf("BuildImage: %v", err)
+	}
+
+	report := VerifyImage(ref, imageVerifyOptions{})
+	if report.Verdict != imageVerifyPass {
+		t.Fatalf("Verdict = %s, want PASS (%#v)", report.Verdict, report.Checks)
+	}
+	if report.Manifest == nil || report.Manifest.SourceManifestDigest != imageTestManifestDigest {
+		t.Fatalf("manifest SourceManifestDigest = %#v, want %q", report.Manifest, imageTestManifestDigest)
+	}
+	if got := imageVerifyCheckStatus(report, "source manifest"); got != imageVerifyPass {
+		t.Fatalf("source manifest check = %s, want PASS (%#v)", got, report.Checks)
 	}
 }
 

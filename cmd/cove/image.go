@@ -136,6 +136,7 @@ func BuildImage(opts BuildImageOptions) (*imagestore.Manifest, error) {
 	}
 	srcCfg, _ := vmconfig.Load(srcDir)
 	sourceImage := ""
+	sourceManifestDigest := readDiskProvenance(srcDir)
 	agentCommit := ""
 	agentFeatures := []string(nil)
 	if srcCfg != nil {
@@ -160,24 +161,25 @@ func BuildImage(opts BuildImageOptions) (*imagestore.Manifest, error) {
 		coveCommit = resolvedVersion().Version
 	}
 	manifest := &imagestore.Manifest{
-		SchemaVersion:  1,
-		Name:           opts.Ref.Name,
-		Tag:            opts.Ref.Tag,
-		OSType:         osType,
-		SourceVM:       opts.SourceVM,
-		BaseImage:      sourceImage,
-		CoveCommit:     coveCommit,
-		AgentCommit:    agentCommit,
-		AgentFeatures:  agentFeatures,
-		BuildRecipe:    buildRecipe,
-		SourceImage:    sourceImage,
-		BuiltAt:        nowTime,
-		DefaultNetwork: strings.TrimSpace(networkMode),
-		DefaultSandbox: effectiveSandboxMode(),
-		DiskSHA256:     hash,
-		DiskSize:       size,
-		CreatedAt:      nowTime,
-		SourceConfig:   srcCfg,
+		SchemaVersion:        1,
+		Name:                 opts.Ref.Name,
+		Tag:                  opts.Ref.Tag,
+		OSType:               osType,
+		SourceVM:             opts.SourceVM,
+		BaseImage:            sourceImage,
+		CoveCommit:           coveCommit,
+		AgentCommit:          agentCommit,
+		AgentFeatures:        agentFeatures,
+		BuildRecipe:          buildRecipe,
+		SourceImage:          sourceImage,
+		SourceManifestDigest: sourceManifestDigest,
+		BuiltAt:              nowTime,
+		DefaultNetwork:       strings.TrimSpace(networkMode),
+		DefaultSandbox:       effectiveSandboxMode(),
+		DiskSHA256:           hash,
+		DiskSize:             size,
+		CreatedAt:            nowTime,
+		SourceConfig:         srcCfg,
 	}
 	if err := writeImageManifest(imgDir, manifest); err != nil {
 		cleanup()
@@ -236,6 +238,14 @@ func legacyImageManifest(m *imagestore.Manifest) bool {
 		m.BuiltAt.IsZero() &&
 		strings.TrimSpace(m.DefaultNetwork) == "" &&
 		strings.TrimSpace(m.DefaultSandbox) == ""
+}
+
+func readDiskProvenance(dir string) string {
+	data, err := os.ReadFile(filepath.Join(dir, "disk.provenance"))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
 }
 
 func normalizeAgentFeatures(features []string) []string {
@@ -473,6 +483,12 @@ func MaterializeImage(opts MaterializeImageOptions) (string, error) {
 	if err := vmconfig.Save(childDir, cfg); err != nil {
 		cleanup()
 		return "", fmt.Errorf("materialize: save child config: %w", err)
+	}
+	if manifest.SourceManifestDigest != "" {
+		if err := writePullProvenance(childDir, manifest.SourceManifestDigest); err != nil {
+			cleanup()
+			return "", fmt.Errorf("materialize: write provenance: %w", err)
+		}
 	}
 
 	if opts.Ephemeral {

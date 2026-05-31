@@ -37,15 +37,16 @@ func TestExportGHASummary(t *testing.T) {
 	root := t.TempDir()
 	writeRun(t, root, "20260505-gha", []metrics.Event{
 		event("fork_created", "ok", 10, map[string]any{
-			"source_kind": "vm",
-			"source_ref":  "base-vm",
-			"child_name":  "base-vm-job-1",
-			"mode":        "linked-clone",
-			"disk_reuse":  "apfs-copy-on-write",
-			"ephemeral":   true,
-			"keep":        false,
-			"cleanup":     "remove-on-stop",
-			"limitation":  "temporary RAM overlay disabled",
+			"source_kind":            "vm",
+			"source_ref":             "base-vm",
+			"source_manifest_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+			"child_name":             "base-vm-job-1",
+			"mode":                   "linked-clone",
+			"disk_reuse":             "apfs-copy-on-write",
+			"ephemeral":              true,
+			"keep":                   false,
+			"cleanup":                "remove-on-stop",
+			"limitation":             "temporary RAM overlay disabled",
 		}),
 		event("network_policy", "ok", 12, map[string]any{
 			"policy":        "packages",
@@ -73,6 +74,7 @@ func TestExportGHASummary(t *testing.T) {
 		"**Failure:** `vm_start`: boot failed",
 		"### Fork",
 		"| source | vm base-vm |",
+		"| source_manifest_digest | sha256:3333333333333333333333333333333333333333333333333333333333333333 |",
 		"| child | base-vm-job-1 |",
 		"| mode | linked-clone |",
 		"| disk_reuse | apfs-copy-on-write |",

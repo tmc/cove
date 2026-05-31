@@ -26,26 +26,27 @@ import (
 // Field order matches the Go struct; `encoding/json` honors that for stable
 // output across runs.
 type ImageInspectOutput struct {
-	Ref            string   `json:"ref"`
-	Name           string   `json:"name"`
-	Tag            string   `json:"tag"`
-	ManifestPath   string   `json:"manifest_path"`
-	DiskSize       int64    `json:"disk_size"`
-	DiskSHA256     string   `json:"disk_sha256"`
-	BaseImage      string   `json:"base_image,omitempty"`
-	CoveCommit     string   `json:"cove_commit,omitempty"`
-	AgentCommit    string   `json:"agent_commit,omitempty"`
-	AgentFeatures  []string `json:"agent_features,omitempty"`
-	BuildRecipe    string   `json:"build_recipe,omitempty"`
-	SourceImage    string   `json:"source_image,omitempty"`
-	Created        string   `json:"created,omitempty"`
-	BuiltAt        string   `json:"built_at,omitempty"`
-	DefaultNetwork string   `json:"default_network,omitempty"`
-	DefaultSandbox string   `json:"default_sandbox,omitempty"`
-	LegacyManifest bool     `json:"legacy_manifest,omitempty"`
-	MachineModelID string   `json:"machine_model_id,omitempty"`
-	Forks          []string `json:"forks"`
-	ForkCount      int      `json:"fork_count"`
+	Ref                  string   `json:"ref"`
+	Name                 string   `json:"name"`
+	Tag                  string   `json:"tag"`
+	ManifestPath         string   `json:"manifest_path"`
+	DiskSize             int64    `json:"disk_size"`
+	DiskSHA256           string   `json:"disk_sha256"`
+	BaseImage            string   `json:"base_image,omitempty"`
+	CoveCommit           string   `json:"cove_commit,omitempty"`
+	AgentCommit          string   `json:"agent_commit,omitempty"`
+	AgentFeatures        []string `json:"agent_features,omitempty"`
+	BuildRecipe          string   `json:"build_recipe,omitempty"`
+	SourceImage          string   `json:"source_image,omitempty"`
+	SourceManifestDigest string   `json:"source_manifest_digest,omitempty"`
+	Created              string   `json:"created,omitempty"`
+	BuiltAt              string   `json:"built_at,omitempty"`
+	DefaultNetwork       string   `json:"default_network,omitempty"`
+	DefaultSandbox       string   `json:"default_sandbox,omitempty"`
+	LegacyManifest       bool     `json:"legacy_manifest,omitempty"`
+	MachineModelID       string   `json:"machine_model_id,omitempty"`
+	Forks                []string `json:"forks"`
+	ForkCount            int      `json:"fork_count"`
 }
 
 type imageInspectDiff struct {
@@ -109,23 +110,24 @@ func inspectImageOutput(ref imagestore.Ref, imageDir string, manifest *imagestor
 		forks = []string{}
 	}
 	out := ImageInspectOutput{
-		Ref:            ref.String(),
-		Name:           manifest.Name,
-		Tag:            manifest.Tag,
-		ManifestPath:   filepath.Join(imageDir, "manifest.json"),
-		DiskSize:       manifest.DiskSize,
-		DiskSHA256:     manifest.DiskSHA256,
-		BaseImage:      manifest.BaseImage,
-		CoveCommit:     manifest.CoveCommit,
-		AgentCommit:    manifest.AgentCommit,
-		AgentFeatures:  append([]string(nil), manifest.AgentFeatures...),
-		BuildRecipe:    manifest.BuildRecipe,
-		SourceImage:    manifest.SourceImage,
-		DefaultNetwork: manifest.DefaultNetwork,
-		DefaultSandbox: manifest.DefaultSandbox,
-		LegacyManifest: legacyImageManifest(manifest),
-		Forks:          forks,
-		ForkCount:      len(forks),
+		Ref:                  ref.String(),
+		Name:                 manifest.Name,
+		Tag:                  manifest.Tag,
+		ManifestPath:         filepath.Join(imageDir, "manifest.json"),
+		DiskSize:             manifest.DiskSize,
+		DiskSHA256:           manifest.DiskSHA256,
+		BaseImage:            manifest.BaseImage,
+		CoveCommit:           manifest.CoveCommit,
+		AgentCommit:          manifest.AgentCommit,
+		AgentFeatures:        append([]string(nil), manifest.AgentFeatures...),
+		BuildRecipe:          manifest.BuildRecipe,
+		SourceImage:          manifest.SourceImage,
+		SourceManifestDigest: manifest.SourceManifestDigest,
+		DefaultNetwork:       manifest.DefaultNetwork,
+		DefaultSandbox:       manifest.DefaultSandbox,
+		LegacyManifest:       legacyImageManifest(manifest),
+		Forks:                forks,
+		ForkCount:            len(forks),
 	}
 	if !manifest.CreatedAt.IsZero() {
 		out.Created = manifest.CreatedAt.UTC().Format(time.RFC3339)
@@ -439,6 +441,7 @@ func imageInspectFieldRank(field string) int {
 		"built_at",
 		"build_recipe",
 		"source_image",
+		"source_manifest_digest",
 		"baseImage",
 		"diskSHA256",
 		"diskSize",
@@ -614,6 +617,9 @@ func writeInspectText(w io.Writer, out ImageInspectOutput) error {
 	}
 	if out.SourceImage != "" {
 		fmt.Fprintf(w, "  source image: %s\n", out.SourceImage)
+	}
+	if out.SourceManifestDigest != "" {
+		fmt.Fprintf(w, "  source manifest: %s\n", out.SourceManifestDigest)
 	}
 	if out.Created != "" {
 		fmt.Fprintf(w, "  created:     %s\n", out.Created)
