@@ -7,27 +7,12 @@ import (
 	"crypto/sha256"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"syscall"
 	"testing"
 )
 
 func TestHelperCommandDoesNotRewriteBinary(t *testing.T) {
-	tmp := t.TempDir()
-	exe := filepath.Join(tmp, "cove")
-	entitlements := repoPath(t, "internal", "autosign", "vz.entitlements")
-
-	build := exec.Command("go", "build", "-o", exe, ".")
-	build.Dir = "."
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("go build: %v\n%s", err, out)
-	}
-
-	sign := exec.Command("codesign", "-s", "-", "-f", "--entitlements", entitlements, exe)
-	sign.Dir = "."
-	if out, err := sign.CombinedOutput(); err != nil {
-		t.Fatalf("codesign: %v\n%s", err, out)
-	}
+	exe := doctorE2EBinary(t)
 
 	before := snapshotFile(t, exe)
 

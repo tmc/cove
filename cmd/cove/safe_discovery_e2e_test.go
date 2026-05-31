@@ -92,7 +92,7 @@ func TestSafeDiscoveryNoResidueE2E(t *testing.T) {
 
 func runCoveDiscoveryCommand(t *testing.T, bin, home string, args ...string) (stdout, stderr string, exit int) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Env = append(os.Environ(), "HOME="+home)

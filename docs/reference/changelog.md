@@ -12,6 +12,8 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   screenshot, key, text, and mouse events through the backing VM control socket.
 - The OpenAI Agents Python cloud provider now maps `ComputerTool`
   screenshot/key/text/mouse calls onto the sandbox control endpoint.
+- The public Go `agentsandbox` package now includes a local/cloud client for
+  hosted sandbox create/wait/exec/control/delete flows.
 - `cove fleet cordon` and `uncordon` now mark registered hosts as skipped for
   `fleet run` placement while keeping direct `--fleet=<name>` routing intact.
 - `cove fleet run` now records short local placement leases and counts active
@@ -130,10 +132,8 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   `running` and `ready` intervals, with scoped `GET
   /v1/metering/sandboxes` and `GET /v1/sandboxes/{id}/metering` summaries for
   VM, CPU, and memory-byte milliseconds.
-- The OpenAI Agents Python adapter now supports
-  `CoveSandboxClientOptions(provider="cloud", ...)`, creating sandboxes through
-  `cove-fleetd`, polling readiness, executing commands, and deleting handles
-  through the REST control plane.
+- The OpenAI Agents Python adapter and public Go `agentsandbox` package now
+  support cloud/control-plane sandboxes for create/wait/exec/delete workflows.
 - `coved -fleet-url` now starts leased assignments asynchronously so a
   long-running `cove` assignment can keep renewing while the worker continues
   heartbeating and polling for additional assigned work.

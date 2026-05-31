@@ -331,11 +331,34 @@ see records in their namespace.
 
 This is a scaffold for the hosted `/v1/sandboxes` lifecycle:
 create/list/get/delete/start/restart/stop/wait/exec/control, leases, and
-metering are present. The OpenAI Agents Python adapter can switch
-`SandboxRunConfig` between
-local VM control and this cloud/control-plane path, including hosted
-ComputerTool screenshot/key/text/mouse events; remaining SDK follow-up is Go SDK
-parity.
+metering are present. The OpenAI Agents Python adapter and public Go
+`agentsandbox` package can switch between local VM control and this
+cloud/control-plane path, including hosted ComputerTool-style
+screenshot/key/text/mouse events.
+
+Go SDK example:
+
+```go
+ctx := context.Background()
+sb, err := agentsandbox.Create(ctx, agentsandbox.ClientOptions{
+	Provider: agentsandbox.ProviderCloud,
+	FleetURL: "https://fleet.internal.example",
+	APIKey:   os.Getenv("COVE_API_KEY"),
+	ImageRef: "macos-base:latest",
+})
+if err != nil {
+	log.Fatal(err)
+}
+defer sb.Delete(ctx)
+if err := sb.WaitReady(ctx, 2*time.Minute); err != nil {
+	log.Fatal(err)
+}
+result, err := sb.Shell(ctx, "sw_vers")
+if err != nil {
+	log.Fatal(err)
+}
+fmt.Print(result.Stdout)
+```
 
 Assignment endpoints:
 
