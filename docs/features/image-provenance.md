@@ -26,6 +26,11 @@ Output is `PASS`, `WARN`, or `FAIL`. Use `--strict` to turn a missing
 refuses a `FAIL` result unless `COVE_ALLOW_STALE_IMAGE=1` is set.
 `WARN` results print a warning and continue.
 
+`cove action prepare-image <ref>` also runs `cove image verify --strict --json`
+before it trusts the freshness shortcut. A recently built image that lacks
+`execattach.v3`, has a corrupt layout, or fails a strict provenance check is not
+reported as prepared.
+
 ## Comparing images
 
 Use `cove diff <ref-a> <ref-b> [-json]` to compare two local image disk layer

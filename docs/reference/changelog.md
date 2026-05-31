@@ -55,6 +55,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   VM/image/status, policy, enforcement mode, allowlists, limitations, and
   decision counts. Use `--raw` for the original log bytes or `--json` for
   machine-readable output.
+- `cove action prepare-image` now runs `cove image verify --strict --json`
+  before using the freshness shortcut, so a fresh timestamp cannot hide a
+  missing `execattach.v3` agent feature, corrupt layout, or failed provenance
+  check.
 - `cove image inspect -remote` now accepts multiple registry refs for private
   catalog audits. Single-ref JSON remains an object; batch JSON is an array and
   includes per-ref errors while returning a failing exit status if any ref fails.

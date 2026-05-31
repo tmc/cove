@@ -95,10 +95,12 @@ volume has enough free space, the network helper can list host interfaces, and
 the run artifact root is writable. It is read-only.
 
 `cove action prepare-image <ref>` checks that the local image ref is suitable for
-action jobs before a workflow uses it. It verifies the image exists, can be
-forked, has a current guest agent, can run a shell command through the agent, has
-runner dependencies present, has enough disk headroom for a job fork, and has no
-stale forks that would make operator intent ambiguous.
+action jobs before a workflow uses it. It first runs `cove image verify --strict`
+so manifest/layout/provenance and `execattach.v3` are checked even when the image
+timestamp is still fresh. Stale images then get full live checks: the image can
+be forked, has a current guest agent, can run a shell command through the agent,
+has runner dependencies present, has enough disk headroom for a job fork, and
+has no stale forks that would make operator intent ambiguous.
 
 Both commands accept `--json` for automation. Human output is for operators;
 JSON output is for CI gates. Exit codes are:

@@ -52,7 +52,7 @@ Refresh sources checked on 2026-05-11:
 | Gap | Status in cove now | Competitive pressure | Next action |
 | --- | --- | --- | --- |
 | Public install and public trust path | Still gated. The repo remains private; public Homebrew/Marketplace/image-catalog language must stay out of operator docs until the privacy/release decision is made. | Cua and Tart are much easier to evaluate from public docs. | User-gated release/distribution decision; do not auto-ship from conductor. |
-| Public image catalog and signed provenance | Private OCI and tar transport work; public catalog, cosign/SLSA, and curated base images remain deferred. | Tart's GHCR image ecosystem is still the benchmark; Lume documents registry push/pull. | Decide the public registry/signing posture before marketing cove as drop-in image infrastructure. |
+| Public image catalog and signed provenance | Private OCI and tar transport work plus local image provenance/freshness gates are present. `cove image verify --strict` now feeds `cove action prepare-image` before the freshness shortcut, so fresh timestamps cannot mask missing agent features or corrupt local layout. Public catalog, cosign/SLSA, and curated base images remain deferred. | Tart's GHCR image ecosystem is still the benchmark; Lume documents registry push/pull. | Decide the public registry/signing posture before marketing cove as drop-in image infrastructure; meanwhile keep private runner image gates strict. |
 | Hosted queue semantics | Intentionally absent. Cove owns VM/image/fork execution and expects GitHub Actions, Buildkite, or an operator scheduler to schedule hosts. | Cirrus users expect queue semantics; Daytona-style products sell the API-hosted sandbox. | Keep as non-goal, but make scheduler handoff examples boring. |
 | Resource observability | Run JSONL, OTLP, daemon/fleet metrics, runs UX, and best-effort `resource_sample` events now exist for standalone runs and forked run bundles. Samples include guest memory/disk/load/uptime/user counts, bounded in-guest top-process PID/CPU/RSS attribution, VZ memory/balloon fields, and owning cove process PID/CPU/RSS/start source when available; periodic samples run after guest readiness. `cove runs show` and GitHub summary export now fold samples into memory/load/process/host peaks and pressure hints. | Cirrus users expect task resource visibility; hosted sandbox products expose operational state through APIs. | Validate thresholds against real private CI runs, then add dashboard views only if operators need longer history. |
 | Guest artifact copy-out | Run bundles, `cove runs export`, and cove-action `artifacts` copy-out now exist. Declared absolute guest paths are copied into the run bundle under `guest/`, exposed through `artifact-path`, and recorded as `artifact_copy` metrics; workflow upload remains the scheduler's job. | Cirrus artifacts are first-class. | Keep upload explicit through GitHub Actions/Buildkite artifact steps; add richer summaries only after operator feedback. |
@@ -65,10 +65,11 @@ Refresh sources checked on 2026-05-11:
 
 ### Current ranking
 
-1. **Canonical agent command polish.** `cove agent-sandbox run` is the one
+1. **Private runner image gates.** Keep making `cove action doctor` and
+   `prepare-image` boring enough for private CI: signed binary, entitlement,
+   image provenance, strict agent-feature gates, freshness, and shell readiness.
+2. **Canonical agent command polish.** `cove agent-sandbox run` is the one
    operator-facing path; next polish is real private provider-run validation.
-2. **In-VM user management.** Small differentiator if scoped to an agent-backed
-   lifecycle command plus cleanup audit, not a new isolation boundary.
 3. **Public packaging/signing decision.** This remains high leverage but
    user-gated. Do not let conductor loops make this decision implicitly.
 
@@ -309,7 +310,8 @@ ExecAttach, metrics, and private images.
 Ship:
 
 - `cove action doctor`: validates signed cove binary, entitlement, image
-  freshness, agent version, disk capacity, network mode, and metrics output.
+  freshness, strict agent feature verification, agent version, disk capacity,
+  network mode, and metrics output.
 - `cove action prepare-image`: checks an image has current agent, runner deps,
   shell readiness, and no stale forks.
 - Workflow examples for success, failure, artifact upload, metrics upload, and

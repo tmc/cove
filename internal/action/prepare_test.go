@@ -29,6 +29,15 @@ func key(name string, args ...string) string {
 	return strings.Join(append([]string{name}, args...), "\x00")
 }
 
+const prepareImageVerifyPassJSON = `{"verdict":"PASS","checks":[{"name":"agent features","status":"PASS","detail":"execattach.v3"}]}`
+
+func seedPrepareImageVerifyPass(r *fakeRunner, ref string) {
+	if r.outputs == nil {
+		r.outputs = map[string]Output{}
+	}
+	r.outputs[key("cove", "image", "verify", "--strict", "--json", ref)] = Output{Stdout: prepareImageVerifyPassJSON}
+}
+
 func TestCheckNetworkFallsBackToTopLevelNetwork(t *testing.T) {
 	r := &fakeRunner{
 		outputs: map[string]Output{
@@ -73,6 +82,7 @@ func TestWriteReport(t *testing.T) {
 
 func TestRunPreparePass(t *testing.T) {
 	r := &fakeRunner{outputs: map[string]Output{}, errors: map[string]error{}}
+	seedPrepareImageVerifyPass(r, "ubuntu:ci")
 	for _, call := range []string{
 		key("cove", "shell", "ubuntu:ci", "--", "which", "bash"),
 		key("cove", "shell", "ubuntu:ci", "--", "which", "curl"),
@@ -92,6 +102,7 @@ func TestRunPreparePass(t *testing.T) {
 		t.Fatalf("RunPrepare status = %q exit = %d, want pass/0", got.Status, got.ExitCode())
 	}
 	for _, want := range []string{
+		key("cove", "image", "verify", "--strict", "--json", "ubuntu:ci"),
 		key("cove", "image", "inspect", "-json", "ubuntu:ci"),
 		key("cove", "shell", "ubuntu:ci", "--", "which", "docker"),
 		key("cove", "vm", "tree", "--reachable-from", "ubuntu:ci"),
@@ -104,6 +115,7 @@ func TestRunPreparePass(t *testing.T) {
 
 func TestRunPrepareFailsMissingDependency(t *testing.T) {
 	r := &fakeRunner{outputs: map[string]Output{}, errors: map[string]error{}}
+	seedPrepareImageVerifyPass(r, "ubuntu:ci")
 	r.outputs[key("cove", "shell", "ubuntu:ci", "--", "vz-agent", "-version")] = Output{Stdout: "vz-agent abc123\n"}
 	r.outputs[key("cove", "version")] = Output{Stdout: "cove abc123 (commit abc123, built now)\n"}
 	r.errors[key("cove", "shell", "ubuntu:ci", "--", "which", "docker")] = errors.New("exit 1")
@@ -117,6 +129,7 @@ func TestRunPrepareFailsMissingDependency(t *testing.T) {
 
 func TestRunPrepareFailsStaleAgent(t *testing.T) {
 	r := &fakeRunner{outputs: map[string]Output{}, errors: map[string]error{}}
+	seedPrepareImageVerifyPass(r, "ubuntu:ci")
 	r.outputs[key("cove", "shell", "ubuntu:ci", "--", "vz-agent", "-version")] = Output{Stdout: "vz-agent old\n"}
 	r.outputs[key("cove", "version")] = Output{Stdout: "cove new (commit new, built now)\n"}
 	r.outputs[key("cove", "shell", "ubuntu:ci", "--", "echo", "OK")] = Output{Stdout: "OK\n"}
@@ -133,6 +146,7 @@ func TestRunPrepareSkipsFreshImage(t *testing.T) {
 		},
 		errors: map[string]error{},
 	}
+	seedPrepareImageVerifyPass(r, "ubuntu:ci")
 	got := RunPrepare(context.Background(), PrepareConfig{
 		CoveBin: "cove",
 		Ref:     "ubuntu:ci",
@@ -143,19 +157,20 @@ func TestRunPrepareSkipsFreshImage(t *testing.T) {
 	if got.Status != StatusPass {
 		t.Fatalf("RunPrepare status = %q, want pass", got.Status)
 	}
-	if len(got.Checks) != 1 || got.Checks[0].Name != "image-fresh" {
-		t.Fatalf("checks = %#v, want image-fresh only", got.Checks)
+	if len(got.Checks) != 2 || got.Checks[0].Name != "image-verify" || got.Checks[1].Name != "image-fresh" {
+		t.Fatalf("checks = %#v, want image-verify and image-fresh", got.Checks)
 	}
-	if !strings.Contains(got.Checks[0].Message, "image already prepared") {
-		t.Fatalf("fresh message = %q", got.Checks[0].Message)
+	if !strings.Contains(got.Checks[1].Message, "image already prepared") {
+		t.Fatalf("fresh message = %q", got.Checks[1].Message)
 	}
-	if len(r.calls) != 1 {
-		t.Fatalf("calls = %v, want inspect only", r.calls)
+	if len(r.calls) != 2 {
+		t.Fatalf("calls = %v, want verify and inspect only", r.calls)
 	}
 }
 
 func TestRunPrepareChecksStaleImage(t *testing.T) {
 	r := &fakeRunner{outputs: map[string]Output{}, errors: map[string]error{}}
+	seedPrepareImageVerifyPass(r, "ubuntu:ci")
 	for _, call := range []string{
 		key("cove", "image", "inspect", "-json", "ubuntu:ci"),
 		key("cove", "shell", "ubuntu:ci", "--", "which", "bash"),
@@ -182,6 +197,7 @@ func TestRunPrepareChecksStaleImage(t *testing.T) {
 
 func TestRunPrepareForceBypassesFreshSkip(t *testing.T) {
 	r := &fakeRunner{outputs: map[string]Output{}, errors: map[string]error{}}
+	seedPrepareImageVerifyPass(r, "ubuntu:ci")
 	for _, call := range []string{
 		key("cove", "image", "inspect", "-json", "ubuntu:ci"),
 		key("cove", "shell", "ubuntu:ci", "--", "which", "bash"),
@@ -202,6 +218,39 @@ func TestRunPrepareForceBypassesFreshSkip(t *testing.T) {
 	}
 	if !contains(r.calls, key("cove", "shell", "ubuntu:ci", "--", "which", "docker")) {
 		t.Fatalf("force did not run full checks: %v", r.calls)
+	}
+}
+
+func TestRunPrepareFreshImageFailsWithoutStrictVerify(t *testing.T) {
+	r := &fakeRunner{
+		outputs: map[string]Output{
+			key("cove", "image", "verify", "--strict", "--json", "ubuntu:ci"): {
+				Stdout: `{"verdict":"FAIL","checks":[{"name":"agent features","status":"FAIL","detail":"missing execattach.v3"}]}`,
+			},
+			key("cove", "image", "inspect", "-json", "ubuntu:ci"): {Stdout: `{"built_at":"2026-05-05T10:00:00Z"}`},
+		},
+		errors: map[string]error{
+			key("cove", "image", "verify", "--strict", "--json", "ubuntu:ci"): errors.New("exit 1"),
+		},
+	}
+	got := RunPrepare(context.Background(), PrepareConfig{
+		CoveBin: "cove",
+		Ref:     "ubuntu:ci",
+		Runner:  r,
+		TTL:     24 * time.Hour,
+		Now:     mustTime(t, "2026-05-05T12:00:00Z"),
+	})
+	if got.Status != StatusFail {
+		t.Fatalf("RunPrepare status = %q, want fail", got.Status)
+	}
+	if len(got.Checks) != 1 || got.Checks[0].Name != "image-verify" {
+		t.Fatalf("checks = %#v, want image-verify only", got.Checks)
+	}
+	if !strings.Contains(got.Checks[0].Message, "missing execattach.v3") {
+		t.Fatalf("message = %q, want execattach detail", got.Checks[0].Message)
+	}
+	if contains(r.calls, key("cove", "image", "inspect", "-json", "ubuntu:ci")) {
+		t.Fatalf("freshness check ran after failed verify: %v", r.calls)
 	}
 }
 

@@ -57,17 +57,22 @@ func RunPrepare(ctx context.Context, cfg PrepareConfig) Report {
 		}})
 	}
 
+	checks := []CheckResult{prepareImageVerify(ctx, cfg, ref)}
+	if checks[0].Status == StatusFail {
+		return makeReport(checks)
+	}
 	if !cfg.Force {
 		fresh := prepareFreshness(ctx, cfg, ref)
-		if fresh.Status == StatusPass {
-			return makeReport([]CheckResult{fresh})
+		if fresh.Status == StatusPass && checks[0].Status == StatusPass {
+			checks = append(checks, fresh)
+			return makeReport(checks)
 		}
 	}
 
-	checks := []CheckResult{
+	checks = append(checks,
 		prepareCommand(ctx, cfg, "image-inspect", []string{"image", "inspect", "-json", ref}, "image inspect ok"),
 		prepareAgentVersion(ctx, cfg, ref),
-	}
+	)
 	for _, dep := range []string{"bash", "curl", "git", "docker"} {
 		checks = append(checks, prepareCommand(ctx, cfg, "runner-dep-"+dep, []string{"shell", ref, "--", "which", dep}, dep+" present"))
 	}
@@ -228,6 +233,69 @@ func movePrepareFlagsFirst(args []string) []string {
 		}
 	}
 	return append(flags, rest...)
+}
+
+type prepareImageVerifyPayload struct {
+	Verdict string `json:"verdict"`
+	Checks  []struct {
+		Name   string `json:"name"`
+		Status string `json:"status"`
+		Detail string `json:"detail"`
+	} `json:"checks"`
+}
+
+func prepareImageVerify(ctx context.Context, cfg PrepareConfig, ref string) CheckResult {
+	ctx, cancel := context.WithTimeout(ctx, cfg.Timeout)
+	defer cancel()
+	out, err := cfg.Runner.Run(ctx, cfg.CoveBin, "image", "verify", "--strict", "--json", ref)
+	var payload prepareImageVerifyPayload
+	if parseErr := json.Unmarshal([]byte(out.Stdout), &payload); parseErr != nil {
+		if err != nil {
+			return CheckResult{Name: "image-verify", Status: StatusFail, Message: "image verify failed: " + trimOutput(out, err)}
+		}
+		return CheckResult{Name: "image-verify", Status: StatusFail, Message: "parse image verify JSON: " + parseErr.Error()}
+	}
+	message := prepareImageVerifyMessage(payload)
+	switch strings.ToUpper(strings.TrimSpace(payload.Verdict)) {
+	case "PASS":
+		if err != nil {
+			return CheckResult{Name: "image-verify", Status: StatusFail, Message: "image verify failed: " + trimOutput(out, err)}
+		}
+		return CheckResult{Name: "image-verify", Status: StatusPass, Message: message}
+	case "WARN":
+		return CheckResult{Name: "image-verify", Status: StatusWarn, Message: message}
+	case "FAIL":
+		return CheckResult{Name: "image-verify", Status: StatusFail, Message: message}
+	default:
+		return CheckResult{Name: "image-verify", Status: StatusFail, Message: "unexpected image verify verdict " + payload.Verdict}
+	}
+}
+
+func prepareImageVerifyMessage(payload prepareImageVerifyPayload) string {
+	verdict := strings.ToUpper(strings.TrimSpace(payload.Verdict))
+	var problems []string
+	for _, check := range payload.Checks {
+		if strings.EqualFold(check.Status, "PASS") || strings.EqualFold(check.Status, "INFO") {
+			continue
+		}
+		name := strings.TrimSpace(check.Name)
+		detail := strings.TrimSpace(check.Detail)
+		if name == "" {
+			name = "check"
+		}
+		if detail == "" {
+			problems = append(problems, fmt.Sprintf("%s=%s", name, check.Status))
+			continue
+		}
+		problems = append(problems, fmt.Sprintf("%s: %s", name, detail))
+	}
+	if len(problems) == 0 {
+		if verdict == "" {
+			return "image verify passed"
+		}
+		return "image verify " + strings.ToLower(verdict)
+	}
+	return "image verify " + strings.ToLower(verdict) + ": " + strings.Join(problems, "; ")
 }
 
 func prepareFreshness(ctx context.Context, cfg PrepareConfig, ref string) CheckResult {
