@@ -403,6 +403,61 @@ func TestStoreRestartRunningSandboxQueuesStopThenStart(t *testing.T) {
 	}
 }
 
+func TestStoreSandboxMeteringRecordsRunningIntervals(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "fleet.json")
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}}); err != nil {
+		t.Fatal(err)
+	}
+	sandbox, err := store.CreateSandbox(SandboxRequest{
+		Namespace: "team-a",
+		ID:        "job-1",
+		ImageRef:  "base:v1",
+		Resources: Capacity{CPUs: 2, MemoryBytes: 1024},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AwaitAssignment("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: sandbox.Assignment.ID, Status: "running"}); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(2 * time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: sandbox.Assignment.ID, Status: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(2 * time.Second)
+	if _, err := store.StopSandbox("job-1"); err != nil {
+		t.Fatal(err)
+	}
+	metering := store.ListSandboxMetering("team-a", "job-1")
+	if len(metering.Records) != 2 {
+		t.Fatalf("metering records = %+v, want 2", metering.Records)
+	}
+	if metering.Summary.DurationMillis != 4000 || metering.Summary.VMMillis != 4000 || metering.Summary.CPUMillis != 8000 || metering.Summary.MemoryByteMillis != 4096000 {
+		t.Fatalf("metering summary = %+v, want 4s vm, 8 cpu-s, 4096000 byte-ms", metering.Summary)
+	}
+	if got := store.ListSandboxMetering("team-b", "job-1"); len(got.Records) != 0 || got.Summary.Records != 0 {
+		t.Fatalf("cross-namespace metering = %+v, want none", got)
+	}
+	reopened, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := reopened.ListSandboxMetering("team-a", "job-1")
+	if got.Summary.DurationMillis != metering.Summary.DurationMillis || len(got.Records) != len(metering.Records) {
+		t.Fatalf("reopened metering = %+v, want %+v", got, metering)
+	}
+}
+
 func TestStoreSandboxLeaseAcquireRenewRelease(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "fleet.json")
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
@@ -2355,6 +2410,52 @@ func TestHandlerSandboxes(t *testing.T) {
 	postJSON(t, server.URL+"/v1/sandboxes/job-2/restart", map[string]string{}, &restart)
 	if restart.Restarting || restart.ID != "job-2" || restart.Status != "pending" {
 		t.Fatalf("restart pending sandbox = %+v, want pending no-op", restart)
+	}
+}
+
+func TestHandlerSandboxMetering(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var account ServiceAccountResult
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-a", Namespace: "team-a", Token: "token-a"}, &account)
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-b", Namespace: "team-b", Token: "token-b"}, &account)
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 4}}, &record)
+	var created SandboxStatus
+	postJSONAuth(t, server.URL+"/v1/sandboxes", "token-a", SandboxRequest{ID: "job-1", ImageRef: "base:v1", Resources: Capacity{CPUs: 2, MemoryBytes: 1024}}, &created)
+	var leased Assignment
+	getJSON(t, server.URL+"/v1/workers/worker-1/assignments", &leased)
+	now = now.Add(time.Second)
+	postJSON(t, server.URL+"/v1/workers/worker-1/reports", WorkerReport{AssignmentID: leased.ID, Status: "running"}, &record)
+	now = now.Add(2 * time.Second)
+	postJSON(t, server.URL+"/v1/workers/worker-1/reports", WorkerReport{AssignmentID: leased.ID, Status: "ready"}, &record)
+	now = now.Add(time.Second)
+	var stopped SandboxStopResult
+	postJSON(t, server.URL+"/v1/sandboxes/job-1/stop", map[string]string{}, &stopped)
+
+	var metering SandboxMeteringResult
+	getJSON(t, server.URL+"/v1/metering/sandboxes?sandbox_id=job-1", &metering)
+	if len(metering.Records) != 2 || metering.Summary.DurationMillis != 3000 || metering.Summary.CPUMillis != 6000 {
+		t.Fatalf("metering = %+v, want 2 records and 3s/6cpu-s", metering)
+	}
+	getJSON(t, server.URL+"/v1/sandboxes/job-1/metering", &metering)
+	if metering.Summary.SandboxID != "job-1" || metering.Summary.DurationMillis != 3000 {
+		t.Fatalf("sandbox metering = %+v, want job-1 3s", metering)
+	}
+	getJSONAuth(t, server.URL+"/v1/metering/sandboxes?sandbox_id=job-1", "token-a", &metering)
+	if len(metering.Records) != 2 || metering.Summary.Namespace != "team-a" {
+		t.Fatalf("team-a metering = %+v, want scoped records", metering)
+	}
+	getJSONAuth(t, server.URL+"/v1/metering/sandboxes?sandbox_id=job-1", "token-b", &metering)
+	if len(metering.Records) != 0 || metering.Summary.Records != 0 {
+		t.Fatalf("team-b metering = %+v, want none", metering)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/sandboxes/job-1/metering", "token-b"); code != http.StatusNotFound {
+		t.Fatalf("cross-namespace sandbox metering status = %d, want 404", code)
 	}
 }
 

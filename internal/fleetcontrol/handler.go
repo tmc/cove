@@ -71,6 +71,9 @@ func Handler(store *Store) http.Handler {
 	mux.HandleFunc("/v1/service-accounts", func(w http.ResponseWriter, r *http.Request) {
 		handleServiceAccounts(w, r, store)
 	})
+	mux.HandleFunc("/v1/metering/sandboxes", func(w http.ResponseWriter, r *http.Request) {
+		handleSandboxMetering(w, r, store)
+	})
 	mux.HandleFunc("/v1/sandboxes/", func(w http.ResponseWriter, r *http.Request) {
 		handleSandbox(w, r, store)
 	})
@@ -401,9 +404,38 @@ func handleSandboxAction(w http.ResponseWriter, r *http.Request, store *Store, i
 		writeJSON(w, http.StatusOK, result)
 	case "lease":
 		handleSandboxLease(w, r, store, id)
+	case "metering":
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		if !requireRole(w, identity, ServiceAccountRoleViewer) {
+			return
+		}
+		if !sandboxVisible(w, store, id, identity) {
+			return
+		}
+		writeJSON(w, http.StatusOK, store.ListSandboxMetering(namespaceFilterFromRequest(r, identity), id))
 	default:
 		writeError(w, http.StatusNotFound, "sandbox route not found")
 	}
+}
+
+func handleSandboxMetering(w http.ResponseWriter, r *http.Request, store *Store) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	namespace := namespaceFilterFromRequest(r, identity)
+	sandboxID := strings.TrimSpace(r.URL.Query().Get("sandbox_id"))
+	if sandboxID == "" {
+		sandboxID = strings.TrimSpace(r.URL.Query().Get("sandbox"))
+	}
+	writeJSON(w, http.StatusOK, store.ListSandboxMetering(namespace, sandboxID))
 }
 
 func handleSandboxLease(w http.ResponseWriter, r *http.Request, store *Store, id string) {

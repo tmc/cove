@@ -119,6 +119,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `POST/DELETE /v1/sandboxes/{id}/lease` now acquires, renews, and releases
   exclusive sandbox handle leases with TTLs, conflict responses, namespace
   scoping, and audit events.
+- `cove-fleetd` now persists per-sandbox metering records for active
+  `running` and `ready` intervals, with scoped `GET
+  /v1/metering/sandboxes` and `GET /v1/sandboxes/{id}/metering` summaries for
+  VM, CPU, and memory-byte milliseconds.
 - `coved -fleet-url` now starts leased assignments asynchronously so a
   long-running `cove` assignment can keep renewing while the worker continues
   heartbeating and polling for additional assigned work.

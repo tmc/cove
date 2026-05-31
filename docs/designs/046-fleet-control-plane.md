@@ -320,9 +320,10 @@ governance/hosted, with scheduling as the free adoption driver — not the SKU.
   handles from the retained VM, restarts active handles through stop cleanup
   plus requeue, stops/deletes by canceling pending work or queueing same-worker
   stop cleanup, and exposes `POST/DELETE /v1/sandboxes/{id}/lease` for
-  TTL-based exclusive modify locks. Remaining work is the SDK/provider surface
-  and metering. The bar to beat is Daytona's create→exec→delete in under six
-  lines with an opaque handle.
+  TTL-based exclusive modify locks plus `GET /v1/sandboxes/{id}/metering` and
+  `GET /v1/metering/sandboxes` for scoped usage records. Remaining work is the
+  SDK/provider surface. The bar to beat is Daytona's create→exec→delete in
+  under six lines with an opaque handle.
 - **The wedge.** Cua Cloud runs **Linux/Windows only** — Apple-Silicon macOS does
   not scale horizontally cheaply, so they abandoned hosted macOS — and Cua users
   are openly asking for remote/multi-host macOS (Cua issues #1446, #1021) that
@@ -331,8 +332,9 @@ governance/hosted, with scheduling as the free adoption driver — not the SKU.
   fork/restore primitive namespace sandboxes cannot match.
 - **Metering** lives only in the paid control plane: per-minute/per-second per
   vCPU+RAM, no charge while stopped/archived, **BYO-LLM-key** so compute is the
-  only SKU (sidesteps the "are you marking up tokens" objection). The control
-  plane ingests worker-reported lifecycle events into billing records.
+  only SKU (sidesteps the "are you marking up tokens" objection). The initial
+  control-plane records now derive VM, CPU, and memory-byte milliseconds from
+  worker-reported `running` and `ready` lifecycle intervals.
 - **Deployment: both, identical binary.** Avoid the "Daytona trap" (single-host
   Docker-Compose OSS vs. heavyweight Helm/Terraform-K8s cloud). Follow
   Nomad/Orchard: ship one ~single-binary fleet control plane that runs the same
@@ -351,7 +353,7 @@ Each slice is independently shippable. The MIT/paid boundary is at **Slice 5**.
 | 5 | **Stateful fleet controller (the boundary)** | new control-plane binary (working name `cove-fleetd`) accepts worker dial-ins; `coved` gains `--fleet-url` outbound stream + four-verb worker protocol; embedded host-inventory store | **PAID** (controller) / **MIT** (worker mode) | Slice 4 | NAT traversal for remote Macs; N-way SSH fan-out becomes the bottleneck; establishes the monetization boundary. |
 | 6 | Fleet-wide policy & GC | controller pushes lifecycle policy, image-GC, and storage budget/prune down worker streams; workers report results | PAID | Slice 5 | Fulfills 034-deferred fleet-wide policy; image-GC, VM lifecycle-policy, and storage budget/prune push have landed. |
 | 7 | Top-k bin-pack scheduler + base-image affinity + warm-pool | controller-side placement replacing client-side least-loaded; base-image affinity; fork-warm-pool quota plus agent-ready slot claim, downsize, delete, and cleanup | PAID | Slice 5 | Resolves oversubscription races; lights up cove's image-locality edge for CI/agent pools. |
-| 8 | Hosted API + SDK provider abstraction + metering | REST `/v1/sandboxes` surface; create/list/get/delete/start/restart/stop/wait/lease scaffold has started; `provider=local\|cloud` SDK; per-resource metering; BYO-LLM-key | PAID (hosted) | Slice 7 | Use case C; competes with Daytona/Cua on the macOS wedge. |
+| 8 | Hosted API + SDK provider abstraction + metering | REST `/v1/sandboxes` surface; create/list/get/delete/start/restart/stop/wait/lease/metering scaffold has started; `provider=local\|cloud` SDK; BYO-LLM-key | PAID (hosted) | Slice 7 | Use case C; competes with Daytona/Cua on the macOS wedge. |
 | 9 | Fleet RBAC / SSO / audit | SAML/OIDC, namespaces, fleet audit log; initial persisted audit feed, service-account actor binding, namespace filters, service-account roles, and audit-chain verification have started | PAID | Slice 5 | Enterprise-governance monetization axis (Teleport line); the durable revenue, not the scheduler. |
 | — | Federation (deferred) | independent per-site controllers, no cross-site consensus | PAID | Slice 7 | Multi-datacenter scale; deliberately deferred to avoid premature distributed-systems complexity. |
 

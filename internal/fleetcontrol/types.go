@@ -375,6 +375,38 @@ type SandboxRestartResult struct {
 	Cleanup    *Assignment `json:"cleanup,omitempty"`
 }
 
+type SandboxMeteringRecord struct {
+	ID               string    `json:"id"`
+	Time             time.Time `json:"time"`
+	Namespace        string    `json:"namespace,omitempty"`
+	SandboxID        string    `json:"sandbox_id"`
+	AssignmentID     string    `json:"assignment_id"`
+	WorkerID         string    `json:"worker_id,omitempty"`
+	Status           string    `json:"status"`
+	Started          time.Time `json:"started"`
+	Ended            time.Time `json:"ended"`
+	DurationMillis   int64     `json:"duration_millis"`
+	Resources        Capacity  `json:"resources,omitempty"`
+	VMMillis         int64     `json:"vm_millis"`
+	CPUMillis        int64     `json:"cpu_millis,omitempty"`
+	MemoryByteMillis uint64    `json:"memory_byte_millis,omitempty"`
+}
+
+type SandboxMeteringSummary struct {
+	Namespace        string `json:"namespace,omitempty"`
+	SandboxID        string `json:"sandbox_id,omitempty"`
+	Records          int    `json:"records"`
+	DurationMillis   int64  `json:"duration_millis"`
+	VMMillis         int64  `json:"vm_millis"`
+	CPUMillis        int64  `json:"cpu_millis,omitempty"`
+	MemoryByteMillis uint64 `json:"memory_byte_millis,omitempty"`
+}
+
+type SandboxMeteringResult struct {
+	Records []SandboxMeteringRecord `json:"records"`
+	Summary SandboxMeteringSummary  `json:"summary"`
+}
+
 type SandboxDeleteResult struct {
 	Namespace  string      `json:"namespace,omitempty"`
 	ID         string      `json:"id"`

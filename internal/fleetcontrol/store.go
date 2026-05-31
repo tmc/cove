@@ -25,15 +25,17 @@ type Store struct {
 	assignments   map[string]Assignment
 	warmPools     map[string]WarmPool
 	audit         []AuditEvent
+	metering      []SandboxMeteringRecord
 	accounts      map[string]serviceAccountRecord
 }
 
 type storeFile struct {
-	Hosts           []HostRecord           `json:"hosts"`
-	Assignments     []Assignment           `json:"assignments,omitempty"`
-	WarmPools       []WarmPool             `json:"warm_pools,omitempty"`
-	AuditEvents     []AuditEvent           `json:"audit_events,omitempty"`
-	ServiceAccounts []serviceAccountRecord `json:"service_accounts,omitempty"`
+	Hosts           []HostRecord            `json:"hosts"`
+	Assignments     []Assignment            `json:"assignments,omitempty"`
+	WarmPools       []WarmPool              `json:"warm_pools,omitempty"`
+	AuditEvents     []AuditEvent            `json:"audit_events,omitempty"`
+	MeteringRecords []SandboxMeteringRecord `json:"metering_records,omitempty"`
+	ServiceAccounts []serviceAccountRecord  `json:"service_accounts,omitempty"`
 }
 
 type serviceAccountRecord struct {
@@ -63,6 +65,7 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		assignments:   make(map[string]Assignment),
 		warmPools:     make(map[string]WarmPool),
 		audit:         nil,
+		metering:      nil,
 		accounts:      make(map[string]serviceAccountRecord),
 	}
 	if s.path == "" {
@@ -127,6 +130,13 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		s.audit = append(s.audit, event)
 	}
 	s.audit = chainLegacyAuditEvents(s.audit)
+	for _, record := range file.MeteringRecords {
+		record = normalizeSandboxMeteringRecord(record)
+		if record.ID == "" || record.SandboxID == "" || record.AssignmentID == "" || record.Time.IsZero() {
+			continue
+		}
+		s.metering = append(s.metering, record)
+	}
 	for _, account := range file.ServiceAccounts {
 		account = normalizeServiceAccountRecord(account)
 		if account.Name == "" || account.TokenHash == "" || account.Role == "" {
@@ -372,6 +382,9 @@ func (s *Store) Report(r WorkerReport) (HostRecord, error) {
 				if assignment.Status == "restarting" {
 					storedStatus = "restarting"
 				}
+			}
+			if assignment.SandboxID != "" && assignment.SandboxRole == sandboxRoleRun {
+				s.appendSandboxMeteringLocked(received, assignment)
 			}
 			assignment.Status = storedStatus
 			assignment.Updated = received
@@ -836,6 +849,27 @@ func (s *Store) ListSandboxesNamespace(namespace string) []SandboxStatus {
 	return sandboxes
 }
 
+func (s *Store) ListSandboxMetering(namespace, sandboxID string) SandboxMeteringResult {
+	namespace = normalizeNamespace(namespace)
+	sandboxID = strings.TrimSpace(sandboxID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	records := make([]SandboxMeteringRecord, 0, len(s.metering))
+	for _, record := range s.sortedMeteringLocked() {
+		if !namespaceMatches(record.Namespace, namespace) {
+			continue
+		}
+		if sandboxID != "" && record.SandboxID != sandboxID {
+			continue
+		}
+		records = append(records, cloneSandboxMeteringRecord(record))
+	}
+	return SandboxMeteringResult{
+		Records: records,
+		Summary: sandboxMeteringSummary(namespace, sandboxID, records),
+	}
+}
+
 func (s *Store) LeaseSandbox(id string, req SandboxLeaseRequest) (SandboxLeaseResult, error) {
 	return s.LeaseSandboxActor("controller", id, req)
 }
@@ -1024,6 +1058,7 @@ func (s *Store) RestartSandboxActor(actor, id string) (SandboxRestartResult, err
 			}
 			s.assignments[cleanup.ID] = cleanup
 		}
+		s.appendSandboxMeteringLocked(now, assignment)
 		assignment.Status = "restarting"
 		assignment.Updated = now
 		s.assignments[assignment.ID] = assignment
@@ -1770,6 +1805,9 @@ func (s *Store) reconcileLocked(now time.Time) ReconcileResult {
 		}
 
 		changed := false
+		if assignment.SandboxID != "" && assignment.SandboxRole == sandboxRoleRun {
+			s.appendSandboxMeteringLocked(now, assignment)
+		}
 		if assignment.Status != "pending" {
 			assignment.Status = "pending"
 			changed = true
@@ -1895,8 +1933,9 @@ func (s *Store) persistLocked() error {
 	assignments := s.sortedAssignmentsLocked()
 	warmPools := s.sortedWarmPoolsLocked()
 	audit := cloneAuditEvents(s.audit)
+	metering := s.sortedMeteringLocked()
 	accounts := s.sortedServiceAccountsLocked()
-	data, err := json.MarshalIndent(storeFile{Hosts: hosts, Assignments: assignments, WarmPools: warmPools, AuditEvents: audit, ServiceAccounts: accounts}, "", "  ")
+	data, err := json.MarshalIndent(storeFile{Hosts: hosts, Assignments: assignments, WarmPools: warmPools, AuditEvents: audit, MeteringRecords: metering, ServiceAccounts: accounts}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode fleet store: %w", err)
 	}
@@ -1958,6 +1997,17 @@ func (s *Store) sortedAuditLocked() []AuditEvent {
 	return events
 }
 
+func (s *Store) sortedMeteringLocked() []SandboxMeteringRecord {
+	records := cloneSandboxMeteringRecords(s.metering)
+	sort.Slice(records, func(i, j int) bool {
+		if !records[i].Time.Equal(records[j].Time) {
+			return records[i].Time.Before(records[j].Time)
+		}
+		return records[i].ID < records[j].ID
+	})
+	return records
+}
+
 func (s *Store) sortedServiceAccountsLocked() []serviceAccountRecord {
 	records := make([]serviceAccountRecord, 0, len(s.accounts))
 	for _, record := range s.accounts {
@@ -1987,6 +2037,24 @@ func (s *Store) nextAuditIDLocked(now time.Time) string {
 		found := false
 		for _, event := range s.audit {
 			if event.ID == id {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return id
+		}
+		id = fmt.Sprintf("%s-%d", base, i)
+	}
+}
+
+func (s *Store) nextMeteringIDLocked(now time.Time) string {
+	base := fmt.Sprintf("metering-%d", now.UnixNano())
+	id := base
+	for i := 2; ; i++ {
+		found := false
+		for _, record := range s.metering {
+			if record.ID == id {
 				found = true
 				break
 			}
@@ -2040,6 +2108,21 @@ func cloneAuditEvents(in []AuditEvent) []AuditEvent {
 	out := make([]AuditEvent, len(in))
 	for i := range in {
 		out[i] = cloneAuditEvent(in[i])
+	}
+	return out
+}
+
+func cloneSandboxMeteringRecord(in SandboxMeteringRecord) SandboxMeteringRecord {
+	return in
+}
+
+func cloneSandboxMeteringRecords(in []SandboxMeteringRecord) []SandboxMeteringRecord {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]SandboxMeteringRecord, len(in))
+	for i := range in {
+		out[i] = cloneSandboxMeteringRecord(in[i])
 	}
 	return out
 }
@@ -2487,6 +2570,7 @@ func (s *Store) stopSandboxLocked(now time.Time, actor, id, action string) (Sand
 			}
 			s.assignments[cleanup.ID] = cleanup
 		}
+		s.appendSandboxMeteringLocked(now, assignment)
 		assignment.Status = "draining"
 		assignment.Updated = now
 		s.assignments[assignment.ID] = assignment
@@ -2991,6 +3075,41 @@ func (s *Store) activeWarmPoolCleanupLocked(slotID string) bool {
 	return false
 }
 
+func (s *Store) appendSandboxMeteringLocked(ended time.Time, assignment Assignment) {
+	if assignment.SandboxID == "" || assignment.SandboxRole != sandboxRoleRun || !sandboxMeteredStatus(assignment.Status) {
+		return
+	}
+	if assignment.Updated.IsZero() || !ended.After(assignment.Updated) {
+		return
+	}
+	durationMillis := ended.Sub(assignment.Updated).Milliseconds()
+	if durationMillis <= 0 {
+		return
+	}
+	resources := normalizeResources(assignment.Resources)
+	record := SandboxMeteringRecord{
+		ID:             s.nextMeteringIDLocked(ended),
+		Time:           ended.UTC(),
+		Namespace:      assignment.Namespace,
+		SandboxID:      assignment.SandboxID,
+		AssignmentID:   assignment.ID,
+		WorkerID:       assignment.WorkerID,
+		Status:         assignment.Status,
+		Started:        assignment.Updated.UTC(),
+		Ended:          ended.UTC(),
+		DurationMillis: durationMillis,
+		Resources:      resources,
+		VMMillis:       durationMillis * int64(resources.VMs),
+	}
+	if resources.CPUs > 0 {
+		record.CPUMillis = durationMillis * int64(resources.CPUs)
+	}
+	if resources.MemoryBytes > 0 {
+		record.MemoryByteMillis = saturatingMulUint64(uint64(durationMillis), resources.MemoryBytes)
+	}
+	s.metering = append(s.metering, normalizeSandboxMeteringRecord(record))
+}
+
 func (s *Store) appendAuditLocked(now time.Time, event AuditEvent) AuditEvent {
 	event = normalizeAuditEvent(event)
 	if event.Time.IsZero() {
@@ -3025,6 +3144,73 @@ func normalizeAuditEvent(event AuditEvent) AuditEvent {
 		event.Time = event.Time.UTC()
 	}
 	return event
+}
+
+func normalizeSandboxMeteringRecord(record SandboxMeteringRecord) SandboxMeteringRecord {
+	record.ID = strings.TrimSpace(record.ID)
+	record.Namespace = normalizeNamespace(record.Namespace)
+	record.SandboxID = strings.TrimSpace(record.SandboxID)
+	record.AssignmentID = strings.TrimSpace(record.AssignmentID)
+	record.WorkerID = strings.TrimSpace(record.WorkerID)
+	record.Status = strings.TrimSpace(record.Status)
+	record.Resources = normalizeResources(record.Resources)
+	if !record.Time.IsZero() {
+		record.Time = record.Time.UTC()
+	}
+	if !record.Started.IsZero() {
+		record.Started = record.Started.UTC()
+	}
+	if !record.Ended.IsZero() {
+		record.Ended = record.Ended.UTC()
+	}
+	if record.DurationMillis < 0 {
+		record.DurationMillis = 0
+	}
+	if record.VMMillis < 0 {
+		record.VMMillis = 0
+	}
+	if record.CPUMillis < 0 {
+		record.CPUMillis = 0
+	}
+	return record
+}
+
+func sandboxMeteringSummary(namespace, sandboxID string, records []SandboxMeteringRecord) SandboxMeteringSummary {
+	summary := SandboxMeteringSummary{
+		Namespace: normalizeNamespace(namespace),
+		SandboxID: strings.TrimSpace(sandboxID),
+		Records:   len(records),
+	}
+	for _, record := range records {
+		summary.DurationMillis += record.DurationMillis
+		summary.VMMillis += record.VMMillis
+		summary.CPUMillis += record.CPUMillis
+		summary.MemoryByteMillis = saturatingAddUint64(summary.MemoryByteMillis, record.MemoryByteMillis)
+	}
+	return summary
+}
+
+func sandboxMeteredStatus(status string) bool {
+	return status == "running" || status == "ready"
+}
+
+func saturatingMulUint64(a, b uint64) uint64 {
+	if a == 0 || b == 0 {
+		return 0
+	}
+	max := ^uint64(0)
+	if a > max/b {
+		return max
+	}
+	return a * b
+}
+
+func saturatingAddUint64(a, b uint64) uint64 {
+	max := ^uint64(0)
+	if max-a < b {
+		return max
+	}
+	return a + b
 }
 
 func (s *Store) lastAuditHashLocked() string {

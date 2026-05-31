@@ -261,6 +261,8 @@ curl -X DELETE 'http://127.0.0.1:9758/v1/sandboxes/job-1/lease?holder=runner-42'
 curl -X POST http://127.0.0.1:9758/v1/sandboxes/job-1/start
 curl -X POST http://127.0.0.1:9758/v1/sandboxes/job-1/restart
 curl -X POST 'http://127.0.0.1:9758/v1/sandboxes/job-1/wait?timeout=30s'
+curl 'http://127.0.0.1:9758/v1/sandboxes/job-1/metering'
+curl 'http://127.0.0.1:9758/v1/metering/sandboxes?sandbox_id=job-1'
 curl -X POST http://127.0.0.1:9758/v1/sandboxes/job-1/stop
 curl -X DELETE http://127.0.0.1:9758/v1/sandboxes/job-1
 ```
@@ -298,9 +300,18 @@ retained VM start when cleanup reports complete. `POST
 with `sandbox_role:"stop"`. When that stop assignment reports complete, the
 sandbox handle becomes `stopped`.
 `DELETE /v1/sandboxes/{id}` uses the same stop/cancel path and records a delete
-audit event. This is a scaffold for the hosted `/v1/sandboxes` lifecycle:
-create/list/get/delete/start/restart/stop/wait and leases are present, while
-metering and SDK provider switching remain follow-up work.
+audit event.
+
+`GET /v1/sandboxes/{id}/metering` and `GET /v1/metering/sandboxes` return
+append-only records for metered sandbox run intervals. The controller records
+time spent in `running` and `ready`, derives VM, CPU, and memory-byte
+millisecond totals from the sandbox resources, and does not meter pending,
+stopped, draining, or restarting time. Namespace-scoped service accounts only
+see records in their namespace.
+
+This is a scaffold for the hosted `/v1/sandboxes` lifecycle:
+create/list/get/delete/start/restart/stop/wait, leases, and metering are
+present, while SDK provider switching remains follow-up work.
 
 Assignment endpoints:
 
