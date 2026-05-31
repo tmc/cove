@@ -146,7 +146,7 @@ func (w *FleetWorker) Run(ctx context.Context) {
 				w.warn("fleet heartbeat", err)
 			}
 		case <-assignments.C:
-			if err := w.PollAssignment(ctx); err != nil {
+			if err := w.PollAssignmentAsync(ctx); err != nil {
 				w.warn("fleet assignment", err)
 			}
 		}
@@ -193,6 +193,19 @@ func (w *FleetWorker) PollAssignment(ctx context.Context) error {
 		return err
 	}
 	return w.HandleAssignment(ctx, *assignment)
+}
+
+func (w *FleetWorker) PollAssignmentAsync(ctx context.Context) error {
+	assignment, err := w.AwaitAssignment(ctx)
+	if err != nil || assignment == nil {
+		return err
+	}
+	go func() {
+		if err := w.HandleAssignment(ctx, *assignment); err != nil {
+			w.warn("fleet assignment", err)
+		}
+	}()
+	return nil
 }
 
 func (w *FleetWorker) HandleAssignment(ctx context.Context, assignment fleetcontrol.Assignment) error {

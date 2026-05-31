@@ -54,7 +54,7 @@ Worker protocol:
 |------|----------|-------|
 | register | `POST /v1/workers/register` | `coved` sends host id, version, labels, CPU count, VM count, local image count, and local image refs; controller stores the host record. |
 | heartbeat | `POST /v1/workers/heartbeat` | `coved` refreshes `last_seen` and capacity. |
-| await-assignment | `GET /v1/workers/<id>/assignments` | `coved` polls for work; the controller leases one pending assignment and otherwise returns `204 No Content`. |
+| await-assignment | `GET /v1/workers/<id>/assignments` | `coved` polls for work; the controller leases one pending assignment and otherwise returns `204 No Content`. The daemon starts leased assignments asynchronously so long `cove` runs do not block later polls or heartbeats. |
 | report-status | `POST /v1/workers/<id>/reports` | `coved` records `noop` as complete, executes `cove` assignments with bounded stdout/stderr capture, sends `running` renewals while `cove` is active, and reports other verbs as unsupported. |
 
 Inventory endpoints:

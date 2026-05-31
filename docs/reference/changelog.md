@@ -59,6 +59,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   durable fork warm-pool quotas; reconciliation creates replenishable
   `cove run -fork-from ... -ephemeral -keep -headless` assignments through
   `coved`.
+- `coved -fleet-url` now starts leased assignments asynchronously so a
+  long-running `cove` assignment can keep renewing while the worker continues
+  heartbeating and polling for additional assigned work.
 - `cove build --cache-from` and `--cache-to` now import and export cove
   build-cache artifacts through OCI refs, carrying cache entries, layer
   manifests, and block-delta blobs between runners.

@@ -345,6 +345,69 @@ exit 0
 	}
 }
 
+func TestFleetWorkerRunPollsWhileCoveAssignmentRuns(t *testing.T) {
+	release := filepath.Join(t.TempDir(), "release")
+	t.Setenv("COVE_TEST_RELEASE", release)
+	store := fleetcontrol.NewMemoryStore(time.Minute)
+	server := httptest.NewServer(fleetcontrol.Handler(store))
+	defer server.Close()
+	coveBin := writeExecutable(t, `#!/bin/sh
+while [ ! -f "$COVE_TEST_RELEASE" ]; do
+  sleep 0.02
+done
+exit 0
+`)
+
+	worker, err := NewFleetWorker(FleetWorkerConfig{
+		ControllerURL:      server.URL,
+		ID:                 "worker-1",
+		CoveBin:            coveBin,
+		HeartbeatInterval:  20 * time.Millisecond,
+		AssignmentInterval: 20 * time.Millisecond,
+		AssignmentTimeout:  time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go worker.Run(ctx)
+	waitUntil(t, time.Second, func() bool {
+		_, ok := store.Get("worker-1")
+		return ok
+	})
+	if _, err := store.CreateAssignment(fleetcontrol.Assignment{ID: "long", WorkerID: "worker-1", Verb: "cove"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAssignment(fleetcontrol.Assignment{ID: "second", WorkerID: "worker-1", Verb: "noop"}); err != nil {
+		t.Fatal(err)
+	}
+	waitUntil(t, time.Second, func() bool {
+		assignment, ok := store.GetAssignment("long")
+		return ok && assignment.Status == "running"
+	})
+	record, ok := store.Get("worker-1")
+	if !ok {
+		t.Fatal("worker missing")
+	}
+	seenWhileRunning := record.LastSeen
+	waitUntil(t, time.Second, func() bool {
+		record, ok := store.Get("worker-1")
+		return ok && record.LastSeen.After(seenWhileRunning)
+	})
+	waitUntil(t, time.Second, func() bool {
+		assignment, ok := store.GetAssignment("second")
+		return ok && assignment.Status == "complete"
+	})
+	if err := os.WriteFile(release, []byte("done\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	waitUntil(t, time.Second, func() bool {
+		assignment, ok := store.GetAssignment("long")
+		return ok && assignment.Status == "complete"
+	})
+}
+
 func TestFleetWorkerReportsCoveAssignmentFailure(t *testing.T) {
 	store := fleetcontrol.NewMemoryStore(time.Minute)
 	server := httptest.NewServer(fleetcontrol.Handler(store))
