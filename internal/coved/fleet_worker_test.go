@@ -180,6 +180,56 @@ exit 0
 	}
 }
 
+func TestFleetWorkerRenewsRunningCoveAssignment(t *testing.T) {
+	store := fleetcontrol.NewMemoryStore(time.Minute)
+	server := httptest.NewServer(fleetcontrol.Handler(store))
+	defer server.Close()
+	coveBin := writeExecutable(t, `#!/bin/sh
+sleep 0.2
+exit 0
+`)
+
+	worker, err := NewFleetWorker(FleetWorkerConfig{
+		ControllerURL:      server.URL,
+		ID:                 "worker-1",
+		CoveBin:            coveBin,
+		AssignmentInterval: 20 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := worker.Register(ctx); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if _, err := store.CreateAssignment(fleetcontrol.Assignment{ID: "assignment-1", WorkerID: "worker-1", Verb: "cove"}); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- worker.PollAssignment(ctx)
+	}()
+	waitUntil(t, time.Second, func() bool {
+		assignment, ok := store.GetAssignment("assignment-1")
+		return ok && assignment.Status == "running" && assignment.LastReport != nil && assignment.LastReport.Status == "running"
+	})
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("PollAssignment: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("PollAssignment did not finish")
+	}
+	assignment, ok := store.GetAssignment("assignment-1")
+	if !ok {
+		t.Fatal("assignment missing")
+	}
+	if assignment.Status != "complete" || assignment.LastReport == nil || assignment.LastReport.Status != "complete" {
+		t.Fatalf("assignment = %+v", assignment)
+	}
+}
+
 func TestFleetWorkerReportsCoveAssignmentFailure(t *testing.T) {
 	store := fleetcontrol.NewMemoryStore(time.Minute)
 	server := httptest.NewServer(fleetcontrol.Handler(store))
@@ -250,4 +300,16 @@ func writeExecutable(t *testing.T, script string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func waitUntil(t *testing.T, timeout time.Duration, ok func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if ok() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("condition not met before timeout")
 }

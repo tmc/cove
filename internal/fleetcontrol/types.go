@@ -60,6 +60,12 @@ type WorkerReport struct {
 	Time         time.Time `json:"time,omitempty"`
 }
 
+type ReconcileResult struct {
+	StaleWorkers        []string `json:"stale_workers,omitempty"`
+	RequeuedAssignments []string `json:"requeued_assignments,omitempty"`
+	ReplacedAssignments []string `json:"replaced_assignments,omitempty"`
+}
+
 type Assignment struct {
 	ID             string            `json:"id"`
 	WorkerID       string            `json:"worker_id,omitempty"`

@@ -24,7 +24,22 @@ func Handler(store *Store) http.Handler {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
+		if !reconcile(w, store) {
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"workers": store.List()})
+	})
+	mux.HandleFunc("/v1/reconcile", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		result, err := store.Reconcile()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
 	})
 	mux.HandleFunc("/v1/workers/register", func(w http.ResponseWriter, r *http.Request) {
 		handleWorkerHeartbeat(w, r, store, VerbRegister)
@@ -73,6 +88,9 @@ func handleWorker(w http.ResponseWriter, r *http.Request, store *Store) {
 	if len(parts) == 1 {
 		if r.Method != http.MethodGet {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		if !reconcile(w, store) {
 			return
 		}
 		record, ok := store.Get(id)
@@ -141,6 +159,9 @@ func handleWorkerReports(w http.ResponseWriter, r *http.Request, store *Store, i
 func handleAssignments(w http.ResponseWriter, r *http.Request, store *Store) {
 	switch r.Method {
 	case http.MethodGet:
+		if !reconcile(w, store) {
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"assignments": store.ListAssignments()})
 	case http.MethodPost:
 		var assignment Assignment
@@ -169,12 +190,23 @@ func handleAssignment(w http.ResponseWriter, r *http.Request, store *Store) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	if !reconcile(w, store) {
+		return
+	}
 	assignment, ok := store.GetAssignment(id)
 	if !ok {
 		writeError(w, http.StatusNotFound, "assignment not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, assignment)
+}
+
+func reconcile(w http.ResponseWriter, store *Store) bool {
+	if _, err := store.Reconcile(); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return false
+	}
+	return true
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

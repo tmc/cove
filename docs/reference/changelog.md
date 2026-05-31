@@ -37,6 +37,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `cove-fleetd` assignment creation can now place work on a ready worker with
   controller-side `least-loaded` or `image-affinity` policy using `coved`
   heartbeat image refs and pending assignment load.
+- `cove-fleetd` now reconciles stale workers and expired assignment leases,
+  exposes `POST /v1/reconcile`, and `coved` renews active `cove` assignments
+  with `running` reports so long jobs do not get reclaimed while still alive.
 - `cove build --cache-from` and `--cache-to` now import and export cove
   build-cache artifacts through OCI refs, carrying cache entries, layer
   manifests, and block-delta blobs between runners.

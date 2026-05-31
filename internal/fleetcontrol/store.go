@@ -92,6 +92,20 @@ func (s *Store) SetAssignmentTTL(ttl time.Duration) {
 	s.assignmentTTL = ttl
 }
 
+func (s *Store) Reconcile() (ReconcileResult, error) {
+	now := s.now().UTC()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	result := s.reconcileLocked(now)
+	if !result.changed() {
+		return result, nil
+	}
+	if err := s.persistLocked(); err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
 func (s *Store) UpsertHeartbeat(h WorkerHeartbeat) (HostRecord, error) {
 	id := strings.TrimSpace(h.ID)
 	if id == "" {
@@ -135,11 +149,13 @@ func (s *Store) Report(r WorkerReport) (HostRecord, error) {
 	if status == "" {
 		return HostRecord{}, fmt.Errorf("report status required")
 	}
+	received := s.now().UTC()
 	if r.Time.IsZero() {
-		r.Time = s.now().UTC()
+		r.Time = received
 	} else {
 		r.Time = r.Time.UTC()
 	}
+	r.AssignmentID = strings.TrimSpace(r.AssignmentID)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -151,20 +167,29 @@ func (s *Store) Report(r WorkerReport) (HostRecord, error) {
 	r.Status = status
 	if r.AssignmentID != "" {
 		if assignment, ok := s.assignments[r.AssignmentID]; ok {
-			if assignment.LeasedTo != "" && assignment.LeasedTo != id {
+			if assignment.LeasedTo == "" {
+				return HostRecord{}, fmt.Errorf("assignment %q is not leased to %q", r.AssignmentID, id)
+			}
+			if assignment.LeasedTo != id {
 				return HostRecord{}, fmt.Errorf("assignment %q leased to %q", r.AssignmentID, assignment.LeasedTo)
 			}
 		}
 	}
 	record.Report = &r
-	record.Status = status
+	record.Status = "ready"
+	record.LastSeen = received
+	record.Expires = received.Add(s.ttl)
 	s.hosts[id] = record
 	if r.AssignmentID != "" {
 		assignment, ok := s.assignments[r.AssignmentID]
 		if ok {
 			assignment.Status = status
-			assignment.Updated = r.Time
+			assignment.Updated = received
 			assignment.LastReport = &r
+			if assignmentLeaseStatus(status) {
+				assignment.LeasedTo = id
+				assignment.LeaseExpires = received.Add(s.assignmentTTL)
+			}
 			s.assignments[assignment.ID] = assignment
 		}
 	}
@@ -193,6 +218,7 @@ func (s *Store) CreateAssignment(a Assignment) (Assignment, error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.reconcileLocked(now)
 	id := strings.TrimSpace(a.ID)
 	if id == "" {
 		id = s.nextAssignmentIDLocked(now)
@@ -242,12 +268,13 @@ func (s *Store) AwaitAssignment(id string) (*Assignment, error) {
 	if _, ok := s.hosts[id]; !ok {
 		return nil, fmt.Errorf("worker %q not registered", id)
 	}
+	reconciled := s.reconcileLocked(now)
 	assignments := s.sortedAssignmentsLocked()
 	for _, assignment := range assignments {
 		if assignment.WorkerID != "" && assignment.WorkerID != id {
 			continue
 		}
-		if assignment.Status != "pending" && !(assignment.Status == "leased" && now.After(assignment.LeaseExpires)) {
+		if assignment.Status != "pending" {
 			continue
 		}
 		assignment.Status = "leased"
@@ -260,6 +287,11 @@ func (s *Store) AwaitAssignment(id string) (*Assignment, error) {
 		}
 		out := cloneAssignment(assignment)
 		return &out, nil
+	}
+	if reconciled.changed() {
+		if err := s.persistLocked(); err != nil {
+			return nil, err
+		}
 	}
 	return nil, nil
 }
@@ -309,6 +341,66 @@ func (s *Store) List() []HostRecord {
 	return out
 }
 
+func (s *Store) reconcileLocked(now time.Time) ReconcileResult {
+	var result ReconcileResult
+	stale := make(map[string]bool)
+	for id, host := range s.hosts {
+		if !now.After(host.Expires) {
+			continue
+		}
+		stale[id] = true
+		if host.Status != "stale" {
+			host.Status = "stale"
+			s.hosts[id] = host
+			result.StaleWorkers = append(result.StaleWorkers, id)
+		}
+	}
+
+	for _, assignment := range s.sortedAssignmentsLocked() {
+		if !activeAssignmentStatus(assignment.Status) {
+			continue
+		}
+		leaseExpired := assignmentLeaseStatus(assignment.Status) && !assignment.LeaseExpires.IsZero() && now.After(assignment.LeaseExpires)
+		leaseStale := assignment.LeasedTo != "" && stale[assignment.LeasedTo]
+		workerStale := assignment.WorkerID != "" && stale[assignment.WorkerID]
+		if !leaseExpired && !leaseStale && !workerStale {
+			continue
+		}
+
+		changed := false
+		if assignment.Status != "pending" {
+			assignment.Status = "pending"
+			changed = true
+		}
+		if assignment.LeasedTo != "" {
+			assignment.LeasedTo = ""
+			changed = true
+		}
+		if !assignment.LeaseExpires.IsZero() {
+			assignment.LeaseExpires = time.Time{}
+			changed = true
+		}
+		if workerStale && assignmentCanPlace(assignment) {
+			selected, err := s.selectWorkerLocked(assignmentPolicy(assignment), assignment.ImageRef, assignment.RequiredLabels)
+			if err == nil && selected != assignment.WorkerID {
+				assignment.WorkerID = selected
+				result.ReplacedAssignments = append(result.ReplacedAssignments, assignment.ID)
+				changed = true
+			}
+		}
+		if !changed {
+			continue
+		}
+		assignment.Updated = now
+		s.assignments[assignment.ID] = assignment
+		result.RequeuedAssignments = append(result.RequeuedAssignments, assignment.ID)
+	}
+	sort.Strings(result.StaleWorkers)
+	sort.Strings(result.RequeuedAssignments)
+	sort.Strings(result.ReplacedAssignments)
+	return result
+}
+
 func (s *Store) statusLocked(record HostRecord) HostRecord {
 	if s.now().After(record.Expires) {
 		record.Status = "stale"
@@ -320,6 +412,39 @@ func (s *Store) statusLocked(record HostRecord) HostRecord {
 		record.Report = &report
 	}
 	return record
+}
+
+func (r ReconcileResult) changed() bool {
+	return len(r.StaleWorkers) > 0 || len(r.RequeuedAssignments) > 0 || len(r.ReplacedAssignments) > 0
+}
+
+func activeAssignmentStatus(status string) bool {
+	switch status {
+	case "pending", "leased", "running":
+		return true
+	default:
+		return false
+	}
+}
+
+func assignmentLeaseStatus(status string) bool {
+	switch status {
+	case "leased", "running":
+		return true
+	default:
+		return false
+	}
+}
+
+func assignmentCanPlace(assignment Assignment) bool {
+	return assignment.Policy != "" || assignment.ImageRef != "" || len(assignment.RequiredLabels) > 0
+}
+
+func assignmentPolicy(assignment Assignment) string {
+	if assignment.Policy == "" && assignment.ImageRef != "" {
+		return PolicyImageAffinity
+	}
+	return assignment.Policy
 }
 
 func (s *Store) persistLocked() error {

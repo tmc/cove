@@ -224,7 +224,27 @@ func (w *FleetWorker) runCoveAssignment(ctx context.Context, assignment fleetcon
 	cmd := exec.CommandContext(runCtx, w.coveBin, assignment.Args...)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	err := cmd.Run()
+	if err := cmd.Start(); err != nil {
+		report.Error = err.Error()
+		return report
+	}
+	w.reportRunning(runCtx, assignment.ID)
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+	ticker := time.NewTicker(w.assignmentInterval)
+	defer ticker.Stop()
+	var err error
+	for {
+		select {
+		case err = <-done:
+			goto finished
+		case <-ticker.C:
+			w.reportRunning(runCtx, assignment.ID)
+		}
+	}
+finished:
 	report.Stdout = trimReportOutput(stdout.String(), w.outputLimit)
 	report.Stderr = trimReportOutput(stderr.String(), w.outputLimit)
 	if cmd.ProcessState != nil {
@@ -241,6 +261,16 @@ func (w *FleetWorker) runCoveAssignment(ctx context.Context, assignment fleetcon
 	report.Status = "complete"
 	report.Error = ""
 	return report
+}
+
+func (w *FleetWorker) reportRunning(ctx context.Context, assignmentID string) {
+	_, err := w.ReportStatus(ctx, fleetcontrol.WorkerReport{
+		AssignmentID: assignmentID,
+		Status:       "running",
+	})
+	if err != nil {
+		w.warn("fleet assignment running report", err)
+	}
 }
 
 func (w *FleetWorker) ReportStatus(ctx context.Context, report fleetcontrol.WorkerReport) (fleetcontrol.HostRecord, error) {

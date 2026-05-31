@@ -7,7 +7,8 @@ title: Fleet Control Plane
 inventory, assignment leases, and the worker-facing protocol surface. `coved`
 can now dial out as a worker and execute leased `cove` assignments;
 controller-side placement can choose a ready worker by least-loaded or
-image-affinity policy.
+image-affinity policy, and the controller reconciles stale workers and expired
+assignment leases.
 
 Start a private controller:
 
@@ -23,6 +24,7 @@ Options:
 | `-store <path>` | `~/.vz/fleet-controller.json` | JSON host inventory store; empty keeps memory only |
 | `-worker-ttl <duration>` | `30s` | Time before a worker heartbeat is marked stale |
 | `-assignment-ttl <duration>` | `30s` | Time before a leased assignment can be reclaimed |
+| `-reconcile-interval <duration>` | `5s` | Reconciliation cadence; `0` disables the background loop |
 | `-version` | false | Print build version |
 
 Start a worker:
@@ -49,8 +51,8 @@ Worker protocol:
 |------|----------|-------|
 | register | `POST /v1/workers/register` | `coved` sends host id, version, labels, CPU count, VM count, local image count, and local image refs; controller stores the host record. |
 | heartbeat | `POST /v1/workers/heartbeat` | `coved` refreshes `last_seen` and capacity. |
-| await-assignment | `GET /v1/workers/<id>/assignments` | `coved` polls for work; the controller leases one pending or expired assignment and otherwise returns `204 No Content`. |
-| report-status | `POST /v1/workers/<id>/reports` | `coved` records `noop` as complete, executes `cove` assignments with bounded stdout/stderr capture, and reports other verbs as unsupported. |
+| await-assignment | `GET /v1/workers/<id>/assignments` | `coved` polls for work; the controller leases one pending assignment and otherwise returns `204 No Content`. |
+| report-status | `POST /v1/workers/<id>/reports` | `coved` records `noop` as complete, executes `cove` assignments with bounded stdout/stderr capture, sends `running` renewals while `cove` is active, and reports other verbs as unsupported. |
 
 Inventory endpoints:
 
@@ -58,6 +60,7 @@ Inventory endpoints:
 curl http://127.0.0.1:9758/healthz
 curl http://127.0.0.1:9758/v1/workers
 curl http://127.0.0.1:9758/v1/workers/mini-1
+curl -X POST http://127.0.0.1:9758/v1/reconcile
 ```
 
 Assignment endpoints:
@@ -76,9 +79,11 @@ curl http://127.0.0.1:9758/v1/assignments
 curl http://127.0.0.1:9758/v1/assignments/probe-1
 ```
 
-Assignments are stored with `pending`, `leased`, or worker-reported terminal
-status. Leases expire after the controller's assignment TTL and can then be
-claimed by another eligible worker.
+Assignments are stored with `pending`, `leased`, `running`, or worker-reported
+terminal status. `coved` renews active `cove` assignments with `running`
+reports. Reconciliation marks expired workers stale, requeues expired
+assignment leases, rejects late reports for reclaimed leases, and can move a
+policy-placed assignment from a stale worker to another ready worker.
 
 When `worker_id` is empty and `policy` is set, the controller places the
 assignment before storing it:
@@ -98,5 +103,6 @@ curl -X POST http://127.0.0.1:9758/v1/workers/register \
   -d '{"id":"mini-1","host":"mini.local","version":"dev","cpus":12,"memory_bytes":68719476736}'
 ```
 
-This surface is intentionally private and local-first. It does not yet provide
-Orchard-style reconciliation, worker lifecycle management, or fork warm pools.
+This surface is intentionally private and local-first. It now has basic
+controller reconciliation, but it does not yet provide richer Orchard-style
+worker lifecycle management or fork warm pools.

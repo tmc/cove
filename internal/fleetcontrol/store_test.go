@@ -71,7 +71,7 @@ func TestStoreReportRequiresRegisteredWorker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Report == nil || got.Report.AssignmentID != "a1" || got.Status != "done" {
+	if got.Report == nil || got.Report.AssignmentID != "a1" || got.Status != "ready" {
 		t.Fatalf("report not recorded: %+v", got)
 	}
 }
@@ -122,6 +122,38 @@ func TestStoreAssignmentsLeaseReportAndPersist(t *testing.T) {
 	}
 }
 
+func TestStoreReportRenewsRunningAssignment(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.assignmentTTL = 2 * time.Second
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAssignment(Assignment{ID: "assignment-1", WorkerID: "worker-1", Verb: "cove"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AwaitAssignment("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	reportTime := now.Add(time.Second)
+	store.now = func() time.Time { return reportTime }
+	record, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: "assignment-1", Status: "running"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Status != "ready" || !record.Expires.Equal(reportTime.Add(time.Minute)) {
+		t.Fatalf("record = %+v", record)
+	}
+	assignment, ok := store.GetAssignment("assignment-1")
+	if !ok {
+		t.Fatal("assignment missing")
+	}
+	if assignment.Status != "running" || assignment.LeasedTo != "worker-1" || !assignment.LeaseExpires.Equal(reportTime.Add(2*time.Second)) {
+		t.Fatalf("assignment = %+v", assignment)
+	}
+}
+
 func TestStoreAssignmentLeaseExpires(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
 	store := NewMemoryStore(time.Minute)
@@ -157,6 +189,94 @@ func TestStoreAssignmentLeaseExpires(t *testing.T) {
 	}
 	if got == nil || got.LeasedTo != "worker-2" {
 		t.Fatalf("expired lease reassignment = %+v", got)
+	}
+}
+
+func TestStoreReconcileRequeuesExpiredLease(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.assignmentTTL = time.Second
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAssignment(Assignment{ID: "assignment-1", Verb: "noop"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AwaitAssignment("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	store.now = func() time.Time { return now.Add(2 * time.Second) }
+	result, err := store.Reconcile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.RequeuedAssignments) != 1 || result.RequeuedAssignments[0] != "assignment-1" {
+		t.Fatalf("reconcile result = %+v", result)
+	}
+	assignment, ok := store.GetAssignment("assignment-1")
+	if !ok {
+		t.Fatal("assignment missing")
+	}
+	if assignment.Status != "pending" || assignment.LeasedTo != "" || !assignment.LeaseExpires.IsZero() {
+		t.Fatalf("assignment = %+v", assignment)
+	}
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: "assignment-1", Status: "complete"}); err == nil {
+		t.Fatal("late Report() error = nil, want lease error")
+	}
+}
+
+func TestStoreReconcileReplacesStaleScheduledWorker(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.assignmentTTL = 10 * time.Minute
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{
+		ID:        "warm",
+		ImageRefs: []string{"macos-runner:latest"},
+		Capacity:  Capacity{VMs: 4},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "cold", Capacity: Capacity{VMs: 1}}); err != nil {
+		t.Fatal(err)
+	}
+	created, err := store.CreateAssignment(Assignment{
+		ID:       "assignment-1",
+		Policy:   PolicyImageAffinity,
+		ImageRef: "macos-runner:latest",
+		Verb:     "cove",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.WorkerID != "warm" {
+		t.Fatalf("created WorkerID = %q, want warm", created.WorkerID)
+	}
+	if _, err := store.AwaitAssignment("warm"); err != nil {
+		t.Fatal(err)
+	}
+	store.now = func() time.Time { return now.Add(30 * time.Second) }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "cold", Capacity: Capacity{VMs: 1}}); err != nil {
+		t.Fatal(err)
+	}
+	store.now = func() time.Time { return now.Add(70 * time.Second) }
+	result, err := store.Reconcile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.StaleWorkers) != 1 || result.StaleWorkers[0] != "warm" {
+		t.Fatalf("stale workers = %+v", result)
+	}
+	if len(result.ReplacedAssignments) != 1 || result.ReplacedAssignments[0] != "assignment-1" {
+		t.Fatalf("replaced assignments = %+v", result)
+	}
+	assignment, ok := store.GetAssignment("assignment-1")
+	if !ok {
+		t.Fatal("assignment missing")
+	}
+	if assignment.Status != "pending" || assignment.WorkerID != "cold" || assignment.LeasedTo != "" {
+		t.Fatalf("assignment = %+v", assignment)
 	}
 }
 
@@ -360,6 +480,32 @@ func TestHandlerSchedulesAssignment(t *testing.T) {
 	}, &created)
 	if created.WorkerID != "warm" {
 		t.Fatalf("created assignment = %+v, want warm worker", created)
+	}
+}
+
+func TestHandlerReconcileEndpoint(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.assignmentTTL = time.Second
+	store.now = func() time.Time { return now }
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1"}, &record)
+	var created Assignment
+	postJSON(t, server.URL+"/v1/assignments", Assignment{ID: "assignment-1", Verb: "noop"}, &created)
+	var leased Assignment
+	getJSON(t, server.URL+"/v1/workers/worker-1/assignments", &leased)
+	if leased.Status != "leased" {
+		t.Fatalf("leased assignment = %+v", leased)
+	}
+
+	store.now = func() time.Time { return now.Add(2 * time.Second) }
+	var result ReconcileResult
+	postJSON(t, server.URL+"/v1/reconcile", map[string]string{}, &result)
+	if len(result.RequeuedAssignments) != 1 || result.RequeuedAssignments[0] != "assignment-1" {
+		t.Fatalf("reconcile result = %+v", result)
 	}
 }
 
