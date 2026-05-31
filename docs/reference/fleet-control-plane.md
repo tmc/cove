@@ -258,6 +258,8 @@ curl -X POST http://127.0.0.1:9758/v1/sandboxes/job-1/lease \
   -H 'content-type: application/json' \
   -d '{"holder":"runner-42","ttl":"30s"}'
 curl -X DELETE 'http://127.0.0.1:9758/v1/sandboxes/job-1/lease?holder=runner-42'
+curl -X POST http://127.0.0.1:9758/v1/sandboxes/job-1/start
+curl -X POST http://127.0.0.1:9758/v1/sandboxes/job-1/restart
 curl -X POST 'http://127.0.0.1:9758/v1/sandboxes/job-1/wait?timeout=30s'
 curl -X POST http://127.0.0.1:9758/v1/sandboxes/job-1/stop
 curl -X DELETE http://127.0.0.1:9758/v1/sandboxes/job-1
@@ -285,14 +287,20 @@ the backing assignment, and lease acquire/release operations are audited.
 /bin/sh -c true` before reporting `ready`, matching warm-pool readiness
 semantics. `POST /v1/sandboxes/{id}/wait` waits until the sandbox reaches a
 terminal status or `timeout` expires; `timeout=0` returns the current status
-without polling. `POST /v1/sandboxes/{id}/stop` cancels a pending sandbox, or
-marks a started sandbox `draining` and queues a same-worker
-`cove ctl -vm <vm> stop` cleanup assignment with `sandbox_role:"stop"`. When
-that stop assignment reports complete, the sandbox handle becomes `stopped`.
+without polling. `POST /v1/sandboxes/{id}/start` requeues a terminal sandbox
+handle: canceled handles run the original fork assignment again, while stopped
+or completed handles start the retained VM on the same ready worker with
+`cove run -vm <vm> -headless`. `POST /v1/sandboxes/{id}/restart` marks a
+started sandbox `restarting`, queues same-worker stop cleanup, and requeues the
+retained VM start when cleanup reports complete. `POST
+/v1/sandboxes/{id}/stop` cancels a pending sandbox, or marks a started sandbox
+`draining` and queues a same-worker `cove ctl -vm <vm> stop` cleanup assignment
+with `sandbox_role:"stop"`. When that stop assignment reports complete, the
+sandbox handle becomes `stopped`.
 `DELETE /v1/sandboxes/{id}` uses the same stop/cancel path and records a delete
 audit event. This is a scaffold for the hosted `/v1/sandboxes` lifecycle:
-create/list/get/delete/stop/wait and leases are present, while restart/start
-from stopped, metering, and SDK provider switching remain follow-up work.
+create/list/get/delete/start/restart/stop/wait and leases are present, while
+metering and SDK provider switching remain follow-up work.
 
 Assignment endpoints:
 

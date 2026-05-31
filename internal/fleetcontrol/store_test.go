@@ -270,6 +270,28 @@ func TestStoreDeleteRunningSandboxQueuesStop(t *testing.T) {
 	if !wait.Done || wait.Sandbox.Status != "stopped" {
 		t.Fatalf("WaitSandbox = %+v, want stopped done", wait)
 	}
+	now = now.Add(time.Second)
+	started, err := store.StartSandbox("job-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !started.Started || started.Status != "pending" {
+		t.Fatalf("StartSandbox stopped = %+v, want pending started", started)
+	}
+	wantStartArgs := []string{"run", "-vm", "cove-sandbox-job-1", "-headless"}
+	if started.Assignment.WorkerID != "worker-1" || !equalStrings(started.Assignment.Args, wantStartArgs) {
+		t.Fatalf("start assignment = %+v, want worker-1 args %+v", started.Assignment, wantStartArgs)
+	}
+	restarted, err := store.AwaitAssignment("worker-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restarted == nil || restarted.ID != sandbox.Assignment.ID || restarted.Status != "leased" {
+		t.Fatalf("restarted lease = %+v, want run assignment", restarted)
+	}
+	if event := auditAction(store.ListAudit(0), "sandbox.start"); event == nil || event.TargetID != "job-1" {
+		t.Fatalf("sandbox start audit = %+v", event)
+	}
 }
 
 func TestStoreStopSandboxPendingCancels(t *testing.T) {
@@ -296,6 +318,88 @@ func TestStoreStopSandboxPendingCancels(t *testing.T) {
 	}
 	if event := auditAction(store.ListAudit(0), "sandbox.stop"); event == nil || event.TargetID != "job-1" {
 		t.Fatalf("sandbox stop audit = %+v", event)
+	}
+	started, err := store.StartSandbox("job-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !started.Started || started.Status != "pending" {
+		t.Fatalf("StartSandbox canceled = %+v, want pending started", started)
+	}
+	wantArgs := []string{"run", "-fork-from", "base:v1", "-fork-name", "cove-sandbox-job-1", "-ephemeral", "-keep", "-headless"}
+	if !equalStrings(started.Assignment.Args, wantArgs) {
+		t.Fatalf("started assignment args = %+v, want %+v", started.Assignment.Args, wantArgs)
+	}
+}
+
+func TestStoreRestartRunningSandboxQueuesStopThenStart(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 4}}); err != nil {
+		t.Fatal(err)
+	}
+	sandbox, err := store.CreateSandbox(SandboxRequest{ID: "job-1", ImageRef: "base:v1", Args: []string{"--net", "nat"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AwaitAssignment("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: sandbox.Assignment.ID, Status: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+	restart, err := store.RestartSandbox("job-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !restart.Restarting || restart.Status != "restarting" || restart.Cleanup == nil {
+		t.Fatalf("RestartSandbox = %+v, want restarting cleanup", restart)
+	}
+	wait, err := store.WaitSandbox("job-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wait.Done || wait.Sandbox.Status != "restarting" {
+		t.Fatalf("WaitSandbox restarting = %+v, want not done", wait)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: sandbox.Assignment.ID, Status: "complete"}); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := store.GetSandbox("job-1")
+	if !ok || got.Status != "restarting" {
+		t.Fatalf("sandbox after run completion = %+v, %v, want restarting", got, ok)
+	}
+	cleanup, err := store.AwaitAssignment("worker-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleanup == nil || cleanup.ID != restart.Cleanup.ID {
+		t.Fatalf("cleanup assignment = %+v, want %s", cleanup, restart.Cleanup.ID)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: cleanup.ID, Status: "complete"}); err != nil {
+		t.Fatal(err)
+	}
+	started, ok := store.GetSandbox("job-1")
+	if !ok || started.Status != "pending" {
+		t.Fatalf("sandbox after restart cleanup = %+v, %v, want pending", started, ok)
+	}
+	wantArgs := []string{"run", "-vm", "cove-sandbox-job-1", "-headless", "--net", "nat"}
+	if !equalStrings(started.Assignment.Args, wantArgs) {
+		t.Fatalf("restart start args = %+v, want %+v", started.Assignment.Args, wantArgs)
+	}
+	leased, err := store.AwaitAssignment("worker-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leased == nil || leased.ID != sandbox.Assignment.ID {
+		t.Fatalf("leased restarted sandbox = %+v, want %s", leased, sandbox.Assignment.ID)
+	}
+	if event := auditAction(store.ListAudit(0), "sandbox.restart"); event == nil || event.TargetID != "job-1" || event.Fields["restarting"] != "true" {
+		t.Fatalf("sandbox restart audit = %+v", event)
 	}
 }
 
@@ -2242,6 +2346,16 @@ func TestHandlerSandboxes(t *testing.T) {
 	if !wait.Done || wait.Sandbox.ID != "job-2" || wait.Sandbox.Status != "canceled" {
 		t.Fatalf("wait sandbox = %+v, want canceled job-2", wait)
 	}
+	var started SandboxStartResult
+	postJSON(t, server.URL+"/v1/sandboxes/job-2/start", map[string]string{}, &started)
+	if !started.Started || started.ID != "job-2" || started.Status != "pending" {
+		t.Fatalf("start sandbox = %+v, want pending job-2", started)
+	}
+	var restart SandboxRestartResult
+	postJSON(t, server.URL+"/v1/sandboxes/job-2/restart", map[string]string{}, &restart)
+	if restart.Restarting || restart.ID != "job-2" || restart.Status != "pending" {
+		t.Fatalf("restart pending sandbox = %+v, want pending no-op", restart)
+	}
 }
 
 func TestHandlerSandboxNamespaceScope(t *testing.T) {
@@ -2265,6 +2379,12 @@ func TestHandlerSandboxNamespaceScope(t *testing.T) {
 	}
 	if code := postJSONStatus(t, server.URL+"/v1/sandboxes/job-1/stop", "token-b", map[string]string{}); code != http.StatusNotFound {
 		t.Fatalf("cross-namespace sandbox stop status = %d, want 404", code)
+	}
+	if code := postJSONStatus(t, server.URL+"/v1/sandboxes/job-1/start", "token-b", map[string]string{}); code != http.StatusNotFound {
+		t.Fatalf("cross-namespace sandbox start status = %d, want 404", code)
+	}
+	if code := postJSONStatus(t, server.URL+"/v1/sandboxes/job-1/restart", "token-b", map[string]string{}); code != http.StatusNotFound {
+		t.Fatalf("cross-namespace sandbox restart status = %d, want 404", code)
 	}
 	if code := postJSONStatus(t, server.URL+"/v1/sandboxes/job-1/lease", "token-b", SandboxLeaseRequest{Holder: "client-b"}); code != http.StatusNotFound {
 		t.Fatalf("cross-namespace sandbox lease status = %d, want 404", code)

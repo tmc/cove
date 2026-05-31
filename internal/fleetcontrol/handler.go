@@ -326,6 +326,40 @@ func handleSandbox(w http.ResponseWriter, r *http.Request, store *Store) {
 func handleSandboxAction(w http.ResponseWriter, r *http.Request, store *Store, id, action string) {
 	identity := identityFromRequest(r, store)
 	switch action {
+	case "start":
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		if !requireRole(w, identity, ServiceAccountRoleOperator) {
+			return
+		}
+		if !sandboxVisible(w, store, id, identity) {
+			return
+		}
+		result, err := store.StartSandboxActor(identity.Actor, id)
+		if err != nil {
+			writeError(w, sandboxLifecycleErrorStatus(err), err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	case "restart":
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		if !requireRole(w, identity, ServiceAccountRoleOperator) {
+			return
+		}
+		if !sandboxVisible(w, store, id, identity) {
+			return
+		}
+		result, err := store.RestartSandboxActor(identity.Actor, id)
+		if err != nil {
+			writeError(w, sandboxLifecycleErrorStatus(err), err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
 	case "stop":
 		if r.Method != http.MethodPost {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -442,6 +476,16 @@ func sandboxLeaseErrorStatus(err error) int {
 	}
 	if strings.Contains(msg, "lease held by") {
 		return http.StatusConflict
+	}
+	return http.StatusBadRequest
+}
+
+func sandboxLifecycleErrorStatus(err error) int {
+	if err == nil {
+		return http.StatusOK
+	}
+	if strings.Contains(err.Error(), "not found") {
+		return http.StatusNotFound
 	}
 	return http.StatusBadRequest
 }

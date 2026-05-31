@@ -111,6 +111,11 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `POST /v1/sandboxes/{id}/wait` now waits for a sandbox handle to reach a
   terminal state, and sandbox stop-cleanup completion transitions the handle to
   `stopped`.
+- `POST /v1/sandboxes/{id}/start` now requeues canceled sandboxes from their
+  original fork assignment and starts stopped/complete handles from the retained
+  VM on the same ready worker; `POST /v1/sandboxes/{id}/restart` queues
+  same-worker stop cleanup and automatically requeues the retained VM start
+  after cleanup completes.
 - `POST/DELETE /v1/sandboxes/{id}/lease` now acquires, renews, and releases
   exclusive sandbox handle leases with TTLs, conflict responses, namespace
   scoping, and audit events.

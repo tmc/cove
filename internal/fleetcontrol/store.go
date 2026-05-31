@@ -367,8 +367,11 @@ func (s *Store) Report(r WorkerReport) (HostRecord, error) {
 			if assignment.WarmPool != "" && assignment.Status == "draining" && (status == "ready" || status == "running") {
 				storedStatus = "draining"
 			}
-			if assignment.SandboxID != "" && assignment.SandboxRole == sandboxRoleRun && assignment.Status == "draining" && (status == "ready" || status == "running") {
+			if assignment.SandboxID != "" && assignment.SandboxRole == sandboxRoleRun && sandboxPendingStopStatus(assignment.Status) {
 				storedStatus = "draining"
+				if assignment.Status == "restarting" {
+					storedStatus = "restarting"
+				}
 			}
 			assignment.Status = storedStatus
 			assignment.Updated = received
@@ -934,6 +937,121 @@ func (s *Store) ReleaseSandboxLeaseActor(actor, id, holder string) (SandboxStatu
 		return SandboxStatus{}, err
 	}
 	return sandboxStatusFromAssignment(assignment, now), nil
+}
+
+func (s *Store) StartSandbox(id string) (SandboxStartResult, error) {
+	return s.StartSandboxActor("controller", id)
+}
+
+func (s *Store) StartSandboxActor(actor, id string) (SandboxStartResult, error) {
+	now := s.now().UTC()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	result, err := s.startSandboxLocked(now, normalizeActor(actor), id, "sandbox.start")
+	if err != nil {
+		return SandboxStartResult{}, err
+	}
+	if result.Started {
+		if err := s.persistLocked(); err != nil {
+			return SandboxStartResult{}, err
+		}
+	}
+	return result, nil
+}
+
+func (s *Store) RestartSandbox(id string) (SandboxRestartResult, error) {
+	return s.RestartSandboxActor("controller", id)
+}
+
+func (s *Store) RestartSandboxActor(actor, id string) (SandboxRestartResult, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return SandboxRestartResult{}, fmt.Errorf("sandbox id required")
+	}
+	now := s.now().UTC()
+	actor = normalizeActor(actor)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reconcileLocked(now)
+	assignment, ok := s.sandboxRunAssignmentLocked(id)
+	if !ok {
+		return SandboxRestartResult{}, fmt.Errorf("sandbox %q not found", id)
+	}
+	if sandboxTerminalStatus(assignment.Status) {
+		started, err := s.startSandboxLocked(now, actor, id, "sandbox.restart")
+		if err != nil {
+			return SandboxRestartResult{}, err
+		}
+		if started.Started {
+			if err := s.persistLocked(); err != nil {
+				return SandboxRestartResult{}, err
+			}
+		}
+		return SandboxRestartResult{
+			Namespace:  started.Namespace,
+			ID:         started.ID,
+			VMName:     started.VMName,
+			Status:     started.Status,
+			Restarting: started.Started,
+			Assignment: started.Assignment,
+		}, nil
+	}
+	vmName := SandboxAssignmentVMName(assignment)
+	result := SandboxRestartResult{
+		Namespace:  assignment.Namespace,
+		ID:         id,
+		VMName:     vmName,
+		Status:     assignment.Status,
+		Assignment: cloneAssignment(assignment),
+	}
+	switch assignment.Status {
+	case "pending":
+		return result, nil
+	case "leased", "running", "ready", "draining", "restarting":
+		cleanup, ok := s.activeSandboxCleanupLocked(id)
+		if !ok {
+			cleanup = Assignment{
+				ID:          s.nextAssignmentIDLocked(now),
+				Namespace:   assignment.Namespace,
+				WorkerID:    assignment.WorkerID,
+				SandboxID:   id,
+				SandboxRole: sandboxRoleStop,
+				Verb:        "cove",
+				Args:        sandboxStopArgs(vmName),
+				Status:      "pending",
+				Created:     now,
+				Updated:     now,
+			}
+			s.assignments[cleanup.ID] = cleanup
+		}
+		assignment.Status = "restarting"
+		assignment.Updated = now
+		s.assignments[assignment.ID] = assignment
+		result.Status = assignment.Status
+		result.Restarting = true
+		result.Assignment = cloneAssignment(assignment)
+		cleanup = cloneAssignment(cleanup)
+		result.Cleanup = &cleanup
+	}
+	s.appendAuditLocked(now, AuditEvent{
+		Actor:        actor,
+		Namespace:    assignment.Namespace,
+		Action:       "sandbox.restart",
+		TargetType:   "sandbox",
+		TargetID:     id,
+		WorkerID:     assignment.WorkerID,
+		AssignmentID: assignment.ID,
+		Fields: map[string]string{
+			"vm_name":    vmName,
+			"status":     result.Status,
+			"restarting": strconv.FormatBool(result.Restarting),
+			"cleanup":    strconv.FormatBool(result.Cleanup != nil),
+		},
+	})
+	if err := s.persistLocked(); err != nil {
+		return SandboxRestartResult{}, err
+	}
+	return result, nil
 }
 
 func (s *Store) DeleteSandbox(id string) (SandboxDeleteResult, error) {
@@ -2247,6 +2365,85 @@ func (s *Store) activeSandboxCleanupLocked(id string) (Assignment, bool) {
 	return Assignment{}, false
 }
 
+func (s *Store) startSandboxLocked(now time.Time, actor, id, action string) (SandboxStartResult, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return SandboxStartResult{}, fmt.Errorf("sandbox id required")
+	}
+	s.reconcileLocked(now)
+	assignment, ok := s.sandboxRunAssignmentLocked(id)
+	if !ok {
+		return SandboxStartResult{}, fmt.Errorf("sandbox %q not found", id)
+	}
+	vmName := SandboxAssignmentVMName(assignment)
+	result := SandboxStartResult{
+		Namespace:  assignment.Namespace,
+		ID:         id,
+		VMName:     vmName,
+		Status:     assignment.Status,
+		Assignment: cloneAssignment(assignment),
+	}
+	if !sandboxTerminalStatus(assignment.Status) {
+		return result, nil
+	}
+	if assignment.Status == "stopped" || assignment.Status == "complete" || sandboxRunUsesExistingVM(assignment.Args) {
+		if err := s.requireSandboxWorkerReadyLocked(now, assignment.WorkerID); err != nil {
+			return SandboxStartResult{}, err
+		}
+		assignment.Args = sandboxStartArgs(assignment)
+	} else if assignmentCanPlace(assignment) {
+		workerID, err := s.selectWorkerLocked(assignmentPolicy(assignment), assignment.ImageRef, assignment.RequiredLabels, assignment.AntiAffinityKey, assignment.Resources)
+		if err != nil {
+			return SandboxStartResult{}, err
+		}
+		assignment.WorkerID = workerID
+	} else if err := s.requireSandboxWorkerReadyLocked(now, assignment.WorkerID); err != nil {
+		return SandboxStartResult{}, err
+	}
+	assignment.Status = "pending"
+	assignment.LeasedTo = ""
+	assignment.LeaseExpires = time.Time{}
+	assignment.LastReport = nil
+	assignment.Updated = now
+	s.assignments[assignment.ID] = assignment
+	result.Status = assignment.Status
+	result.Started = true
+	result.Assignment = cloneAssignment(assignment)
+	s.appendAuditLocked(now, AuditEvent{
+		Actor:        actor,
+		Namespace:    assignment.Namespace,
+		Action:       action,
+		TargetType:   "sandbox",
+		TargetID:     id,
+		WorkerID:     assignment.WorkerID,
+		AssignmentID: assignment.ID,
+		Fields: map[string]string{
+			"vm_name": vmName,
+			"status":  assignment.Status,
+		},
+	})
+	return result, nil
+}
+
+func (s *Store) requireSandboxWorkerReadyLocked(now time.Time, workerID string) error {
+	workerID = strings.TrimSpace(workerID)
+	if workerID == "" {
+		return fmt.Errorf("sandbox worker required")
+	}
+	record, ok := s.hosts[workerID]
+	if !ok {
+		return fmt.Errorf("sandbox worker %q not registered", workerID)
+	}
+	status := s.statusLocked(record)
+	if status.Status != "ready" {
+		return fmt.Errorf("sandbox worker %q is %s", workerID, status.Status)
+	}
+	if now.After(status.Expires) {
+		return fmt.Errorf("sandbox worker %q is stale", workerID)
+	}
+	return nil
+}
+
 func (s *Store) stopSandboxLocked(now time.Time, actor, id, action string) (SandboxStopResult, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -2273,7 +2470,7 @@ func (s *Store) stopSandboxLocked(now time.Time, actor, id, action string) (Sand
 		result.Status = assignment.Status
 		result.Canceled = true
 		result.Assignment = cloneAssignment(assignment)
-	case "leased", "running", "ready", "draining":
+	case "leased", "running", "ready", "draining", "restarting":
 		cleanup, ok := s.activeSandboxCleanupLocked(id)
 		if !ok {
 			cleanup = Assignment{
@@ -2318,11 +2515,19 @@ func (s *Store) stopSandboxLocked(now time.Time, actor, id, action string) (Sand
 
 func (s *Store) finishSandboxStopLocked(now time.Time, id, stopStatus string) {
 	run, ok := s.sandboxRunAssignmentLocked(id)
-	if !ok || run.Status != "draining" {
+	if !ok || !sandboxPendingStopStatus(run.Status) {
 		return
 	}
 	if stopStatus == "complete" {
-		run.Status = "stopped"
+		if run.Status == "restarting" {
+			run.Args = sandboxStartArgs(run)
+			run.Status = "pending"
+			run.LeasedTo = ""
+			run.LeaseExpires = time.Time{}
+			run.LastReport = nil
+		} else {
+			run.Status = "stopped"
+		}
 	} else if !assignmentLeaseStatus(stopStatus) {
 		run.Status = "failed"
 	}
@@ -2511,12 +2716,37 @@ func sandboxRunArgs(imageRef, vmName string, extra []string) []string {
 	return append(args, cloneStrings(extra)...)
 }
 
+func sandboxStartArgs(assignment Assignment) []string {
+	vmName := SandboxAssignmentVMName(assignment)
+	args := []string{"run", "-vm", vmName, "-headless"}
+	return append(args, sandboxRunExtraArgs(assignment.Args)...)
+}
+
+func sandboxRunExtraArgs(args []string) []string {
+	args = cloneStrings(args)
+	if len(args) >= 8 && args[0] == "run" && args[1] == "-fork-from" && args[3] == "-fork-name" && args[5] == "-ephemeral" && args[6] == "-keep" && args[7] == "-headless" {
+		return cloneStrings(args[8:])
+	}
+	if sandboxRunUsesExistingVM(args) {
+		return cloneStrings(args[4:])
+	}
+	return nil
+}
+
+func sandboxRunUsesExistingVM(args []string) bool {
+	return len(args) >= 4 && args[0] == "run" && args[1] == "-vm" && args[3] == "-headless"
+}
+
 func sandboxStopArgs(vmName string) []string {
 	return []string{"ctl", "-vm", vmName, "stop"}
 }
 
 func sandboxTerminalStatus(status string) bool {
-	return !activeAssignmentStatus(status) && status != "draining"
+	return !activeAssignmentStatus(status) && !sandboxPendingStopStatus(status)
+}
+
+func sandboxPendingStopStatus(status string) bool {
+	return status == "draining" || status == "restarting"
 }
 
 func sandboxVMName(id string) string {
@@ -2971,7 +3201,7 @@ func normalizeActor(actor string) string {
 
 func auditReportStatus(status string) bool {
 	switch status {
-	case "running", "ready", "leased", "claimed", "draining":
+	case "running", "ready", "leased", "claimed", "draining", "restarting":
 		return false
 	default:
 		return strings.TrimSpace(status) != ""

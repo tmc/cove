@@ -356,6 +356,25 @@ type SandboxLeaseResult struct {
 	Lease   SandboxLease  `json:"lease"`
 }
 
+type SandboxStartResult struct {
+	Namespace  string     `json:"namespace,omitempty"`
+	ID         string     `json:"id"`
+	VMName     string     `json:"vm_name"`
+	Status     string     `json:"status,omitempty"`
+	Started    bool       `json:"started,omitempty"`
+	Assignment Assignment `json:"assignment"`
+}
+
+type SandboxRestartResult struct {
+	Namespace  string      `json:"namespace,omitempty"`
+	ID         string      `json:"id"`
+	VMName     string      `json:"vm_name"`
+	Status     string      `json:"status,omitempty"`
+	Restarting bool        `json:"restarting,omitempty"`
+	Assignment Assignment  `json:"assignment"`
+	Cleanup    *Assignment `json:"cleanup,omitempty"`
+}
+
 type SandboxDeleteResult struct {
 	Namespace  string      `json:"namespace,omitempty"`
 	ID         string      `json:"id"`
