@@ -105,9 +105,11 @@ func TestParseTarget(t *testing.T) {
 }
 
 func TestSSHForwardArgs(t *testing.T) {
+	t.Setenv("COVE_FLEET_SSH_MULTIPLEX", "")
 	remote := Remote{Host: "mini.local", User: "tmc", SSHArgs: []string{"-o", "BatchMode=yes"}}
 	got := SSHForwardArgs(remote, "/tmp/local.sock", "/Users/tmc/.vz/vms/vm/control.sock")
-	want := []string{"-N", "-L", "/tmp/local.sock:/Users/tmc/.vz/vms/vm/control.sock", "-o", "BatchMode=yes", "tmc@mini.local"}
+	want := append([]string{"-N", "-L", "/tmp/local.sock:/Users/tmc/.vz/vms/vm/control.sock"}, wantSSHBaseArgs("-o", "BatchMode=yes")...)
+	want = append(want, "tmc@mini.local")
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("SSHForwardArgs = %#v, want %#v", got, want)
 	}

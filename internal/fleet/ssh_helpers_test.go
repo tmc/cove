@@ -2,6 +2,7 @@ package fleet
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,6 +45,7 @@ func TestReadControlToken(t *testing.T) {
 		t.Fatalf("write ssh stub: %v", err)
 	}
 	t.Setenv("COVE_FLEET_SSH", ssh)
+	t.Setenv("COVE_FLEET_SSH_MULTIPLEX", "")
 	token, err := ReadControlToken(context.Background(), Remote{User: "me", Host: "host"}, "dev")
 	if err != nil {
 		t.Fatalf("ReadControlToken: %v", err)
@@ -55,10 +57,39 @@ func TestReadControlToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read args log: %v", err)
 	}
-	want := "me@host\ncat\n" + filepath.Join(".vz", "vms", "dev", "control.token")
+	want := strings.Join(append(wantSSHBaseArgs(), "me@host", "cat", filepath.Join(".vz", "vms", "dev", "control.token")), "\n")
 	if strings.TrimSpace(string(data)) != want {
 		t.Fatalf("ssh args = %q, want %q", strings.TrimSpace(string(data)), want)
 	}
+}
+
+func TestSSHBaseArgs(t *testing.T) {
+	t.Setenv("COVE_FLEET_SSH_MULTIPLEX", "")
+	remote := Remote{SSHArgs: []string{"-o", "BatchMode=yes"}}
+	got := SSHBaseArgs(remote)
+	want := wantSSHBaseArgs("-o", "BatchMode=yes")
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("SSHBaseArgs = %#v, want %#v", got, want)
+	}
+}
+
+func TestSSHBaseArgsMultiplexDisabled(t *testing.T) {
+	t.Setenv("COVE_FLEET_SSH_MULTIPLEX", "0")
+	got := SSHBaseArgs(Remote{SSHArgs: []string{"-p", "2222"}})
+	want := []string{"-p", "2222"}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("SSHBaseArgs = %#v, want %#v", got, want)
+	}
+}
+
+func wantSSHBaseArgs(extra ...string) []string {
+	args := []string{
+		"-o", "ControlMaster=auto",
+		"-o", "ControlPersist=60s",
+		"-o", "ControlPath=" + filepath.Join(os.TempDir(), fmt.Sprintf("cove-fleet-%d-%%C", os.Getuid())),
+	}
+	args = append(args, extra...)
+	return args
 }
 
 func TestRemoteTarget(t *testing.T) {

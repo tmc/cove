@@ -953,6 +953,9 @@ operate on hosts you control; they do not create a hosted queue. For Cirrus
 migration context, see [Fleet Quickstart](../quickstart/fleet.md) and
 [Migrate from Cirrus](../migrations/from-cirrus.md).
 
+Fleet SSH calls use OpenSSH ControlMaster reuse by default. Set
+`COVE_FLEET_SSH_MULTIPLEX=0` to force a new SSH transport per command.
+
 ```
 cove fleet add <name> <ssh-target> [--root <path>]
 cove fleet cordon <name>

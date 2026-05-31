@@ -17,6 +17,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `cove fleet run --all` now starts the same run concurrently on every
   non-cordoned registered host for stateless burst fan-out, pre-staging
   `-fork-from` images to cold hosts first.
+- Fleet SSH calls now enable OpenSSH ControlMaster reuse by default, with
+  `COVE_FLEET_SSH_MULTIPLEX=0` available for troubleshooting isolated
+  transports.
 - `cove build --cache-from` and `--cache-to` now import and export cove
   build-cache artifacts through OCI refs, carrying cache entries, layer
   manifests, and block-delta blobs between runners.

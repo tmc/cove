@@ -2,6 +2,9 @@
 
 Fleet lets one cove CLI register another Mac host, run selected remote commands
 over SSH, aggregate state across hosts, and copy images directly between hosts.
+Fleet SSH calls reuse OpenSSH ControlMaster sockets by default so repeated
+aggregate and placement commands do not pay a fresh SSH handshake per host. Set
+`COVE_FLEET_SSH_MULTIPLEX=0` to disable reuse for troubleshooting.
 
 ## Setup
 

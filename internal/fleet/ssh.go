@@ -69,9 +69,35 @@ func (t *Tunnel) Close() error {
 
 func SSHForwardArgs(remote Remote, localSock, remoteSock string) []string {
 	args := []string{"-N", "-L", localSock + ":" + remoteSock}
-	args = append(args, remote.SSHArgs...)
+	args = append(args, SSHBaseArgs(remote)...)
 	args = append(args, remoteTarget(remote))
 	return args
+}
+
+func SSHBaseArgs(remote Remote) []string {
+	args := []string{}
+	if sshMultiplexEnabled() {
+		args = append(args,
+			"-o", "ControlMaster=auto",
+			"-o", "ControlPersist=60s",
+			"-o", "ControlPath="+sshControlPath(),
+		)
+	}
+	args = append(args, remote.SSHArgs...)
+	return args
+}
+
+func sshMultiplexEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("COVE_FLEET_SSH_MULTIPLEX"))) {
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return true
+	}
+}
+
+func sshControlPath() string {
+	return filepath.Join(os.TempDir(), fmt.Sprintf("cove-fleet-%d-%%C", os.Getuid()))
 }
 
 func RemoteControlSocketPath(remote Remote, vm string) string {
@@ -87,7 +113,7 @@ func ReadControlToken(ctx context.Context, remote Remote, vm string) (string, er
 	if vm == "" {
 		return "", fmt.Errorf("fleet vm required")
 	}
-	args := append([]string{}, remote.SSHArgs...)
+	args := SSHBaseArgs(remote)
 	args = append(args, remoteTarget(remote), "cat", RemoteControlTokenPath(remote, vm))
 	data, err := exec.CommandContext(ctx, sshBinary(), args...).Output()
 	if err != nil {

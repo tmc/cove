@@ -327,7 +327,7 @@ func (sshFleetRunner) RunCommand(ctx context.Context, remote fleetpkg.Remote, ar
 }
 
 func runSSHFleetCommand(ctx context.Context, remote fleetpkg.Remote, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
-	sshArgs := append([]string{}, remote.SSHArgs...)
+	sshArgs := fleetpkg.SSHBaseArgs(remote)
 	sshArgs = append(sshArgs, fleetRemoteTarget(remote), "cove")
 	sshArgs = append(sshArgs, shellJoinArgs(args))
 	cmd := exec.CommandContext(ctx, fleetSSHBinary(), sshArgs...)
