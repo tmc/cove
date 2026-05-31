@@ -29,7 +29,7 @@ delegates the disk/runtime work to `tart` or `vetu`.
 | **VM-state snapshot** | VM-state snapshots plus disk clone snapshots (`snapshots.go`, `disk-snapshots/`) | suspend state only | none found | none found |
 | **Distribution** | OCI push/pull for cove images; compatibility push/pull for tart and lume formats; Lume tar-split pulls prefetch parts concurrently, preserve part order, and verify descriptor size/digest; OCI build-cache import/export; local image tar transfer for fleet (`cmd/cove/push.go`, `pull.go`, `lume_pull.go`, `fleet_image.go`) | first-class OCI registry push/pull | first-class OCI registry push/pull | pulls images onto workers through the chosen runtime |
 | **Base/delta reuse** | cove-format chunked disks support `--base`, blob mount/reuse, base-manifest annotations, resumable pulls, local base-disk reuse, persistent registry-base materialization shared by builds and pulls, and portable build-cache layers via `--cache-from` / `--cache-to` | local layer cache with digest ranges and APFS share checks | legacy chunk annotations and concurrent reassembly | runtime-dependent |
-| **Placement** | `fleet run --policy=least-loaded|image-affinity`; image-affinity can pre-stage a local image to the selected host; `fleet run --all` fans out concurrently to every non-cordoned host and pre-stages `-fork-from` only to cold targets; cordon/uncordon skips hosts for placement; short local placement leases count as pending load; `fleet health` reports remote reachability/version; repeated SSH operations reuse OpenSSH ControlMaster sockets; initial `cove-fleetd` control-plane boundary now accepts `coved -fleet-url` worker register/heartbeat/report dial-ins, tracks worker image refs, persists leased controller assignments, places assignments with least-loaded or image-affinity policy, reconciles stale workers and expired leases, supports controller-side worker cordon/uncordon, renews running `cove` assignments, and executes leased `cove` assignments on workers (`cmd/cove/fleet_run.go`, `cmd/cove/fleet_health.go`, `cmd/cove-fleetd`, `cmd/coved`, `internal/fleetcontrol`, `internal/coved`) | none | none | full controller/scheduler model |
+| **Placement** | `fleet run --policy=least-loaded|image-affinity`; image-affinity can pre-stage a local image to the selected host; `fleet run --all` fans out concurrently to every non-cordoned host and pre-stages `-fork-from` only to cold targets; cordon/uncordon skips hosts for placement; short local placement leases count as pending load; `fleet health` reports remote reachability/version; repeated SSH operations reuse OpenSSH ControlMaster sockets; initial `cove-fleetd` control-plane boundary now accepts `coved -fleet-url` worker register/heartbeat/report dial-ins, tracks worker image refs, persists leased controller assignments, places assignments with least-loaded or image-affinity policy, reconciles stale workers and expired leases, supports controller-side worker cordon/uncordon, queues fleet image-preparation pulls onto cold workers, renews running `cove` assignments, and executes leased `cove` assignments on workers (`cmd/cove/fleet_run.go`, `cmd/cove/fleet_health.go`, `cmd/cove-fleetd`, `cmd/coved`, `internal/fleetcontrol`, `internal/coved`) | none | none | full controller/scheduler model |
 
 ## Where cove now leads
 
@@ -73,9 +73,9 @@ delegates the disk/runtime work to `tart` or `vetu`.
 - **orchard has the more mature control plane.** cove's fleet support is CLI
   placement, fan-out, transfer, local cordon, short lease metadata, and an
   initial `cove-fleetd`/`coved -fleet-url` host-inventory, assignment-lease,
-  reconciliation, worker cordon, and worker execution boundary with
-  least-loaded and image-affinity placement; orchard still owns richer worker
-  lifecycle and controller operations.
+  reconciliation, worker cordon, fleet image preparation, and worker execution
+  boundary with least-loaded and image-affinity placement; orchard still owns
+  richer controller operations.
 - **tart has the mature public image lane.** cove now speaks tart format, but
   tart still has the established image catalog and local layer-cache machinery.
 - **lume has native ecosystem defaults.** cove can interoperate with Lume
@@ -92,7 +92,7 @@ image-aware fleet placement with cordon drains, local launch leases, and
 concurrent multi-host run fan-out with cold-target image staging and reused SSH
 transports. The first `cove-fleetd` plus `coved -fleet-url` control-plane
 boundary is present with host inventory, assignment leases, stale-worker and
-expired-lease reconciliation, controller-side worker cordon, and worker-side
-`cove` assignment execution plus least-loaded/image-affinity placement, but
-tart and lume still lead in ecosystem maturity, and orchard still leads as a
-full fleet controller.
+expired-lease reconciliation, controller-side worker cordon, fleet image
+preparation, and worker-side `cove` assignment execution plus
+least-loaded/image-affinity placement, but tart and lume still lead in
+ecosystem maturity, and orchard still leads as a full fleet controller.

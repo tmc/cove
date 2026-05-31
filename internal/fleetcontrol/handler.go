@@ -42,6 +42,9 @@ func Handler(store *Store) http.Handler {
 		}
 		writeJSON(w, http.StatusOK, result)
 	})
+	mux.HandleFunc("/v1/images/prepare", func(w http.ResponseWriter, r *http.Request) {
+		handleImagePrepare(w, r, store)
+	})
 	mux.HandleFunc("/v1/workers/register", func(w http.ResponseWriter, r *http.Request) {
 		handleWorkerHeartbeat(w, r, store, VerbRegister)
 	})
@@ -159,6 +162,24 @@ func handleWorkerReports(w http.ResponseWriter, r *http.Request, store *Store, i
 		return
 	}
 	writeJSON(w, http.StatusOK, record)
+}
+
+func handleImagePrepare(w http.ResponseWriter, r *http.Request, store *Store) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var req ImagePrepareRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode image prepare: %v", err))
+		return
+	}
+	result, err := store.PrepareImage(req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func handleWorkerCordon(w http.ResponseWriter, r *http.Request, store *Store, id string) {

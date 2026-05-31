@@ -323,6 +323,67 @@ func (s *Store) CreateAssignment(a Assignment) (Assignment, error) {
 	return cloneAssignment(a), nil
 }
 
+func (s *Store) PrepareImage(req ImagePrepareRequest) (ImagePrepareResult, error) {
+	sourceRef := strings.TrimSpace(req.SourceRef)
+	imageRef := strings.TrimSpace(req.ImageRef)
+	if sourceRef == "" {
+		return ImagePrepareResult{}, fmt.Errorf("image prepare source_ref required")
+	}
+	if imageRef == "" {
+		return ImagePrepareResult{}, fmt.Errorf("image prepare image_ref required")
+	}
+	labels := cloneLabels(req.RequiredLabels)
+	now := s.now().UTC()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	reconciled := s.reconcileLocked(now)
+	result := ImagePrepareResult{
+		SourceRef: sourceRef,
+		ImageRef:  imageRef,
+	}
+	for _, host := range s.sortedHostsLocked() {
+		host = s.statusLocked(host)
+		if !labelsMatch(host.Labels, labels) {
+			continue
+		}
+		if host.Status != "ready" {
+			result.Skipped = append(result.Skipped, ImagePrepareSkip{WorkerID: host.ID, Reason: host.Status})
+			continue
+		}
+		if containsString(host.ImageRefs, imageRef) {
+			result.Skipped = append(result.Skipped, ImagePrepareSkip{WorkerID: host.ID, Reason: "present"})
+			continue
+		}
+		if s.activeImagePrepareLocked(host.ID, imageRef) {
+			result.Skipped = append(result.Skipped, ImagePrepareSkip{WorkerID: host.ID, Reason: "active"})
+			continue
+		}
+		assignment := Assignment{
+			ID:             s.nextAssignmentIDLocked(now),
+			WorkerID:       host.ID,
+			ImageRef:       imageRef,
+			RequiredLabels: labels,
+			Verb:           "cove",
+			Args:           imagePrepareArgs(sourceRef, imageRef, req.Force),
+			Status:         "pending",
+			Created:        now,
+			Updated:        now,
+		}
+		s.assignments[assignment.ID] = assignment
+		result.Assignments = append(result.Assignments, cloneAssignment(assignment))
+	}
+	if len(result.Assignments) == 0 && len(result.Skipped) == 0 {
+		return result, fmt.Errorf("no workers match image prepare")
+	}
+	if len(result.Assignments) > 0 || reconciled.changed() {
+		if err := s.persistLocked(); err != nil {
+			return result, err
+		}
+	}
+	return result, nil
+}
+
 func (s *Store) AwaitAssignment(id string) (*Assignment, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -402,13 +463,10 @@ func (s *Store) Get(id string) (HostRecord, bool) {
 func (s *Store) List() []HostRecord {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := make([]HostRecord, 0, len(s.hosts))
-	for _, host := range s.hosts {
-		out = append(out, s.statusLocked(host))
+	out := s.sortedHostsLocked()
+	for i := range out {
+		out[i] = s.statusLocked(out[i])
 	}
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].ID < out[j].ID
-	})
 	return out
 }
 
@@ -566,6 +624,17 @@ func (s *Store) sortedAssignmentsLocked() []Assignment {
 	return assignments
 }
 
+func (s *Store) sortedHostsLocked() []HostRecord {
+	hosts := make([]HostRecord, 0, len(s.hosts))
+	for _, host := range s.hosts {
+		hosts = append(hosts, host)
+	}
+	sort.Slice(hosts, func(i, j int) bool {
+		return hosts[i].ID < hosts[j].ID
+	})
+	return hosts
+}
+
 func (s *Store) nextAssignmentIDLocked(now time.Time) string {
 	base := fmt.Sprintf("assignment-%d", now.UnixNano())
 	id := base
@@ -660,6 +729,26 @@ func (s *Store) pendingAssignmentsLocked(workerID string) int {
 		}
 	}
 	return n
+}
+
+func (s *Store) activeImagePrepareLocked(workerID, imageRef string) bool {
+	for _, assignment := range s.assignments {
+		if assignment.WorkerID != workerID || assignment.ImageRef != imageRef {
+			continue
+		}
+		if assignment.Verb == "cove" && len(assignment.Args) >= 2 && assignment.Args[0] == "image" && assignment.Args[1] == "pull" && activeAssignmentStatus(assignment.Status) {
+			return true
+		}
+	}
+	return false
+}
+
+func imagePrepareArgs(sourceRef, imageRef string, force bool) []string {
+	args := []string{"image", "pull", "-tag", imageRef}
+	if force {
+		args = append(args, "-force")
+	}
+	return append(args, sourceRef)
 }
 
 func labelsMatch(have, want map[string]string) bool {

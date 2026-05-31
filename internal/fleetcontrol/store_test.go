@@ -442,6 +442,57 @@ func TestStoreUncordonRestoresPlacement(t *testing.T) {
 	}
 }
 
+func TestStorePrepareImageCreatesMissingWorkerAssignments(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	for _, hb := range []WorkerHeartbeat{
+		{ID: "warm", Labels: map[string]string{"zone": "desk"}, ImageRefs: []string{"macos-runner:latest"}},
+		{ID: "cold", Labels: map[string]string{"zone": "desk"}},
+		{ID: "drain", Labels: map[string]string{"zone": "desk"}},
+		{ID: "rack", Labels: map[string]string{"zone": "rack"}},
+	} {
+		if _, err := store.UpsertHeartbeat(hb); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.CordonWorker("drain", "maintenance"); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.PrepareImage(ImagePrepareRequest{
+		SourceRef:      "registry.example/cove/macos-runner:latest",
+		ImageRef:       "macos-runner:latest",
+		RequiredLabels: map[string]string{"zone": "desk"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Assignments) != 1 {
+		t.Fatalf("assignments = %+v, want 1", result.Assignments)
+	}
+	assignment := result.Assignments[0]
+	if assignment.WorkerID != "cold" || assignment.Verb != "cove" || assignment.ImageRef != "macos-runner:latest" {
+		t.Fatalf("assignment = %+v", assignment)
+	}
+	wantArgs := []string{"image", "pull", "-tag", "macos-runner:latest", "registry.example/cove/macos-runner:latest"}
+	if !equalStrings(assignment.Args, wantArgs) {
+		t.Fatalf("args = %+v, want %+v", assignment.Args, wantArgs)
+	}
+	if skipReason(result.Skipped, "warm") != "present" || skipReason(result.Skipped, "drain") != "cordoned" || skipReason(result.Skipped, "rack") != "" {
+		t.Fatalf("skipped = %+v", result.Skipped)
+	}
+
+	result, err = store.PrepareImage(ImagePrepareRequest{
+		SourceRef:      "registry.example/cove/macos-runner:latest",
+		ImageRef:       "macos-runner:latest",
+		RequiredLabels: map[string]string{"zone": "desk"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Assignments) != 0 || skipReason(result.Skipped, "cold") != "active" {
+		t.Fatalf("second prepare result = %+v", result)
+	}
+}
+
 func TestStoreScheduleRequiresReadyWorker(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
 	store := NewMemoryStore(time.Minute)
@@ -599,6 +650,23 @@ func TestHandlerWorkerCordonLifecycle(t *testing.T) {
 	}
 }
 
+func TestHandlerPrepareImage(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1"}, &record)
+	var result ImagePrepareResult
+	postJSON(t, server.URL+"/v1/images/prepare", ImagePrepareRequest{
+		SourceRef: "registry.example/cove/macos-runner:latest",
+		ImageRef:  "macos-runner:latest",
+	}, &result)
+	if len(result.Assignments) != 1 || result.Assignments[0].WorkerID != "worker-1" {
+		t.Fatalf("prepare result = %+v", result)
+	}
+}
+
 func TestHandlerReconcileEndpoint(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
 	store := NewMemoryStore(time.Minute)
@@ -673,4 +741,25 @@ func getJSON(t *testing.T, url string, out any) {
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func skipReason(skipped []ImagePrepareSkip, workerID string) string {
+	for _, skip := range skipped {
+		if skip.WorkerID == workerID {
+			return skip.Reason
+		}
+	}
+	return ""
 }

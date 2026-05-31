@@ -208,8 +208,15 @@ func (w *FleetWorker) HandleAssignment(ctx context.Context, assignment fleetcont
 	case "cove":
 		report = w.runCoveAssignment(ctx, assignment)
 	}
-	_, err := w.ReportStatus(ctx, report)
-	return err
+	if _, err := w.ReportStatus(ctx, report); err != nil {
+		return err
+	}
+	if report.Status == "complete" && strings.TrimSpace(assignment.ImageRef) != "" {
+		if err := w.Heartbeat(ctx); err != nil {
+			w.warn("fleet image refresh heartbeat", err)
+		}
+	}
+	return nil
 }
 
 func (w *FleetWorker) runCoveAssignment(ctx context.Context, assignment fleetcontrol.Assignment) fleetcontrol.WorkerReport {

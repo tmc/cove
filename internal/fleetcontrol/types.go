@@ -73,6 +73,25 @@ type WorkerLifecycle struct {
 	Reason string `json:"reason,omitempty"`
 }
 
+type ImagePrepareRequest struct {
+	SourceRef      string            `json:"source_ref"`
+	ImageRef       string            `json:"image_ref"`
+	RequiredLabels map[string]string `json:"required_labels,omitempty"`
+	Force          bool              `json:"force,omitempty"`
+}
+
+type ImagePrepareResult struct {
+	SourceRef   string             `json:"source_ref"`
+	ImageRef    string             `json:"image_ref"`
+	Assignments []Assignment       `json:"assignments,omitempty"`
+	Skipped     []ImagePrepareSkip `json:"skipped,omitempty"`
+}
+
+type ImagePrepareSkip struct {
+	WorkerID string `json:"worker_id"`
+	Reason   string `json:"reason"`
+}
+
 type Assignment struct {
 	ID             string            `json:"id"`
 	WorkerID       string            `json:"worker_id,omitempty"`
