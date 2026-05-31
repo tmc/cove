@@ -90,6 +90,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - Remote image inspect now reports OCI index / Docker manifest-list resolution
   details, selected platform, pull plan, and the descriptor/blob verification
   posture for cove, Tart, Lume, and cove image-store artifacts.
+- `cove image inspect -remote -verify-blobs` now audits every remote config and
+  layer descriptor with HEAD requests, reporting missing registry blobs without
+  downloading VM disk content.
 - `cove-fleetd` now exposes `GET /v1/sandboxes/{id}/events` for sandbox-scoped
   audit history, and the Go/Python hosted sandbox clients expose matching event
   list helpers.

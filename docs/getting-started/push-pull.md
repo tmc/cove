@@ -22,6 +22,7 @@ cove pull <ref> --dry-run                         # validate the pull target
 cove pull <ref> --as my-macos --dry-run           # name the new VM
 cove pull <ref> --dry-run --manifest manifest.json # validate a local manifest
 cove image inspect -remote <ref> -json            # inspect registry metadata only
+cove image inspect -remote -verify-blobs <ref>    # HEAD every referenced blob
 cove image inspect -remote <ref> <ref> -json      # audit several registry refs
 ```
 
@@ -33,8 +34,10 @@ the index to a same-repository image manifest before parsing. Use
 pulling disks. Multiple refs are inspected as a batch, with JSON emitted as an
 array for private catalog audits. Remote inspect reports index/list resolution
 details, the selected platform, the pull plan for cove/Tart/Lume/image-store
-artifacts, and the verification work cove will perform during pull/import. Use
-`--manifest` to validate local manifest JSON.
+artifacts, and the verification work cove will perform during pull/import.
+Add `-verify-blobs` to send HEAD requests for every config and layer descriptor
+so a private catalog audit can catch missing registry blobs without downloading
+VM disks. Use `--manifest` to validate local manifest JSON.
 
 What happens:
 

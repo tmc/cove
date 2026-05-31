@@ -163,11 +163,15 @@ func runImageInspect(env commandEnv, args []string) error {
 	asJSON := fs.Bool("json", false, "emit machine-readable JSON")
 	diff := fs.Bool("diff", false, "compare two image refs")
 	remote := fs.Bool("remote", false, "inspect a registry manifest without pulling")
+	verifyBlobs := fs.Bool("verify-blobs", false, "verify remote config/layer descriptors with HEAD requests")
 	if err := parseFlagsOrHelp(fs, moveImageInspectFlagsFirst(args)); err != nil {
 		if errors.Is(err, errFlagHelp) {
 			return nil
 		}
 		return err
+	}
+	if *verifyBlobs && !*remote {
+		return fmt.Errorf("image inspect: -verify-blobs requires -remote")
 	}
 	if *remote {
 		if *diff {
@@ -179,7 +183,7 @@ func runImageInspect(env commandEnv, args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), remoteInspectTimeout)
 		defer cancel()
 		if fs.NArg() == 1 {
-			out, err := InspectRemoteImage(ctx, fs.Arg(0), remoteInspectOptions{})
+			out, err := InspectRemoteImage(ctx, fs.Arg(0), remoteInspectOptions{VerifyBlobs: *verifyBlobs})
 			if err != nil {
 				return err
 			}
@@ -188,7 +192,7 @@ func runImageInspect(env commandEnv, args []string) error {
 			}
 			return writeRemoteInspectText(env.Stdout, out)
 		}
-		out, err := InspectRemoteImages(ctx, fs.Args(), remoteInspectOptions{})
+		out, err := InspectRemoteImages(ctx, fs.Args(), remoteInspectOptions{VerifyBlobs: *verifyBlobs})
 		if *asJSON {
 			if writeErr := writeRemoteInspectJSONList(env.Stdout, out); writeErr != nil {
 				return writeErr
@@ -259,9 +263,10 @@ func runImageInspect(env commandEnv, args []string) error {
 
 func moveImageInspectFlagsFirst(args []string) []string {
 	return moveKnownFlagsFirst(args, map[string]bool{
-		"json":   false,
-		"diff":   false,
-		"remote": false,
+		"json":         false,
+		"diff":         false,
+		"remote":       false,
+		"verify-blobs": false,
 	})
 }
 
@@ -296,9 +301,10 @@ metadata for cove-native, Tart, Lume, or cove image-store artifacts. Multiple
 remote refs are inspected as a batch; JSON output is an array only in batch mode.
 
 Flags:
-  -json    emit machine-readable JSON
-  -diff    compare two image refs
-  -remote  inspect a registry manifest without pulling blobs`)
+  -json          emit machine-readable JSON
+  -diff          compare two image refs
+  -remote        inspect a registry manifest without pulling blobs
+  -verify-blobs  with -remote, HEAD every config/layer descriptor`)
 }
 
 func writeInspectJSON(w io.Writer, out ImageInspectOutput) error {

@@ -55,8 +55,9 @@ delegates the disk/runtime work to `tart` or `vetu`.
    before extraction. `cove image inspect -remote` fetches only registry
    metadata and identifies cove-native, Tart, Lume, and cove image-store
    artifacts before a disk pull, including index/list resolution details,
-   selected platform, pull plan, and verification posture; multiple refs can be
-   inspected as one batch for private catalog audits.
+   selected platform, pull plan, and verification posture; `-verify-blobs`
+   HEAD-audits every remote config/layer descriptor without downloading disks,
+   and multiple refs can be inspected as one batch for private catalog audits.
 
 4. **Base-aware distribution.** cove-format pushes can reference a base image,
    skip zero chunks, mount already-present blobs in the destination registry, and

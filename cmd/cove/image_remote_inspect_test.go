@@ -39,6 +39,23 @@ func TestInspectRemoteImageCoveManifest(t *testing.T) {
 	}
 }
 
+func TestInspectRemoteImageBlobAuditMissing(t *testing.T) {
+	manifest, _, _ := pullCompressedChunkedTestManifest(t, []byte("abcdefghijklmnop"), 4)
+	srv := newOCIDispatchRegistry(t, manifest)
+	t.Cleanup(srv.Close)
+
+	out, err := InspectRemoteImage(context.Background(), "ghcr.io/me/dev-vm:v1", remoteInspectOptions{
+		RegistryBaseURL: srv.URL,
+		VerifyBlobs:     true,
+	})
+	if err != nil {
+		t.Fatalf("InspectRemoteImage: %v", err)
+	}
+	if out.BlobAudit != "missing" || out.BlobDescriptors == 0 || len(out.MissingBlobs) == 0 {
+		t.Fatalf("blob audit = status:%q descriptors:%d missing:%v", out.BlobAudit, out.BlobDescriptors, out.MissingBlobs)
+	}
+}
+
 func TestInspectRemoteImagesBatchReportsErrors(t *testing.T) {
 	manifest, _, _ := pullCompressedChunkedTestManifest(t, []byte("abcdefghijklmnop"), 4)
 	srv := newOCIDispatchRegistry(t, manifest)
@@ -213,6 +230,71 @@ func TestInspectRemoteImageCoveImageArtifact(t *testing.T) {
 	}
 }
 
+func TestInspectRemoteImageBlobAuditOK(t *testing.T) {
+	created := time.Date(2026, 5, 31, 12, 0, 0, 0, time.UTC)
+	config := imagestore.Manifest{
+		SchemaVersion: 1,
+		Name:          "runner",
+		Tag:           "v1",
+		DiskSHA256:    strings.Repeat("a", 64),
+		DiskSize:      99,
+		CreatedAt:     created,
+	}
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	configDigest := digestData(configBytes)
+	diskData := []byte("disk")
+	auxData := []byte("aux")
+	diskDigest := digestData(diskData)
+	auxDigest := digestData(auxData)
+	manifest := ociimage.Manifest{
+		SchemaVersion: 2,
+		MediaType:     ociimage.MediaTypeImageManifest,
+		Config: ociimage.Descriptor{
+			MediaType: coveImageConfigType,
+			Size:      int64(len(configBytes)),
+			Digest:    configDigest,
+		},
+		Layers: []ociimage.Descriptor{
+			{
+				MediaType:   coveImageDiskType,
+				Size:        int64(len(diskData)),
+				Digest:      diskDigest,
+				Annotations: map[string]string{ociTitleAnnotation: "disk.img.gz"},
+			},
+			{
+				MediaType:   coveImageFileType,
+				Size:        int64(len(auxData)),
+				Digest:      auxDigest,
+				Annotations: map[string]string{ociTitleAnnotation: "aux.img"},
+			},
+		},
+	}
+	srv := newRemoteInspectRegistry(t, manifest, map[string][]byte{
+		configDigest: configBytes,
+		diskDigest:   diskData,
+		auxDigest:    auxData,
+	})
+	t.Cleanup(srv.Close)
+
+	out, err := InspectRemoteImage(context.Background(), "ghcr.io/me/dev-vm:v1", remoteInspectOptions{
+		RegistryBaseURL: srv.URL,
+		VerifyBlobs:     true,
+	})
+	if err != nil {
+		t.Fatalf("InspectRemoteImage: %v", err)
+	}
+	if out.BlobAudit != "ok" || out.BlobDescriptors != 3 || len(out.MissingBlobs) != 0 {
+		t.Fatalf("blob audit = status:%q descriptors:%d missing:%v", out.BlobAudit, out.BlobDescriptors, out.MissingBlobs)
+	}
+	wantBytes := int64(len(configBytes) + len(diskData) + len(auxData))
+	if out.BlobBytes != wantBytes {
+		t.Fatalf("blob bytes = %d, want %d", out.BlobBytes, wantBytes)
+	}
+}
+
 func TestWriteRemoteInspectText(t *testing.T) {
 	var b strings.Builder
 	err := writeRemoteInspectText(&b, ImageRemoteInspectOutput{
@@ -222,6 +304,10 @@ func TestWriteRemoteInspectText(t *testing.T) {
 		Format:              "cove",
 		PullPlan:            "cove chunked pull",
 		Verification:        "manifest parsed; compressed and uncompressed chunk digests verified during pull",
+		BlobAudit:           "missing",
+		BlobDescriptors:     2,
+		BlobBytes:           9,
+		MissingBlobs:        []string{"layer[0]:sha256:missing"},
 		DiskSize:            16,
 		CompressedDiskBytes: 8,
 		ChunkCount:          2,
@@ -231,7 +317,7 @@ func TestWriteRemoteInspectText(t *testing.T) {
 	if err != nil {
 		t.Fatalf("writeRemoteInspectText: %v", err)
 	}
-	for _, want := range []string{"Remote image ghcr.io/me/dev-vm:v1", "format:          cove", "pull plan:       cove chunked pull", "verification:    manifest parsed", "chunks:          2"} {
+	for _, want := range []string{"Remote image ghcr.io/me/dev-vm:v1", "format:          cove", "pull plan:       cove chunked pull", "verification:    manifest parsed", "blob audit:      missing", "missing:       layer[0]:sha256:missing", "chunks:          2"} {
 		if !strings.Contains(b.String(), want) {
 			t.Fatalf("text missing %q:\n%s", want, b.String())
 		}
@@ -278,8 +364,9 @@ func TestMoveImageInspectFlagsFirst(t *testing.T) {
 		"registry.example.com/team/vm:v1",
 		"-remote",
 		"-json",
+		"-verify-blobs",
 	}), " ")
-	want := "-remote -json registry.example.com/team/vm:v1"
+	want := "-remote -json -verify-blobs registry.example.com/team/vm:v1"
 	if got != want {
 		t.Fatalf("args = %q, want %q", got, want)
 	}

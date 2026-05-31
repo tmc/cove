@@ -18,43 +18,48 @@ const remoteInspectTimeout = 30 * time.Second
 type remoteInspectOptions struct {
 	RegistryBaseURL string
 	RegistryToken   string
+	VerifyBlobs     bool
 }
 
 type ImageRemoteInspectOutput struct {
-	Ref                 string `json:"ref"`
-	Error               string `json:"error,omitempty"`
-	ManifestDigest      string `json:"manifest_digest,omitempty"`
-	ResolvedFromIndex   bool   `json:"resolved_from_index,omitempty"`
-	IndexDigest         string `json:"index_digest,omitempty"`
-	IndexMediaType      string `json:"index_media_type,omitempty"`
-	SelectedDigest      string `json:"selected_digest,omitempty"`
-	SelectedPlatform    string `json:"selected_platform,omitempty"`
-	Kind                string `json:"kind"`
-	Format              string `json:"format"`
-	PullPlan            string `json:"pull_plan,omitempty"`
-	Verification        string `json:"verification,omitempty"`
-	MediaType           string `json:"media_type,omitempty"`
-	ConfigMediaType     string `json:"config_media_type,omitempty"`
-	LayerCount          int    `json:"layer_count"`
-	TotalLayerBytes     int64  `json:"total_layer_bytes"`
-	DiskSize            int64  `json:"disk_size,omitempty"`
-	DiskSHA256          string `json:"disk_sha256,omitempty"`
-	CompressedDiskBytes int64  `json:"compressed_disk_bytes,omitempty"`
-	ChunkCount          int    `json:"chunk_count,omitempty"`
-	ZeroChunks          int    `json:"zero_chunks,omitempty"`
-	DiskLayerCount      int    `json:"disk_layer_count,omitempty"`
-	DiskPartCount       int    `json:"disk_part_count,omitempty"`
-	MetadataBlobs       int    `json:"metadata_blobs,omitempty"`
-	MetadataBytes       int64  `json:"metadata_bytes,omitempty"`
-	ConfigBytes         int64  `json:"config_bytes,omitempty"`
-	NVRAMBytes          int64  `json:"nvram_bytes,omitempty"`
-	BaseManifest        string `json:"base_manifest,omitempty"`
-	UploadTime          string `json:"upload_time,omitempty"`
-	ImageRef            string `json:"image_ref,omitempty"`
-	ImageName           string `json:"image_name,omitempty"`
-	ImageTag            string `json:"image_tag,omitempty"`
-	Created             string `json:"created,omitempty"`
-	BuiltAt             string `json:"built_at,omitempty"`
+	Ref                 string   `json:"ref"`
+	Error               string   `json:"error,omitempty"`
+	ManifestDigest      string   `json:"manifest_digest,omitempty"`
+	ResolvedFromIndex   bool     `json:"resolved_from_index,omitempty"`
+	IndexDigest         string   `json:"index_digest,omitempty"`
+	IndexMediaType      string   `json:"index_media_type,omitempty"`
+	SelectedDigest      string   `json:"selected_digest,omitempty"`
+	SelectedPlatform    string   `json:"selected_platform,omitempty"`
+	Kind                string   `json:"kind"`
+	Format              string   `json:"format"`
+	PullPlan            string   `json:"pull_plan,omitempty"`
+	Verification        string   `json:"verification,omitempty"`
+	BlobAudit           string   `json:"blob_audit,omitempty"`
+	BlobDescriptors     int      `json:"blob_descriptors,omitempty"`
+	BlobBytes           int64    `json:"blob_bytes,omitempty"`
+	MissingBlobs        []string `json:"missing_blobs,omitempty"`
+	MediaType           string   `json:"media_type,omitempty"`
+	ConfigMediaType     string   `json:"config_media_type,omitempty"`
+	LayerCount          int      `json:"layer_count"`
+	TotalLayerBytes     int64    `json:"total_layer_bytes"`
+	DiskSize            int64    `json:"disk_size,omitempty"`
+	DiskSHA256          string   `json:"disk_sha256,omitempty"`
+	CompressedDiskBytes int64    `json:"compressed_disk_bytes,omitempty"`
+	ChunkCount          int      `json:"chunk_count,omitempty"`
+	ZeroChunks          int      `json:"zero_chunks,omitempty"`
+	DiskLayerCount      int      `json:"disk_layer_count,omitempty"`
+	DiskPartCount       int      `json:"disk_part_count,omitempty"`
+	MetadataBlobs       int      `json:"metadata_blobs,omitempty"`
+	MetadataBytes       int64    `json:"metadata_bytes,omitempty"`
+	ConfigBytes         int64    `json:"config_bytes,omitempty"`
+	NVRAMBytes          int64    `json:"nvram_bytes,omitempty"`
+	BaseManifest        string   `json:"base_manifest,omitempty"`
+	UploadTime          string   `json:"upload_time,omitempty"`
+	ImageRef            string   `json:"image_ref,omitempty"`
+	ImageName           string   `json:"image_name,omitempty"`
+	ImageTag            string   `json:"image_tag,omitempty"`
+	Created             string   `json:"created,omitempty"`
+	BuiltAt             string   `json:"built_at,omitempty"`
 }
 
 func InspectRemoteImages(ctx context.Context, refs []string, opts remoteInspectOptions) ([]ImageRemoteInspectOutput, error) {
@@ -94,13 +99,17 @@ func InspectRemoteImage(ctx context.Context, refText string, opts remoteInspectO
 	}
 	out := remoteInspectBase(ref, resolution, manifest)
 	if isCoveImageArtifactManifest(manifest) {
-		return inspectRemoteCoveImageArtifact(ctx, client, ref, manifest, out)
+		out, err = inspectRemoteCoveImageArtifact(ctx, client, ref, manifest, out)
+		if err != nil {
+			return out, err
+		}
+		return maybeAuditRemoteBlobs(ctx, client, ref, manifest, out, opts)
 	}
 	parsed, err := ociimage.ParseManifest(manifest)
 	if err != nil {
 		return ImageRemoteInspectOutput{}, fmt.Errorf("image inspect remote: parse manifest: %w", err)
 	}
-	return inspectRemoteVMManifest(parsed, out), nil
+	return maybeAuditRemoteBlobs(ctx, client, ref, manifest, inspectRemoteVMManifest(parsed, out), opts)
 }
 
 func remoteInspectBase(ref ociimage.Reference, resolution ociimage.ManifestResolution, manifest ociimage.Manifest) ImageRemoteInspectOutput {
@@ -262,6 +271,73 @@ func inspectRemoteVMManifest(parsed ociimage.ParsedManifest, out ImageRemoteInsp
 	return out
 }
 
+func maybeAuditRemoteBlobs(ctx context.Context, client ociimage.RegistryClient, ref ociimage.Reference, manifest ociimage.Manifest, out ImageRemoteInspectOutput, opts remoteInspectOptions) (ImageRemoteInspectOutput, error) {
+	if !opts.VerifyBlobs {
+		return out, nil
+	}
+	audit, err := auditRemoteBlobs(ctx, client, ref, manifest)
+	if err != nil {
+		return out, err
+	}
+	out.BlobAudit = audit.Status
+	out.BlobDescriptors = audit.Checked
+	out.BlobBytes = audit.Bytes
+	out.MissingBlobs = audit.Missing
+	return out, nil
+}
+
+type remoteBlobAudit struct {
+	Status  string
+	Checked int
+	Bytes   int64
+	Missing []string
+}
+
+func auditRemoteBlobs(ctx context.Context, client ociimage.RegistryClient, ref ociimage.Reference, manifest ociimage.Manifest) (remoteBlobAudit, error) {
+	descriptors := remoteBlobDescriptors(manifest)
+	audit := remoteBlobAudit{Status: "ok", Checked: len(descriptors)}
+	for _, desc := range descriptors {
+		if desc.Descriptor.Size > 0 {
+			audit.Bytes += desc.Descriptor.Size
+		}
+		if desc.Descriptor.Digest == "" {
+			audit.Missing = append(audit.Missing, desc.Name+":missing digest")
+			continue
+		}
+		ok, err := client.BlobExists(ctx, ref, desc.Descriptor.Digest)
+		if err != nil {
+			return audit, fmt.Errorf("image inspect remote: verify blob %s: %w", desc.Name, err)
+		}
+		if !ok {
+			audit.Missing = append(audit.Missing, desc.Name+":"+desc.Descriptor.Digest)
+		}
+	}
+	if len(audit.Missing) > 0 {
+		audit.Status = "missing"
+	}
+	return audit, nil
+}
+
+type remoteBlobDescriptor struct {
+	Name       string
+	Descriptor ociimage.Descriptor
+}
+
+func remoteBlobDescriptors(manifest ociimage.Manifest) []remoteBlobDescriptor {
+	out := make([]remoteBlobDescriptor, 0, 1+len(manifest.Layers))
+	out = append(out, remoteBlobDescriptor{Name: "config", Descriptor: manifest.Config})
+	for i, layer := range manifest.Layers {
+		name := fmt.Sprintf("layer[%d]", i)
+		if title := layer.Annotations[ociTitleAnnotation]; title != "" {
+			name = title
+		} else if role := layer.Annotations[ociimage.CoveRole]; role != "" {
+			name = role
+		}
+		out = append(out, remoteBlobDescriptor{Name: name, Descriptor: layer})
+	}
+	return out
+}
+
 func remotePlatformString(platform *ociimage.Platform) string {
 	if platform == nil {
 		return ""
@@ -365,6 +441,21 @@ func writeRemoteInspectText(w io.Writer, out ImageRemoteInspectOutput) error {
 	}
 	if out.Verification != "" {
 		fmt.Fprintf(w, "  verification:    %s\n", out.Verification)
+	}
+	if out.BlobAudit != "" {
+		fmt.Fprintf(w, "  blob audit:      %s", out.BlobAudit)
+		if out.BlobDescriptors > 0 {
+			fmt.Fprintf(w, " (%d descriptors", out.BlobDescriptors)
+			if out.BlobBytes > 0 {
+				fmt.Fprintf(w, ", %s)", bytefmt.Size(out.BlobBytes))
+			} else {
+				fmt.Fprint(w, ")")
+			}
+		}
+		fmt.Fprintln(w)
+		for _, missing := range out.MissingBlobs {
+			fmt.Fprintf(w, "    missing:       %s\n", missing)
+		}
 	}
 	if out.ImageRef != "" {
 		fmt.Fprintf(w, "  image ref:       %s\n", out.ImageRef)
