@@ -23,7 +23,7 @@ func TestCommandsJSONIncludesInventory(t *testing.T) {
 	for _, info := range got {
 		have[info.Name] = info
 	}
-	for _, name := range []string{"commands", "recording", "runs", "trace"} {
+	for _, name := range []string{"commands", "recording", "runs", "trace", "user"} {
 		if have[name].Name == "" {
 			t.Fatalf("commands JSON missing %q", name)
 		}
@@ -48,6 +48,12 @@ func TestCommandsJSONIncludesInventory(t *testing.T) {
 	}
 	if have["ctl"].SafeForDiscovery || !have["ctl"].RequiresRunningVM || have["ctl"].MutatesState || have["ctl"].MayBootVM {
 		t.Fatalf("ctl metadata = %+v, want running-VM control command", have["ctl"])
+	}
+	if have["user"].SafeForDiscovery || !have["user"].RequiresRunningVM || have["user"].MutatesState || have["user"].MayBootVM {
+		t.Fatalf("user metadata = %+v, want read-only running-VM command", have["user"])
+	}
+	if !commandsContainsString(have["user"].Outputs, "json") {
+		t.Fatalf("user outputs = %v, want json", have["user"].Outputs)
 	}
 	if have["shared-folder"].SafeForDiscovery || !have["shared-folder"].MutatesState || have["shared-folder"].RequiresRunningVM || have["shared-folder"].MayBootVM {
 		t.Fatalf("shared-folder metadata = %+v, want stateful non-boot command", have["shared-folder"])

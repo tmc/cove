@@ -79,6 +79,8 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			printStatusUsage(os.Stderr)
 		case "trace", "traces":
 			printTraceUsage(os.Stderr)
+		case "user":
+			printUserUsage(os.Stderr)
 		case "daemon":
 			printDaemonUsage(os.Stderr)
 		case "cp":
@@ -384,6 +386,15 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		}
 		if len(subargs) > 1 && subargs[0] == "capabilities" && isHelpArg(subargs[1]) {
 			printTraceCapabilitiesUsage(os.Stderr)
+			return true, 0
+		}
+	case "user":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printUserUsage(os.Stderr)
+			return true, usageExitCode(subargs)
+		}
+		if len(subargs) > 1 && subargs[0] == "audit" && isHelpArg(subargs[1]) {
+			printUserAuditUsage(os.Stderr)
 			return true, 0
 		}
 	case "store":

@@ -33,6 +33,7 @@ func TestCommandMetadata(t *testing.T) {
 		{"commands", false, false, false, true},
 		{"run", true, false, true, false},
 		{"status", false, true, false, false},
+		{"user", false, true, false, false},
 		{"image", true, false, false, false},
 	}
 	for _, tt := range tests {
@@ -61,6 +62,7 @@ func TestOutputHints(t *testing.T) {
 		{"commands", []string{"text", "json"}},
 		{"ctl", []string{"text", "json", "binary"}},
 		{"serve", []string{"text", "http", "mcp"}},
+		{"user", []string{"text", "json"}},
 		{"run", []string{"text"}},
 	}
 	for _, tt := range tests {

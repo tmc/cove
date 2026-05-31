@@ -100,7 +100,7 @@ func TestRunRegisteredCommandRunsSpec(t *testing.T) {
 }
 
 func TestNamespaceNoArgUsageExitCode(t *testing.T) {
-	tests := []string{"agent-sandbox", "build", "fleet", "softreset", "storage", "support"}
+	tests := []string{"agent-sandbox", "build", "fleet", "softreset", "storage", "support", "user"}
 	for _, name := range tests {
 		t.Run(name, func(t *testing.T) {
 			spec, ok := lookupCommand(name)

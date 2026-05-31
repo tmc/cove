@@ -52,6 +52,7 @@ func TestSubcommandSkipsVMDir(t *testing.T) {
 		{"trace status defers VM resolution", []string{"trace", "status", "vm"}, true},
 		{"traces alias defers VM resolution", []string{"traces", "status", "vm"}, true},
 		{"up defers VM dir until args validated", []string{"up"}, true},
+		{"user audit defers VM resolution", []string{"user", "audit", "missing", "-user", "dev"}, true},
 		{"support is global diagnostics", []string{"support", "bundle"}, true},
 		{"support-bundle alias is global diagnostics", []string{"support-bundle"}, true},
 		{"vzscript defers VM resolution", []string{"vzscript", "run", "recipe"}, true},

@@ -176,6 +176,28 @@ cove status work-vm
 
 ---
 
+## user
+
+Inspect guest user state through the running VM guest agent.
+
+```
+cove user audit <vm> --user <name> [-json]
+cove user audit --user <name> [-vm <vm>] [-json]
+```
+
+`audit` is read-only. It reports whether the user exists, uid/gid, home, shell,
+groups, admin/sudo state, home-directory residue, SSH `authorized_keys`, and
+known cove provisioning files. macOS also reports LaunchAgents, keychains, and
+login-item storage where observable. Linux also reports sudoers and systemd
+user-unit residue.
+
+```bash
+cove user audit macos-runner --user runner
+cove user audit --user ubuntu -vm ubuntu-runner -json
+```
+
+---
+
 ## commands
 
 Print the top-level command inventory.
@@ -1184,6 +1206,7 @@ cove diff <ref-a> <ref-b> [-json]
 cove forward <vm> <hostport>:<vmport>
 cove forward <vm> -reverse <vmport>:<hostport>
 cove forward <vm> udp:<hostport>:<vmport>
+cove user audit <vm> --user <name> [-json]
 cove network logs <vm> [-f]
 ```
 
@@ -1193,6 +1216,7 @@ cove network logs <vm> [-f]
 | `cp [-vm name]` | Copy a file host-to-guest or guest-to-host using `vm:/absolute/path` syntax. `-vm` may appear before or after operands and must match the `vm:/path` endpoint. |
 | `diff <ref-a> <ref-b> [-json]` | Compare local image manifests/layers. |
 | `forward` | Forward TCP/UDP between host and guest; `-reverse` exposes guest-to-host direction. |
+| `user audit <vm> --user <name> [-json]` | Read-only guest user audit through the agent: identity, groups, home/SSH residue, admin/sudo state, and cove provisioning files. |
 | `network logs <vm> [-f]` | Tail network policy audit events. |
 
 ```bash
@@ -1203,6 +1227,7 @@ cove cp ubuntu-runner:/tmp/artifact.txt ./artifact.txt -vm ubuntu-runner
 cove diff macos-runner:old macos-runner:new -json
 cove forward dev 8080:80
 cove forward dev -reverse 3000:8080
+cove user audit dev --user runner -json
 cove network logs dev -f
 ```
 

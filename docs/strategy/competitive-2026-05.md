@@ -58,7 +58,7 @@ Refresh sources checked on 2026-05-11:
 | Guest artifact copy-out | Run bundles, `cove runs export`, and cove-action `artifacts` copy-out now exist. Declared absolute guest paths are copied into the run bundle under `guest/`, exposed through `artifact-path`, and recorded as `artifact_copy` metrics; workflow upload remains the scheduler's job. | Cirrus artifacts are first-class. | Keep upload explicit through GitHub Actions/Buildkite artifact steps; add richer summaries only after operator feedback. |
 | GitHub annotations | cove-action injects `$COVE_GITHUB_ANNOTATIONS`, copies `github-annotations.log` into the run bundle, forwards `error` / `warning` / `notice` workflow commands or JSON records to GitHub Actions stdout, and records `github_annotation_forward`. | CI users expect structured failures. | Validate against private CI suites; keep broader task-report summaries separate from annotations. |
 | Agent-facing UX | The canonical local path is `cove agent-sandbox run`: fork a local image, wait for the guest agent, run one provider loop, write replay artifacts, print run/replay/summary paths, and write `replay/summary.md` with provider, image, VM, status, task, artifact counts, and final answer. It fails before fork creation when provider credentials are missing, with a direct `doctor --provider` hint, and docs now show `cove runs export` recipes for replay tarballs and GitHub summaries. Background-safety expectations are explicit: cove isolates the VM fork, but the current macOS capture/control path is not a Cua Driver-style focus-safe guarantee. | Cua leads with a clearer computer-use product. Daytona leads with API-first managed sandbox framing. | Validate summary defaults against real private provider runs. |
-| In-VM user management | First-boot provisioning creates an admin user with password and optional SSH setup, but there is no lifecycle command for creating/deleting users after boot or auditing leftover home, keychain, SSH, LaunchAgent, and group residue. | Cirrus users think in job identities; Tart and Lume leave user lifecycle mostly to scripts/SSH. A cove-owned primitive would fit the guest-agent/no-SSH story. | Add a small `cove user` plan: create/delete, admin vs standard, password/SSH key input, macOS vs Linux backend split, and dry-run residue audit. |
+| In-VM user management | First-boot provisioning creates an admin user with password and optional SSH setup, and `cove user audit` now provides a read-only running-guest residue audit for identity, groups, admin/sudo, home, SSH, macOS LaunchAgents/keychains/login items, Linux systemd user units, and known cove provisioning files. Create/delete lifecycle commands are still absent. | Cirrus users think in job identities; Tart and Lume leave user lifecycle mostly to scripts/SSH. A cove-owned primitive fits the guest-agent/no-SSH story. | Add `cove user create/delete`: admin vs standard, password/SSH key input, and separate macOS/Linux backends. |
 | Network policy depth | Baseline policies and audit/log surfaces shipped. | Tart Softnet-style allow/block policy remains deeper. | Keep current surface for v0.6; consider DNS/egress allowlist policy only if a customer workload demands it. |
 | macOS capture backend | SCKit Slice 3 shipped; Slice 4 default flip and CGWindowList removal are intentionally deferred to v0.7. | Cua keeps improving background/focus-safe macOS control. | Do not rush pre-v0.7; finish perf/TCC evidence first. |
 | Config/lifecycle code hygiene | Go-team review follow-ups are recorded: `applyUpConfig` global state and `macos.go` lifecycle cleanup. | Internal maintainability gap, not a market gap. | Handle only after protected dirty `up.go`/`macos.go` lanes land or are explicitly assigned. |
@@ -382,16 +382,17 @@ Impact: medium. Uniqueness: medium.
 
 Smallest slice:
 
-- `cove user create/delete <name>` through the guest agent, with `--admin` and
-  default standard-user modes.
+- `cove user audit <vm> --user <name>` has the first read-only residue report:
+  identity, groups, sudo/admin state, home, SSH keys, macOS LaunchAgents,
+  keychains and login-item storage, Linux systemd user units, sudoers, and known
+  cove provisioning files.
+- Next: `cove user create/delete <name>` through the guest agent, with
+  `--admin` and default standard-user modes.
 - Password input by prompt or secret file descriptor; SSH key install as an
   explicit option, not the primary command path.
 - macOS backend owns `sysadminctl`/`dscl`/home cleanup; Linux backend owns
   `useradd`/`userdel`/sudoers/authorized_keys`. Keep the UI common but the
   implementations separate.
-- `cove user audit <name>` reports residue: home dir, groups, sudo/admin state,
-  SSH keys, LaunchAgents, login items, keychains where observable, and known
-  cove provisioning files.
 
 Why now: Cirrus/Tart/Lume users mostly script this themselves. A small
 agent-backed lifecycle command would improve reusable images and operator

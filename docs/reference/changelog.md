@@ -42,6 +42,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   `cove agent-sandbox doctor --provider <name>` hint.
 - Agent-sandbox docs now include the standard replay export recipe through
   `cove runs export --format tar` and `--format gha-summary`.
+- `cove user audit <vm> --user <name> [-json]` now audits a running guest user
+  through the guest agent without mutating state, covering identity, groups,
+  admin/sudo state, home residue, SSH keys, macOS LaunchAgents/keychains/login
+  items, Linux systemd user units, and known cove provisioning files.
 - `cove image inspect -remote` now accepts multiple registry refs for private
   catalog audits. Single-ref JSON remains an object; batch JSON is an array and
   includes per-ref errors while returning a failing exit status if any ref fails.

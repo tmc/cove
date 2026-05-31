@@ -48,7 +48,7 @@ func MutatesState(name string) bool {
 
 func RequiresRunningVM(name string) bool {
 	switch name {
-	case "agent-upgrade", "cp", "ctl", "logs", "shell", "status", "trace", "vzscript":
+	case "agent-upgrade", "cp", "ctl", "logs", "shell", "status", "trace", "user", "vzscript":
 		return true
 	default:
 		return false
@@ -66,7 +66,7 @@ func MayBootVM(name string) bool {
 
 func OutputHints(name string) []string {
 	switch name {
-	case "action", "commands", "daemon", "diff", "recording", "runner", "runs", "security", "storage", "trace", "vm":
+	case "action", "commands", "daemon", "diff", "recording", "runner", "runs", "security", "storage", "trace", "user", "vm":
 		return []string{"text", "json"}
 	case "ctl":
 		return []string{"text", "json", "binary"}

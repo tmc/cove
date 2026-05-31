@@ -84,6 +84,7 @@ var commandRegistry = []covecli.Spec{
 	{Name: "uiscript", Summary: "Deprecated alias for vzscript", Dispatch: covecli.DispatchEarly, Run: runUIScriptCommand},
 	{Name: "unpin", Summary: "Remove a storage pin", Dispatch: covecli.DispatchEarly, Run: runUnpinCommand},
 	{Name: "up", Summary: "Install + provision + boot in one command", Dispatch: covecli.DispatchEarly, Run: runUpCommand},
+	{Name: "user", Summary: "Audit guest user state", Dispatch: covecli.DispatchEarly, Run: runUserCommand},
 	{Name: "verify", Aliases: []string{"doctor"}, Summary: "Verify provisioning files in VM disk", Dispatch: covecli.DispatchEarly, Run: runVerifyCommand},
 	{Name: "version", Summary: "Print version information", Dispatch: covecli.DispatchEarly, Run: runVersionCommand},
 	{Name: "vnc", Summary: "Inspect private VNC server state", Dispatch: covecli.DispatchEarly, Run: runControlAliasCommand},
@@ -217,6 +218,13 @@ func runQuotaCommand(env commandEnv, _ string, args []string) int {
 }
 func runUnpinCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleUnpinCommand(env, args))
+}
+func runUserCommand(env commandEnv, _ string, args []string) int {
+	err := handleUserCommand(env, args)
+	if err != nil && strings.HasPrefix(err.Error(), "usage: cove user ") {
+		return commandUsageError(env, err)
+	}
+	return commandError(env, err)
 }
 func runRunsCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleRunsCommand(env, args))
