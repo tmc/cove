@@ -427,7 +427,8 @@ func TestRunCurrentVMWithTemporaryRAMSystemDiskAttachment(t *testing.T) {
 
 func TestRunEphemeralForkUsesLinkedCloneForMacOSVMParent(t *testing.T) {
 	hooks, _ := stubAcquireRunLockHook(t)
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 	parent := "identity-parent"
 	stageParentVMForEphemeralFork(t, parent)
 
@@ -514,6 +515,34 @@ func TestRunEphemeralForkUsesLinkedCloneForMacOSVMParent(t *testing.T) {
 	}
 	if runtimeSystemDiskAttachment != oldRuntimeSystemDiskAttachment {
 		t.Fatalf("runtimeSystemDiskAttachment after run = %v, want %v", runtimeSystemDiskAttachment, oldRuntimeSystemDiskAttachment)
+	}
+	entries, err := os.ReadDir(filepath.Join(home, ".vz", "runs"))
+	if err != nil {
+		t.Fatalf("read runs dir: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("run bundle entries = %d, want 1", len(entries))
+	}
+	events := readMetricEvents(t, filepath.Join(home, ".vz", "runs", entries[0].Name(), "metrics.jsonl"))
+	fork := metricEventOfType(events, "fork_created")
+	if fork == nil {
+		t.Fatal("fork_created metric missing")
+	}
+	for key, want := range map[string]any{
+		"source_kind": "vm",
+		"source_ref":  parent,
+		"child_name":  "identity-child",
+		"child_path":  clonePath,
+		"mode":        "linked-clone",
+		"disk_reuse":  "apfs-copy-on-write",
+		"ephemeral":   true,
+		"keep":        false,
+		"cleanup":     "remove-on-stop",
+		"limitation":  "temporary RAM overlay disabled",
+	} {
+		if got := fork.Extra[key]; got != want {
+			t.Fatalf("fork extra %s = %#v, want %#v", key, got, want)
+		}
 	}
 }
 

@@ -18,7 +18,7 @@ import (
 var ErrRunNotFound = errors.New("run not found")
 
 var lifecycleEvents = map[string]bool{
-	"fork_created":              true,
+	forkCreatedEvent:            true,
 	"vm_create":                 true,
 	"vm_start":                  true,
 	"agent_ready":               true,
@@ -37,6 +37,7 @@ type Show struct {
 	Events        []metrics.Event  `json:"events"`
 	Lifecycle     []metrics.Event  `json:"lifecycle"`
 	Result        Result           `json:"result"`
+	Fork          *ForkSummary     `json:"fork,omitempty"`
 	Network       *NetworkSummary  `json:"network,omitempty"`
 	Resource      *ResourceSummary `json:"resource,omitempty"`
 	Artifacts     []string         `json:"artifacts"`
@@ -79,6 +80,7 @@ func LoadShow(root, prefix string) (Show, error) {
 		Events:        events,
 		Lifecycle:     lifecycle(events),
 		Result:        result(events),
+		Fork:          summarizeFork(events),
 		Network:       summarizeNetwork(events),
 		Resource:      summarizeResources(events),
 		Artifacts:     artifacts,
@@ -138,6 +140,14 @@ func RenderShow(w io.Writer, show Show) error {
 	}
 	if show.Failure.Class != "" {
 		if _, err := fmt.Fprintf(w, "Failure: %s: %s\n", show.Failure.Class, show.Failure.Reason); err != nil {
+			return err
+		}
+	}
+	if show.Fork != nil {
+		if _, err := fmt.Fprintln(w); err != nil {
+			return err
+		}
+		if err := renderForkSummary(w, show.Fork); err != nil {
 			return err
 		}
 	}

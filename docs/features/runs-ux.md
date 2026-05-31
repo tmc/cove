@@ -35,8 +35,8 @@ duration such as `24h` or `7d`, `--status` filters successful or failed runs,
 line.
 
 `runs show`
-: Prints one run's lifecycle, result, network policy summary, resource summary,
-and artifacts.
+: Prints one run's lifecycle, result, fork provenance summary, network policy
+summary, resource summary, and artifacts.
 `--json` emits the raw event array for compatibility; `--summary-json` emits
 the structured show object for scripts, including raw events.
 
@@ -65,6 +65,18 @@ Commands that take `<run-id-prefix>` match local directories under `~/.vz/runs`.
 The prefix must identify exactly one run. If no run matches, the command fails.
 If more than one run matches, the command fails with an ambiguous-prefix error
 and the operator should pass more characters from the run id.
+
+## Fork Summary
+
+When a run contains a `fork_created` event, `runs show` folds it into a short
+fork summary with the source image or VM, child name/path, materialization mode,
+disk reuse, ephemeral/keep cleanup intent, verification status, fork duration,
+and any limitation. GitHub summary exports include the same derived fork
+section.
+
+The raw `fork_created` event remains in `runs show --json` and
+`cove runs export <id> --format json`. The derived summary is available in
+human `runs show`, `runs show --summary-json`, and GitHub summary export.
 
 ## Resource Summary
 

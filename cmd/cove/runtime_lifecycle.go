@@ -635,8 +635,16 @@ func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 	fmt.Fprintf(cfg.Stdout, "Parent:         %s\n", cfg.EphemeralForkParent)
 	fmt.Fprintf(cfg.Stdout, "Mode:           linked clone (temporary RAM overlay disabled)\n")
 	bundle.EmitMetricEvent("fork_created", forkStarted, "ok", map[string]any{
-		"child_name": clone.Name,
-		"child_path": clone.Path,
+		"source_kind": "vm",
+		"source_ref":  cfg.EphemeralForkParent,
+		"child_name":  clone.Name,
+		"child_path":  clone.Path,
+		"mode":        "linked-clone",
+		"disk_reuse":  "apfs-copy-on-write",
+		"ephemeral":   true,
+		"keep":        cfg.EphemeralForkKeep,
+		"cleanup":     forkCleanupMode(cfg.EphemeralForkKeep),
+		"limitation":  "temporary RAM overlay disabled",
 	})
 
 	vmName = clone.Name
@@ -678,6 +686,13 @@ func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 		fmt.Fprintf(cfg.Stdout, "Ephemeral fork removed: %s\n", clone.Name)
 	}
 	return runErr
+}
+
+func forkCleanupMode(keep bool) string {
+	if keep {
+		return "retained"
+	}
+	return "remove-on-stop"
 }
 
 func markEphemeralForkPath(path string) error {

@@ -153,6 +153,26 @@ func TestRunExistingImageForkFromStillCreatesRunBundle(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatalf("run bundle entries = %d, want 1", len(entries))
 	}
+	events := readMetricEvents(t, filepath.Join(home, ".vz", "runs", entries[0].Name(), "metrics.jsonl"))
+	fork := metricEventOfType(events, "fork_created")
+	if fork == nil {
+		t.Fatal("fork_created metric missing")
+	}
+	wantVerification := string(VerifyImage(ref, imageVerifyOptions{}).Verdict)
+	for key, want := range map[string]any{
+		"source_kind":  "image",
+		"source_ref":   ref.String(),
+		"mode":         "image-materialized",
+		"disk_reuse":   "clonefile",
+		"ephemeral":    true,
+		"keep":         false,
+		"cleanup":      "remove-on-stop",
+		"verification": wantVerification,
+	} {
+		if got := fork.Extra[key]; got != want {
+			t.Fatalf("fork extra %s = %#v, want %#v", key, got, want)
+		}
+	}
 }
 
 func TestIsImageForkFromRefTreatsMissingTaggedRefAsImage(t *testing.T) {

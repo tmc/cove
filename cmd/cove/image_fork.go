@@ -104,9 +104,21 @@ func runImageForkFromWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 	if cfg.Ephemeral {
 		fmt.Printf("  mode:   ephemeral (destroyed on stop)\n")
 	}
+	cleanup := "retained"
+	if cfg.Ephemeral {
+		cleanup = forkCleanupMode(cfg.EphemeralForkKeep)
+	}
 	bundle.EmitMetricEvent("fork_created", forkStarted, "ok", map[string]any{
-		"child_name": childName,
-		"child_path": childPath,
+		"source_kind":  "image",
+		"source_ref":   ref.String(),
+		"child_name":   childName,
+		"child_path":   childPath,
+		"mode":         "image-materialized",
+		"disk_reuse":   "clonefile",
+		"ephemeral":    cfg.Ephemeral,
+		"keep":         cfg.EphemeralForkKeep,
+		"cleanup":      cleanup,
+		"verification": string(verification.Verdict),
 	})
 
 	vmName = childName

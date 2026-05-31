@@ -36,7 +36,17 @@ func TestExportJSON(t *testing.T) {
 func TestExportGHASummary(t *testing.T) {
 	root := t.TempDir()
 	writeRun(t, root, "20260505-gha", []metrics.Event{
-		event("fork_created", "ok", 10, nil),
+		event("fork_created", "ok", 10, map[string]any{
+			"source_kind": "vm",
+			"source_ref":  "base-vm",
+			"child_name":  "base-vm-job-1",
+			"mode":        "linked-clone",
+			"disk_reuse":  "apfs-copy-on-write",
+			"ephemeral":   true,
+			"keep":        false,
+			"cleanup":     "remove-on-stop",
+			"limitation":  "temporary RAM overlay disabled",
+		}),
 		event("network_policy", "ok", 12, map[string]any{
 			"policy":        "packages",
 			"mode":          "nat",
@@ -61,6 +71,15 @@ func TestExportGHASummary(t *testing.T) {
 		"| vm_start | [fail] failed | 20ms |",
 		"**Result:** [fail] failed exit_code=1 wallclock=30ms failed_events=2",
 		"**Failure:** `vm_start`: boot failed",
+		"### Fork",
+		"| source | vm base-vm |",
+		"| child | base-vm-job-1 |",
+		"| mode | linked-clone |",
+		"| disk_reuse | apfs-copy-on-write |",
+		"| ephemeral | true |",
+		"| keep | false |",
+		"| cleanup | remove-on-stop |",
+		"| limitation | temporary RAM overlay disabled |",
 		"### Network",
 		"| policy | packages mode=nat |",
 		"| enforcement | not-hooked |",

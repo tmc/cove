@@ -55,7 +55,7 @@ parameterized helpers `emitMetricEvent` (package main) and
 | `network_policy` | `network_policy.go` | Per-run network posture. `extra` carries `policy`, `mode`, `enforcement`, `audit_log`, optional `allow_domains`, optional `allow_cidrs`, and optional `limitation`. |
 | `resource_sample` | `run_metrics.go` | Best-effort runtime resource snapshot. `extra.phase` is `start`, `periodic`, or `end`; periodic samples also carry `sample_index`. Guest-agent fields include `memory_total_bytes`, `memory_available_bytes`, `disk_total_bytes`, `disk_available_bytes`, `guest_load_avg_1`, `guest_load_avg_5`, `guest_load_avg_15`, `guest_uptime_seconds`, `guest_user_count`, `guest_process_count`, and bounded `guest_top_processes` entries (`pid`, `cpu_percent`, `rss_bytes`, `command`) when agent info reports them. Virtualization.framework memory fields include `configured_memory_gb`, `target_memory_gb`, `minimum_allowed_memory_mb`, and `has_balloon` when balloon info is available. Host-process fields include `host_pid`, `host_start_source`, `host_cpu_percent`, and `host_rss_bytes` when cove can resolve the runtime process. |
 | `vm_stop` | (sink test only) | VM stopped |
-| `fork_created` | `image_fork.go`, `runtime_lifecycle.go` | Fork-from VM materialized |
+| `fork_created` | `image_fork.go`, `runtime_lifecycle.go` | Fork-from VM materialized. `extra` carries `source_kind`, `source_ref`, `child_name`, `child_path`, `mode`, `disk_reuse`, `ephemeral`, `keep`, `cleanup`, optional `verification`, and optional `limitation`. |
 | `run_complete` | `up.go`, `build.go`, `runtime_lifecycle.go`, `run_bundle.go`, `image_cli.go` | Terminal event; carries the final `status` and `extra.exit_code` |
 
 ### Build / benchmark
@@ -123,9 +123,12 @@ Events not in this list (image GC, agent sandbox, capture latency, daemon-side
 not rendered in the default lifecycle phase table. `resource_sample` events are
 also folded into the `runs show` resource summary, which reports sample count,
 guest memory/load and process peaks, host CPU/RSS peaks, and best-effort
-pressure hints. `network_policy` events are folded into the network summary,
-which reports the selected policy, effective mode, enforcement shape,
-allowlists, audit-log flag, and any limitation.
+pressure hints. `fork_created` events are folded into the fork summary, which
+reports the fork source, child, materialization mode, disk reuse, cleanup
+intent, verification status, duration, and any limitation. `network_policy`
+events are folded into the network summary, which reports the selected policy,
+effective mode, enforcement shape, allowlists, audit-log flag, and any
+limitation.
 
 ## Export formats
 

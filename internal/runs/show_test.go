@@ -78,7 +78,18 @@ func TestLoadShowReportsMissingMetrics(t *testing.T) {
 func TestRenderShow(t *testing.T) {
 	root := t.TempDir()
 	events := []metrics.Event{
-		event("fork_created", "ok", 10, nil),
+		event("fork_created", "ok", 10, map[string]any{
+			"source_kind":  "image",
+			"source_ref":   "macos-ci:latest",
+			"child_name":   "macos-ci-run-1",
+			"child_path":   "/tmp/macos-ci-run-1",
+			"mode":         "image-materialized",
+			"disk_reuse":   "clonefile",
+			"ephemeral":    true,
+			"keep":         false,
+			"cleanup":      "remove-on-stop",
+			"verification": "PASS",
+		}),
 		event("vm_create", "ok", 20, nil),
 		event("network_policy", "ok", 22, map[string]any{
 			"policy":        "egress",
@@ -124,6 +135,9 @@ func TestRenderShow(t *testing.T) {
 	if show.Failure.Class != "vm_start" || show.Failure.Reason != "boot failed" {
 		t.Fatalf("failure = %+v", show.Failure)
 	}
+	if show.Fork == nil || show.Fork.SourceKind != "image" || show.Fork.SourceRef != "macos-ci:latest" || show.Fork.ChildName != "macos-ci-run-1" || show.Fork.Ephemeral == nil || !*show.Fork.Ephemeral {
+		t.Fatalf("fork = %+v", show.Fork)
+	}
 	if show.Resource == nil || show.Resource.SampleCount != 1 || show.Resource.TopGuestProcess == nil || show.Resource.TopGuestProcess.Command != "xcodebuild" {
 		t.Fatalf("resource = %+v", show.Resource)
 	}
@@ -141,6 +155,17 @@ func TestRenderShow(t *testing.T) {
 		"fork_created  ok  10ms",
 		"Result: failed exit_code=2 wallclock=150ms failed_events=2",
 		"Failure: vm_start: boot failed",
+		"Fork:",
+		"source: image macos-ci:latest",
+		"child: macos-ci-run-1",
+		"child_path: /tmp/macos-ci-run-1",
+		"mode: image-materialized",
+		"disk_reuse: clonefile",
+		"ephemeral: true",
+		"keep: false",
+		"cleanup: remove-on-stop",
+		"verification: PASS",
+		"duration: 10ms",
 		"Network:",
 		"policy: egress mode=nat",
 		"enforcement: not-hooked",

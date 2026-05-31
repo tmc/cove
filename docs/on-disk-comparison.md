@@ -36,7 +36,10 @@ delegates the disk/runtime work to `tart` or `vetu`.
 1. **RAM-overlay ephemeral forks.** cove can boot a child that shares the parent
    disk read-only and stores all writes in host RAM, so reset is shutdown and the
    dirty state disappears. APFS CoW clones are useful, but they still leave dirty
-   blocks to clean up; this RAM-backed disposable mode is distinct.
+   blocks to clean up; this RAM-backed disposable mode is distinct. Run evidence
+   now records fork source, child, materialization mode, disk reuse, cleanup
+   intent, verification, and limitations in `fork_created` metrics and derived
+   `runs show` / GitHub summaries.
 
 2. **Live quota caps.** cove caps the VM directory with APFS quotas and discovers
    whether the host OS still supports the `diskutil apfs setQuota` verb. tart and

@@ -126,7 +126,7 @@ for that service to receive.
 A minimal forked run:
 
 ```json
-{"timestamp":"2026-05-05T18:30:01.124000000Z","event_type":"fork_created","vm_name":"macos-15-dev-fork-1","image_ref":"macos-15:dev","duration_ms":142,"status":"ok","extra":{"run_id":"a12f9c01","child_name":"macos-15-dev-fork-1","child_path":"/Users/ci/.vz/vms/macos-15-dev-fork-1"}}
+{"timestamp":"2026-05-05T18:30:01.124000000Z","event_type":"fork_created","vm_name":"macos-15-dev-fork-1","image_ref":"macos-15:dev","duration_ms":142,"status":"ok","extra":{"run_id":"a12f9c01","source_kind":"image","source_ref":"macos-15:dev","child_name":"macos-15-dev-fork-1","child_path":"/Users/ci/.vz/vms/macos-15-dev-fork-1","mode":"image-materialized","disk_reuse":"clonefile","ephemeral":true,"keep":false,"cleanup":"remove-on-stop","verification":"PASS"}}
 {"timestamp":"2026-05-05T18:30:04.912000000Z","event_type":"agent_ready","vm_name":"macos-15-dev-fork-1","image_ref":"macos-15:dev","status":"ok","duration_ms":3610,"extra":{"run_id":"a12f9c01"}}
 {"timestamp":"2026-05-05T18:30:08.004000000Z","event_type":"run_complete","vm_name":"macos-15-dev-fork-1","image_ref":"macos-15:dev","status":"ok","duration_ms":6880,"extra":{"run_id":"a12f9c01"}}
 ```

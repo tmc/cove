@@ -478,3 +478,12 @@ func readMetricEvents(t *testing.T, path string) []runmetrics.Event {
 	}
 	return events
 }
+
+func metricEventOfType(events []runmetrics.Event, typ string) *runmetrics.Event {
+	for i := range events {
+		if events[i].EventType == typ {
+			return &events[i]
+		}
+	}
+	return nil
+}

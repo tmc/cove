@@ -83,6 +83,11 @@ func ExportGHASummary(w io.Writer, root, prefix string) error {
 			return err
 		}
 	}
+	if show.Fork != nil {
+		if err := exportForkSummaryMarkdown(w, show.Fork); err != nil {
+			return err
+		}
+	}
 	if show.Network != nil {
 		if err := exportNetworkSummaryMarkdown(w, show.Network); err != nil {
 			return err
@@ -90,6 +95,24 @@ func ExportGHASummary(w io.Writer, root, prefix string) error {
 	}
 	if show.Resource != nil {
 		if err := exportResourceSummaryMarkdown(w, show.Resource); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func exportForkSummaryMarkdown(w io.Writer, s *ForkSummary) error {
+	if _, err := fmt.Fprint(w, "\n### Fork\n\n"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, "| Field | Value |"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, "| --- | --- |"); err != nil {
+		return err
+	}
+	for _, row := range forkSummaryRows(s) {
+		if _, err := fmt.Fprintf(w, "| %s | %s |\n", markdownCell(row.Name), markdownCell(row.Value)); err != nil {
 			return err
 		}
 	}
