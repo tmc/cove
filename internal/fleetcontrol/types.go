@@ -132,6 +132,38 @@ type ServiceAccountResult struct {
 	ServiceAccount ServiceAccount `json:"service_account"`
 }
 
+type OIDCKey struct {
+	KID string `json:"kid,omitempty"`
+	Alg string `json:"alg,omitempty"`
+	PEM string `json:"pem"`
+}
+
+type OIDCBinding struct {
+	Name      string    `json:"name"`
+	Issuer    string    `json:"issuer"`
+	Subject   string    `json:"subject"`
+	Audience  string    `json:"audience"`
+	Namespace string    `json:"namespace,omitempty"`
+	Role      string    `json:"role,omitempty"`
+	KeyIDs    []string  `json:"key_ids,omitempty"`
+	Created   time.Time `json:"created,omitempty"`
+	Updated   time.Time `json:"updated,omitempty"`
+}
+
+type OIDCBindingRequest struct {
+	Name      string    `json:"name"`
+	Issuer    string    `json:"issuer"`
+	Subject   string    `json:"subject"`
+	Audience  string    `json:"audience"`
+	Namespace string    `json:"namespace,omitempty"`
+	Role      string    `json:"role,omitempty"`
+	Keys      []OIDCKey `json:"keys"`
+}
+
+type OIDCBindingResult struct {
+	Binding OIDCBinding `json:"binding"`
+}
+
 type WorkerLifecycle struct {
 	Reason string `json:"reason,omitempty"`
 }

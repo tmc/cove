@@ -85,6 +85,18 @@ curl -H 'authorization: Bearer local-secret' \
 curl -H 'authorization: Bearer local-secret' \
   http://127.0.0.1:9758/v1/assignments
 curl http://127.0.0.1:9758/v1/assignments?namespace=team-a
+curl -X POST http://127.0.0.1:9758/v1/oidc-bindings \
+  -H 'content-type: application/json' \
+  -d '{
+    "name":"github-main",
+    "issuer":"https://token.actions.githubusercontent.com",
+    "subject":"repo:tmc/cove:ref:refs/heads/main",
+    "audience":"cove-fleet",
+    "namespace":"team-a",
+    "role":"operator",
+    "keys":[{"kid":"kid-1","pem":"-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"}]
+  }'
+curl http://127.0.0.1:9758/v1/oidc-bindings
 curl http://127.0.0.1:9758/v1/audit
 curl http://127.0.0.1:9758/v1/audit?limit=50
 curl http://127.0.0.1:9758/v1/audit/verify
@@ -103,7 +115,12 @@ the plaintext in their own secret manager. Supplying a matching bearer token on
 operator requests records audit actor `service-account:<name>`;
 unauthenticated local requests still record `controller`, and worker protocol
 events record `worker:<id>`.
-This is service-account RBAC for controller resources, not SAML/OIDC SSO yet.
+`/v1/oidc-bindings` adds an initial OIDC identity-binding path: admin users bind
+one issuer, subject, audience, namespace, role, and one or more RS256 public
+keys. A matching bearer JWT must verify with one of those public keys, must not
+be expired, and records audit actor `oidc:<binding-name>`. This is not dynamic
+OIDC discovery/JWKS fetch or SAML yet; operators upload the trusted public keys
+explicitly.
 If a service account has `namespace` set, assignment, warm-pool, sandbox,
 service-account, and audit list/read/mutation requests through that bearer token
 are scoped to that namespace; attempts to write another namespace are rejected.

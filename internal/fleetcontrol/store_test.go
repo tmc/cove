@@ -2,7 +2,14 @@ package fleetcontrol
 
 import (
 	"bytes"
+	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -692,6 +699,88 @@ func TestStoreServiceAccountsPersistTokenHashes(t *testing.T) {
 	}
 	if _, ok := reopened.AuthenticateServiceAccount("secret-token"); !ok {
 		t.Fatal("reopened AuthenticateServiceAccount(secret-token) = false")
+	}
+}
+
+func TestStoreOIDCBindingAuthenticatesRS256JWT(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	key, keyPEM := testOIDCKey(t)
+	path := filepath.Join(t.TempDir(), "fleet.json")
+	store, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.now = func() time.Time { return now }
+	result, err := store.UpsertOIDCBinding(OIDCBindingRequest{
+		Name:      "okta-ci",
+		Issuer:    "https://issuer.example",
+		Subject:   "repo:tmc/cove:ref:main",
+		Audience:  "cove-fleet",
+		Namespace: "team-a",
+		Role:      ServiceAccountRoleOperator,
+		Keys:      []OIDCKey{{KID: "kid-1", PEM: keyPEM}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Binding.Name != "okta-ci" || result.Binding.Role != ServiceAccountRoleOperator || len(result.Binding.KeyIDs) != 1 || result.Binding.KeyIDs[0] != "kid-1" {
+		t.Fatalf("binding = %+v", result.Binding)
+	}
+	if _, err := store.UpsertOIDCBinding(OIDCBindingRequest{
+		Name:     "missing-role",
+		Issuer:   "https://issuer.example",
+		Subject:  "repo:tmc/cove:ref:main",
+		Audience: "cove-fleet",
+		Keys:     []OIDCKey{{PEM: keyPEM}},
+	}); err == nil || !strings.Contains(err.Error(), "role required") {
+		t.Fatalf("missing role err = %v, want role required", err)
+	}
+	token := signOIDCJWT(t, key, "kid-1", map[string]any{
+		"iss": "https://issuer.example",
+		"sub": "repo:tmc/cove:ref:main",
+		"aud": []string{"cove-fleet", "other"},
+		"exp": now.Add(time.Hour).Unix(),
+	})
+	principal, ok := store.AuthenticateBearer(token)
+	if !ok {
+		t.Fatal("AuthenticateBearer(oidc token) = false")
+	}
+	if principal.Actor != "oidc:okta-ci" || principal.Namespace != "team-a" || principal.Role != ServiceAccountRoleOperator {
+		t.Fatalf("principal = %+v, want oidc okta-ci team-a operator", principal)
+	}
+	wrongAudience := signOIDCJWT(t, key, "kid-1", map[string]any{
+		"iss": "https://issuer.example",
+		"sub": "repo:tmc/cove:ref:main",
+		"aud": "wrong",
+		"exp": now.Add(time.Hour).Unix(),
+	})
+	if _, ok := store.AuthenticateBearer(wrongAudience); ok {
+		t.Fatal("AuthenticateBearer(wrong audience) = true")
+	}
+	expired := signOIDCJWT(t, key, "kid-1", map[string]any{
+		"iss": "https://issuer.example",
+		"sub": "repo:tmc/cove:ref:main",
+		"aud": "cove-fleet",
+		"exp": now.Add(-2 * time.Minute).Unix(),
+	})
+	if _, ok := store.AuthenticateBearer(expired); ok {
+		t.Fatal("AuthenticateBearer(expired token) = true")
+	}
+
+	reopened, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened.now = func() time.Time { return now }
+	if principal, ok := reopened.AuthenticateBearer(token); !ok || principal.Actor != "oidc:okta-ci" {
+		t.Fatalf("reopened AuthenticateBearer = %+v, %v", principal, ok)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(data, []byte("PRIVATE KEY")) {
+		t.Fatalf("store file contains private key:\n%s", data)
 	}
 }
 
@@ -2811,6 +2900,63 @@ func TestHandlerServiceAccountRoles(t *testing.T) {
 	}
 }
 
+func TestHandlerOIDCBindingAuthScopesOperator(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	key, keyPEM := testOIDCKey(t)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var binding OIDCBindingResult
+	postJSON(t, server.URL+"/v1/oidc-bindings", OIDCBindingRequest{
+		Name:      "github-main",
+		Issuer:    "https://token.actions.githubusercontent.com",
+		Subject:   "repo:tmc/cove:ref:refs/heads/main",
+		Audience:  "cove-fleet",
+		Namespace: "team-a",
+		Role:      ServiceAccountRoleOperator,
+		Keys:      []OIDCKey{{KID: "kid-1", PEM: keyPEM}},
+	}, &binding)
+	if binding.Binding.Name != "github-main" || binding.Binding.Namespace != "team-a" {
+		t.Fatalf("binding = %+v", binding.Binding)
+	}
+	var list struct {
+		OIDCBindings []OIDCBinding `json:"oidc_bindings"`
+	}
+	getJSON(t, server.URL+"/v1/oidc-bindings", &list)
+	if len(list.OIDCBindings) != 1 || list.OIDCBindings[0].Name != "github-main" || len(list.OIDCBindings[0].KeyIDs) != 1 {
+		t.Fatalf("oidc bindings = %+v", list.OIDCBindings)
+	}
+
+	token := signOIDCJWT(t, key, "kid-1", map[string]any{
+		"iss": "https://token.actions.githubusercontent.com",
+		"sub": "repo:tmc/cove:ref:refs/heads/main",
+		"aud": "cove-fleet",
+		"exp": now.Add(time.Hour).Unix(),
+	})
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 2}}, &record)
+	var created SandboxStatus
+	postJSONAuth(t, server.URL+"/v1/sandboxes", token, SandboxRequest{ID: "job-1", ImageRef: "base:v1"}, &created)
+	if created.Namespace != "team-a" || created.ID != "job-1" {
+		t.Fatalf("created sandbox = %+v, want team-a job-1", created)
+	}
+	if code := postJSONStatus(t, server.URL+"/v1/sandboxes", token, SandboxRequest{ID: "job-2", Namespace: "team-b", ImageRef: "base:v1"}); code != http.StatusForbidden {
+		t.Fatalf("cross-namespace oidc sandbox status = %d, want 403", code)
+	}
+	if code := postJSONStatus(t, server.URL+"/v1/service-accounts", token, ServiceAccountRequest{Name: "denied", Token: "denied"}); code != http.StatusForbidden {
+		t.Fatalf("oidc operator service-account POST status = %d, want 403", code)
+	}
+	var audit struct {
+		Events []AuditEvent `json:"events"`
+	}
+	getJSON(t, server.URL+"/v1/audit?limit=1", &audit)
+	if len(audit.Events) != 1 || audit.Events[0].Actor != "oidc:github-main" || audit.Events[0].TargetID != "job-1" {
+		t.Fatalf("audit = %+v, want oidc sandbox create", audit.Events)
+	}
+}
+
 func TestHandlerWarmPoolNamespaceScope(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	server := httptest.NewServer(Handler(store))
@@ -2983,6 +3129,44 @@ func deleteJSON(t *testing.T, url string, out any) {
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func testOIDCKey(t *testing.T) (*rsa.PrivateKey, string) {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKIXPublicKey(&key.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block := &pem.Block{Type: "PUBLIC KEY", Bytes: der}
+	return key, string(pem.EncodeToMemory(block))
+}
+
+func signOIDCJWT(t *testing.T, key *rsa.PrivateKey, kid string, claims map[string]any) string {
+	t.Helper()
+	header := map[string]any{"alg": "RS256", "typ": "JWT"}
+	if kid != "" {
+		header["kid"] = kid
+	}
+	headerJSON, err := json.Marshal(header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimsJSON, err := json.Marshal(claims)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enc := base64.RawURLEncoding
+	signingInput := enc.EncodeToString(headerJSON) + "." + enc.EncodeToString(claimsJSON)
+	sum := sha256.Sum256([]byte(signingInput))
+	sig, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, sum[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return signingInput + "." + enc.EncodeToString(sig)
 }
 
 func auditAction(events []AuditEvent, action string) *AuditEvent {

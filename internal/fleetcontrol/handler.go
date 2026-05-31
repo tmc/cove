@@ -71,6 +71,12 @@ func Handler(store *Store) http.Handler {
 	mux.HandleFunc("/v1/service-accounts", func(w http.ResponseWriter, r *http.Request) {
 		handleServiceAccounts(w, r, store)
 	})
+	mux.HandleFunc("/v1/oidc-bindings/", func(w http.ResponseWriter, r *http.Request) {
+		handleOIDCBinding(w, r, store)
+	})
+	mux.HandleFunc("/v1/oidc-bindings", func(w http.ResponseWriter, r *http.Request) {
+		handleOIDCBindings(w, r, store)
+	})
 	mux.HandleFunc("/v1/metering/sandboxes", func(w http.ResponseWriter, r *http.Request) {
 		handleSandboxMetering(w, r, store)
 	})
@@ -235,6 +241,71 @@ func handleServiceAccount(w http.ResponseWriter, r *http.Request, store *Store) 
 			}
 		}
 		result, err := store.DeleteServiceAccountActor(identity.Actor, name)
+		if err != nil {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func handleOIDCBindings(w http.ResponseWriter, r *http.Request, store *Store) {
+	identity := identityFromRequest(r, store)
+	switch r.Method {
+	case http.MethodGet:
+		if !requireRole(w, identity, ServiceAccountRoleViewer) {
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"oidc_bindings": store.ListOIDCBindingsNamespace(namespaceFilterFromRequest(r, identity))})
+	case http.MethodPost:
+		if !requireRole(w, identity, ServiceAccountRoleAdmin) {
+			return
+		}
+		var req OIDCBindingRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode oidc binding: %v", err))
+			return
+		}
+		if !applyScopedNamespace(w, identity, &req.Namespace) {
+			return
+		}
+		result, err := store.UpsertOIDCBindingActor(identity.Actor, req)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func handleOIDCBinding(w http.ResponseWriter, r *http.Request, store *Store) {
+	name, err := nameFromPath(r.URL.Path, "/v1/oidc-bindings/", "oidc binding")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	identity := identityFromRequest(r, store)
+	switch r.Method {
+	case http.MethodDelete:
+		if !requireRole(w, identity, ServiceAccountRoleAdmin) {
+			return
+		}
+		if identity.Scoped {
+			binding, ok := oidcBindingByName(store.ListOIDCBindingsNamespace(identity.Namespace), name)
+			if !ok {
+				writeError(w, http.StatusNotFound, "oidc binding not found")
+				return
+			}
+			if !canAccessNamespace(identity, binding.Namespace) {
+				writeError(w, http.StatusForbidden, "namespace not allowed")
+				return
+			}
+		}
+		result, err := store.DeleteOIDCBindingActor(identity.Actor, name)
 		if err != nil {
 			writeError(w, http.StatusNotFound, err.Error())
 			return
@@ -1102,12 +1173,12 @@ func identityFromRequest(r *http.Request, store *Store) requestIdentity {
 	const prefix = "bearer "
 	if len(auth) >= len(prefix) && strings.EqualFold(auth[:len(prefix)], prefix) {
 		token := strings.TrimSpace(auth[len(prefix):])
-		if account, ok := store.AuthenticateServiceAccount(token); ok {
-			namespace := normalizeNamespace(account.Namespace)
+		if principal, ok := store.AuthenticateBearer(token); ok {
+			namespace := normalizeNamespace(principal.Namespace)
 			return requestIdentity{
-				Actor:     "service-account:" + account.Name,
+				Actor:     principal.Actor,
 				Namespace: namespace,
-				Role:      account.Role,
+				Role:      principal.Role,
 				Scoped:    namespace != "",
 			}
 		}
@@ -1188,6 +1259,16 @@ func serviceAccountByName(accounts []ServiceAccount, name string) (ServiceAccoun
 		}
 	}
 	return ServiceAccount{}, false
+}
+
+func oidcBindingByName(bindings []OIDCBinding, name string) (OIDCBinding, bool) {
+	name = strings.TrimSpace(name)
+	for _, binding := range bindings {
+		if binding.Name == name {
+			return binding, true
+		}
+	}
+	return OIDCBinding{}, false
 }
 
 func handleWarmPoolClaim(w http.ResponseWriter, r *http.Request, store *Store) {

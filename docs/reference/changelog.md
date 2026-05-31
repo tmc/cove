@@ -14,6 +14,8 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   screenshot/key/text/mouse calls onto the sandbox control endpoint.
 - The public Go `agentsandbox` package now includes a local/cloud client for
   hosted sandbox create/wait/exec/control/delete flows.
+- `cove-fleetd` now supports admin-managed RS256 OIDC bearer bindings that map
+  verified issuer/subject/audience claims onto namespace-scoped controller roles.
 - `cove fleet cordon` and `uncordon` now mark registered hosts as skipped for
   `fleet run` placement while keeping direct `--fleet=<name>` routing intact.
 - `cove fleet run` now records short local placement leases and counts active

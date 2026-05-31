@@ -1,10 +1,15 @@
 package fleetcontrol
 
 import (
+	"crypto"
+	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/subtle"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -27,6 +32,7 @@ type Store struct {
 	audit         []AuditEvent
 	metering      []SandboxMeteringRecord
 	accounts      map[string]serviceAccountRecord
+	oidcBindings  map[string]oidcBindingRecord
 }
 
 type storeFile struct {
@@ -36,6 +42,7 @@ type storeFile struct {
 	AuditEvents     []AuditEvent            `json:"audit_events,omitempty"`
 	MeteringRecords []SandboxMeteringRecord `json:"metering_records,omitempty"`
 	ServiceAccounts []serviceAccountRecord  `json:"service_accounts,omitempty"`
+	OIDCBindings    []oidcBindingRecord     `json:"oidc_bindings,omitempty"`
 }
 
 type serviceAccountRecord struct {
@@ -45,6 +52,24 @@ type serviceAccountRecord struct {
 	TokenHash string    `json:"token_sha256"`
 	Created   time.Time `json:"created,omitempty"`
 	Updated   time.Time `json:"updated,omitempty"`
+}
+
+type oidcBindingRecord struct {
+	Name      string          `json:"name"`
+	Issuer    string          `json:"issuer"`
+	Subject   string          `json:"subject"`
+	Audience  string          `json:"audience"`
+	Namespace string          `json:"namespace,omitempty"`
+	Role      string          `json:"role,omitempty"`
+	Keys      []oidcKeyRecord `json:"keys,omitempty"`
+	Created   time.Time       `json:"created,omitempty"`
+	Updated   time.Time       `json:"updated,omitempty"`
+}
+
+type oidcKeyRecord struct {
+	KID string `json:"kid,omitempty"`
+	Alg string `json:"alg,omitempty"`
+	PEM string `json:"pem"`
 }
 
 const (
@@ -69,6 +94,7 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		audit:         nil,
 		metering:      nil,
 		accounts:      make(map[string]serviceAccountRecord),
+		oidcBindings:  make(map[string]oidcBindingRecord),
 	}
 	if s.path == "" {
 		return s, nil
@@ -145,6 +171,13 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 			continue
 		}
 		s.accounts[account.Name] = account
+	}
+	for _, binding := range file.OIDCBindings {
+		binding, err := normalizeOIDCBindingRecord(binding)
+		if err != nil {
+			continue
+		}
+		s.oidcBindings[binding.Name] = binding
 	}
 	return s, nil
 }
@@ -1887,6 +1920,126 @@ func (s *Store) AuthenticateServiceAccount(token string) (ServiceAccount, bool) 
 	return ServiceAccount{}, false
 }
 
+type authenticatedPrincipal struct {
+	Actor     string
+	Namespace string
+	Role      string
+}
+
+func (s *Store) AuthenticateBearer(token string) (authenticatedPrincipal, bool) {
+	token = strings.TrimSpace(token)
+	if account, ok := s.AuthenticateServiceAccount(token); ok {
+		return authenticatedPrincipal{
+			Actor:     "service-account:" + account.Name,
+			Namespace: normalizeNamespace(account.Namespace),
+			Role:      account.Role,
+		}, true
+	}
+	return s.authenticateOIDCBearer(token)
+}
+
+func (s *Store) UpsertOIDCBinding(req OIDCBindingRequest) (OIDCBindingResult, error) {
+	return s.UpsertOIDCBindingActor("controller", req)
+}
+
+func (s *Store) UpsertOIDCBindingActor(actor string, req OIDCBindingRequest) (OIDCBindingResult, error) {
+	record := oidcBindingRecord{
+		Name:      strings.TrimSpace(req.Name),
+		Issuer:    strings.TrimSpace(req.Issuer),
+		Subject:   strings.TrimSpace(req.Subject),
+		Audience:  strings.TrimSpace(req.Audience),
+		Namespace: normalizeNamespace(req.Namespace),
+		Role:      strings.TrimSpace(req.Role),
+		Keys:      oidcRequestKeys(req.Keys),
+	}
+	var err error
+	record, err = normalizeOIDCBindingRecord(record)
+	if err != nil {
+		return OIDCBindingResult{}, err
+	}
+	now := s.now().UTC()
+	actor = normalizeActor(actor)
+	record.Created = now
+	record.Updated = now
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if old, ok := s.oidcBindings[record.Name]; ok && !old.Created.IsZero() {
+		if old.Namespace != record.Namespace {
+			return OIDCBindingResult{}, fmt.Errorf("oidc binding %q already exists in another namespace", record.Name)
+		}
+		record.Created = old.Created
+	}
+	s.oidcBindings[record.Name] = record
+	s.appendAuditLocked(now, AuditEvent{
+		Actor:      actor,
+		Namespace:  record.Namespace,
+		Action:     "oidc_binding.upsert",
+		TargetType: "oidc_binding",
+		TargetID:   record.Name,
+		Fields: map[string]string{
+			"issuer":   record.Issuer,
+			"audience": record.Audience,
+			"role":     record.Role,
+		},
+	})
+	if err := s.persistLocked(); err != nil {
+		return OIDCBindingResult{}, err
+	}
+	return OIDCBindingResult{Binding: publicOIDCBinding(record)}, nil
+}
+
+func (s *Store) DeleteOIDCBinding(name string) (OIDCBindingResult, error) {
+	return s.DeleteOIDCBindingActor("controller", name)
+}
+
+func (s *Store) DeleteOIDCBindingActor(actor, name string) (OIDCBindingResult, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return OIDCBindingResult{}, fmt.Errorf("oidc binding name required")
+	}
+	now := s.now().UTC()
+	actor = normalizeActor(actor)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, ok := s.oidcBindings[name]
+	if !ok {
+		return OIDCBindingResult{}, fmt.Errorf("oidc binding %q not found", name)
+	}
+	delete(s.oidcBindings, name)
+	s.appendAuditLocked(now, AuditEvent{
+		Actor:      actor,
+		Namespace:  record.Namespace,
+		Action:     "oidc_binding.delete",
+		TargetType: "oidc_binding",
+		TargetID:   name,
+	})
+	if err := s.persistLocked(); err != nil {
+		return OIDCBindingResult{}, err
+	}
+	return OIDCBindingResult{Binding: publicOIDCBinding(record)}, nil
+}
+
+func (s *Store) ListOIDCBindings() []OIDCBinding {
+	return s.ListOIDCBindingsNamespace("")
+}
+
+func (s *Store) ListOIDCBindingsNamespace(namespace string) []OIDCBinding {
+	namespace = normalizeNamespace(namespace)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	records := s.sortedOIDCBindingsLocked()
+	out := make([]OIDCBinding, 0, len(records))
+	for _, record := range records {
+		if !namespaceMatches(record.Namespace, namespace) {
+			continue
+		}
+		out = append(out, publicOIDCBinding(record))
+	}
+	return out
+}
+
 func (s *Store) Get(id string) (HostRecord, bool) {
 	id = strings.TrimSpace(id)
 	s.mu.Lock()
@@ -2065,7 +2218,8 @@ func (s *Store) persistLocked() error {
 	audit := cloneAuditEvents(s.audit)
 	metering := s.sortedMeteringLocked()
 	accounts := s.sortedServiceAccountsLocked()
-	data, err := json.MarshalIndent(storeFile{Hosts: hosts, Assignments: assignments, WarmPools: warmPools, AuditEvents: audit, MeteringRecords: metering, ServiceAccounts: accounts}, "", "  ")
+	oidcBindings := s.sortedOIDCBindingsLocked()
+	data, err := json.MarshalIndent(storeFile{Hosts: hosts, Assignments: assignments, WarmPools: warmPools, AuditEvents: audit, MeteringRecords: metering, ServiceAccounts: accounts, OIDCBindings: oidcBindings}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode fleet store: %w", err)
 	}
@@ -2142,6 +2296,17 @@ func (s *Store) sortedServiceAccountsLocked() []serviceAccountRecord {
 	records := make([]serviceAccountRecord, 0, len(s.accounts))
 	for _, record := range s.accounts {
 		records = append(records, cloneServiceAccountRecord(record))
+	}
+	sort.Slice(records, func(i, j int) bool {
+		return records[i].Name < records[j].Name
+	})
+	return records
+}
+
+func (s *Store) sortedOIDCBindingsLocked() []oidcBindingRecord {
+	records := make([]oidcBindingRecord, 0, len(s.oidcBindings))
+	for _, record := range s.oidcBindings {
+		records = append(records, cloneOIDCBindingRecord(record))
 	}
 	sort.Slice(records, func(i, j int) bool {
 		return records[i].Name < records[j].Name
@@ -2261,11 +2426,39 @@ func cloneServiceAccountRecord(in serviceAccountRecord) serviceAccountRecord {
 	return in
 }
 
+func cloneOIDCBindingRecord(in oidcBindingRecord) oidcBindingRecord {
+	in.Keys = cloneOIDCKeyRecords(in.Keys)
+	return in
+}
+
+func cloneOIDCKeyRecords(in []oidcKeyRecord) []oidcKeyRecord {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]oidcKeyRecord, len(in))
+	copy(out, in)
+	return out
+}
+
 func publicServiceAccount(record serviceAccountRecord) ServiceAccount {
 	return ServiceAccount{
 		Name:      record.Name,
 		Namespace: record.Namespace,
 		Role:      record.Role,
+		Created:   record.Created,
+		Updated:   record.Updated,
+	}
+}
+
+func publicOIDCBinding(record oidcBindingRecord) OIDCBinding {
+	return OIDCBinding{
+		Name:      record.Name,
+		Issuer:    record.Issuer,
+		Subject:   record.Subject,
+		Audience:  record.Audience,
+		Namespace: record.Namespace,
+		Role:      record.Role,
+		KeyIDs:    oidcKeyIDs(record.Keys),
 		Created:   record.Created,
 		Updated:   record.Updated,
 	}
@@ -3548,6 +3741,264 @@ func normalizeServiceAccountRecord(record serviceAccountRecord) serviceAccountRe
 		record.Updated = record.Updated.UTC()
 	}
 	return record
+}
+
+func normalizeOIDCBindingRecord(record oidcBindingRecord) (oidcBindingRecord, error) {
+	record.Name = strings.TrimSpace(record.Name)
+	if record.Name == "" {
+		return oidcBindingRecord{}, fmt.Errorf("oidc binding name required")
+	}
+	record.Issuer = strings.TrimSpace(record.Issuer)
+	if record.Issuer == "" {
+		return oidcBindingRecord{}, fmt.Errorf("oidc binding issuer required")
+	}
+	record.Subject = strings.TrimSpace(record.Subject)
+	if record.Subject == "" {
+		return oidcBindingRecord{}, fmt.Errorf("oidc binding subject required")
+	}
+	record.Audience = strings.TrimSpace(record.Audience)
+	if record.Audience == "" {
+		return oidcBindingRecord{}, fmt.Errorf("oidc binding audience required")
+	}
+	if strings.TrimSpace(record.Role) == "" {
+		return oidcBindingRecord{}, fmt.Errorf("oidc binding role required")
+	}
+	role, err := normalizeServiceAccountRole(record.Role)
+	if err != nil {
+		return oidcBindingRecord{}, err
+	}
+	record.Role = role
+	record.Namespace = normalizeNamespace(record.Namespace)
+	record.Keys, err = normalizeOIDCKeys(record.Keys)
+	if err != nil {
+		return oidcBindingRecord{}, err
+	}
+	if !record.Created.IsZero() {
+		record.Created = record.Created.UTC()
+	}
+	if !record.Updated.IsZero() {
+		record.Updated = record.Updated.UTC()
+	}
+	return record, nil
+}
+
+func normalizeOIDCKeys(keys []oidcKeyRecord) ([]oidcKeyRecord, error) {
+	if len(keys) == 0 {
+		return nil, fmt.Errorf("oidc binding key required")
+	}
+	out := make([]oidcKeyRecord, 0, len(keys))
+	for _, key := range keys {
+		key.KID = strings.TrimSpace(key.KID)
+		key.Alg = strings.TrimSpace(key.Alg)
+		if key.Alg == "" {
+			key.Alg = "RS256"
+		}
+		if key.Alg != "RS256" {
+			return nil, fmt.Errorf("unsupported oidc key algorithm %q", key.Alg)
+		}
+		key.PEM = strings.TrimSpace(key.PEM)
+		if key.PEM == "" {
+			return nil, fmt.Errorf("oidc binding key pem required")
+		}
+		if _, err := parseRSAPublicKeyPEM(key.PEM); err != nil {
+			return nil, fmt.Errorf("oidc binding key %q: %w", key.KID, err)
+		}
+		out = append(out, key)
+	}
+	return out, nil
+}
+
+func oidcRequestKeys(keys []OIDCKey) []oidcKeyRecord {
+	if len(keys) == 0 {
+		return nil
+	}
+	out := make([]oidcKeyRecord, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, oidcKeyRecord{KID: key.KID, Alg: key.Alg, PEM: key.PEM})
+	}
+	return out
+}
+
+func oidcKeyIDs(keys []oidcKeyRecord) []string {
+	if len(keys) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(keys))
+	for _, key := range keys {
+		if key.KID != "" {
+			ids = append(ids, key.KID)
+		}
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+func (s *Store) authenticateOIDCBearer(token string) (authenticatedPrincipal, bool) {
+	parsed, err := parseOIDCJWT(token)
+	if err != nil {
+		return authenticatedPrincipal{}, false
+	}
+	s.mu.Lock()
+	now := s.now().UTC()
+	bindings := s.sortedOIDCBindingsLocked()
+	s.mu.Unlock()
+	for _, binding := range bindings {
+		if !oidcClaimsMatch(binding, parsed.claims, now) {
+			continue
+		}
+		if verifyOIDCSignature(binding.Keys, parsed) {
+			return authenticatedPrincipal{
+				Actor:     "oidc:" + binding.Name,
+				Namespace: binding.Namespace,
+				Role:      binding.Role,
+			}, true
+		}
+	}
+	return authenticatedPrincipal{}, false
+}
+
+type parsedOIDCJWT struct {
+	header       oidcJWTHeader
+	claims       oidcJWTClaims
+	signingInput string
+	signature    []byte
+}
+
+type oidcJWTHeader struct {
+	Alg string `json:"alg"`
+	KID string `json:"kid,omitempty"`
+}
+
+type oidcJWTClaims struct {
+	Issuer    string       `json:"iss"`
+	Subject   string       `json:"sub"`
+	Audience  oidcAudience `json:"aud"`
+	Expires   int64        `json:"exp"`
+	NotBefore int64        `json:"nbf,omitempty"`
+}
+
+type oidcAudience []string
+
+func (a *oidcAudience) UnmarshalJSON(data []byte) error {
+	var one string
+	if err := json.Unmarshal(data, &one); err == nil {
+		*a = []string{one}
+		return nil
+	}
+	var many []string
+	if err := json.Unmarshal(data, &many); err != nil {
+		return err
+	}
+	*a = many
+	return nil
+}
+
+func (a oidcAudience) contains(value string) bool {
+	for _, item := range a {
+		if item == value {
+			return true
+		}
+	}
+	return false
+}
+
+func parseOIDCJWT(token string) (parsedOIDCJWT, error) {
+	token = strings.TrimSpace(token)
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return parsedOIDCJWT{}, fmt.Errorf("jwt must have three parts")
+	}
+	headerData, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return parsedOIDCJWT{}, fmt.Errorf("decode jwt header: %w", err)
+	}
+	payloadData, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return parsedOIDCJWT{}, fmt.Errorf("decode jwt payload: %w", err)
+	}
+	signature, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil {
+		return parsedOIDCJWT{}, fmt.Errorf("decode jwt signature: %w", err)
+	}
+	var header oidcJWTHeader
+	if err := json.Unmarshal(headerData, &header); err != nil {
+		return parsedOIDCJWT{}, fmt.Errorf("parse jwt header: %w", err)
+	}
+	var claims oidcJWTClaims
+	if err := json.Unmarshal(payloadData, &claims); err != nil {
+		return parsedOIDCJWT{}, fmt.Errorf("parse jwt claims: %w", err)
+	}
+	return parsedOIDCJWT{
+		header:       header,
+		claims:       claims,
+		signingInput: parts[0] + "." + parts[1],
+		signature:    signature,
+	}, nil
+}
+
+func oidcClaimsMatch(binding oidcBindingRecord, claims oidcJWTClaims, now time.Time) bool {
+	if binding.Issuer != strings.TrimSpace(claims.Issuer) {
+		return false
+	}
+	if binding.Subject != strings.TrimSpace(claims.Subject) {
+		return false
+	}
+	if !claims.Audience.contains(binding.Audience) {
+		return false
+	}
+	if claims.Expires == 0 {
+		return false
+	}
+	const skew = time.Minute
+	if now.After(time.Unix(claims.Expires, 0).Add(skew)) {
+		return false
+	}
+	if claims.NotBefore != 0 && now.Add(skew).Before(time.Unix(claims.NotBefore, 0)) {
+		return false
+	}
+	return true
+}
+
+func verifyOIDCSignature(keys []oidcKeyRecord, parsed parsedOIDCJWT) bool {
+	if parsed.header.Alg != "RS256" {
+		return false
+	}
+	sum := sha256.Sum256([]byte(parsed.signingInput))
+	for _, key := range keys {
+		if key.Alg != "" && key.Alg != parsed.header.Alg {
+			continue
+		}
+		if parsed.header.KID != "" && key.KID != "" && key.KID != parsed.header.KID {
+			continue
+		}
+		pub, err := parseRSAPublicKeyPEM(key.PEM)
+		if err != nil {
+			continue
+		}
+		if rsa.VerifyPKCS1v15(pub, crypto.SHA256, sum[:], parsed.signature) == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func parseRSAPublicKeyPEM(data string) (*rsa.PublicKey, error) {
+	block, _ := pem.Decode([]byte(data))
+	if block == nil {
+		return nil, fmt.Errorf("parse public key pem")
+	}
+	if key, err := x509.ParsePKIXPublicKey(block.Bytes); err == nil {
+		rsaKey, ok := key.(*rsa.PublicKey)
+		if !ok {
+			return nil, fmt.Errorf("public key is %T, want rsa", key)
+		}
+		return rsaKey, nil
+	}
+	key, err := x509.ParsePKCS1PublicKey(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("parse rsa public key: %w", err)
+	}
+	return key, nil
 }
 
 func normalizeServiceAccountRole(role string) (string, error) {
