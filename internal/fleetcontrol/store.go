@@ -58,6 +58,7 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 			continue
 		}
 		host.ID = id
+		host.ImageRefs = sortedUniqueStrings(host.ImageRefs)
 		s.hosts[id] = host
 	}
 	for _, assignment := range file.Assignments {
@@ -67,6 +68,8 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		}
 		assignment.ID = id
 		assignment.Args = cloneStrings(assignment.Args)
+		assignment.ImageRef = strings.TrimSpace(assignment.ImageRef)
+		assignment.RequiredLabels = cloneLabels(assignment.RequiredLabels)
 		if assignment.Status == "" {
 			assignment.Status = "pending"
 		}
@@ -99,15 +102,16 @@ func (s *Store) UpsertHeartbeat(h WorkerHeartbeat) (HostRecord, error) {
 	}
 	now := s.now().UTC()
 	record := HostRecord{
-		ID:       id,
-		Host:     strings.TrimSpace(h.Host),
-		Address:  strings.TrimSpace(h.Address),
-		Version:  strings.TrimSpace(h.Version),
-		Labels:   cloneLabels(h.Labels),
-		Capacity: h.Capacity,
-		Status:   "ready",
-		LastSeen: now,
-		Expires:  now.Add(s.ttl),
+		ID:        id,
+		Host:      strings.TrimSpace(h.Host),
+		Address:   strings.TrimSpace(h.Address),
+		Version:   strings.TrimSpace(h.Version),
+		Labels:    cloneLabels(h.Labels),
+		ImageRefs: sortedUniqueStrings(h.ImageRefs),
+		Capacity:  h.Capacity,
+		Status:    "ready",
+		LastSeen:  now,
+		Expires:   now.Add(s.ttl),
 	}
 
 	s.mu.Lock()
@@ -176,6 +180,15 @@ func (s *Store) CreateAssignment(a Assignment) (Assignment, error) {
 		return Assignment{}, fmt.Errorf("assignment verb required")
 	}
 	workerID := strings.TrimSpace(a.WorkerID)
+	policy := strings.TrimSpace(a.Policy)
+	imageRef := strings.TrimSpace(a.ImageRef)
+	requiredLabels := cloneLabels(a.RequiredLabels)
+	if policy == "" && imageRef != "" {
+		policy = PolicyImageAffinity
+	}
+	if policy != "" && policy != PolicyLeastLoaded && policy != PolicyImageAffinity {
+		return Assignment{}, fmt.Errorf("unknown assignment policy %q", policy)
+	}
 	now := s.now().UTC()
 
 	s.mu.Lock()
@@ -191,9 +204,18 @@ func (s *Store) CreateAssignment(a Assignment) (Assignment, error) {
 		if _, ok := s.hosts[workerID]; !ok {
 			return Assignment{}, fmt.Errorf("worker %q not registered", workerID)
 		}
+	} else if policy != "" || len(requiredLabels) > 0 {
+		selected, err := s.selectWorkerLocked(policy, imageRef, requiredLabels)
+		if err != nil {
+			return Assignment{}, err
+		}
+		workerID = selected
 	}
 	a.ID = id
 	a.WorkerID = workerID
+	a.Policy = policy
+	a.ImageRef = imageRef
+	a.RequiredLabels = requiredLabels
 	a.Verb = verb
 	a.Args = cloneStrings(a.Args)
 	a.Status = "pending"
@@ -292,6 +314,7 @@ func (s *Store) statusLocked(record HostRecord) HostRecord {
 		record.Status = "stale"
 	}
 	record.Labels = cloneLabels(record.Labels)
+	record.ImageRefs = cloneStrings(record.ImageRefs)
 	if record.Report != nil {
 		report := *record.Report
 		record.Report = &report
@@ -357,6 +380,7 @@ func (s *Store) nextAssignmentIDLocked(now time.Time) string {
 func cloneAssignment(in Assignment) Assignment {
 	out := in
 	out.Args = cloneStrings(in.Args)
+	out.RequiredLabels = cloneLabels(in.RequiredLabels)
 	if in.LastReport != nil {
 		report := *in.LastReport
 		out.LastReport = &report
@@ -370,6 +394,108 @@ func cloneStrings(in []string) []string {
 	}
 	out := make([]string, len(in))
 	copy(out, in)
+	return out
+}
+
+func (s *Store) selectWorkerLocked(policy, imageRef string, labels map[string]string) (string, error) {
+	if policy == "" {
+		policy = PolicyLeastLoaded
+	}
+	switch policy {
+	case PolicyLeastLoaded, PolicyImageAffinity:
+	default:
+		return "", fmt.Errorf("unknown assignment policy %q", policy)
+	}
+	var best HostRecord
+	bestSet := false
+	bestLoad := 0
+	bestHasImage := false
+	for _, host := range s.hosts {
+		host = s.statusLocked(host)
+		if host.Status != "ready" {
+			continue
+		}
+		if !labelsMatch(host.Labels, labels) {
+			continue
+		}
+		load := host.Capacity.VMs + s.pendingAssignmentsLocked(host.ID)
+		hasImage := imageRef != "" && containsString(host.ImageRefs, imageRef)
+		if !bestSet {
+			best = host
+			bestSet = true
+			bestLoad = load
+			bestHasImage = hasImage
+			continue
+		}
+		if betterHost(policy, host.ID, load, hasImage, best.ID, bestLoad, bestHasImage) {
+			best = host
+			bestLoad = load
+			bestHasImage = hasImage
+		}
+	}
+	if !bestSet {
+		return "", fmt.Errorf("no ready worker matches assignment")
+	}
+	return best.ID, nil
+}
+
+func betterHost(policy, id string, load int, hasImage bool, bestID string, bestLoad int, bestHasImage bool) bool {
+	if policy == PolicyImageAffinity && hasImage != bestHasImage {
+		return hasImage
+	}
+	if load != bestLoad {
+		return load < bestLoad
+	}
+	return id < bestID
+}
+
+func (s *Store) pendingAssignmentsLocked(workerID string) int {
+	var n int
+	for _, assignment := range s.assignments {
+		if assignment.WorkerID != workerID && assignment.LeasedTo != workerID {
+			continue
+		}
+		switch assignment.Status {
+		case "pending", "leased":
+			n++
+		}
+	}
+	return n
+}
+
+func labelsMatch(have, want map[string]string) bool {
+	for key, value := range want {
+		if have[key] != value {
+			return false
+		}
+	}
+	return true
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func sortedUniqueStrings(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool, len(in))
+	out := make([]string, 0, len(in))
+	for _, value := range in {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	sort.Strings(out)
 	return out
 }
 

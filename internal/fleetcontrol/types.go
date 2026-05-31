@@ -9,6 +9,11 @@ const (
 	VerbReportStatus    = "report-status"
 )
 
+const (
+	PolicyLeastLoaded   = "least-loaded"
+	PolicyImageAffinity = "image-affinity"
+)
+
 const DefaultWorkerTTL = 30 * time.Second
 
 const DefaultAssignmentTTL = 30 * time.Second
@@ -21,25 +26,27 @@ type Capacity struct {
 }
 
 type WorkerHeartbeat struct {
-	ID      string            `json:"id"`
-	Host    string            `json:"host,omitempty"`
-	Address string            `json:"address,omitempty"`
-	Version string            `json:"version,omitempty"`
-	Labels  map[string]string `json:"labels,omitempty"`
+	ID        string            `json:"id"`
+	Host      string            `json:"host,omitempty"`
+	Address   string            `json:"address,omitempty"`
+	Version   string            `json:"version,omitempty"`
+	Labels    map[string]string `json:"labels,omitempty"`
+	ImageRefs []string          `json:"image_refs,omitempty"`
 	Capacity
 }
 
 type HostRecord struct {
-	ID       string            `json:"id"`
-	Host     string            `json:"host,omitempty"`
-	Address  string            `json:"address,omitempty"`
-	Version  string            `json:"version,omitempty"`
-	Labels   map[string]string `json:"labels,omitempty"`
-	Capacity Capacity          `json:"capacity,omitempty"`
-	Status   string            `json:"status"`
-	LastSeen time.Time         `json:"last_seen"`
-	Expires  time.Time         `json:"expires"`
-	Report   *WorkerReport     `json:"last_report,omitempty"`
+	ID        string            `json:"id"`
+	Host      string            `json:"host,omitempty"`
+	Address   string            `json:"address,omitempty"`
+	Version   string            `json:"version,omitempty"`
+	Labels    map[string]string `json:"labels,omitempty"`
+	ImageRefs []string          `json:"image_refs,omitempty"`
+	Capacity  Capacity          `json:"capacity,omitempty"`
+	Status    string            `json:"status"`
+	LastSeen  time.Time         `json:"last_seen"`
+	Expires   time.Time         `json:"expires"`
+	Report    *WorkerReport     `json:"last_report,omitempty"`
 }
 
 type WorkerReport struct {
@@ -54,14 +61,17 @@ type WorkerReport struct {
 }
 
 type Assignment struct {
-	ID           string        `json:"id"`
-	WorkerID     string        `json:"worker_id,omitempty"`
-	Verb         string        `json:"verb"`
-	Args         []string      `json:"args,omitempty"`
-	Status       string        `json:"status,omitempty"`
-	Created      time.Time     `json:"created,omitempty"`
-	Updated      time.Time     `json:"updated,omitempty"`
-	LeasedTo     string        `json:"leased_to,omitempty"`
-	LeaseExpires time.Time     `json:"lease_expires,omitempty"`
-	LastReport   *WorkerReport `json:"last_report,omitempty"`
+	ID             string            `json:"id"`
+	WorkerID       string            `json:"worker_id,omitempty"`
+	Policy         string            `json:"policy,omitempty"`
+	ImageRef       string            `json:"image_ref,omitempty"`
+	RequiredLabels map[string]string `json:"required_labels,omitempty"`
+	Verb           string            `json:"verb"`
+	Args           []string          `json:"args,omitempty"`
+	Status         string            `json:"status,omitempty"`
+	Created        time.Time         `json:"created,omitempty"`
+	Updated        time.Time         `json:"updated,omitempty"`
+	LeasedTo       string            `json:"leased_to,omitempty"`
+	LeaseExpires   time.Time         `json:"lease_expires,omitempty"`
+	LastReport     *WorkerReport     `json:"last_report,omitempty"`
 }

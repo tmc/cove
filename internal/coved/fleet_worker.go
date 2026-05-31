@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -287,20 +288,22 @@ func (w *FleetWorker) postJSON(ctx context.Context, path string, in, out any) er
 }
 
 func (w *FleetWorker) heartbeat() fleetcontrol.WorkerHeartbeat {
+	imageRefs := listImageRefs(w.imageRoot)
 	return fleetcontrol.WorkerHeartbeat{
-		ID:       w.id,
-		Host:     w.host,
-		Version:  w.version,
-		Labels:   cloneStringMap(w.labels),
-		Capacity: w.capacity(),
+		ID:        w.id,
+		Host:      w.host,
+		Version:   w.version,
+		Labels:    cloneStringMap(w.labels),
+		ImageRefs: imageRefs,
+		Capacity:  w.capacity(len(imageRefs)),
 	}
 }
 
-func (w *FleetWorker) capacity() fleetcontrol.Capacity {
+func (w *FleetWorker) capacity(images int) fleetcontrol.Capacity {
 	return fleetcontrol.Capacity{
 		CPUs:   runtime.NumCPU(),
 		VMs:    countDirEntries(w.vmRoot),
-		Images: countImageManifests(w.imageRoot),
+		Images: images,
 	}
 }
 
@@ -344,18 +347,51 @@ func countDirEntries(root string) int {
 	return n
 }
 
-func countImageManifests(root string) int {
-	var n int
+func listImageRefs(root string) []string {
+	if strings.TrimSpace(root) == "" {
+		return nil
+	}
+	seen := make(map[string]bool)
 	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
 		if !d.IsDir() && filepath.Base(path) == "manifest.json" {
-			n++
+			ref, ok := imageRefForManifest(root, path)
+			if ok {
+				seen[ref] = true
+			}
 		}
 		return nil
 	})
-	return n
+	refs := make([]string, 0, len(seen))
+	for ref := range seen {
+		refs = append(refs, ref)
+	}
+	sort.Strings(refs)
+	return refs
+}
+
+func imageRefForManifest(root, manifest string) (string, bool) {
+	dir := filepath.Dir(manifest)
+	rel, err := filepath.Rel(root, dir)
+	if err != nil || rel == "." {
+		return "", false
+	}
+	rel = filepath.ToSlash(rel)
+	if rel == ".." || strings.HasPrefix(rel, "../") {
+		return "", false
+	}
+	parts := strings.Split(rel, "/")
+	if len(parts) < 2 {
+		return "", false
+	}
+	tag := parts[len(parts)-1]
+	name := strings.Join(parts[:len(parts)-1], "/")
+	if name == "" || tag == "" {
+		return "", false
+	}
+	return name + ":" + tag, true
 }
 
 func cloneStringMap(in map[string]string) map[string]string {

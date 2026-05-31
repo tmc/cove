@@ -62,6 +62,10 @@ func TestFleetWorkerRegisterHeartbeatAndAwait(t *testing.T) {
 	if record.Capacity.CPUs <= 0 || record.Capacity.VMs != 1 || record.Capacity.Images != 2 {
 		t.Fatalf("worker capacity = %+v", record.Capacity)
 	}
+	wantRefs := []string{"base:v1", "nested/image:latest"}
+	if strings.Join(record.ImageRefs, ",") != strings.Join(wantRefs, ",") {
+		t.Fatalf("image refs = %+v, want %+v", record.ImageRefs, wantRefs)
+	}
 }
 
 func TestFleetWorkerReportsUnsupportedAssignment(t *testing.T) {

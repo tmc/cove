@@ -160,6 +160,94 @@ func TestStoreAssignmentLeaseExpires(t *testing.T) {
 	}
 }
 
+func TestStoreSchedulesLeastLoadedAssignment(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	for _, hb := range []WorkerHeartbeat{
+		{ID: "busy", Capacity: Capacity{VMs: 4}},
+		{ID: "idle", Capacity: Capacity{VMs: 1}},
+	} {
+		if _, err := store.UpsertHeartbeat(hb); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assignment, err := store.CreateAssignment(Assignment{
+		ID:     "assignment-1",
+		Policy: PolicyLeastLoaded,
+		Verb:   "cove",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if assignment.WorkerID != "idle" {
+		t.Fatalf("WorkerID = %q, want idle", assignment.WorkerID)
+	}
+}
+
+func TestStoreSchedulesImageAffinityAssignment(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	for _, hb := range []WorkerHeartbeat{
+		{ID: "warm", ImageRefs: []string{"macos-runner:latest"}, Capacity: Capacity{VMs: 4}},
+		{ID: "cold", Capacity: Capacity{VMs: 1}},
+	} {
+		if _, err := store.UpsertHeartbeat(hb); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assignment, err := store.CreateAssignment(Assignment{
+		ID:       "assignment-1",
+		Policy:   PolicyImageAffinity,
+		ImageRef: "macos-runner:latest",
+		Verb:     "cove",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if assignment.WorkerID != "warm" {
+		t.Fatalf("WorkerID = %q, want warm", assignment.WorkerID)
+	}
+}
+
+func TestStoreSchedulesWithRequiredLabelsAndPendingLoad(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	for _, hb := range []WorkerHeartbeat{
+		{ID: "a", Labels: map[string]string{"zone": "desk"}, Capacity: Capacity{VMs: 1}},
+		{ID: "b", Labels: map[string]string{"zone": "desk"}, Capacity: Capacity{VMs: 1}},
+		{ID: "c", Labels: map[string]string{"zone": "rack"}, Capacity: Capacity{VMs: 0}},
+	} {
+		if _, err := store.UpsertHeartbeat(hb); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.CreateAssignment(Assignment{ID: "assignment-1", WorkerID: "a", Verb: "cove"}); err != nil {
+		t.Fatal(err)
+	}
+	assignment, err := store.CreateAssignment(Assignment{
+		ID:             "assignment-2",
+		Policy:         PolicyLeastLoaded,
+		RequiredLabels: map[string]string{"zone": "desk"},
+		Verb:           "cove",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if assignment.WorkerID != "b" {
+		t.Fatalf("WorkerID = %q, want b", assignment.WorkerID)
+	}
+}
+
+func TestStoreScheduleRequiresReadyWorker(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "stale"}); err != nil {
+		t.Fatal(err)
+	}
+	store.now = func() time.Time { return now.Add(2 * time.Minute) }
+	if _, err := store.CreateAssignment(Assignment{Policy: PolicyLeastLoaded, Verb: "cove"}); err == nil {
+		t.Fatal("CreateAssignment error = nil, want no ready worker")
+	}
+}
+
 func TestHandlerWorkerProtocol(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	server := httptest.NewServer(Handler(store))
@@ -180,6 +268,9 @@ func TestHandlerWorkerProtocol(t *testing.T) {
 	}, &record)
 	if record.ID != "mini-1" || record.Capacity.CPUs != 12 {
 		t.Fatalf("register response = %+v", record)
+	}
+	if got := record.ImageRefs; len(got) != 0 {
+		t.Fatalf("image refs = %+v, want none", got)
 	}
 
 	resp, err := http.Get(server.URL + "/v1/workers/mini-1/assignments")
@@ -248,6 +339,27 @@ func TestHandlerAssignmentProtocol(t *testing.T) {
 	getJSON(t, server.URL+"/v1/assignments", &list)
 	if len(list.Assignments) != 1 || list.Assignments[0].ID != "assignment-1" {
 		t.Fatalf("list = %+v", list)
+	}
+}
+
+func TestHandlerSchedulesAssignment(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "warm", ImageRefs: []string{"macos-runner:latest"}, Capacity: Capacity{VMs: 5}}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "cold", Capacity: Capacity{VMs: 1}}, &record)
+
+	var created Assignment
+	postJSON(t, server.URL+"/v1/assignments", Assignment{
+		ID:       "assignment-1",
+		Policy:   PolicyImageAffinity,
+		ImageRef: "macos-runner:latest",
+		Verb:     "cove",
+	}, &created)
+	if created.WorkerID != "warm" {
+		t.Fatalf("created assignment = %+v, want warm worker", created)
 	}
 }
 

@@ -6,7 +6,8 @@ title: Fleet Control Plane
 `cove-fleetd` is the first stateful fleet-control-plane boundary. It owns host
 inventory, assignment leases, and the worker-facing protocol surface. `coved`
 can now dial out as a worker and execute leased `cove` assignments;
-controller-side scheduling is the next slice.
+controller-side placement can choose a ready worker by least-loaded or
+image-affinity policy.
 
 Start a private controller:
 
@@ -46,7 +47,7 @@ Worker protocol:
 
 | Verb | Endpoint | Shape |
 |------|----------|-------|
-| register | `POST /v1/workers/register` | `coved` sends host id, version, labels, CPU count, VM count, and local image count; controller stores the host record. |
+| register | `POST /v1/workers/register` | `coved` sends host id, version, labels, CPU count, VM count, local image count, and local image refs; controller stores the host record. |
 | heartbeat | `POST /v1/workers/heartbeat` | `coved` refreshes `last_seen` and capacity. |
 | await-assignment | `GET /v1/workers/<id>/assignments` | `coved` polls for work; the controller leases one pending or expired assignment and otherwise returns `204 No Content`. |
 | report-status | `POST /v1/workers/<id>/reports` | `coved` records `noop` as complete, executes `cove` assignments with bounded stdout/stderr capture, and reports other verbs as unsupported. |
@@ -68,6 +69,9 @@ curl -X POST http://127.0.0.1:9758/v1/assignments \
 curl -X POST http://127.0.0.1:9758/v1/assignments \
   -H 'content-type: application/json' \
   -d '{"id":"run-1","worker_id":"mini-1","verb":"cove","args":["run","-ephemeral","-headless"]}'
+curl -X POST http://127.0.0.1:9758/v1/assignments \
+  -H 'content-type: application/json' \
+  -d '{"id":"placed-1","policy":"image-affinity","image_ref":"macos-runner:latest","verb":"cove","args":["run","-fork-from","macos-runner:latest","-ephemeral"]}'
 curl http://127.0.0.1:9758/v1/assignments
 curl http://127.0.0.1:9758/v1/assignments/probe-1
 ```
@@ -75,6 +79,16 @@ curl http://127.0.0.1:9758/v1/assignments/probe-1
 Assignments are stored with `pending`, `leased`, or worker-reported terminal
 status. Leases expire after the controller's assignment TTL and can then be
 claimed by another eligible worker.
+
+When `worker_id` is empty and `policy` is set, the controller places the
+assignment before storing it:
+
+| Policy | Placement |
+|--------|-----------|
+| `least-loaded` | Choose the ready worker with the lowest VM count plus pending assignment count. |
+| `image-affinity` | Prefer a ready worker that already reports `image_ref`; fall back to least-loaded. |
+
+`required_labels` can restrict placement to workers with exact matching labels.
 
 Register a worker record manually:
 
@@ -84,6 +98,5 @@ curl -X POST http://127.0.0.1:9758/v1/workers/register \
   -d '{"id":"mini-1","host":"mini.local","version":"dev","cpus":12,"memory_bytes":68719476736}'
 ```
 
-This surface is intentionally private and local-first. It does not yet replace
-`cove fleet` SSH placement, choose hosts for new work, or provide Orchard-style
-reconciliation.
+This surface is intentionally private and local-first. It does not yet provide
+Orchard-style reconciliation, worker lifecycle management, or fork warm pools.

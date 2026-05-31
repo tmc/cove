@@ -34,6 +34,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   records worker reports back onto the assignment.
 - `coved` now executes leased `cove` assignments with a configurable local cove
   binary, timeout, exit code, and bounded stdout/stderr reporting.
+- `cove-fleetd` assignment creation can now place work on a ready worker with
+  controller-side `least-loaded` or `image-affinity` policy using `coved`
+  heartbeat image refs and pending assignment load.
 - `cove build --cache-from` and `--cache-to` now import and export cove
   build-cache artifacts through OCI refs, carrying cache entries, layer
   manifests, and block-delta blobs between runners.
