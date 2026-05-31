@@ -40,6 +40,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `cove-fleetd` now reconciles stale workers and expired assignment leases,
   exposes `POST /v1/reconcile`, and `coved` renews active `cove` assignments
   with `running` reports so long jobs do not get reclaimed while still alive.
+- `cove-fleetd` now exposes controller-side worker cordon/uncordon endpoints;
+  cordoned workers keep heartbeating but are skipped for policy placement while
+  explicit `worker_id` assignments remain allowed.
 - `cove build --cache-from` and `--cache-to` now import and export cove
   build-cache artifacts through OCI refs, carrying cache entries, layer
   manifests, and block-delta blobs between runners.

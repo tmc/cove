@@ -355,6 +355,93 @@ func TestStoreSchedulesWithRequiredLabelsAndPendingLoad(t *testing.T) {
 	}
 }
 
+func TestStoreCordonPersistsAcrossHeartbeatAndSkipsPlacement(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	for _, hb := range []WorkerHeartbeat{
+		{ID: "drain", Capacity: Capacity{VMs: 0}},
+		{ID: "ready", Capacity: Capacity{VMs: 5}},
+	} {
+		if _, err := store.UpsertHeartbeat(hb); err != nil {
+			t.Fatal(err)
+		}
+	}
+	record, err := store.CordonWorker("drain", "maintenance")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !record.Cordoned || record.Status != "cordoned" || record.CordonReason != "maintenance" || record.CordonedAt.IsZero() {
+		t.Fatalf("cordoned record = %+v", record)
+	}
+	now = now.Add(10 * time.Second)
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "drain", Capacity: Capacity{VMs: 0}}); err != nil {
+		t.Fatal(err)
+	}
+	record, ok := store.Get("drain")
+	if !ok {
+		t.Fatal("worker missing")
+	}
+	if !record.Cordoned || record.Status != "cordoned" || record.CordonReason != "maintenance" {
+		t.Fatalf("heartbeat cleared cordon: %+v", record)
+	}
+	placed, err := store.CreateAssignment(Assignment{
+		ID:     "assignment-1",
+		Policy: PolicyLeastLoaded,
+		Verb:   "noop",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if placed.WorkerID != "ready" {
+		t.Fatalf("WorkerID = %q, want ready", placed.WorkerID)
+	}
+	if _, err := store.CreateAssignment(Assignment{
+		ID:       "assignment-2",
+		WorkerID: "drain",
+		Verb:     "noop",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	leased, err := store.AwaitAssignment("drain")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leased == nil || leased.ID != "assignment-2" {
+		t.Fatalf("direct lease = %+v, want assignment-2", leased)
+	}
+}
+
+func TestStoreUncordonRestoresPlacement(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	for _, id := range []string{"a", "b"} {
+		if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: id}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.CordonWorker("a", "maintenance"); err != nil {
+		t.Fatal(err)
+	}
+	record, err := store.UncordonWorker("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Cordoned || record.Status != "ready" || record.CordonReason != "" || !record.CordonedAt.IsZero() {
+		t.Fatalf("uncordoned record = %+v", record)
+	}
+	assignment, err := store.CreateAssignment(Assignment{
+		ID:     "assignment-1",
+		Policy: PolicyLeastLoaded,
+		Verb:   "noop",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if assignment.WorkerID != "a" {
+		t.Fatalf("WorkerID = %q, want a", assignment.WorkerID)
+	}
+}
+
 func TestStoreScheduleRequiresReadyWorker(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
 	store := NewMemoryStore(time.Minute)
@@ -480,6 +567,35 @@ func TestHandlerSchedulesAssignment(t *testing.T) {
 	}, &created)
 	if created.WorkerID != "warm" {
 		t.Fatalf("created assignment = %+v, want warm worker", created)
+	}
+}
+
+func TestHandlerWorkerCordonLifecycle(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "drain"}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "ready"}, &record)
+	postJSON(t, server.URL+"/v1/workers/drain/cordon", WorkerLifecycle{Reason: "maintenance"}, &record)
+	if !record.Cordoned || record.Status != "cordoned" || record.CordonReason != "maintenance" {
+		t.Fatalf("cordon response = %+v", record)
+	}
+
+	var created Assignment
+	postJSON(t, server.URL+"/v1/assignments", Assignment{
+		ID:     "assignment-1",
+		Policy: PolicyLeastLoaded,
+		Verb:   "noop",
+	}, &created)
+	if created.WorkerID != "ready" {
+		t.Fatalf("created assignment = %+v, want ready worker", created)
+	}
+
+	postJSON(t, server.URL+"/v1/workers/drain/uncordon", map[string]string{}, &record)
+	if record.Cordoned || record.Status != "ready" {
+		t.Fatalf("uncordon response = %+v", record)
 	}
 }
 

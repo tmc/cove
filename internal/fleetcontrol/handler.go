@@ -3,6 +3,7 @@ package fleetcontrol
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 )
@@ -108,8 +109,12 @@ func handleWorker(w http.ResponseWriter, r *http.Request, store *Store) {
 	switch parts[1] {
 	case "assignments":
 		handleWorkerAssignments(w, r, store, id)
+	case "cordon":
+		handleWorkerCordon(w, r, store, id)
 	case "reports":
 		handleWorkerReports(w, r, store, id)
+	case "uncordon":
+		handleWorkerUncordon(w, r, store, id)
 	default:
 		writeError(w, http.StatusNotFound, "worker route not found")
 	}
@@ -149,6 +154,37 @@ func handleWorkerReports(w http.ResponseWriter, r *http.Request, store *Store, i
 		return
 	}
 	record, err := store.Report(report)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, record)
+}
+
+func handleWorkerCordon(w http.ResponseWriter, r *http.Request, store *Store, id string) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var lifecycle WorkerLifecycle
+	if err := json.NewDecoder(r.Body).Decode(&lifecycle); err != nil && err != io.EOF {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode worker lifecycle: %v", err))
+		return
+	}
+	record, err := store.CordonWorker(id, lifecycle.Reason)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, record)
+}
+
+func handleWorkerUncordon(w http.ResponseWriter, r *http.Request, store *Store, id string) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	record, err := store.UncordonWorker(id)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

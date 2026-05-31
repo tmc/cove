@@ -130,14 +130,76 @@ func (s *Store) UpsertHeartbeat(h WorkerHeartbeat) (HostRecord, error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if old, ok := s.hosts[id]; ok && record.Host == "" {
-		record.Host = old.Host
+	if old, ok := s.hosts[id]; ok {
+		if record.Host == "" {
+			record.Host = old.Host
+		}
+		record.Cordoned = old.Cordoned
+		record.CordonReason = old.CordonReason
+		record.CordonedAt = old.CordonedAt
+		if record.Cordoned {
+			record.Status = "cordoned"
+		}
 	}
 	s.hosts[id] = record
 	if err := s.persistLocked(); err != nil {
 		return HostRecord{}, err
 	}
 	return record, nil
+}
+
+func (s *Store) CordonWorker(id, reason string) (HostRecord, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return HostRecord{}, fmt.Errorf("worker id required")
+	}
+	now := s.now().UTC()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, ok := s.hosts[id]
+	if !ok {
+		return HostRecord{}, fmt.Errorf("worker %q not registered", id)
+	}
+	record.Cordoned = true
+	record.CordonReason = strings.TrimSpace(reason)
+	record.CordonedAt = now
+	if now.After(record.Expires) {
+		record.Status = "stale"
+	} else {
+		record.Status = "cordoned"
+	}
+	s.hosts[id] = record
+	if err := s.persistLocked(); err != nil {
+		return HostRecord{}, err
+	}
+	return s.statusLocked(record), nil
+}
+
+func (s *Store) UncordonWorker(id string) (HostRecord, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return HostRecord{}, fmt.Errorf("worker id required")
+	}
+	now := s.now().UTC()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, ok := s.hosts[id]
+	if !ok {
+		return HostRecord{}, fmt.Errorf("worker %q not registered", id)
+	}
+	record.Cordoned = false
+	record.CordonReason = ""
+	record.CordonedAt = time.Time{}
+	if now.After(record.Expires) {
+		record.Status = "stale"
+	} else {
+		record.Status = "ready"
+	}
+	s.hosts[id] = record
+	if err := s.persistLocked(); err != nil {
+		return HostRecord{}, err
+	}
+	return s.statusLocked(record), nil
 }
 
 func (s *Store) Report(r WorkerReport) (HostRecord, error) {
@@ -176,7 +238,11 @@ func (s *Store) Report(r WorkerReport) (HostRecord, error) {
 		}
 	}
 	record.Report = &r
-	record.Status = "ready"
+	if record.Cordoned {
+		record.Status = "cordoned"
+	} else {
+		record.Status = "ready"
+	}
 	record.LastSeen = received
 	record.Expires = received.Add(s.ttl)
 	s.hosts[id] = record
@@ -268,10 +334,15 @@ func (s *Store) AwaitAssignment(id string) (*Assignment, error) {
 	if _, ok := s.hosts[id]; !ok {
 		return nil, fmt.Errorf("worker %q not registered", id)
 	}
+	worker := s.statusLocked(s.hosts[id])
 	reconciled := s.reconcileLocked(now)
 	assignments := s.sortedAssignmentsLocked()
 	for _, assignment := range assignments {
-		if assignment.WorkerID != "" && assignment.WorkerID != id {
+		direct := assignment.WorkerID == id
+		if assignment.WorkerID != "" && !direct {
+			continue
+		}
+		if !direct && worker.Status != "ready" {
 			continue
 		}
 		if assignment.Status != "pending" {
@@ -404,6 +475,10 @@ func (s *Store) reconcileLocked(now time.Time) ReconcileResult {
 func (s *Store) statusLocked(record HostRecord) HostRecord {
 	if s.now().After(record.Expires) {
 		record.Status = "stale"
+	} else if record.Cordoned {
+		record.Status = "cordoned"
+	} else if record.Status == "" || record.Status == "stale" || record.Status == "cordoned" {
+		record.Status = "ready"
 	}
 	record.Labels = cloneLabels(record.Labels)
 	record.ImageRefs = cloneStrings(record.ImageRefs)
@@ -580,8 +655,7 @@ func (s *Store) pendingAssignmentsLocked(workerID string) int {
 		if assignment.WorkerID != workerID && assignment.LeasedTo != workerID {
 			continue
 		}
-		switch assignment.Status {
-		case "pending", "leased":
+		if activeAssignmentStatus(assignment.Status) {
 			n++
 		}
 	}

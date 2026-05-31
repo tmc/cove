@@ -8,7 +8,8 @@ inventory, assignment leases, and the worker-facing protocol surface. `coved`
 can now dial out as a worker and execute leased `cove` assignments;
 controller-side placement can choose a ready worker by least-loaded or
 image-affinity policy, and the controller reconciles stale workers and expired
-assignment leases.
+assignment leases. Operators can cordon workers for maintenance without
+dropping their heartbeat history.
 
 Start a private controller:
 
@@ -60,6 +61,10 @@ Inventory endpoints:
 curl http://127.0.0.1:9758/healthz
 curl http://127.0.0.1:9758/v1/workers
 curl http://127.0.0.1:9758/v1/workers/mini-1
+curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/cordon \
+  -H 'content-type: application/json' \
+  -d '{"reason":"maintenance"}'
+curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/uncordon
 curl -X POST http://127.0.0.1:9758/v1/reconcile
 ```
 
@@ -85,13 +90,17 @@ reports. Reconciliation marks expired workers stale, requeues expired
 assignment leases, rejects late reports for reclaimed leases, and can move a
 policy-placed assignment from a stale worker to another ready worker.
 
+Cordoned workers keep heartbeating and reporting, but controller placement
+skips them for unbound and policy-placed assignments. Explicit `worker_id`
+assignments can still target a cordoned worker.
+
 When `worker_id` is empty and `policy` is set, the controller places the
 assignment before storing it:
 
 | Policy | Placement |
 |--------|-----------|
-| `least-loaded` | Choose the ready worker with the lowest VM count plus pending assignment count. |
-| `image-affinity` | Prefer a ready worker that already reports `image_ref`; fall back to least-loaded. |
+| `least-loaded` | Choose the non-cordoned ready worker with the lowest VM count plus pending assignment count. |
+| `image-affinity` | Prefer a non-cordoned ready worker that already reports `image_ref`; fall back to least-loaded. |
 
 `required_labels` can restrict placement to workers with exact matching labels.
 
@@ -104,5 +113,5 @@ curl -X POST http://127.0.0.1:9758/v1/workers/register \
 ```
 
 This surface is intentionally private and local-first. It now has basic
-controller reconciliation, but it does not yet provide richer Orchard-style
-worker lifecycle management or fork warm pools.
+controller reconciliation and worker cordon lifecycle, but it does not yet
+provide richer Orchard-style worker lifecycle management or fork warm pools.
