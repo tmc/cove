@@ -75,6 +75,7 @@ type ImageRemoteBaseManifest struct {
 	DiskFormat     string `json:"disk_format,omitempty"`
 	ChunkCount     int    `json:"chunk_count,omitempty"`
 	MatchingChunks int    `json:"matching_chunks,omitempty"`
+	MatchingBytes  int64  `json:"matching_bytes,omitempty"`
 	BaseManifest   string `json:"base_manifest,omitempty"`
 	Error          string `json:"error,omitempty"`
 }
@@ -369,7 +370,9 @@ func auditRemoteBaseChain(ctx context.Context, client ociimage.RegistryClient, r
 		entry.DiskFormat = base.Annotations.DiskFormat
 		entry.ChunkCount = len(base.Chunks)
 		entry.BaseManifest = strings.TrimSpace(base.Annotations.BaseManifest)
-		entry.MatchingChunks = len(matchingPullBaseChunks(current.DiskLayers, base.DiskLayers))
+		matching := matchingPullBaseChunks(current.DiskLayers, base.DiskLayers)
+		entry.MatchingChunks = len(matching)
+		entry.MatchingBytes = matchingPullBaseBytes(current.DiskLayers, matching)
 		if base.Format != ociimage.FormatCove {
 			entry.Status = "invalid"
 			entry.Error = "base manifest is not cove format"
@@ -405,6 +408,16 @@ func fetchRemoteBaseManifest(ctx context.Context, client ociimage.RegistryClient
 	baseRef.Digest = digest
 	manifest, _, err := client.FetchManifestInfo(ctx, baseRef)
 	return manifest, err
+}
+
+func matchingPullBaseBytes(layers []ociimage.DiskLayer, matching map[int]bool) int64 {
+	var bytes int64
+	for _, layer := range layers {
+		if matching[layer.Chunk.Index] {
+			bytes += layer.Chunk.Size
+		}
+	}
+	return bytes
 }
 
 func remoteBaseFetchStatus(err error) string {
@@ -681,6 +694,9 @@ func writeRemoteInspectText(w io.Writer, out ImageRemoteInspectOutput) error {
 			}
 			if entry.MatchingChunks > 0 {
 				fmt.Fprintf(w, " matching_chunks=%d", entry.MatchingChunks)
+			}
+			if entry.MatchingBytes > 0 {
+				fmt.Fprintf(w, " matching_bytes=%s", bytefmt.Size(entry.MatchingBytes))
 			}
 			if entry.BaseManifest != "" {
 				fmt.Fprintf(w, " parent=%s", entry.BaseManifest)

@@ -101,7 +101,7 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   posture for cove, Tart, Lume, and cove image-store artifacts.
 - Remote image inspect now walks declared cove base-manifest chains by digest,
   reports missing or incompatible parents before disk download, and includes
-  disk format plus matching chunk counts for reusable base layers.
+  disk format plus matching chunk counts and bytes for reusable base layers.
 - Cove pull base reuse now requires matching manifest disk format and detected
   base-file disk format before cloning a local or cached base disk; registry
   base cache metadata records the cove-native disk format.
