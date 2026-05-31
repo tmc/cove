@@ -32,6 +32,7 @@ the intended egress posture and are recorded in the run audit log.
 | `packages` | `nat` | Package registries only: Debian, Ubuntu, PyPI, npm, GitHub Container Registry, Docker Hub, and Fedora registry hosts. |
 | `host-services` | `nat` | Package registries plus RFC1918 host/LAN ranges: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`. |
 | `lan` | `nat` | RFC1918 LAN ranges only; no public internet by policy. |
+| `egress:<list>` | `nat` | Custom comma-separated allowlist of domains, IPs, and CIDRs, recorded per run. |
 | `open` | `nat` | Full egress. Equivalent to `nat`. |
 
 Examples:
@@ -41,6 +42,7 @@ cove run --net offline
 cove run --net packages
 cove run --net host-services
 cove run --net lan
+cove run --net egress:api.openai.com,ghcr.io,10.0.0.0/8
 cove run --net open
 ```
 
@@ -59,7 +61,7 @@ that can be attached to CI summaries.
 Current enforcement limits:
 
 - `offline` is enforced by attaching no virtual network device.
-- `packages`, `host-services`, and `lan` currently use the shipped
+- `packages`, `host-services`, `lan`, and `egress:<list>` currently use the shipped
   Virtualization.framework NAT path. That path does not expose host-side
   per-connection allow/deny hooks, so `network.log` records the selected policy,
   allowlist, and limitation rather than a complete connection decision stream.
@@ -71,6 +73,7 @@ Examples:
 ```bash
 cove run --net nat
 cove run --net packages
+cove run --net egress:api.openai.com,ghcr.io,10.0.0.0/8
 cove run --net host-only
 cove run --net bridged:en0
 cove run --net none

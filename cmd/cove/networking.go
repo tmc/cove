@@ -28,6 +28,13 @@ var (
 // ParseNetworkMode parses a network mode string.
 func ParseNetworkMode(s string) (networkx.Config, error) {
 	s = strings.ToLower(strings.TrimSpace(s))
+	if strings.HasPrefix(s, "egress:") {
+		policy, err := ParseNetworkPolicy(s)
+		if err != nil {
+			return networkx.Config{}, err
+		}
+		return policy.NetworkConfig(), nil
+	}
 	if policy, ok := parseNamedNetworkPolicyMode(s); ok {
 		return policy.NetworkConfig(), nil
 	}
@@ -87,6 +94,7 @@ Named policies:
   packages         NAT with package-registry allowlist audit
   host-services    NAT with package-registry plus RFC1918 audit
   lan              NAT with RFC1918-only audit intent
+  egress:<list>    NAT with custom domain/IP/CIDR allowlist audit
   open             Full egress, equivalent to nat
 
 Commands:
@@ -98,6 +106,7 @@ Commands:
 Examples:
   --net nat                 Default NAT mode
   --net packages            Package-registry policy audit
+  --net egress:api.openai.com,ghcr.io,10.0.0.0/8
   --net bridged:en0         Bridge to ethernet
   --net host-only           Host and guest only
   --net bridged:en1         Bridge to WiFi (check 'cove network list')

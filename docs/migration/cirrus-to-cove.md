@@ -91,12 +91,14 @@ named policy on `cove run` (or `cove-action`'s `network:` input):
 | `host_network: true` | `host-only` (LAN to host) or `host-services` |
 | custom container w/ no egress | `offline` |
 | package install only | `packages` |
+| specific API or registry hosts | `egress:api.openai.com,ghcr.io,10.0.0.0/8` |
 | LAN scanning / discovery | `lan` |
 | anything goes | `open` |
 
 `bridged:<iface>`, `vmnet`, and `filehandle` modes cover the rest. pcap
-capture is available on `filehandle`. There is no
-`cove network audit <run-id>` yet; tail with `cove network logs tail`.
+capture is available on `filehandle`. Use `cove network audit <run-id-prefix>`
+to summarize the run's network intent and audit log, or
+`cove network logs <vm> -f` to tail the newest audit log for a VM.
 
 ## Known gaps
 

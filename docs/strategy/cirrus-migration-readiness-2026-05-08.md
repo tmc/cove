@@ -50,7 +50,7 @@ this doc is the readiness gap report behind it.
 | Image freshness gate | `cove image verify --strict --newer-than <dur>` | `26380b8` `6f0d396`; `image_verify.go` |
 | Runner preflight | `cove action doctor` and `cove action prepare-image` | `7fafe40` `6470615` `14260b3` `9e6253a`; `internal/action/{doctor,prepare}.go` |
 | Per-task metrics (start/end/exit) | run JSONL + optional OTLP exporter | `8318fa7` `3f6c144` `c390eb9`; `internal/metrics/` |
-| Network mode controls | `--net nat|bridged:<iface>|host-only|none|vmnet|filehandle` and named policies (`offline`, `packages`, `host-services`, `lan`, `open`) | `671754a` `1ac32f9`; `networking.go:24-85` |
+| Network mode controls | `--net nat|bridged:<iface>|host-only|none|vmnet|filehandle`, named policies (`offline`, `packages`, `host-services`, `lan`, `open`), and custom `egress:<domain,ip,cidr...>` audit intent | `671754a` `1ac32f9`; `networking.go` |
 
 ## Partial
 

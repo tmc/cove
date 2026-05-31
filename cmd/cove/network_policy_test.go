@@ -64,8 +64,60 @@ func TestParseNetworkPolicyInvalid(t *testing.T) {
 	if _, err := ParseNetworkPolicy("bogus-policy-name"); err == nil {
 		t.Fatal("ParseNetworkPolicy(bogus): want error, got nil")
 	}
+	for _, spec := range []string{
+		"egress:",
+		"egress:api.openai.com,,ghcr.io",
+		"egress:https://api.openai.com",
+		"egress:api.openai.com:443",
+		"egress:-bad.example",
+	} {
+		if _, err := ParseNetworkPolicy(spec); err == nil {
+			t.Fatalf("ParseNetworkPolicy(%q): want error, got nil", spec)
+		}
+	}
 	if err := validateNetworkMode("not-a-mode"); err == nil {
 		t.Fatal("validateNetworkMode(not-a-mode): want error, got nil")
+	}
+	if _, err := ParseNetworkMode("egress:https://api.openai.com"); err == nil || !strings.Contains(err.Error(), "invalid egress domain") {
+		t.Fatalf("ParseNetworkMode invalid egress = %v, want invalid egress domain", err)
+	}
+}
+
+func TestParseNetworkPolicyEgressAllowlist(t *testing.T) {
+	policy, err := ParseNetworkPolicy("egress:API.OpenAI.com,ghcr.io,10.0.0.0/8,192.168.1.10")
+	if err != nil {
+		t.Fatalf("ParseNetworkPolicy egress: %v", err)
+	}
+	if policy.Name != "egress" || policy.Mode != NetworkModeNAT || !policy.Audit || policy.Enforced {
+		t.Fatalf("policy = %+v", policy)
+	}
+	if got := strings.Join(policy.Domains, ","); got != "api.openai.com,ghcr.io" {
+		t.Fatalf("domains = %q", got)
+	}
+	if got := prefixStrings(policy.CIDRs); strings.Join(got, ",") != "10.0.0.0/8,192.168.1.10/32" {
+		t.Fatalf("cidrs = %v", got)
+	}
+	if !policy.AllowsDomain("files.api.openai.com") {
+		t.Fatal("egress policy should allow subdomains")
+	}
+	if !policy.AllowsIP(netip.MustParseAddr("10.1.2.3")) {
+		t.Fatal("egress policy should allow CIDR member")
+	}
+	if !policy.AllowsIP(netip.MustParseAddr("192.168.1.10")) {
+		t.Fatal("egress policy should allow single IP")
+	}
+	if policy.AllowsDomain("example.com") || policy.AllowsIP(netip.MustParseAddr("8.8.8.8")) {
+		t.Fatal("egress policy allowed an unlisted destination")
+	}
+}
+
+func TestParseNetworkModeAcceptsEgressPolicy(t *testing.T) {
+	cfg, err := ParseNetworkMode("egress:api.openai.com,10.0.0.0/8")
+	if err != nil {
+		t.Fatalf("ParseNetworkMode egress: %v", err)
+	}
+	if cfg.Mode != NetworkModeNAT {
+		t.Fatalf("mode = %q, want nat", cfg.Mode)
 	}
 }
 
@@ -177,6 +229,33 @@ func TestRunVMWithConfigWritesNetworkPolicyAudit(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "# policy=lan mode=nat") {
 		t.Fatalf("network.log = %s", data)
+	}
+}
+
+func TestWriteNetworkPolicyAuditEgress(t *testing.T) {
+	policy, err := ParseNetworkPolicy("egress:api.openai.com,10.0.0.0/8")
+	if err != nil {
+		t.Fatalf("ParseNetworkPolicy: %v", err)
+	}
+	dir := t.TempDir()
+	if err := WriteNetworkPolicyAudit(dir, policy); err != nil {
+		t.Fatalf("WriteNetworkPolicyAudit: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "network.log"))
+	if err != nil {
+		t.Fatalf("ReadFile(network.log): %v", err)
+	}
+	out := string(data)
+	for _, want := range []string{
+		"# policy=egress mode=nat",
+		"# allow_domains=api.openai.com",
+		"# allow_cidrs=10.0.0.0/8",
+		"# enforcement=not-hooked",
+		"dest=* decision=policy-loaded policy=egress",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("network.log missing %q:\n%s", want, out)
+		}
 	}
 }
 
@@ -342,4 +421,12 @@ func writeNetworkAuditMetrics(t *testing.T, dir, vm, image, status string, exitC
 	if err := os.WriteFile(filepath.Join(dir, "metrics.jsonl"), b.Bytes(), 0644); err != nil {
 		t.Fatalf("WriteFile metrics: %v", err)
 	}
+}
+
+func prefixStrings(in []netip.Prefix) []string {
+	out := make([]string, 0, len(in))
+	for _, prefix := range in {
+		out = append(out, prefix.String())
+	}
+	return out
 }

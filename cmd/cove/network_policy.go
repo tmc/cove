@@ -54,6 +54,9 @@ var rfc1918PolicyCIDRs = mustParsePrefixes([]string{
 
 func ParseNetworkPolicy(s string) (NetworkPolicy, error) {
 	in := strings.ToLower(strings.TrimSpace(s))
+	if spec, ok := strings.CutPrefix(in, "egress:"); ok {
+		return parseEgressNetworkPolicy(spec)
+	}
 	switch in {
 	case "":
 		return openNetworkPolicy(false), nil
@@ -103,6 +106,69 @@ func ParseNetworkPolicy(s string) (NetworkPolicy, error) {
 		}
 		return NetworkPolicy{Name: string(cfg.Mode), Mode: cfg.Mode}, nil
 	}
+}
+
+func parseEgressNetworkPolicy(spec string) (NetworkPolicy, error) {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return NetworkPolicy{}, fmt.Errorf("%w: egress policy requires at least one domain, IP, or CIDR", ErrInvalidNetworkSpec)
+	}
+	var domains []string
+	var cidrs []netip.Prefix
+	for _, part := range strings.Split(spec, ",") {
+		item := strings.TrimSpace(part)
+		if item == "" {
+			return NetworkPolicy{}, fmt.Errorf("%w: egress policy contains an empty allowlist entry", ErrInvalidNetworkSpec)
+		}
+		if prefix, err := netip.ParsePrefix(item); err == nil {
+			cidrs = append(cidrs, prefix.Masked())
+			continue
+		}
+		if addr, err := netip.ParseAddr(item); err == nil {
+			cidrs = append(cidrs, netip.PrefixFrom(addr, addr.BitLen()))
+			continue
+		}
+		domain, err := normalizeNetworkPolicyDomain(item)
+		if err != nil {
+			return NetworkPolicy{}, err
+		}
+		domains = append(domains, domain)
+	}
+	return NetworkPolicy{
+		Name:       "egress",
+		Mode:       NetworkModeNAT,
+		Domains:    dedupeStrings(domains),
+		CIDRs:      dedupePrefixes(cidrs),
+		Audit:      true,
+		Limit:      "Virtualization.framework NAT does not expose per-connection host-side allow/deny hooks; this run uses NAT and records the custom egress allowlist.",
+		namedInput: true,
+	}, nil
+}
+
+func normalizeNetworkPolicyDomain(s string) (string, error) {
+	domain := strings.TrimSuffix(strings.TrimSpace(s), ".")
+	if domain == "" {
+		return "", fmt.Errorf("%w: empty egress domain", ErrInvalidNetworkSpec)
+	}
+	if strings.Contains(domain, "://") || strings.ContainsAny(domain, "/:*[]") {
+		return "", fmt.Errorf("%w: invalid egress domain %q", ErrInvalidNetworkSpec, s)
+	}
+	labels := strings.Split(domain, ".")
+	for _, label := range labels {
+		if label == "" || len(label) > 63 {
+			return "", fmt.Errorf("%w: invalid egress domain %q", ErrInvalidNetworkSpec, s)
+		}
+		if label[0] == '-' || label[len(label)-1] == '-' {
+			return "", fmt.Errorf("%w: invalid egress domain %q", ErrInvalidNetworkSpec, s)
+		}
+		for _, r := range label {
+			if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+				continue
+			}
+			return "", fmt.Errorf("%w: invalid egress domain %q", ErrInvalidNetworkSpec, s)
+		}
+	}
+	return domain, nil
 }
 
 func openNetworkPolicy(named bool) NetworkPolicy {
@@ -481,6 +547,39 @@ func splitCommaList(value string) []string {
 		if part != "" {
 			out = append(out, part)
 		}
+	}
+	return out
+}
+
+func dedupeStrings(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	seen := map[string]bool{}
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	return out
+}
+
+func dedupePrefixes(in []netip.Prefix) []netip.Prefix {
+	if len(in) == 0 {
+		return nil
+	}
+	seen := map[string]bool{}
+	out := make([]netip.Prefix, 0, len(in))
+	for _, p := range in {
+		key := p.String()
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, p)
 	}
 	return out
 }

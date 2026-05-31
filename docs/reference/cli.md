@@ -72,7 +72,7 @@ cove run [flags]
 | `-memory <n>` | 4 | Memory in GB |
 | `-vm <name>` | active VM | Target VM name |
 | `-display <spec>` | | Display config: WxH[@PPI] or preset (4k, 1080p, 720p, retina) |
-| `-network <mode>` / `--net <mode>` | nat | Network mode: nat, bridged:\<iface\>, host-only, none |
+| `-network <mode>` / `--net <mode>` | nat | Network mode: nat, bridged:\<iface\>, host-only, none, named policies, or `egress:<domain,ip,cidr...>` |
 | `-http <addr>` | | Expose per-VM HTTP API |
 | `-v <mount>` / `-vol <mount>` | | Host directory mount: /host[:tag][:ro\|rw] (repeatable) |
 | `-usb <path>` | | USB storage: /path/to/disk.img[:ro] (repeatable) |

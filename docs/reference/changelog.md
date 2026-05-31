@@ -59,6 +59,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   VM/image/status, policy, enforcement mode, allowlists, limitations, and
   decision counts. Use `--raw` for the original log bytes or `--json` for
   machine-readable output.
+- `--net egress:<domain,ip,cidr...>` now records a custom per-run egress
+  allowlist in `network.log` and `cove network audit`, giving CI and agent
+  runs an explicit network intent artifact while Virtualization.framework NAT
+  remains the effective attachment.
 - `cove action prepare-image` now runs `cove image verify --strict --json`
   before using the freshness shortcut, so a fresh timestamp cannot hide a
   missing `execattach.v3` agent feature, corrupt layout, or failed provenance
