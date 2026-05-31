@@ -329,7 +329,8 @@ governance/hosted, with scheduling as the free adoption driver — not the SKU.
   records. The OpenAI Agents Python adapter now has a `provider="cloud"`
   `SandboxRunConfig` path over this REST surface, and the public Go
   `agentsandbox` package now has a matching local/cloud client for hosted
-  create/wait/exec/delete and screenshot/key/text/mouse flows.
+  create/list/get/wait/lease/restart/exec/control/metering/delete and
+  screenshot/key/text/mouse flows.
   The bar to beat is Daytona's create→exec→delete in under six lines with an
   opaque handle.
 - **The wedge.** Cua Cloud runs **Linux/Windows only** — Apple-Silicon macOS does

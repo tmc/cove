@@ -354,8 +354,8 @@ This is a scaffold for the hosted `/v1/sandboxes` lifecycle:
 create/list/get/delete/start/restart/stop/wait/exec/control, leases, and
 metering are present. The OpenAI Agents Python adapter and public Go
 `agentsandbox` package can switch between local VM control and this
-cloud/control-plane path, including hosted ComputerTool-style
-screenshot/key/text/mouse events.
+cloud/control-plane path, including hosted lifecycle helpers, leases,
+metering, and ComputerTool-style screenshot/key/text/mouse events.
 
 Go SDK example:
 
@@ -371,6 +371,11 @@ if err != nil {
 	log.Fatal(err)
 }
 defer sb.Delete(ctx)
+lease, err := sb.Lease(ctx, "runner-42", 30*time.Second)
+if err != nil {
+	log.Fatal(err)
+}
+defer sb.ReleaseLease(ctx, lease.Lease.Holder)
 if err := sb.WaitReady(ctx, 2*time.Minute); err != nil {
 	log.Fatal(err)
 }
@@ -379,6 +384,11 @@ if err != nil {
 	log.Fatal(err)
 }
 fmt.Print(result.Stdout)
+metering, err := sb.Metering(ctx)
+if err != nil {
+	log.Fatal(err)
+}
+fmt.Printf("metered records: %d\n", metering.Summary.Records)
 ```
 
 Assignment endpoints:

@@ -164,5 +164,25 @@ deletes the sandbox handle on close when `delete_on_close=True`. Set
 `COVE_FLEET_URL` and `COVE_API_KEY` (or `COVE_FLEET_TOKEN`) instead of passing
 `fleet_url` and `api_key` directly.
 
+For direct fleet-client code, `CoveFleetClient` covers the hosted lifecycle:
+
+```python
+from cove_sandbox import CoveFleetClient
+
+client = CoveFleetClient.create_sandbox(
+    fleet_url="https://fleet.internal.example",
+    api_key="cove_...",
+    namespace="team-a",
+    image_ref="macos-base:latest",
+    sandbox_id="eval-001",
+)
+lease = client.lease(holder="runner-42", ttl=30)
+client.wait_ready(timeout=120)
+print(client.exec("sw_vers").stdout)
+print(client.metering()["summary"]["records"])
+client.release_lease(holder=lease["lease"]["holder"])
+client.delete_vm()
+```
+
 For a copy-paste helper that returns the SDK `RunConfig` wrapper directly,
 import `sandbox_run_config` from `cove_sandbox`.

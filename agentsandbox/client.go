@@ -55,11 +55,61 @@ type Client struct {
 }
 
 type SandboxStatus struct {
-	Namespace string `json:"namespace,omitempty"`
-	ID        string `json:"id"`
-	VMName    string `json:"vm_name,omitempty"`
-	Status    string `json:"status,omitempty"`
-	WorkerID  string `json:"worker_id,omitempty"`
+	Namespace string    `json:"namespace,omitempty"`
+	ID        string    `json:"id"`
+	VMName    string    `json:"vm_name,omitempty"`
+	ImageRef  string    `json:"image_ref,omitempty"`
+	Status    string    `json:"status,omitempty"`
+	WorkerID  string    `json:"worker_id,omitempty"`
+	Lease     *Lease    `json:"lease,omitempty"`
+	Created   time.Time `json:"created,omitempty"`
+	Updated   time.Time `json:"updated,omitempty"`
+}
+
+type Lease struct {
+	Holder  string    `json:"holder"`
+	Expires time.Time `json:"expires"`
+}
+
+type LeaseResult struct {
+	Sandbox SandboxStatus `json:"sandbox"`
+	Lease   Lease         `json:"lease"`
+}
+
+type MeteringRecord struct {
+	ID               string    `json:"id"`
+	Time             time.Time `json:"time"`
+	Namespace        string    `json:"namespace,omitempty"`
+	SandboxID        string    `json:"sandbox_id"`
+	AssignmentID     string    `json:"assignment_id"`
+	WorkerID         string    `json:"worker_id,omitempty"`
+	Status           string    `json:"status"`
+	Started          time.Time `json:"started"`
+	Ended            time.Time `json:"ended"`
+	DurationMillis   int64     `json:"duration_millis"`
+	VMMillis         int64     `json:"vm_millis"`
+	CPUMillis        int64     `json:"cpu_millis,omitempty"`
+	MemoryByteMillis uint64    `json:"memory_byte_millis,omitempty"`
+}
+
+type MeteringSummary struct {
+	Namespace        string `json:"namespace,omitempty"`
+	SandboxID        string `json:"sandbox_id,omitempty"`
+	Records          int    `json:"records"`
+	DurationMillis   int64  `json:"duration_millis"`
+	VMMillis         int64  `json:"vm_millis"`
+	CPUMillis        int64  `json:"cpu_millis,omitempty"`
+	MemoryByteMillis uint64 `json:"memory_byte_millis,omitempty"`
+}
+
+type MeteringResult struct {
+	Records []MeteringRecord `json:"records"`
+	Summary MeteringSummary  `json:"summary"`
+}
+
+type WaitResult struct {
+	Done    bool          `json:"done"`
+	Sandbox SandboxStatus `json:"sandbox"`
 }
 
 type ExecRequest struct {
@@ -250,6 +300,55 @@ func (c *Client) Status(ctx context.Context) (SandboxStatus, error) {
 	return SandboxStatus{ID: c.vm, VMName: c.vm, Status: "ready"}, nil
 }
 
+func (c *Client) Get(ctx context.Context) (SandboxStatus, error) {
+	return c.Status(ctx)
+}
+
+func (c *Client) List(ctx context.Context) ([]SandboxStatus, error) {
+	if err := c.ready(); err != nil {
+		return nil, err
+	}
+	if c.provider == ProviderLocal {
+		status, err := c.Status(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return []SandboxStatus{status}, nil
+	}
+	var result struct {
+		Sandboxes []SandboxStatus `json:"sandboxes"`
+	}
+	if err := c.request(ctx, http.MethodGet, c.queryPath("/v1/sandboxes", map[string]string{"namespace": c.namespace}), nil, &result, c.timeout); err != nil {
+		return nil, err
+	}
+	return result.Sandboxes, nil
+}
+
+func (c *Client) Wait(ctx context.Context, timeout time.Duration) (WaitResult, error) {
+	if err := c.ready(); err != nil {
+		return WaitResult{}, err
+	}
+	if c.provider != ProviderCloud {
+		status, err := c.Status(ctx)
+		if err != nil {
+			return WaitResult{}, err
+		}
+		return WaitResult{Done: terminalSandboxStatus(status.Status), Sandbox: status}, nil
+	}
+	if timeout < 0 {
+		return WaitResult{}, errors.New("agentsandbox: wait timeout must not be negative")
+	}
+	path := c.queryPath(c.sandboxPath("wait"), map[string]string{"timeout": formatSeconds(timeout)})
+	requestTimeout := maxDuration(c.timeout, timeout+minDuration(timeout, 30*time.Second))
+	var result WaitResult
+	if err := c.request(ctx, http.MethodPost, path, map[string]any{}, &result, requestTimeout); err != nil {
+		return WaitResult{}, err
+	}
+	c.vmName = result.Sandbox.VMName
+	c.namespace = result.Sandbox.Namespace
+	return result, nil
+}
+
 func (c *Client) WaitReady(ctx context.Context, timeout time.Duration) error {
 	if err := c.ready(); err != nil {
 		return err
@@ -290,6 +389,84 @@ func (c *Client) Stop(ctx context.Context) error {
 
 func (c *Client) Restart(ctx context.Context) error {
 	return c.sandboxAction(ctx, "restart")
+}
+
+func (c *Client) Lease(ctx context.Context, holder string, ttl time.Duration) (LeaseResult, error) {
+	if err := c.ready(); err != nil {
+		return LeaseResult{}, err
+	}
+	if c.provider != ProviderCloud {
+		return LeaseResult{}, errors.New("agentsandbox: lease is only supported for cloud sandboxes")
+	}
+	body := map[string]any{}
+	if strings.TrimSpace(holder) != "" {
+		body["holder"] = strings.TrimSpace(holder)
+	}
+	if ttl < 0 {
+		return LeaseResult{}, errors.New("agentsandbox: lease ttl must not be negative")
+	}
+	if ttl > 0 {
+		body["ttl"] = formatSeconds(ttl)
+	}
+	var result LeaseResult
+	if err := c.request(ctx, http.MethodPost, c.sandboxPath("lease"), body, &result, c.timeout); err != nil {
+		return LeaseResult{}, err
+	}
+	c.vmName = result.Sandbox.VMName
+	c.namespace = result.Sandbox.Namespace
+	return result, nil
+}
+
+func (c *Client) ReleaseLease(ctx context.Context, holder string) (LeaseResult, error) {
+	if err := c.ready(); err != nil {
+		return LeaseResult{}, err
+	}
+	if c.provider != ProviderCloud {
+		return LeaseResult{}, errors.New("agentsandbox: lease is only supported for cloud sandboxes")
+	}
+	path := c.sandboxPath("lease")
+	if strings.TrimSpace(holder) != "" {
+		path = c.queryPath(path, map[string]string{"holder": strings.TrimSpace(holder)})
+	}
+	var result LeaseResult
+	if err := c.request(ctx, http.MethodDelete, path, nil, &result, c.timeout); err != nil {
+		return LeaseResult{}, err
+	}
+	c.vmName = result.Sandbox.VMName
+	c.namespace = result.Sandbox.Namespace
+	return result, nil
+}
+
+func (c *Client) Metering(ctx context.Context) (MeteringResult, error) {
+	if err := c.ready(); err != nil {
+		return MeteringResult{}, err
+	}
+	if c.provider != ProviderCloud {
+		return MeteringResult{}, errors.New("agentsandbox: metering is only supported for cloud sandboxes")
+	}
+	var result MeteringResult
+	if err := c.request(ctx, http.MethodGet, c.sandboxPath("metering"), nil, &result, c.timeout); err != nil {
+		return MeteringResult{}, err
+	}
+	return result, nil
+}
+
+func (c *Client) ListMetering(ctx context.Context, sandboxID string) (MeteringResult, error) {
+	if err := c.ready(); err != nil {
+		return MeteringResult{}, err
+	}
+	if c.provider != ProviderCloud {
+		return MeteringResult{}, errors.New("agentsandbox: metering is only supported for cloud sandboxes")
+	}
+	query := map[string]string{"namespace": c.namespace}
+	if strings.TrimSpace(sandboxID) != "" {
+		query["sandbox_id"] = strings.TrimSpace(sandboxID)
+	}
+	var result MeteringResult
+	if err := c.request(ctx, http.MethodGet, c.queryPath("/v1/metering/sandboxes", query), nil, &result, c.timeout); err != nil {
+		return MeteringResult{}, err
+	}
+	return result, nil
 }
 
 func (c *Client) Delete(ctx context.Context) error {
@@ -736,6 +913,20 @@ func (c *Client) sandboxPath(action string) string {
 		path += "/" + url.PathEscape(action)
 	}
 	return path
+}
+
+func (c *Client) queryPath(path string, values map[string]string) string {
+	query := make(url.Values)
+	for key, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			query.Set(key, value)
+		}
+	}
+	if len(query) == 0 {
+		return path
+	}
+	return path + "?" + query.Encode()
 }
 
 func (c *Client) ready() error {

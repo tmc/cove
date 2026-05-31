@@ -5,6 +5,7 @@ import json
 import os
 import socket
 import threading
+import urllib.parse
 import uuid
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -130,28 +131,64 @@ def test_fleet_client_create_wait_exec_and_delete() -> None:
             api_key="secret",
             image_ref="base:v1",
             sandbox_id="job-1",
+            namespace="team-a",
         )
+        sandboxes = client.list()
+        assert sandboxes[0]["id"] == "job-1"
+        assert sandboxes[0]["image_ref"] == "base:v1"
+        listed = CoveFleetClient.list_sandboxes(fleet_url=server.url, api_key="secret", namespace="team-a")
+        assert listed[0]["id"] == "job-1"
+        status = client.status()
+        assert status["status"] == "ready"
+        wait = client.wait(timeout=2.5)
+        assert wait["done"] is True
+        lease = client.lease(holder="runner-42", ttl=30)
+        assert lease["lease"]["holder"] == "runner-42"
+        released = client.release_lease(holder="runner-42")
+        assert released["sandbox"]["lease"] is None
         client.wait_ready(timeout=1)
+        client.restart()
         result = client.exec(["/bin/echo", "ok"], env={"A": "1"}, timeout=2.5)
         assert result.exit_code == 7
         assert result.stdout == "out"
         assert result.stderr == "err"
+        metering = client.metering()
+        assert metering["summary"]["records"] == 1
+        all_metering = client.list_metering(sandbox_id="job-1")
+        assert all_metering["summary"]["sandbox_id"] == "job-1"
         client.delete_vm()
 
         paths = [req["path"] for req in server.requests]
         assert paths == [
             "/v1/sandboxes",
+            "/v1/sandboxes",
+            "/v1/sandboxes",
             "/v1/sandboxes/job-1",
+            "/v1/sandboxes/job-1/wait",
+            "/v1/sandboxes/job-1/lease",
+            "/v1/sandboxes/job-1/lease",
+            "/v1/sandboxes/job-1",
+            "/v1/sandboxes/job-1/restart",
             "/v1/sandboxes/job-1/exec",
+            "/v1/sandboxes/job-1/metering",
+            "/v1/metering/sandboxes",
             "/v1/sandboxes/job-1",
         ]
         create = server.requests[0]
         assert create["authorization"] == "Bearer secret"
         assert create["body"]["image_ref"] == "base:v1"
-        exec_req = server.requests[2]
+        assert create["body"]["namespace"] == "team-a"
+        assert server.requests[1]["query"]["namespace"] == ["team-a"]
+        assert server.requests[2]["query"]["namespace"] == ["team-a"]
+        assert server.requests[4]["query"]["timeout"] == ["2.5s"]
+        assert server.requests[5]["body"] == {"holder": "runner-42", "ttl": "30s"}
+        assert server.requests[6]["query"]["holder"] == ["runner-42"]
+        exec_req = server.requests[9]
         assert exec_req["body"]["command"] == ["/bin/echo", "ok"]
         assert exec_req["body"]["env"] == {"A": "1"}
         assert exec_req["body"]["timeout"] == "2.5s"
+        assert server.requests[11]["query"]["namespace"] == ["team-a"]
+        assert server.requests[11]["query"]["sandbox_id"] == ["job-1"]
     finally:
         server.stop()
 
@@ -206,6 +243,22 @@ def _state_kwargs() -> dict[str, object]:
 
 def _b64(data: bytes) -> str:
     return base64.b64encode(data).decode("ascii")
+
+
+def _metering(sandbox_id: str) -> dict[str, object]:
+    return {
+        "records": [
+            {
+                "id": "metering-1",
+                "sandbox_id": sandbox_id,
+                "assignment_id": "assignment-1",
+                "status": "ready",
+                "duration_millis": 1000,
+                "vm_millis": 1000,
+            }
+        ],
+        "summary": {"sandbox_id": sandbox_id, "records": 1, "duration_millis": 1000, "vm_millis": 1000},
+    }
 
 
 def _short_socket_path() -> Path:
@@ -269,36 +322,84 @@ class _FleetHTTPServer:
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self) -> None:  # noqa: N802
+                path, query = self._path_query()
                 owner.requests.append(
                     {
                         "method": "GET",
-                        "path": self.path,
+                        "path": path,
+                        "query": query,
                         "authorization": self.headers.get("authorization", ""),
                         "body": {},
                     }
                 )
-                if self.path == "/v1/sandboxes/job-1":
+                if path == "/v1/sandboxes":
+                    self._write(
+                        {
+                            "sandboxes": [
+                                {
+                                    "id": "job-1",
+                                    "vm_name": "cove-sandbox-job-1",
+                                    "image_ref": "base:v1",
+                                    "status": "ready",
+                                }
+                            ]
+                        }
+                    )
+                    return
+                if path == "/v1/sandboxes/job-1":
                     self._write({"id": "job-1", "vm_name": "cove-sandbox-job-1", "status": "ready"})
+                    return
+                if path == "/v1/sandboxes/job-1/metering":
+                    self._write(_metering("job-1"))
+                    return
+                if path == "/v1/metering/sandboxes":
+                    self._write(_metering(query.get("sandbox_id", ["job-1"])[0]))
                     return
                 self.send_error(404)
 
             def do_POST(self) -> None:  # noqa: N802
+                path, query = self._path_query()
                 body = self._read_json()
                 owner.requests.append(
                     {
                         "method": "POST",
-                        "path": self.path,
+                        "path": path,
+                        "query": query,
                         "authorization": self.headers.get("authorization", ""),
                         "body": body,
                     }
                 )
-                if self.path == "/v1/sandboxes":
+                if path == "/v1/sandboxes":
                     self._write({"id": "job-1", "vm_name": "cove-sandbox-job-1", "status": "pending"})
                     return
-                if self.path == "/v1/sandboxes/job-1/exec":
+                if path == "/v1/sandboxes/job-1/wait":
+                    self._write(
+                        {
+                            "done": True,
+                            "sandbox": {"id": "job-1", "vm_name": "cove-sandbox-job-1", "status": "ready"},
+                        }
+                    )
+                    return
+                if path == "/v1/sandboxes/job-1/lease":
+                    self._write(
+                        {
+                            "sandbox": {
+                                "id": "job-1",
+                                "vm_name": "cove-sandbox-job-1",
+                                "status": "ready",
+                                "lease": {"holder": "runner-42", "expires": "2026-05-31T10:00:30Z"},
+                            },
+                            "lease": {"holder": "runner-42", "expires": "2026-05-31T10:00:30Z"},
+                        }
+                    )
+                    return
+                if path == "/v1/sandboxes/job-1/restart":
+                    self._write({"id": "job-1", "vm_name": "cove-sandbox-job-1", "status": "restarting"})
+                    return
+                if path == "/v1/sandboxes/job-1/exec":
                     self._write({"done": True, "exit_code": 7, "stdout": "out", "stderr": "err"})
                     return
-                if self.path == "/v1/sandboxes/job-1/control":
+                if path == "/v1/sandboxes/job-1/control":
                     if body.get("type") == "screenshot":
                         self._write(
                             {
@@ -313,15 +414,20 @@ class _FleetHTTPServer:
                 self.send_error(404)
 
             def do_DELETE(self) -> None:  # noqa: N802
+                path, query = self._path_query()
                 owner.requests.append(
                     {
                         "method": "DELETE",
-                        "path": self.path,
+                        "path": path,
+                        "query": query,
                         "authorization": self.headers.get("authorization", ""),
                         "body": {},
                     }
                 )
-                if self.path == "/v1/sandboxes/job-1":
+                if path == "/v1/sandboxes/job-1/lease":
+                    self._write({"sandbox": {"id": "job-1", "vm_name": "cove-sandbox-job-1", "status": "ready", "lease": None}})
+                    return
+                if path == "/v1/sandboxes/job-1":
                     self._write({"id": "job-1", "status": "draining"})
                     return
                 self.send_error(404)
@@ -342,5 +448,9 @@ class _FleetHTTPServer:
                 self.send_header("content-length", str(len(data)))
                 self.end_headers()
                 self.wfile.write(data)
+
+            def _path_query(self) -> tuple[str, dict[str, list[str]]]:
+                parsed = urllib.parse.urlsplit(self.path)
+                return parsed.path, urllib.parse.parse_qs(parsed.query)
 
         return Handler

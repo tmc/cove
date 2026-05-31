@@ -327,6 +327,51 @@ class CoveFleetClient:
             timeout=timeout,
         )
 
+    @classmethod
+    def list_sandboxes(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        timeout: float = 30.0,
+    ) -> list[dict[str, Any]]:
+        seed = cls(
+            sandbox_id="list",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        return seed.list()
+
+    def list(self) -> list[dict[str, Any]]:
+        path = _query_path("/v1/sandboxes", {"namespace": self.namespace})
+        data = self._request("GET", path, timeout=self.timeout)
+        sandboxes = data.get("sandboxes") or []
+        if not isinstance(sandboxes, list):
+            raise CoveError("GET /v1/sandboxes: expected sandboxes list")
+        return [dict(item) for item in sandboxes if isinstance(item, dict)]
+
+    def status(self, *, timeout: float | None = None) -> dict[str, Any]:
+        data = self._request("GET", self._sandbox_path(), timeout=timeout or self.timeout)
+        self.vm = str(data.get("vm_name") or self.vm or "")
+        return data
+
+    def wait(self, timeout: float = 30.0) -> dict[str, Any]:
+        if timeout < 0:
+            raise ValueError("timeout must not be negative")
+        data = self._request(
+            "POST",
+            _query_path(self._sandbox_path("wait"), {"timeout": _format_seconds(timeout)}),
+            {},
+            timeout=timeout + min(timeout, 30),
+        )
+        sandbox = data.get("sandbox") or {}
+        if isinstance(sandbox, dict):
+            self.vm = str(sandbox.get("vm_name") or self.vm or "")
+        return data
+
     def start(self, *, gui: bool = False, extra_args: Sequence[str] = ()) -> None:
         del gui, extra_args
         self._request("POST", self._sandbox_path("start"), {}, timeout=self.timeout)
@@ -335,13 +380,38 @@ class CoveFleetClient:
         del force
         self._request("POST", self._sandbox_path("stop"), {}, timeout=self.timeout)
 
+    def restart(self) -> None:
+        self._request("POST", self._sandbox_path("restart"), {}, timeout=self.timeout)
+
+    def lease(self, *, holder: str = "", ttl: float | None = None) -> dict[str, Any]:
+        if ttl is not None and ttl < 0:
+            raise ValueError("ttl must not be negative")
+        body: dict[str, object] = {}
+        if holder.strip():
+            body["holder"] = holder.strip()
+        if ttl is not None:
+            body["ttl"] = _format_seconds(ttl)
+        return self._request("POST", self._sandbox_path("lease"), body, timeout=self.timeout)
+
+    def release_lease(self, *, holder: str = "") -> dict[str, Any]:
+        path = self._sandbox_path("lease")
+        if holder.strip():
+            path = _query_path(path, {"holder": holder.strip()})
+        return self._request("DELETE", path, timeout=self.timeout)
+
+    def metering(self) -> dict[str, Any]:
+        return self._request("GET", self._sandbox_path("metering"), timeout=self.timeout)
+
+    def list_metering(self, *, sandbox_id: str | None = None) -> dict[str, Any]:
+        query = {"namespace": self.namespace, "sandbox_id": sandbox_id or ""}
+        return self._request("GET", _query_path("/v1/metering/sandboxes", query), timeout=self.timeout)
+
     def wait_ready(self, timeout: float = 120.0) -> None:
         deadline = time.monotonic() + timeout
         last_status = ""
         while True:
-            data = self._request("GET", self._sandbox_path(), timeout=min(max(timeout, 0.1), self.timeout))
+            data = self.status(timeout=min(max(timeout, 0.1), self.timeout))
             last_status = str(data.get("status") or "")
-            self.vm = str(data.get("vm_name") or self.vm or "")
             if last_status == "ready":
                 return
             if last_status in {"canceled", "complete", "failed", "stopped"}:
@@ -534,6 +604,13 @@ class CoveFleetClient:
 
 def _fleet_api_key_from_env() -> str:
     return (os.environ.get("COVE_API_KEY") or os.environ.get("COVE_FLEET_TOKEN") or "").strip()
+
+
+def _query_path(path: str, values: Mapping[str, str]) -> str:
+    query = {key: value.strip() for key, value in values.items() if value.strip()}
+    if not query:
+        return path
+    return path + "?" + urllib.parse.urlencode(query)
 
 
 def _format_seconds(seconds: float) -> str:
