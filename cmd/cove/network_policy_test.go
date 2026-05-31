@@ -2,11 +2,14 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/tmc/cove/internal/metrics"
 )
 
 func TestParseNetworkPolicyNamed(t *testing.T) {
@@ -202,6 +205,88 @@ func TestPrintNetworkAudit(t *testing.T) {
 	}
 }
 
+func TestRunNetworkAuditSummaryJSONAndRaw(t *testing.T) {
+	runsRoot := t.TempDir()
+	prevRuns := runsDirHook
+	runsDirHook = func() string { return runsRoot }
+	t.Cleanup(func() { runsDirHook = prevRuns })
+
+	dir := filepath.Join(runsRoot, "20260531-alpha")
+	writeNetworkAuditMetrics(t, dir, "job-vm", "macos:latest", "ok", 0)
+	policy, err := ParseNetworkPolicy("packages")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteNetworkPolicyAudit(dir, policy); err != nil {
+		t.Fatal(err)
+	}
+
+	var human bytes.Buffer
+	if err := RunNetworkAudit(&human, []string{"20260531"}); err != nil {
+		t.Fatalf("RunNetworkAudit summary: %v", err)
+	}
+	for _, want := range []string{
+		"run:",
+		"20260531-alpha",
+		"vm:",
+		"job-vm",
+		"policy:",
+		"packages mode=nat",
+		"enforcement:",
+		"not-hooked",
+		"decisions:",
+		"policy-loaded=1",
+	} {
+		if !strings.Contains(human.String(), want) {
+			t.Fatalf("summary missing %q:\n%s", want, human.String())
+		}
+	}
+
+	var raw bytes.Buffer
+	if err := RunNetworkAudit(&raw, []string{"20260531", "--raw"}); err != nil {
+		t.Fatalf("RunNetworkAudit raw: %v", err)
+	}
+	if !strings.Contains(raw.String(), "# cove network audit") {
+		t.Fatalf("raw audit = %q", raw.String())
+	}
+
+	var js bytes.Buffer
+	if err := RunNetworkAudit(&js, []string{"20260531", "--json"}); err != nil {
+		t.Fatalf("RunNetworkAudit json: %v", err)
+	}
+	var report networkAuditReport
+	if err := json.Unmarshal(js.Bytes(), &report); err != nil {
+		t.Fatalf("json: %v\n%s", err, js.String())
+	}
+	if report.RunID != "20260531-alpha" || report.Policy != "packages" || report.Mode != "nat" || report.Decisions["policy-loaded"] != 1 {
+		t.Fatalf("report = %+v", report)
+	}
+}
+
+func TestRunNetworkAuditNoLog(t *testing.T) {
+	runsRoot := t.TempDir()
+	prevRuns := runsDirHook
+	runsDirHook = func() string { return runsRoot }
+	t.Cleanup(func() { runsDirHook = prevRuns })
+
+	dir := filepath.Join(runsRoot, "open-run")
+	writeNetworkAuditMetrics(t, dir, "open-vm", "", "ok", 0)
+	var out bytes.Buffer
+	if err := RunNetworkAudit(&out, []string{"open"}); err != nil {
+		t.Fatalf("RunNetworkAudit: %v", err)
+	}
+	if !strings.Contains(out.String(), "no network.log found") {
+		t.Fatalf("summary = %s", out.String())
+	}
+}
+
+func TestRunNetworkAuditFlagConflict(t *testing.T) {
+	err := RunNetworkAudit(&bytes.Buffer{}, []string{"run", "--raw", "--json"})
+	if err == nil || !strings.Contains(err.Error(), "choose only one") {
+		t.Fatalf("err = %v, want flag conflict", err)
+	}
+}
+
 func TestWriteNetworkPolicyAuditWrapsWriteError(t *testing.T) {
 	// Plant a directory at network.log so WriteFile fails; exercises the
 	// wrap path independently of the MkdirAll branch.
@@ -219,5 +304,42 @@ func TestWriteNetworkPolicyAuditWrapsWriteError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "network.log") {
 		t.Fatalf("error %q missing path", err)
+	}
+}
+
+func writeNetworkAuditMetrics(t *testing.T, dir, vm, image, status string, exitCode int) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	events := []metrics.Event{
+		{
+			Timestamp: "2026-05-31T12:00:00Z",
+			EventType: "vm_start",
+			VMName:    vm,
+			ImageRef:  image,
+			Status:    "ok",
+		},
+		{
+			Timestamp:  "2026-05-31T12:00:05Z",
+			EventType:  "run_complete",
+			VMName:     vm,
+			ImageRef:   image,
+			Status:     status,
+			DurationMS: 5000,
+			Extra: map[string]any{
+				"exit_code": exitCode,
+			},
+		},
+	}
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	for _, event := range events {
+		if err := enc.Encode(event); err != nil {
+			t.Fatalf("encode metric: %v", err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "metrics.jsonl"), b.Bytes(), 0644); err != nil {
+		t.Fatalf("WriteFile metrics: %v", err)
 	}
 }

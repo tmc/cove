@@ -50,6 +50,11 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   `file://`, and `fd://` secret inputs, optional SSH authorized_keys install,
   and JSON output. `delete` removes account records and standard home-directory
   residue by default, with `--keep-home` available.
+- `cove network audit <run-id-prefix>` now resolves run prefixes and prints a
+  run-aware network summary from `metrics.jsonl` plus `network.log`, including
+  VM/image/status, policy, enforcement mode, allowlists, limitations, and
+  decision counts. Use `--raw` for the original log bytes or `--json` for
+  machine-readable output.
 - `cove image inspect -remote` now accepts multiple registry refs for private
   catalog audits. Single-ref JSON remains an object; batch JSON is an array and
   includes per-ref errors while returning a failing exit status if any ref fails.

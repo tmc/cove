@@ -1206,7 +1206,7 @@ cove unpin run:20260505T120000Z
 
 ---
 
-## logs / cp / diff / forward / network logs
+## logs / cp / diff / forward / network audit/logs
 
 v0.4 adds small operator commands for moving data, reading logs, comparing
 images, and exposing selected ports.
@@ -1222,6 +1222,7 @@ cove forward <vm> udp:<hostport>:<vmport>
 cove user audit <vm> --user <name> [-json]
 cove user create <vm> --user <name> [--admin]
 cove user delete <vm> --user <name> [--keep-home]
+cove network audit <run-id-prefix> [--raw|--json]
 cove network logs <vm> [-f]
 ```
 
@@ -1232,6 +1233,7 @@ cove network logs <vm> [-f]
 | `diff <ref-a> <ref-b> [-json]` | Compare local image manifests/layers. |
 | `forward` | Forward TCP/UDP between host and guest; `-reverse` exposes guest-to-host direction. |
 | `user audit/create/delete` | Guest user lifecycle through the agent: read-only residue audit, standard/admin creation with password and optional SSH key, and deletion with home cleanup. |
+| `network audit <run-id-prefix> [--raw\|--json]` | Summarize one run bundle's network policy audit with VM/image/status, policy, enforcement, allowlists, limitations, and decision counts. |
 | `network logs <vm> [-f]` | Tail network policy audit events. |
 
 ```bash
@@ -1245,6 +1247,8 @@ cove forward dev -reverse 3000:8080
 cove user audit dev --user runner -json
 cove user create dev --user runner --password fd://3 --ssh-key ~/.ssh/id_ed25519.pub
 cove user delete dev --user runner
+cove network audit 20260531
+cove network audit 20260531 --json
 cove network logs dev -f
 ```
 

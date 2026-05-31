@@ -45,12 +45,16 @@ cove run --net open
 ```
 
 For policies other than `open`, Cove writes `network.log` under the run
-artifact directory, for example `~/.vz/runs/<run-id>/network.log`.
-Print it with:
+artifact directory, for example `~/.vz/runs/<run-id>/network.log`. Summarize the
+run status, policy, enforcement, allowlists, limitations, and decision counts
+with:
 
 ```bash
-cove network audit <run-id>
+cove network audit <run-id-prefix>
 ```
+
+Use `--raw` to print `network.log` unchanged, or `--json` for structured output
+that can be attached to CI summaries.
 
 Current enforcement limits:
 

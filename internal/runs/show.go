@@ -60,7 +60,7 @@ type Failure struct {
 
 // LoadShow loads show data for the run matching prefix under root.
 func LoadShow(root, prefix string) (Show, error) {
-	dir, err := matchRunDir(root, prefix)
+	dir, err := ResolveDir(root, prefix)
 	if err != nil {
 		return Show{}, err
 	}
@@ -86,6 +86,11 @@ func LoadShow(root, prefix string) (Show, error) {
 		show.Failure = failure(events)
 	}
 	return show, nil
+}
+
+// ResolveDir returns the single run directory matching prefix under root.
+func ResolveDir(root, prefix string) (string, error) {
+	return matchRunDir(root, prefix)
 }
 
 // RenderShow writes a plain text summary for show.
