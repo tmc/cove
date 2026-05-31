@@ -19,6 +19,7 @@ type Remote struct {
 	User      string   `json:"user,omitempty"`
 	SSHArgs   []string `json:"ssh_args,omitempty"`
 	DefaultVM string   `json:"default_vm,omitempty"`
+	Cordoned  bool     `json:"cordoned,omitempty"`
 }
 
 type Entry struct {
@@ -106,6 +107,19 @@ func (c *Config) Remove(name string) error {
 		return fmt.Errorf("fleet remote %q not found", name)
 	}
 	delete(c.Remotes, name)
+	return nil
+}
+
+func (c *Config) SetCordoned(name string, cordoned bool) error {
+	if c == nil || c.Remotes == nil {
+		return fmt.Errorf("fleet remote %q not found", name)
+	}
+	remote, ok := c.Remotes[name]
+	if !ok {
+		return fmt.Errorf("fleet remote %q not found", name)
+	}
+	remote.Cordoned = cordoned
+	c.Remotes[name] = remote
 	return nil
 }
 

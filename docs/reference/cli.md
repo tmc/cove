@@ -955,6 +955,8 @@ migration context, see [Fleet Quickstart](../quickstart/fleet.md) and
 
 ```
 cove fleet add <name> <ssh-target> [--root <path>]
+cove fleet cordon <name>
+cove fleet uncordon <name>
 cove fleet ls
 cove fleet rm <name>
 cove --fleet=<name> <command> [args...]
@@ -964,13 +966,15 @@ cove fleet ps [--json] [--watch]
 cove fleet image push <ref> <dst-host>
 cove fleet image pull <ref> <src-host>
 cove fleet image sync <ref> <src-host> <dst-host>
-cove fleet run --policy=least-loaded [run flags...]
+cove fleet run --policy=least-loaded|image-affinity [run flags...]
 cove fleet metrics [--json]
 ```
 
 | Subcommand | Description |
 |------------|-------------|
 | `add <name> <ssh-target>` | Register a trusted remote Mac reachable by SSH. |
+| `cordon <name>` | Keep a registered host routable, but skip it for fleet run placement. |
+| `uncordon <name>` | Allow fleet run placement to select a previously cordoned host again. |
 | `ls` / `list` | List registered fleet hosts. |
 | `rm` / `remove <name>` | Remove a fleet host registration. |
 | `--fleet=<name> <command>` | Route supported `ctl`, `shell`, `cp`, `logs`, `list`, `vm list`, `image list`, and `run` commands to a remote host. |
@@ -980,11 +984,13 @@ cove fleet metrics [--json]
 | `image push <ref> <dst-host>` | Stream a local image ref to another fleet host. |
 | `image pull <ref> <src-host>` | Pull an image ref from another fleet host. |
 | `image sync <ref> <src-host> <dst-host>` | Copy an image ref between two fleet hosts. |
-| `run --policy=least-loaded` | Place a run on the least-loaded registered host. |
+| `run --policy=least-loaded|image-affinity` | Place a run on a non-cordoned registered host by load or image locality. |
 | `metrics [--json]` | Aggregate fleet-wide metrics across registered hosts. |
 
 ```bash
 cove fleet add mini-1 mini-1.local
+cove fleet cordon mini-1
+cove fleet uncordon mini-1
 cove fleet vm list
 cove fleet image push macos-runner:latest mini-1
 cove fleet run --policy=least-loaded -fork-from macos-runner:latest -ephemeral

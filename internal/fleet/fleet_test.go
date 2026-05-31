@@ -62,6 +62,30 @@ func TestConfigAddRemoveList(t *testing.T) {
 	}
 }
 
+func TestConfigSetCordoned(t *testing.T) {
+	cfg := &Config{}
+	if err := cfg.Add("a", Remote{Host: "a.local"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if err := cfg.SetCordoned("a", true); err != nil {
+		t.Fatalf("SetCordoned true: %v", err)
+	}
+	remote, ok := cfg.Get("a")
+	if !ok || !remote.Cordoned {
+		t.Fatalf("remote = %#v, ok=%v, want cordoned", remote, ok)
+	}
+	if err := cfg.SetCordoned("a", false); err != nil {
+		t.Fatalf("SetCordoned false: %v", err)
+	}
+	remote, ok = cfg.Get("a")
+	if !ok || remote.Cordoned {
+		t.Fatalf("remote = %#v, ok=%v, want uncordoned", remote, ok)
+	}
+	if err := cfg.SetCordoned("missing", true); err == nil {
+		t.Fatal("SetCordoned missing succeeded")
+	}
+}
+
 func TestParseTarget(t *testing.T) {
 	for _, tc := range []struct {
 		in   string

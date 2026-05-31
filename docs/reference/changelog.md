@@ -8,6 +8,8 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 ## Unreleased
 
 ### Added
+- `cove fleet cordon` and `uncordon` now mark registered hosts as skipped for
+  `fleet run` placement while keeping direct `--fleet=<name>` routing intact.
 - `cove build --cache-from` and `--cache-to` now import and export cove
   build-cache artifacts through OCI refs, carrying cache entries, layer
   manifests, and block-delta blobs between runners.

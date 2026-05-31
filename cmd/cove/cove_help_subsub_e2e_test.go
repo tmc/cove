@@ -59,6 +59,8 @@ var subSubHelp = []subSubHelpCase{
 	{"daemon", "metrics"},
 	{"daemon", "ui"},
 	{"fleet", "add"},
+	{"fleet", "cordon"},
+	{"fleet", "uncordon"},
 	{"fleet", "ls"},
 	{"fleet", "rm"},
 	{"fleet", "vm"},

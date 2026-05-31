@@ -63,6 +63,33 @@ func TestFleetRemove(t *testing.T) {
 	}
 }
 
+func TestFleetCordonListUncordon(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "fleet.json")
+	if err := runFleetCommand([]string{"add", "demo", "me@localhost", "-vm", "ubuntu"}, path, &bytes.Buffer{}, &bytes.Buffer{}); err != nil {
+		t.Fatalf("fleet add: %v", err)
+	}
+	if err := runFleetCommand([]string{"cordon", "demo"}, path, &bytes.Buffer{}, &bytes.Buffer{}); err != nil {
+		t.Fatalf("fleet cordon: %v", err)
+	}
+	var out bytes.Buffer
+	if err := runFleetCommand([]string{"ls"}, path, &out, &bytes.Buffer{}); err != nil {
+		t.Fatalf("fleet ls: %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "cordoned") || !strings.Contains(got, "default_vm=ubuntu") {
+		t.Fatalf("fleet ls = %q, want cordoned default vm", got)
+	}
+	if err := runFleetCommand([]string{"uncordon", "demo"}, path, &bytes.Buffer{}, &bytes.Buffer{}); err != nil {
+		t.Fatalf("fleet uncordon: %v", err)
+	}
+	out.Reset()
+	if err := runFleetCommand([]string{"ls"}, path, &out, &bytes.Buffer{}); err != nil {
+		t.Fatalf("fleet ls after uncordon: %v", err)
+	}
+	if strings.Contains(out.String(), "cordoned") {
+		t.Fatalf("fleet ls after uncordon = %q, want no cordoned marker", out.String())
+	}
+}
+
 func TestFleetRemoteArgs(t *testing.T) {
 	remote := fleetpkg.Remote{DefaultVM: "ubuntu"}
 	for _, tc := range []struct {
@@ -120,6 +147,28 @@ func TestFleetRunLeastLoadedIgnoresUnreachable(t *testing.T) {
 	if !strings.Contains(out.String(), "selected b") {
 		t.Fatalf("output = %q, want selected b", out.String())
 	}
+	runner.assertSawCall(t, "b.local", []string{"run"})
+}
+
+func TestFleetRunLeastLoadedSkipsCordoned(t *testing.T) {
+	path := writeFleetHostsConfigWithRemotes(t, map[string]fleetpkg.Remote{
+		"a": {Host: "a.local", Cordoned: true},
+		"b": {Host: "b.local"},
+	})
+	runner := &fakeFleetRunner{outputs: map[string]string{
+		"a.local": "",
+		"b.local": "b1 running\n",
+	}}
+	var out bytes.Buffer
+	if err := runFleetCommandWithRunner(context.Background(), []string{"run", "--policy=least-loaded"}, path, runner, &out, &bytes.Buffer{}); err != nil {
+		t.Fatalf("fleet run: %v", err)
+	}
+	for _, want := range []string{"selected b", "a=cordoned", "b=1"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("output missing %q:\n%s", want, out.String())
+		}
+	}
+	runner.assertCallsWithArgs(t, []string{"vm", "list"}, 1)
 	runner.assertSawCall(t, "b.local", []string{"run"})
 }
 
@@ -202,6 +251,36 @@ func TestFleetRunImageAffinityStagesLocalImageWhenCold(t *testing.T) {
 		t.Fatalf("loaded = %q, want tarball", runner.loaded)
 	}
 	runner.assertSawCall(t, "b.local", []string{"run", "-fork-from=base:latest", "-ephemeral"})
+}
+
+func TestFleetRunImageAffinitySkipsCordoned(t *testing.T) {
+	path := writeFleetHostsConfigWithRemotes(t, map[string]fleetpkg.Remote{
+		"a": {Host: "a.local", Cordoned: true},
+		"b": {Host: "b.local"},
+	})
+	vmListKey := fakeFleetArgsKey([]string{"vm", "list"})
+	inspectKey := fakeFleetArgsKey([]string{"image", "inspect", "-json", "base:latest"})
+	runner := &fakeFleetRunner{
+		outputsByArgs: map[string]map[string]string{
+			"a.local": {vmListKey: "", inspectKey: `{"ok":true}`},
+			"b.local": {vmListKey: "b1 running\n", inspectKey: `{"ok":true}`},
+		},
+	}
+	var out bytes.Buffer
+	err := runFleetCommandWithRunner(context.Background(), []string{
+		"run", "--policy=image-affinity", "-fork-from=base:latest",
+	}, path, runner, &out, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("fleet run image-affinity: %v", err)
+	}
+	for _, want := range []string{"selected b", "a=cordoned", "b=1"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("output missing %q:\n%s", want, out.String())
+		}
+	}
+	runner.assertCallsWithArgs(t, []string{"vm", "list"}, 1)
+	runner.assertCallsWithArgs(t, []string{"image", "inspect", "-json", "base:latest"}, 1)
+	runner.assertSawCall(t, "b.local", []string{"run", "-fork-from=base:latest"})
 }
 
 func TestFleetRunImageAffinityAllRemotesUnreachable(t *testing.T) {
@@ -640,10 +719,19 @@ func writeFleetTestConfig(t *testing.T) string {
 
 func writeFleetHostsConfig(t *testing.T, names ...string) string {
 	t.Helper()
+	remotes := make(map[string]fleetpkg.Remote, len(names))
+	for _, name := range names {
+		remotes[name] = fleetpkg.Remote{Host: name + ".local"}
+	}
+	return writeFleetHostsConfigWithRemotes(t, remotes)
+}
+
+func writeFleetHostsConfigWithRemotes(t *testing.T, remotes map[string]fleetpkg.Remote) string {
+	t.Helper()
 	path := filepath.Join(t.TempDir(), "fleet.json")
 	cfg := &fleetpkg.Config{}
-	for _, name := range names {
-		if err := cfg.Add(name, fleetpkg.Remote{Host: name + ".local"}); err != nil {
+	for name, remote := range remotes {
+		if err := cfg.Add(name, remote); err != nil {
 			t.Fatalf("Add %s: %v", name, err)
 		}
 	}

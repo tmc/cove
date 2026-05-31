@@ -9,24 +9,28 @@ import (
 )
 
 type HostLoad struct {
-	Host  string
-	Count int
-	Error error
+	Host     string
+	Count    int
+	Error    error
+	Cordoned bool
 }
 
 func SelectLeastLoadedHost(ctx context.Context, entries []Entry, query QueryFunc[string]) (Entry, []HostLoad, error) {
 	if len(entries) == 0 {
 		return Entry{}, nil, errors.New("fleet placement: no remotes configured")
 	}
-	results := QueryAll(ctx, entries, query)
-	loads := make([]HostLoad, 0, len(results))
+	active, loads := ActivePlacementEntries(entries)
+	if len(active) == 0 {
+		return Entry{}, loads, errors.New("fleet placement: all remotes cordoned")
+	}
+	results := QueryAll(ctx, active, query)
 	var candidates []Entry
 	counts := make(map[string]int, len(results))
 	for i, result := range results {
 		load := HostLoad{Host: result.Host, Error: result.Error}
 		if result.Error == nil {
 			load.Count = CountRunningVMs(result.Value)
-			candidates = append(candidates, entries[i])
+			candidates = append(candidates, active[i])
 			counts[result.Host] = load.Count
 		}
 		loads = append(loads, load)
@@ -42,6 +46,19 @@ func SelectLeastLoadedHost(ctx context.Context, entries []Entry, query QueryFunc
 		return candidates[i].Name < candidates[j].Name
 	})
 	return candidates[0], loads, nil
+}
+
+func ActivePlacementEntries(entries []Entry) ([]Entry, []HostLoad) {
+	active := make([]Entry, 0, len(entries))
+	loads := make([]HostLoad, 0, len(entries))
+	for _, entry := range entries {
+		if entry.Cordoned {
+			loads = append(loads, HostLoad{Host: entry.Name, Cordoned: true})
+			continue
+		}
+		active = append(active, entry)
+	}
+	return active, loads
 }
 
 func CountRunningVMs(output string) int {
@@ -60,6 +77,10 @@ func FormatHostLoads(loads []HostLoad) string {
 	}
 	parts := make([]string, 0, len(loads))
 	for _, load := range loads {
+		if load.Cordoned {
+			parts = append(parts, fmt.Sprintf("%s=cordoned", load.Host))
+			continue
+		}
 		if load.Error != nil {
 			parts = append(parts, fmt.Sprintf("%s=unreachable", load.Host))
 			continue

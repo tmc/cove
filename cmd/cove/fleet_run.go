@@ -86,7 +86,11 @@ func planFleetRunPlacement(ctx context.Context, policy string, runArgs []string,
 	if len(entries) == 0 {
 		return fleetRunPlacement{}, errors.New("fleet placement: no remotes configured")
 	}
-	results := fleetpkg.QueryAll(ctx, entries, func(ctx context.Context, entry fleetpkg.Entry) (fleetRunProbe, error) {
+	active, loads := fleetpkg.ActivePlacementEntries(entries)
+	if len(active) == 0 {
+		return fleetRunPlacement{Loads: loads}, errors.New("fleet placement: all remotes cordoned")
+	}
+	results := fleetpkg.QueryAll(ctx, active, func(ctx context.Context, entry fleetpkg.Entry) (fleetRunProbe, error) {
 		vmList, err := runFleetVMList(ctx, entry, runner)
 		if err != nil {
 			return fleetRunProbe{}, err
@@ -98,7 +102,6 @@ func planFleetRunPlacement(ctx context.Context, policy string, runArgs []string,
 		}
 		return probe, nil
 	})
-	loads := make([]fleetpkg.HostLoad, 0, len(results))
 	var candidates []fleetpkg.Entry
 	var reachable []fleetpkg.Entry
 	counts := make(map[string]int, len(results))
@@ -107,9 +110,9 @@ func planFleetRunPlacement(ctx context.Context, policy string, runArgs []string,
 		if result.Error == nil {
 			load.Count = fleetpkg.CountRunningVMs(result.Value.VMList)
 			counts[result.Host] = load.Count
-			reachable = append(reachable, entries[i])
+			reachable = append(reachable, active[i])
 			if result.Value.HasImage {
-				candidates = append(candidates, entries[i])
+				candidates = append(candidates, active[i])
 			}
 		}
 		loads = append(loads, load)

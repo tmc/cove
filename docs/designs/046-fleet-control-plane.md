@@ -297,8 +297,9 @@ governance/hosted, with scheduling as the free adoption driver — not the SKU.
   Daytona's sandbox lifecycle, hiding the host entirely:
   `POST /v1/sandboxes` (create = fork-from a snapshot), `GET /v1/sandboxes/{id}`,
   `POST /v1/sandboxes/{id}/{start|stop|wait}`, `DELETE /v1/sandboxes/{id}`, plus
-  `lease` (exclusive-modify lock) and `cordon` (prevent placement). The bar to
-  beat is Daytona's create→exec→delete in under six lines with an opaque handle.
+  `lease` (exclusive-modify lock) and controller-backed `cordon` (prevent
+  placement across all clients). The bar to beat is Daytona's create→exec→delete
+  in under six lines with an opaque handle.
 - **The wedge.** Cua Cloud runs **Linux/Windows only** — Apple-Silicon macOS does
   not scale horizontally cheaply, so they abandoned hosted macOS — and Cua users
   are openly asking for remote/multi-host macOS (Cua issues #1446, #1021) that

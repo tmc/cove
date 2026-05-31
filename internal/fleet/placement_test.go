@@ -66,6 +66,46 @@ func TestSelectLeastLoadedHostIgnoresUnreachable(t *testing.T) {
 	}
 }
 
+func TestSelectLeastLoadedHostSkipsCordoned(t *testing.T) {
+	entries := []Entry{
+		{Name: "a", Remote: Remote{Host: "a.local", Cordoned: true}},
+		{Name: "b", Remote: Remote{Host: "b.local"}},
+	}
+	called := map[string]bool{}
+	got, loads, err := SelectLeastLoadedHost(context.Background(), entries, func(ctx context.Context, e Entry) (string, error) {
+		called[e.Name] = true
+		return "", nil
+	})
+	if err != nil {
+		t.Fatalf("SelectLeastLoadedHost: %v", err)
+	}
+	if got.Name != "b" {
+		t.Fatalf("selected %q, want b", got.Name)
+	}
+	if called["a"] {
+		t.Fatalf("queried cordoned host: %#v", called)
+	}
+	if len(loads) != 2 || !loads[0].Cordoned || loads[1].Host != "b" {
+		t.Fatalf("loads = %#v, want cordoned a then b", loads)
+	}
+	if got := FormatHostLoads(loads); got != "a=cordoned b=0" {
+		t.Fatalf("FormatHostLoads = %q, want cordoned summary", got)
+	}
+}
+
+func TestSelectLeastLoadedHostAllCordoned(t *testing.T) {
+	_, loads, err := SelectLeastLoadedHost(context.Background(), []Entry{{Name: "a", Remote: Remote{Cordoned: true}}}, func(ctx context.Context, e Entry) (string, error) {
+		t.Fatal("queried cordoned host")
+		return "", nil
+	})
+	if err == nil || err.Error() != "fleet placement: all remotes cordoned" {
+		t.Fatalf("err = %v, want all remotes cordoned", err)
+	}
+	if len(loads) != 1 || !loads[0].Cordoned {
+		t.Fatalf("loads = %#v, want cordoned load", loads)
+	}
+}
+
 func TestSelectLeastLoadedHostAllUnreachable(t *testing.T) {
 	_, _, err := SelectLeastLoadedHost(context.Background(), []Entry{{Name: "a"}}, func(ctx context.Context, e Entry) (string, error) {
 		return "", errors.New("offline")

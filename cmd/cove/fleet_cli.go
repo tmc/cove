@@ -49,6 +49,18 @@ func runFleetCommandWithRunner(ctx context.Context, args []string, path string, 
 	switch args[0] {
 	case "add":
 		return fleetAdd(args[1:], path, errOut)
+	case "cordon":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			fmt.Fprintln(out, "Usage: cove fleet cordon <name>")
+			return nil
+		}
+		return fleetSetCordon(args[1:], path, true)
+	case "uncordon":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			fmt.Fprintln(out, "Usage: cove fleet uncordon <name>")
+			return nil
+		}
+		return fleetSetCordon(args[1:], path, false)
 	case "ls", "list":
 		if len(args) > 1 && isHelpArg(args[1]) {
 			fmt.Fprintln(out, "Usage: cove fleet ls")
@@ -101,6 +113,8 @@ func printFleetUsage(w io.Writer) {
 
 Commands:
   add <name> <user@host> [-vm <default>]
+  cordon <name>
+  uncordon <name>
   ls
   rm <name>
   vm ls [--json]
@@ -131,6 +145,23 @@ func fleetAdd(args []string, path string, errOut io.Writer) error {
 		return err
 	}
 	if err := cfg.Add(fs.Arg(0), remote); err != nil {
+		return err
+	}
+	return fleetpkg.SavePath(path, cfg)
+}
+
+func fleetSetCordon(args []string, path string, cordoned bool) error {
+	if len(args) != 1 {
+		if cordoned {
+			return errors.New("usage: cove fleet cordon <name>")
+		}
+		return errors.New("usage: cove fleet uncordon <name>")
+	}
+	cfg, err := fleetpkg.LoadPath(path)
+	if err != nil {
+		return err
+	}
+	if err := cfg.SetCordoned(args[0], cordoned); err != nil {
 		return err
 	}
 	return fleetpkg.SavePath(path, cfg)
@@ -169,10 +200,14 @@ func fleetList(path string, out io.Writer) error {
 			target = e.User + "@" + e.Host
 		}
 		if e.DefaultVM != "" {
-			fmt.Fprintf(out, "%s\t%s\tdefault_vm=%s\n", e.Name, target, e.DefaultVM)
+			fmt.Fprintf(out, "%s\t%s\tdefault_vm=%s", e.Name, target, e.DefaultVM)
 		} else {
-			fmt.Fprintf(out, "%s\t%s\n", e.Name, target)
+			fmt.Fprintf(out, "%s\t%s", e.Name, target)
 		}
+		if e.Cordoned {
+			fmt.Fprint(out, "\tcordoned")
+		}
+		fmt.Fprintln(out)
 	}
 	return nil
 }

@@ -64,6 +64,16 @@ Start a VM on the host with the fewest running VMs:
 cove fleet run --policy=least-loaded -linux -headless -vm ubuntu
 ```
 
+Temporarily take a host out of placement without removing it:
+
+```sh
+cove fleet cordon studio
+cove fleet uncordon studio
+```
+
+Cordoned hosts stay registered and usable through `cove --fleet=<name> ...`,
+but `cove fleet run` skips them when choosing a host.
+
 Remove a remote:
 
 ```sh
@@ -78,4 +88,5 @@ image references.
 
 Use `--fleet` only with commands that inspect or control an existing remote
 host. Least-loaded placement is opt-in through `cove fleet run
---policy=least-loaded`; default `cove run` behavior is unchanged.
+--policy=least-loaded`; default `cove run` behavior is unchanged. Cordon state
+is local CLI placement metadata, not a controller lease or health check.
