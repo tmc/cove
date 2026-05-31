@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	fleetpkg "github.com/tmc/cove/internal/fleet"
 )
@@ -169,6 +170,27 @@ func TestFleetRunLeastLoadedSkipsCordoned(t *testing.T) {
 		}
 	}
 	runner.assertCallsWithArgs(t, []string{"vm", "list"}, 1)
+	runner.assertSawCall(t, "b.local", []string{"run"})
+}
+
+func TestFleetRunLeastLoadedCountsPlacementLease(t *testing.T) {
+	path := writeFleetHostsConfig(t, "a", "b")
+	if err := fleetpkg.RecordPlacementLease(path, "a", time.Now(), time.Minute); err != nil {
+		t.Fatalf("RecordPlacementLease: %v", err)
+	}
+	runner := &fakeFleetRunner{outputs: map[string]string{
+		"a.local": "",
+		"b.local": "",
+	}}
+	var out bytes.Buffer
+	if err := runFleetCommandWithRunner(context.Background(), []string{"run", "--policy=least-loaded"}, path, runner, &out, &bytes.Buffer{}); err != nil {
+		t.Fatalf("fleet run: %v", err)
+	}
+	for _, want := range []string{"selected b", "a=0+1lease", "b=0"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("output missing %q:\n%s", want, out.String())
+		}
+	}
 	runner.assertSawCall(t, "b.local", []string{"run"})
 }
 

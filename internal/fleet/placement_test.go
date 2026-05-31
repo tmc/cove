@@ -93,6 +93,28 @@ func TestSelectLeastLoadedHostSkipsCordoned(t *testing.T) {
 	}
 }
 
+func TestSelectLeastLoadedHostCountsLeases(t *testing.T) {
+	entries := []Entry{
+		{Name: "a", Remote: Remote{Host: "a.local"}},
+		{Name: "b", Remote: Remote{Host: "b.local"}},
+	}
+	got, loads, err := SelectLeastLoadedHostWithLeases(context.Background(), entries, map[string]int{"a": 1}, func(ctx context.Context, e Entry) (string, error) {
+		return "", nil
+	})
+	if err != nil {
+		t.Fatalf("SelectLeastLoadedHostWithLeases: %v", err)
+	}
+	if got.Name != "b" {
+		t.Fatalf("selected %q, want b", got.Name)
+	}
+	if len(loads) != 2 || loads[0].Leases != 1 || loads[1].Leases != 0 {
+		t.Fatalf("loads = %#v, want one lease on a", loads)
+	}
+	if got := FormatHostLoads(loads); got != "a=0+1lease b=0" {
+		t.Fatalf("FormatHostLoads = %q, want lease summary", got)
+	}
+}
+
 func TestSelectLeastLoadedHostAllCordoned(t *testing.T) {
 	_, loads, err := SelectLeastLoadedHost(context.Background(), []Entry{{Name: "a", Remote: Remote{Cordoned: true}}}, func(ctx context.Context, e Entry) (string, error) {
 		t.Fatal("queried cordoned host")

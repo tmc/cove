@@ -74,6 +74,11 @@ cove fleet uncordon studio
 Cordoned hosts stay registered and usable through `cove --fleet=<name> ...`,
 but `cove fleet run` skips them when choosing a host.
 
+Back-to-back `cove fleet run` commands record short local placement leases for
+the selected hosts. Those leases count as pending load during later placement,
+so bursty starts from the same workstation spread out before the remote VM list
+has caught up.
+
 Remove a remote:
 
 ```sh
@@ -89,4 +94,5 @@ image references.
 Use `--fleet` only with commands that inspect or control an existing remote
 host. Least-loaded placement is opt-in through `cove fleet run
 --policy=least-loaded`; default `cove run` behavior is unchanged. Cordon state
-is local CLI placement metadata, not a controller lease or health check.
+and placement leases are local CLI metadata, not durable controller leases or
+health checks.

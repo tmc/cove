@@ -29,7 +29,7 @@ delegates the disk/runtime work to `tart` or `vetu`.
 | **VM-state snapshot** | VM-state snapshots plus disk clone snapshots (`snapshots.go`, `disk-snapshots/`) | suspend state only | none found | none found |
 | **Distribution** | OCI push/pull for cove images; compatibility push/pull for tart and lume formats; OCI build-cache import/export; local image tar transfer for fleet (`cmd/cove/push.go`, `pull.go`, `fleet_image.go`) | first-class OCI registry push/pull | first-class OCI registry push/pull | pulls images onto workers through the chosen runtime |
 | **Base/delta reuse** | cove-format chunked disks support `--base`, blob mount/reuse, base-manifest annotations, resumable pulls, local base-disk reuse, persistent registry-base materialization shared by builds and pulls, and portable build-cache layers via `--cache-from` / `--cache-to` | local layer cache with digest ranges and APFS share checks | legacy chunk annotations and concurrent reassembly | runtime-dependent |
-| **Placement** | `fleet run --policy=least-loaded|image-affinity`; image-affinity can pre-stage a local image to the selected host; cordon/uncordon skips hosts for placement while preserving direct routing (`cmd/cove/fleet_run.go`) | none | none | full controller/scheduler model |
+| **Placement** | `fleet run --policy=least-loaded|image-affinity`; image-affinity can pre-stage a local image to the selected host; cordon/uncordon skips hosts for placement; short local placement leases count as pending load (`cmd/cove/fleet_run.go`) | none | none | full controller/scheduler model |
 
 ## Where cove now leads
 
@@ -57,16 +57,18 @@ delegates the disk/runtime work to `tart` or `vetu`.
    between runners through the same private registry path as images.
 
 5. **Image-aware, drainable fleet placement.** cove is not orchard's controller,
-   but its fleet CLI now understands image locality and operator drain intent:
-   it skips cordoned hosts, prefers a reachable host that already has
+   but its fleet CLI now understands image locality, operator drain intent, and
+   short local placement leases: it skips cordoned hosts, counts recent local
+   selections as pending load, prefers a reachable host that already has
    `-fork-from`, and if none do, stages the local image to the least-loaded
    reachable host before running the VM there.
 
 ## Where competitors still lead
 
 - **orchard has a real control plane.** cove's fleet support is CLI placement and
-  transfer with local cordon metadata; orchard still owns reconciliation,
-  durable leases, worker lifecycle, and scheduler/controller concerns.
+  transfer with local cordon and short lease metadata; orchard still owns
+  reconciliation, durable leases, worker lifecycle, and scheduler/controller
+  concerns.
 - **tart has the mature public image lane.** cove now speaks tart format, but
   tart still has the established image catalog and local layer-cache machinery.
 - **lume's legacy chunk transport is elaborate.** cove can interoperate with
@@ -79,5 +81,6 @@ cove's disk story is no longer "local-only raw disk plus clonefile." It is a VM
 runtime with RAM-overlay disposability, live quota caps, optional ASIF disks,
 multi-format OCI distribution, base/delta reuse, portable OCI build caches,
 resumable pulls, and
-image-aware fleet placement with cordon drains. tart and lume still lead in
-ecosystem maturity, and orchard still leads as a full fleet controller.
+image-aware fleet placement with cordon drains and local launch leases. tart and
+lume still lead in ecosystem maturity, and orchard still leads as a full fleet
+controller.

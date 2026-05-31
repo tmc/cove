@@ -8,6 +8,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"time"
 
 	fleetpkg "github.com/tmc/cove/internal/fleet"
 )
@@ -47,8 +48,15 @@ func runFleetRunCommand(ctx context.Context, args []string, path string, runner 
 		return err
 	}
 	entries := cfg.List()
-	placement, err := planFleetRunPlacement(ctx, policy, runArgs, entries, runner)
+	leases, err := fleetpkg.ActivePlacementLeaseCounts(path, time.Now())
 	if err != nil {
+		return err
+	}
+	placement, err := planFleetRunPlacement(ctx, policy, runArgs, entries, leases, runner)
+	if err != nil {
+		return err
+	}
+	if err := fleetpkg.RecordPlacementLease(path, placement.Selected.Name, time.Now(), fleetpkg.DefaultPlacementLeaseTTL); err != nil {
 		return err
 	}
 	if placement.Prestage != nil {
@@ -68,13 +76,13 @@ func runFleetRunCommand(ctx context.Context, args []string, path string, runner 
 }
 
 func selectFleetRunHost(ctx context.Context, policy string, runArgs []string, entries []fleetpkg.Entry, runner fleetRunner) (fleetpkg.Entry, []fleetpkg.HostLoad, error) {
-	placement, err := planFleetRunPlacement(ctx, policy, runArgs, entries, runner)
+	placement, err := planFleetRunPlacement(ctx, policy, runArgs, entries, nil, runner)
 	return placement.Selected, placement.Loads, err
 }
 
-func planFleetRunPlacement(ctx context.Context, policy string, runArgs []string, entries []fleetpkg.Entry, runner fleetRunner) (fleetRunPlacement, error) {
+func planFleetRunPlacement(ctx context.Context, policy string, runArgs []string, entries []fleetpkg.Entry, leases map[string]int, runner fleetRunner) (fleetRunPlacement, error) {
 	if policy == "least-loaded" {
-		selected, loads, err := fleetpkg.SelectLeastLoadedHost(ctx, entries, func(ctx context.Context, entry fleetpkg.Entry) (string, error) {
+		selected, loads, err := fleetpkg.SelectLeastLoadedHostWithLeases(ctx, entries, leases, func(ctx context.Context, entry fleetpkg.Entry) (string, error) {
 			return runFleetVMList(ctx, entry, runner)
 		})
 		return fleetRunPlacement{Selected: selected, Loads: loads}, err
@@ -109,7 +117,8 @@ func planFleetRunPlacement(ctx context.Context, policy string, runArgs []string,
 		load := fleetpkg.HostLoad{Host: result.Host, Error: result.Error}
 		if result.Error == nil {
 			load.Count = fleetpkg.CountRunningVMs(result.Value.VMList)
-			counts[result.Host] = load.Count
+			load.Leases = leases[result.Host]
+			counts[result.Host] = load.Count + load.Leases
 			reachable = append(reachable, active[i])
 			if result.Value.HasImage {
 				candidates = append(candidates, active[i])

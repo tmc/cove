@@ -13,9 +13,14 @@ type HostLoad struct {
 	Count    int
 	Error    error
 	Cordoned bool
+	Leases   int
 }
 
 func SelectLeastLoadedHost(ctx context.Context, entries []Entry, query QueryFunc[string]) (Entry, []HostLoad, error) {
+	return SelectLeastLoadedHostWithLeases(ctx, entries, nil, query)
+}
+
+func SelectLeastLoadedHostWithLeases(ctx context.Context, entries []Entry, leases map[string]int, query QueryFunc[string]) (Entry, []HostLoad, error) {
 	if len(entries) == 0 {
 		return Entry{}, nil, errors.New("fleet placement: no remotes configured")
 	}
@@ -30,8 +35,9 @@ func SelectLeastLoadedHost(ctx context.Context, entries []Entry, query QueryFunc
 		load := HostLoad{Host: result.Host, Error: result.Error}
 		if result.Error == nil {
 			load.Count = CountRunningVMs(result.Value)
+			load.Leases = leases[result.Host]
 			candidates = append(candidates, active[i])
-			counts[result.Host] = load.Count
+			counts[result.Host] = load.Count + load.Leases
 		}
 		loads = append(loads, load)
 	}
@@ -83,6 +89,14 @@ func FormatHostLoads(loads []HostLoad) string {
 		}
 		if load.Error != nil {
 			parts = append(parts, fmt.Sprintf("%s=unreachable", load.Host))
+			continue
+		}
+		if load.Leases > 0 {
+			suffix := "lease"
+			if load.Leases != 1 {
+				suffix = "leases"
+			}
+			parts = append(parts, fmt.Sprintf("%s=%d+%d%s", load.Host, load.Count, load.Leases, suffix))
 			continue
 		}
 		parts = append(parts, fmt.Sprintf("%s=%d", load.Host, load.Count))

@@ -984,7 +984,7 @@ cove fleet metrics [--json]
 | `image push <ref> <dst-host>` | Stream a local image ref to another fleet host. |
 | `image pull <ref> <src-host>` | Pull an image ref from another fleet host. |
 | `image sync <ref> <src-host> <dst-host>` | Copy an image ref between two fleet hosts. |
-| `run --policy=least-loaded|image-affinity` | Place a run on a non-cordoned registered host by load or image locality. |
+| `run --policy=least-loaded|image-affinity` | Place a run on a non-cordoned registered host by load or image locality, counting short local placement leases as pending load. |
 | `metrics [--json]` | Aggregate fleet-wide metrics across registered hosts. |
 
 ```bash
