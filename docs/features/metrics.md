@@ -61,11 +61,12 @@ truncated `error` string when `status` is `error`.
 bundles. `extra.phase` is `start`, `periodic`, or `end`; periodic samples are
 emitted roughly every 30 seconds after the guest agent becomes ready and carry
 `sample_index`. Guest fields use byte counts from agent info for memory and
-disk, load averages for guest CPU pressure, uptime seconds, and the visible
-non-system user count. Virtualization.framework memory fields report
-configured/target memory plus balloon support when the runtime exposes them,
-and host-process fields report the owning cove process PID, CPU percentage, RSS
-bytes, and start source when cove can resolve them.
+disk, load averages for guest CPU pressure, uptime seconds, visible non-system
+user count, total guest process count, and a bounded top-process list with PID,
+CPU percentage, RSS bytes, and executable label. Virtualization.framework memory
+fields report configured/target memory plus balloon support when the runtime
+exposes them, and host-process fields report the owning cove process PID, CPU
+percentage, RSS bytes, and start source when cove can resolve them.
 
 `build_step`
 : Emitted for each `cove build` step. `extra` includes `step`, `cache_hit`,

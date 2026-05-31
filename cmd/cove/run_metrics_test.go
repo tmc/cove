@@ -130,7 +130,7 @@ func TestResourceSampleMetricWritesMemory(t *testing.T) {
 	runsDirHook = func() string { return runsRoot }
 	prevInfo := resourceAgentInfoHook
 	resourceAgentInfoHook = func(string) (*controlpb.AgentInfoResponse, error) {
-		return &controlpb.AgentInfoResponse{RawJson: `{"memory_total":8192,"memory_available":4096,"disk_total":65536,"disk_available":32768,"load_avg_1":1.25,"load_avg_5":"0.75","load_avg_15":0.5,"uptime_seconds":99,"users":["dev","ci"]}`}, nil
+		return &controlpb.AgentInfoResponse{RawJson: `{"memory_total":8192,"memory_available":4096,"disk_total":65536,"disk_available":32768,"load_avg_1":1.25,"load_avg_5":"0.75","load_avg_15":0.5,"uptime_seconds":99,"users":["dev","ci"],"process_count":22,"top_processes":[{"pid":301,"cpu_percent":35.5,"rss_bytes":65536,"command":"make"},{"pid":302,"cpuPercent":3.5,"rssBytes":"32768","command":"sh"}]}`}, nil
 	}
 	prevMemory := resourceMemoryInfoHook
 	resourceMemoryInfoHook = func(string) (*controlpb.MemoryInfoResponse, error) {
@@ -181,6 +181,13 @@ func TestResourceSampleMetricWritesMemory(t *testing.T) {
 	if got.Extra["guest_load_avg_1"].(float64) != 1.25 || got.Extra["guest_load_avg_5"].(float64) != 0.75 || got.Extra["guest_load_avg_15"].(float64) != 0.5 || got.Extra["guest_user_count"].(float64) != 2 {
 		t.Fatalf("guest load/user extra = %#v", got.Extra)
 	}
+	if got.Extra["guest_process_count"].(float64) != 22 {
+		t.Fatalf("guest process count = %#v", got.Extra)
+	}
+	top := got.Extra["guest_top_processes"].([]any)
+	if len(top) != 2 || top[0].(map[string]any)["command"] != "make" || top[0].(map[string]any)["cpu_percent"].(float64) != 35.5 {
+		t.Fatalf("guest top processes = %#v", got.Extra["guest_top_processes"])
+	}
 	if got.Extra["configured_memory_gb"].(float64) != 8 || got.Extra["target_memory_gb"].(float64) != 6 || got.Extra["minimum_allowed_memory_mb"].(float64) != 1024 || got.Extra["has_balloon"].(bool) != true {
 		t.Fatalf("vz memory extra = %#v", got.Extra)
 	}
@@ -207,7 +214,7 @@ func TestRunBundleResourceSampleUsesChildVMDir(t *testing.T) {
 	var agentDir, memoryDir, serverDir string
 	resourceAgentInfoHook = func(vmDir string) (*controlpb.AgentInfoResponse, error) {
 		agentDir = vmDir
-		return &controlpb.AgentInfoResponse{RawJson: `{"memoryTotal":"16384","memoryAvailable":"8192","diskTotal":"131072","diskAvailable":"65536","loadAvg1":"2.5","loadAvg5":1.5,"loadAvg15":0.25,"uptimeSeconds":"123","users":["dev"]}`}, nil
+		return &controlpb.AgentInfoResponse{RawJson: `{"memoryTotal":"16384","memoryAvailable":"8192","diskTotal":"131072","diskAvailable":"65536","loadAvg1":"2.5","loadAvg5":1.5,"loadAvg15":0.25,"uptimeSeconds":"123","users":["dev"],"processCount":7,"topProcesses":[{"pid":401,"cpuPercent":"12.5","rssBytes":4096,"command":"xcodebuild"}]}`}, nil
 	}
 	resourceMemoryInfoHook = func(vmDir string) (*controlpb.MemoryInfoResponse, error) {
 		memoryDir = vmDir
@@ -257,6 +264,9 @@ func TestRunBundleResourceSampleUsesChildVMDir(t *testing.T) {
 	if samples[0].Extra["disk_total_bytes"].(float64) != 131072 || samples[0].Extra["disk_available_bytes"].(float64) != 65536 || samples[0].Extra["guest_load_avg_1"].(float64) != 2.5 || samples[0].Extra["guest_user_count"].(float64) != 1 {
 		t.Fatalf("start guest counters = %#v", samples[0].Extra)
 	}
+	if samples[0].Extra["guest_process_count"].(float64) != 7 || samples[0].Extra["guest_top_processes"].([]any)[0].(map[string]any)["command"] != "xcodebuild" {
+		t.Fatalf("start guest processes = %#v", samples[0].Extra)
+	}
 	if samples[1].Extra["phase"] != "end" || samples[1].Extra["configured_memory_gb"].(float64) != 16 {
 		t.Fatalf("end sample = %#v", samples[1].Extra)
 	}
@@ -279,7 +289,7 @@ func TestRunBundlePeriodicResourceSamples(t *testing.T) {
 		case calls <- struct{}{}:
 		default:
 		}
-		return &controlpb.AgentInfoResponse{RawJson: `{"memoryTotal":"32768","memoryAvailable":"16384","loadAvg1":3.25,"uptimeSeconds":10}`}, nil
+		return &controlpb.AgentInfoResponse{RawJson: `{"memoryTotal":"32768","memoryAvailable":"16384","loadAvg1":3.25,"uptimeSeconds":10,"processCount":3,"topProcesses":[{"pid":501,"cpuPercent":4.5,"rssBytes":8192,"command":"swift"}]}`}, nil
 	}
 	resourceMemoryInfoHook = func(string) (*controlpb.MemoryInfoResponse, error) { return nil, nil }
 	resourceServerInfoHook = func(string) (RuntimeServerInfo, bool) {
@@ -321,6 +331,9 @@ func TestRunBundlePeriodicResourceSamples(t *testing.T) {
 			}
 			if e.Extra["guest_load_avg_1"].(float64) != 3.25 || e.Extra["guest_uptime_seconds"].(float64) != 10 {
 				t.Fatalf("periodic guest counters = %#v", e.Extra)
+			}
+			if e.Extra["guest_process_count"].(float64) != 3 || e.Extra["guest_top_processes"].([]any)[0].(map[string]any)["command"] != "swift" {
+				t.Fatalf("periodic guest processes = %#v", e.Extra)
 			}
 			if e.Extra["host_cpu_percent"].(float64) != 3.5 || e.Extra["host_rss_bytes"].(float64) != 128*1024 {
 				t.Fatalf("periodic host sample = %#v", e.Extra)

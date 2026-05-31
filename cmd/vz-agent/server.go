@@ -33,6 +33,15 @@ type systemInfo struct {
 	LoadAvg5        float64
 	LoadAvg15       float64
 	UptimeSeconds   uint64
+	ProcessCount    uint32
+	TopProcesses    []systemProcessInfo
+}
+
+type systemProcessInfo struct {
+	PID        int32
+	CPUPercent float64
+	RSSBytes   uint64
+	Command    string
 }
 
 type agentServer struct {
@@ -72,6 +81,7 @@ func (s *agentServer) Info(ctx context.Context, _ *connect.Request[pb.InfoReques
 
 	var si systemInfo
 	populateSystemInfo(ctx, &si)
+	populateProcessInfo(ctx, &si)
 	resp.OsVersion = si.OSVersion
 	resp.KernelVersion = si.KernelVersion
 	resp.MemoryTotal = si.MemoryTotal
@@ -80,6 +90,15 @@ func (s *agentServer) Info(ctx context.Context, _ *connect.Request[pb.InfoReques
 	resp.LoadAvg_5 = si.LoadAvg5
 	resp.LoadAvg_15 = si.LoadAvg15
 	resp.UptimeSeconds = si.UptimeSeconds
+	resp.ProcessCount = si.ProcessCount
+	for _, p := range si.TopProcesses {
+		resp.TopProcesses = append(resp.TopProcesses, &pb.ProcessInfo{
+			Pid:        p.PID,
+			CpuPercent: p.CPUPercent,
+			RssBytes:   p.RSSBytes,
+			Command:    p.Command,
+		})
+	}
 
 	if total, available, err := statFilesystem("/"); err == nil {
 		resp.DiskTotal = total

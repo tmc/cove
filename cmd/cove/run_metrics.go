@@ -42,6 +42,8 @@ type resourceProcessUsage struct {
 	RSSBytes   uint64
 }
 
+const guestTopProcessMetricLimit = 5
+
 type runMetricRecorder interface {
 	EmitMetricEvent(eventType string, started time.Time, status string, extra map[string]any)
 	MarkAgentReady()
@@ -368,6 +370,8 @@ func addGuestResourceFields(vmDir string, extra map[string]any) bool {
 	load5, okLoad5 := metricFloat(raw, "load_avg_5", "loadAvg5")
 	load15, okLoad15 := metricFloat(raw, "load_avg_15", "loadAvg15")
 	userCount, okUserCount := metricStringListLen(raw, "users")
+	processCount, okProcessCount := metricUint(raw, "process_count", "processCount")
+	topProcesses, okTopProcesses := metricProcessList(raw, "top_processes", "topProcesses")
 	if okTotal {
 		extra["memory_total_bytes"] = total
 		added = true
@@ -402,6 +406,14 @@ func addGuestResourceFields(vmDir string, extra map[string]any) bool {
 	}
 	if okUserCount {
 		extra["guest_user_count"] = userCount
+		added = true
+	}
+	if okProcessCount {
+		extra["guest_process_count"] = processCount
+		added = true
+	}
+	if okTopProcesses {
+		extra["guest_top_processes"] = topProcesses
 		added = true
 	}
 	return added
@@ -538,6 +550,54 @@ func metricStringListLen(raw map[string]any, name string) (int, bool) {
 		return len(items), true
 	}
 	return 0, false
+}
+
+func metricProcessList(raw map[string]any, names ...string) ([]map[string]any, bool) {
+	for _, name := range names {
+		v, ok := raw[name]
+		if !ok {
+			continue
+		}
+		items, ok := v.([]any)
+		if !ok {
+			continue
+		}
+		out := make([]map[string]any, 0, min(len(items), guestTopProcessMetricLimit))
+		for _, item := range items {
+			if len(out) >= guestTopProcessMetricLimit {
+				break
+			}
+			obj, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			pid, okPID := metricUint(obj, "pid")
+			if !okPID || pid == 0 {
+				continue
+			}
+			entry := map[string]any{"pid": pid}
+			if cpu, ok := metricFloat(obj, "cpu_percent", "cpuPercent"); ok {
+				entry["cpu_percent"] = cpu
+			}
+			if rss, ok := metricUint(obj, "rss_bytes", "rssBytes"); ok {
+				entry["rss_bytes"] = rss
+			}
+			if command, ok := obj["command"].(string); ok {
+				command = strings.TrimSpace(command)
+				if len(command) > 128 {
+					command = command[:128]
+				}
+				if command != "" {
+					entry["command"] = command
+				}
+			}
+			out = append(out, entry)
+		}
+		if len(out) > 0 {
+			return out, true
+		}
+	}
+	return nil, false
 }
 
 func (b *RunBundle) EmitCaptureLatency(ctx context.Context, e controlserver.CaptureLatencyEvent) {

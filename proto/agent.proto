@@ -80,6 +80,15 @@ message InfoResponse {
   string agent_build_date = 16;
   string agent_sha256 = 17;
   repeated string features = 18;
+  uint32 process_count = 19;
+  repeated ProcessInfo top_processes = 20;
+}
+
+message ProcessInfo {
+  int32 pid = 1;
+  double cpu_percent = 2;
+  uint64 rss_bytes = 3;
+  string command = 4;
 }
 
 // Exec

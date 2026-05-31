@@ -55,6 +55,12 @@ func TestNewExecCommandTTYWithExecIDLeavesPTYSessionAttrs(t *testing.T) {
 }
 
 func TestInfoAdvertisesExecAttach(t *testing.T) {
+	prev := systemProcessOutput
+	systemProcessOutput = func(context.Context) ([]byte, error) {
+		return []byte("301 9.5 2000 /usr/bin/make\n302 1.0 1000 /bin/sh\n"), nil
+	}
+	t.Cleanup(func() { systemProcessOutput = prev })
+
 	s := newAgentServer()
 	resp, err := s.Info(context.Background(), connect.NewRequest(&pb.InfoRequest{}))
 	if err != nil {
@@ -65,6 +71,13 @@ func TestInfoAdvertisesExecAttach(t *testing.T) {
 	}
 	if !containsString(resp.Msg.GetFeatures(), "exec_attach_v3") {
 		t.Fatalf("features = %v, want exec_attach_v3", resp.Msg.GetFeatures())
+	}
+	if resp.Msg.GetProcessCount() != 2 {
+		t.Fatalf("process_count = %d, want 2", resp.Msg.GetProcessCount())
+	}
+	top := resp.Msg.GetTopProcesses()
+	if len(top) != 2 || top[0].GetPid() != 301 || top[0].GetCommand() != "make" || top[0].GetRssBytes() != 2000*1024 {
+		t.Fatalf("top_processes = %+v", top)
 	}
 }
 

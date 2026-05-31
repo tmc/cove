@@ -18,6 +18,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `resource_sample` metrics now harvest existing guest-agent load averages,
   uptime, disk capacity, and user-count fields, giving CI runs in-guest pressure
   signals without SSH or a new agent protocol.
+- `vz-agent` info now includes a bounded top-process list, and
+  `resource_sample` metrics include guest process count plus top process
+  PID/CPU/RSS/command labels for in-guest attribution.
 - `cove image inspect -remote` now accepts multiple registry refs for private
   catalog audits. Single-ref JSON remains an object; batch JSON is an array and
   includes per-ref errors while returning a failing exit status if any ref fails.
