@@ -230,6 +230,15 @@ func TestRunVMWithConfigWritesNetworkPolicyAudit(t *testing.T) {
 	if !strings.Contains(string(data), "# policy=lan mode=nat") {
 		t.Fatalf("network.log = %s", data)
 	}
+	metricsData, err := os.ReadFile(filepath.Join(runsRoot, entries[0].Name(), "metrics.jsonl"))
+	if err != nil {
+		t.Fatalf("ReadFile metrics.jsonl: %v", err)
+	}
+	for _, want := range []string{`"event_type":"network_policy"`, `"policy":"lan"`, `"mode":"nat"`, `"allow_cidrs":["10.0.0.0/8"`} {
+		if !strings.Contains(string(metricsData), want) {
+			t.Fatalf("metrics missing %q:\n%s", want, metricsData)
+		}
+	}
 }
 
 func TestWriteNetworkPolicyAuditEgress(t *testing.T) {
@@ -359,6 +368,54 @@ func TestRunNetworkAuditNoLog(t *testing.T) {
 	}
 }
 
+func TestRunNetworkAuditUsesNetworkPolicyMetricWithoutLog(t *testing.T) {
+	runsRoot := t.TempDir()
+	prevRuns := runsDirHook
+	runsDirHook = func() string { return runsRoot }
+	t.Cleanup(func() { runsDirHook = prevRuns })
+
+	dir := filepath.Join(runsRoot, "open-run")
+	writeNetworkAuditMetrics(t, dir, "open-vm", "", "ok", 0)
+	appendNetworkPolicyMetric(t, dir, map[string]any{
+		"policy":      "open",
+		"mode":        "nat",
+		"enforcement": "open",
+		"audit_log":   false,
+	})
+	var out bytes.Buffer
+	if err := RunNetworkAudit(&out, []string{"open"}); err != nil {
+		t.Fatalf("RunNetworkAudit: %v", err)
+	}
+	for _, want := range []string{
+		"no network.log found",
+		"open mode=nat",
+		"enforcement:",
+		"open",
+		"policy recovered from metrics",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("summary missing %q:\n%s", want, out.String())
+		}
+	}
+}
+
+func TestNetworkPolicyMetricExtra(t *testing.T) {
+	policy, err := ParseNetworkPolicy("egress:api.openai.com,10.0.0.0/8")
+	if err != nil {
+		t.Fatal(err)
+	}
+	extra := networkPolicyMetricExtra(policy)
+	if extra["policy"] != "egress" || extra["mode"] != "nat" || extra["enforcement"] != "not-hooked" || extra["audit_log"] != true {
+		t.Fatalf("extra = %#v", extra)
+	}
+	if got := strings.Join(extra["allow_domains"].([]string), ","); got != "api.openai.com" {
+		t.Fatalf("allow domains = %q", got)
+	}
+	if got := strings.Join(extra["allow_cidrs"].([]string), ","); got != "10.0.0.0/8" {
+		t.Fatalf("allow cidrs = %q", got)
+	}
+}
+
 func TestRunNetworkAuditFlagConflict(t *testing.T) {
 	err := RunNetworkAudit(&bytes.Buffer{}, []string{"run", "--raw", "--json"})
 	if err == nil || !strings.Contains(err.Error(), "choose only one") {
@@ -420,6 +477,24 @@ func writeNetworkAuditMetrics(t *testing.T, dir, vm, image, status string, exitC
 	}
 	if err := os.WriteFile(filepath.Join(dir, "metrics.jsonl"), b.Bytes(), 0644); err != nil {
 		t.Fatalf("WriteFile metrics: %v", err)
+	}
+}
+
+func appendNetworkPolicyMetric(t *testing.T, dir string, extra map[string]any) {
+	t.Helper()
+	f, err := os.OpenFile(filepath.Join(dir, "metrics.jsonl"), os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		t.Fatalf("OpenFile metrics: %v", err)
+	}
+	defer f.Close()
+	enc := json.NewEncoder(f)
+	if err := enc.Encode(metrics.Event{
+		Timestamp: "2026-05-31T12:00:01Z",
+		EventType: "network_policy",
+		Status:    "ok",
+		Extra:     extra,
+	}); err != nil {
+		t.Fatalf("encode network policy metric: %v", err)
 	}
 }
 

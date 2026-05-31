@@ -52,6 +52,7 @@ parameterized helpers `emitMetricEvent` (package main) and
 | `vm_start` | `macos.go` | VM started |
 | `agent_ready` | `run_metrics.go` | Guest agent came up; emitted at most once per run |
 | `capture_latency` | `screenshots.go` | Screenshot capture completed before diff/OCR work. `extra` carries `backend`, `requested_backend`, `fallback`, optional `fallback_cause`, optional `width` and `height`, and optional truncated `error`. |
+| `network_policy` | `network_policy.go` | Per-run network posture. `extra` carries `policy`, `mode`, `enforcement`, `audit_log`, optional `allow_domains`, optional `allow_cidrs`, and optional `limitation`. |
 | `resource_sample` | `run_metrics.go` | Best-effort runtime resource snapshot. `extra.phase` is `start`, `periodic`, or `end`; periodic samples also carry `sample_index`. Guest-agent fields include `memory_total_bytes`, `memory_available_bytes`, `disk_total_bytes`, `disk_available_bytes`, `guest_load_avg_1`, `guest_load_avg_5`, `guest_load_avg_15`, `guest_uptime_seconds`, `guest_user_count`, `guest_process_count`, and bounded `guest_top_processes` entries (`pid`, `cpu_percent`, `rss_bytes`, `command`) when agent info reports them. Virtualization.framework memory fields include `configured_memory_gb`, `target_memory_gb`, `minimum_allowed_memory_mb`, and `has_balloon` when balloon info is available. Host-process fields include `host_pid`, `host_start_source`, `host_cpu_percent`, and `host_rss_bytes` when cove can resolve the runtime process. |
 | `vm_stop` | (sink test only) | VM stopped |
 | `fork_created` | `image_fork.go`, `runtime_lifecycle.go` | Fork-from VM materialized |
@@ -116,7 +117,8 @@ defined in `internal/runs/show.go` (`lifecycleEvents` map):
 `benchmark_result`, `lifecycle.budget.exceeded`, `lifecycle.idle.tripped`,
 `lifecycle.maxage.tripped`, `run_complete`.
 
-Events not in this list (image GC, agent sandbox, capture latency, daemon-side
+Events not in this list (image GC, agent sandbox, capture latency,
+`network_policy`, daemon-side
 `lifecycle.policy.stop`, `vm_policy_stop` fallback) still appear in
 `runs show --json`, `runs show --summary-json`, and `runs export` JSON, but are
 not rendered in the default lifecycle phase table. `resource_sample` events are

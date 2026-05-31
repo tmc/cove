@@ -15,6 +15,7 @@ import (
 	"time"
 
 	networkx "github.com/tmc/apple/x/vzkit/network"
+	runmetrics "github.com/tmc/cove/internal/metrics"
 	"github.com/tmc/cove/internal/runs"
 )
 
@@ -230,20 +231,18 @@ func WriteNetworkPolicyAudit(dir string, policy NetworkPolicy) error {
 		fmt.Fprintf(&b, "# allow_domains=%s\n", strings.Join(policy.Domains, ","))
 	}
 	if len(policy.CIDRs) > 0 {
-		parts := make([]string, 0, len(policy.CIDRs))
-		for _, cidr := range policy.CIDRs {
-			parts = append(parts, cidr.String())
-		}
+		parts := networkPolicyCIDRStrings(policy)
 		fmt.Fprintf(&b, "# allow_cidrs=%s\n", strings.Join(parts, ","))
 	}
-	switch {
-	case policy.Enforced:
-		fmt.Fprintf(&b, "# enforcement=virtual-network-disabled\n")
-	case policy.Limit != "":
-		fmt.Fprintf(&b, "# enforcement=not-hooked\n")
+	enforcement := networkPolicyEnforcement(policy)
+	switch enforcement {
+	case "virtual-network-disabled":
+		fmt.Fprintf(&b, "# enforcement=%s\n", enforcement)
+	case "not-hooked":
+		fmt.Fprintf(&b, "# enforcement=%s\n", enforcement)
 		fmt.Fprintf(&b, "# limitation=%s\n", policy.Limit)
 	default:
-		fmt.Fprintf(&b, "# enforcement=not-hooked\n")
+		fmt.Fprintf(&b, "# enforcement=%s\n", enforcement)
 	}
 	fmt.Fprintf(&b, "%s dest=* decision=policy-loaded policy=%s\n", ts, policy.Name)
 	path := filepath.Join(dir, "network.log")
@@ -329,12 +328,51 @@ func writeActiveNetworkPolicyAudit(run networkAuditDir) {
 		fmt.Fprintf(os.Stderr, "warning: network policy audit: %v\n", err)
 		return
 	}
+	emitNetworkPolicyMetric(run, policy)
 	if !policy.ShouldAudit() {
 		return
 	}
 	if err := WriteNetworkPolicyAudit(run.Dir(), policy); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: network policy audit: %v\n", err)
 	}
+}
+
+func emitNetworkPolicyMetric(run networkAuditDir, policy NetworkPolicy) {
+	switch r := run.(type) {
+	case *RunBundle:
+		r.EmitMetricEvent("network_policy", r.startedAt, "ok", networkPolicyMetricExtra(policy))
+	case *standaloneMetricsRun:
+		r.EmitMetricEvent("network_policy", r.started, "ok", networkPolicyMetricExtra(policy))
+	}
+}
+
+func networkPolicyMetricExtra(policy NetworkPolicy) map[string]any {
+	extra := map[string]any{
+		"policy":      policy.Name,
+		"mode":        string(policy.Mode),
+		"enforcement": networkPolicyEnforcement(policy),
+		"audit_log":   policy.ShouldAudit(),
+	}
+	if len(policy.Domains) > 0 {
+		extra["allow_domains"] = append([]string(nil), policy.Domains...)
+	}
+	if len(policy.CIDRs) > 0 {
+		extra["allow_cidrs"] = networkPolicyCIDRStrings(policy)
+	}
+	if policy.Limit != "" {
+		extra["limitation"] = policy.Limit
+	}
+	return extra
+}
+
+func networkPolicyEnforcement(policy NetworkPolicy) string {
+	if policy.Enforced || policy.Mode == NetworkModeNone {
+		return "virtual-network-disabled"
+	}
+	if policy.Name == "open" {
+		return "open"
+	}
+	return "not-hooked"
 }
 
 func RunNetworkAudit(w io.Writer, args []string) error {
@@ -388,6 +426,7 @@ func LoadNetworkAuditReport(root, prefix string) (networkAuditReport, error) {
 		Status:   show.Result.Status,
 		HasLog:   false,
 	}
+	applyNetworkPolicyMetric(&report, show.Events)
 	if show.Result.HasExitCode {
 		exit := show.Result.ExitCode
 		report.ExitCode = &exit
@@ -427,27 +466,37 @@ func RenderNetworkAuditReport(w io.Writer, report networkAuditReport) error {
 	}
 	if !report.HasLog {
 		fmt.Fprintf(tw, "network audit:\tno network.log found\n")
-		fmt.Fprintf(tw, "note:\topen policy and legacy runs do not write network audit logs\n")
+		if report.Policy != "" || report.Mode != "" {
+			renderNetworkPolicyDetails(tw, report)
+			fmt.Fprintf(tw, "note:\tpolicy recovered from metrics; open/direct modes and legacy runs may not write network.log\n")
+		} else {
+			fmt.Fprintf(tw, "note:\topen policy and legacy runs do not write network audit logs\n")
+		}
 		return tw.Flush()
 	}
 	fmt.Fprintf(tw, "network audit:\t%s\n", report.LogPath)
+	renderNetworkPolicyDetails(tw, report)
+	return tw.Flush()
+}
+
+func renderNetworkPolicyDetails(w io.Writer, report networkAuditReport) {
 	if report.Policy != "" || report.Mode != "" {
-		fmt.Fprintf(tw, "policy:\t%s mode=%s\n", emptyDash(report.Policy), emptyDash(report.Mode))
+		fmt.Fprintf(w, "policy:\t%s mode=%s\n", emptyDash(report.Policy), emptyDash(report.Mode))
 	}
 	if report.Enforcement != "" {
-		fmt.Fprintf(tw, "enforcement:\t%s\n", report.Enforcement)
+		fmt.Fprintf(w, "enforcement:\t%s\n", report.Enforcement)
 	}
 	if report.StartedAt != "" {
-		fmt.Fprintf(tw, "started at:\t%s\n", report.StartedAt)
+		fmt.Fprintf(w, "started at:\t%s\n", report.StartedAt)
 	}
 	if len(report.AllowDomains) > 0 {
-		fmt.Fprintf(tw, "allow domains:\t%s\n", strings.Join(report.AllowDomains, ", "))
+		fmt.Fprintf(w, "allow domains:\t%s\n", strings.Join(report.AllowDomains, ", "))
 	}
 	if len(report.AllowCIDRs) > 0 {
-		fmt.Fprintf(tw, "allow cidrs:\t%s\n", strings.Join(report.AllowCIDRs, ", "))
+		fmt.Fprintf(w, "allow cidrs:\t%s\n", strings.Join(report.AllowCIDRs, ", "))
 	}
 	if report.Limitation != "" {
-		fmt.Fprintf(tw, "limitation:\t%s\n", report.Limitation)
+		fmt.Fprintf(w, "limitation:\t%s\n", report.Limitation)
 	}
 	if len(report.Decisions) > 0 {
 		keys := make([]string, 0, len(report.Decisions))
@@ -459,9 +508,8 @@ func RenderNetworkAuditReport(w io.Writer, report networkAuditReport) error {
 		for _, key := range keys {
 			parts = append(parts, fmt.Sprintf("%s=%d", key, report.Decisions[key]))
 		}
-		fmt.Fprintf(tw, "decisions:\t%s\n", strings.Join(parts, ", "))
+		fmt.Fprintf(w, "decisions:\t%s\n", strings.Join(parts, ", "))
 	}
-	return tw.Flush()
 }
 
 func parseNetworkAuditLog(data []byte, report *networkAuditReport) error {
@@ -485,6 +533,65 @@ func parseNetworkAuditLog(data []byte, report *networkAuditReport) error {
 		}
 	}
 	return nil
+}
+
+func applyNetworkPolicyMetric(report *networkAuditReport, events []runmetrics.Event) {
+	for _, event := range events {
+		if event.EventType != "network_policy" {
+			continue
+		}
+		extra := event.Extra
+		if report.Policy == "" {
+			report.Policy = metricExtraString(extra, "policy")
+		}
+		if report.Mode == "" {
+			report.Mode = metricExtraString(extra, "mode")
+		}
+		if report.Enforcement == "" {
+			report.Enforcement = metricExtraString(extra, "enforcement")
+		}
+		if report.Limitation == "" {
+			report.Limitation = metricExtraString(extra, "limitation")
+		}
+		if report.StartedAt == "" {
+			report.StartedAt = event.Timestamp
+		}
+		if len(report.AllowDomains) == 0 {
+			report.AllowDomains = metricExtraStringSlice(extra, "allow_domains")
+		}
+		if len(report.AllowCIDRs) == 0 {
+			report.AllowCIDRs = metricExtraStringSlice(extra, "allow_cidrs")
+		}
+	}
+}
+
+func metricExtraString(extra map[string]any, key string) string {
+	if extra == nil {
+		return ""
+	}
+	value, _ := extra[key].(string)
+	return value
+}
+
+func metricExtraStringSlice(extra map[string]any, key string) []string {
+	if extra == nil {
+		return nil
+	}
+	switch values := extra[key].(type) {
+	case []string:
+		return append([]string(nil), values...)
+	case []any:
+		out := make([]string, 0, len(values))
+		for _, value := range values {
+			s, ok := value.(string)
+			if ok && s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
 }
 
 func parseNetworkAuditHeader(line string, report *networkAuditReport) {
@@ -549,6 +656,17 @@ func splitCommaList(value string) []string {
 		}
 	}
 	return out
+}
+
+func networkPolicyCIDRStrings(policy NetworkPolicy) []string {
+	if len(policy.CIDRs) == 0 {
+		return nil
+	}
+	parts := make([]string, 0, len(policy.CIDRs))
+	for _, cidr := range policy.CIDRs {
+		parts = append(parts, cidr.String())
+	}
+	return parts
 }
 
 func dedupeStrings(in []string) []string {

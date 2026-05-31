@@ -46,17 +46,20 @@ cove run --net egress:api.openai.com,ghcr.io,10.0.0.0/8
 cove run --net open
 ```
 
-For policies other than `open`, Cove writes `network.log` under the run
-artifact directory, for example `~/.vz/runs/<run-id>/network.log`. Summarize the
-run status, policy, enforcement, allowlists, limitations, and decision counts
-with:
+Every run records the selected network posture as a `network_policy` event in
+`metrics.jsonl`, so `cove runs export --format json` carries the network intent
+even for `open` or direct modes. For policies other than `open`, Cove also
+writes `network.log` under the run artifact directory, for example
+`~/.vz/runs/<run-id>/network.log`. Summarize the run status, policy,
+enforcement, allowlists, limitations, and decision counts with:
 
 ```bash
 cove network audit <run-id-prefix>
 ```
 
 Use `--raw` to print `network.log` unchanged, or `--json` for structured output
-that can be attached to CI summaries.
+that can be attached to CI summaries. When `network.log` is absent, the summary
+falls back to the `network_policy` metric.
 
 Current enforcement limits:
 
