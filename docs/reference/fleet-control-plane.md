@@ -127,6 +127,8 @@ curl -X POST http://127.0.0.1:9758/v1/oidc-bindings \
 curl http://127.0.0.1:9758/v1/oidc-bindings
 curl http://127.0.0.1:9758/v1/audit
 curl http://127.0.0.1:9758/v1/audit?limit=50
+curl 'http://127.0.0.1:9758/v1/audit?action=assignment.create&actor=service-account:ci&target_type=assignment&limit=50'
+curl 'http://127.0.0.1:9758/v1/audit?offset=50&limit=50'
 curl http://127.0.0.1:9758/v1/audit/verify
 curl -X DELETE http://127.0.0.1:9758/v1/service-accounts/ci
 ```
@@ -137,7 +139,11 @@ leases, terminal assignment reports, fleet reconcile changes, image/policy/
 storage fan-out, and warm-pool ensure/claim/delete operations. Each new event
 carries `prev_hash` and `hash` fields that chain the global audit log;
 `GET /v1/audit/verify` recomputes the chain and returns `ok`, `events`,
-`head_hash`, and any chain issues. Service-account tokens are stored only as
+`head_hash`, and any chain issues. `GET /v1/audit` returns `events`, `count`,
+`offset`, `limit`, and `next_offset`; query filters include `namespace`,
+`actor`, `action`, `target_type`, and `target_id`. `limit` preserves the
+existing latest-events behavior, and `offset` pages backward through matching
+events. Service-account tokens are stored only as
 SHA-256 hashes, so operators should provide high-entropy random tokens and keep
 the plaintext in their own secret manager. Supplying a matching bearer token on
 operator requests records audit actor `service-account:<name>`;

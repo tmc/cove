@@ -2007,23 +2007,60 @@ func (s *Store) ListAudit(limit int) []AuditEvent {
 }
 
 func (s *Store) ListAuditNamespace(limit int, namespace string) []AuditEvent {
-	namespace = normalizeNamespace(namespace)
+	return s.ListAuditPage(AuditListFilter{Namespace: namespace, Limit: limit}).Events
+}
+
+func (s *Store) ListAuditFiltered(filter AuditListFilter) []AuditEvent {
+	return s.ListAuditPage(filter).Events
+}
+
+func (s *Store) ListAuditPage(filter AuditListFilter) AuditListResult {
+	filter.Namespace = normalizeNamespace(filter.Namespace)
+	filter.Actor = strings.TrimSpace(filter.Actor)
+	filter.Action = strings.TrimSpace(filter.Action)
+	filter.TargetType = strings.TrimSpace(filter.TargetType)
+	filter.TargetID = strings.TrimSpace(filter.TargetID)
+	if filter.Offset < 0 {
+		filter.Offset = 0
+	}
+	if filter.Limit < 0 {
+		filter.Limit = 0
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	events := s.sortedAuditLocked()
-	if namespace != "" {
-		filtered := events[:0]
-		for _, event := range events {
-			if namespaceMatches(event.Namespace, namespace) {
-				filtered = append(filtered, event)
-			}
+	filtered := events[:0]
+	for _, event := range events {
+		if !namespaceMatches(event.Namespace, filter.Namespace) {
+			continue
 		}
-		events = filtered
+		if filter.Actor != "" && event.Actor != filter.Actor {
+			continue
+		}
+		if filter.Action != "" && event.Action != filter.Action {
+			continue
+		}
+		if filter.TargetType != "" && event.TargetType != filter.TargetType {
+			continue
+		}
+		if filter.TargetID != "" && event.TargetID != filter.TargetID {
+			continue
+		}
+		filtered = append(filtered, event)
 	}
-	if limit > 0 && len(events) > limit {
-		events = events[len(events)-limit:]
+	result := AuditListResult{Offset: filter.Offset, Limit: filter.Limit}
+	if filter.Offset >= len(filtered) {
+		return result
 	}
-	return cloneAuditEvents(events)
+	end := len(filtered) - filter.Offset
+	start := 0
+	if filter.Limit > 0 && end > filter.Limit {
+		start = end - filter.Limit
+		result.NextOffset = filter.Offset + filter.Limit
+	}
+	result.Events = cloneAuditEvents(filtered[start:end])
+	result.Count = len(result.Events)
+	return result
 }
 
 func (s *Store) VerifyAudit() AuditVerifyResult {

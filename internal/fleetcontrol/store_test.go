@@ -117,6 +117,48 @@ func TestStoreAuditsFleetMutations(t *testing.T) {
 	}
 }
 
+func TestStoreListAuditPageFilters(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1"}); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	teamA, err := store.CreateAssignmentActor("service-account:ci", Assignment{Namespace: "team-a", WorkerID: "worker-1", Verb: "noop"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	teamB, err := store.CreateAssignmentActor("oidc:github-main", Assignment{Namespace: "team-b", WorkerID: "worker-1", Verb: "noop"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	page := store.ListAuditPage(AuditListFilter{Action: "assignment.create", Limit: 1})
+	if page.Count != 1 || page.Limit != 1 || page.NextOffset != 1 || page.Events[0].Actor != "oidc:github-main" || page.Events[0].AssignmentID != teamB.ID {
+		t.Fatalf("latest assignment audit page = %+v, want newest team-b event", page)
+	}
+	page = store.ListAuditPage(AuditListFilter{Action: "assignment.create", Offset: 1, Limit: 1})
+	if page.Count != 1 || page.Offset != 1 || page.NextOffset != 0 || page.Events[0].Actor != "service-account:ci" || page.Events[0].AssignmentID != teamA.ID {
+		t.Fatalf("second assignment audit page = %+v, want team-a event", page)
+	}
+	page = store.ListAuditPage(AuditListFilter{Namespace: "team-a", TargetType: "assignment", TargetID: teamA.ID})
+	if page.Count != 1 || page.Events[0].Namespace != "team-a" || page.Events[0].TargetID != teamA.ID {
+		t.Fatalf("team-a target audit page = %+v, want assignment %s only", page, teamA.ID)
+	}
+	if events := store.ListAuditFiltered(AuditListFilter{Actor: "missing"}); len(events) != 0 {
+		t.Fatalf("missing actor audit events = %+v, want none", events)
+	}
+	if events := store.ListAuditNamespace(1, "team-a"); len(events) != 1 || events[0].AssignmentID != teamA.ID {
+		t.Fatalf("team-a namespace audit events = %+v, want %s", events, teamA.ID)
+	}
+	page = store.ListAuditPage(AuditListFilter{Action: "assignment.create", Offset: 99})
+	if page.Count != 0 || len(page.Events) != 0 {
+		t.Fatalf("oversized audit offset page = %+v, want empty", page)
+	}
+}
+
 func TestStoreAuditHashChainDetectsTamper(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1"}); err != nil {
@@ -3037,11 +3079,37 @@ func TestHandlerAudit(t *testing.T) {
 	postJSON(t, server.URL+"/v1/assignments", Assignment{WorkerID: "worker-1", Verb: "noop"}, &created)
 
 	var list struct {
-		Events []AuditEvent `json:"events"`
+		Events     []AuditEvent `json:"events"`
+		Count      int          `json:"count"`
+		Offset     int          `json:"offset,omitempty"`
+		Limit      int          `json:"limit,omitempty"`
+		NextOffset int          `json:"next_offset,omitempty"`
 	}
 	getJSON(t, server.URL+"/v1/audit?limit=1", &list)
-	if len(list.Events) != 1 || list.Events[0].Action != "assignment.create" || list.Events[0].AssignmentID != created.ID {
+	if list.Count != 1 || list.Limit != 1 || list.NextOffset != 1 || len(list.Events) != 1 || list.Events[0].Action != "assignment.create" || list.Events[0].AssignmentID != created.ID {
 		t.Fatalf("audit events = %+v, want latest assignment.create %s", list.Events, created.ID)
+	}
+	list = struct {
+		Events     []AuditEvent `json:"events"`
+		Count      int          `json:"count"`
+		Offset     int          `json:"offset,omitempty"`
+		Limit      int          `json:"limit,omitempty"`
+		NextOffset int          `json:"next_offset,omitempty"`
+	}{}
+	getJSON(t, server.URL+"/v1/audit?action=assignment.create&target_id="+created.ID+"&limit=1", &list)
+	if list.Count != 1 || len(list.Events) != 1 || list.Events[0].Action != "assignment.create" || list.Events[0].AssignmentID != created.ID {
+		t.Fatalf("filtered audit events = %+v, want assignment.create %s", list.Events, created.ID)
+	}
+	list = struct {
+		Events     []AuditEvent `json:"events"`
+		Count      int          `json:"count"`
+		Offset     int          `json:"offset,omitempty"`
+		Limit      int          `json:"limit,omitempty"`
+		NextOffset int          `json:"next_offset,omitempty"`
+	}{}
+	getJSON(t, server.URL+"/v1/audit?offset=1&limit=1", &list)
+	if list.Count != 1 || list.Offset != 1 || list.NextOffset != 0 || len(list.Events) != 1 || list.Events[0].Action != "worker.register" {
+		t.Fatalf("offset audit events = %+v, want worker.register", list)
 	}
 	var verify AuditVerifyResult
 	getJSON(t, server.URL+"/v1/audit/verify", &verify)
@@ -3055,6 +3123,14 @@ func TestHandlerAudit(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("bad audit limit status = %d, want 400", resp.StatusCode)
+	}
+	resp, err = http.Get(server.URL + "/v1/audit?offset=bad")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("bad audit offset status = %d, want 400", resp.StatusCode)
 	}
 }
 

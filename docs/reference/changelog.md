@@ -8,6 +8,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 ## Unreleased
 
 ### Added
+- `cove-fleetd` audit queries now support actor, action, target type, target
+  ID, offset, limit, count, and next-offset metadata for namespace-scoped
+  controller audit review.
 - `cove-fleetd` now exposes `GET /v1/operations/summary` for unscoped viewers,
   aggregating worker readiness, active assignments, sandbox handles, warm-pool
   slots, and sandbox metering for operator dashboards.
@@ -80,7 +83,8 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `cove-fleetd` now persists controller audit events and exposes `GET /v1/audit`
   with optional `limit`, covering worker registration, cordon lifecycle,
   assignment creation/lease/report, reconcile changes, policy/image/storage
-  fan-out, and warm-pool lifecycle operations.
+  fan-out, and warm-pool lifecycle operations. The audit list API later gained
+  actor/action/target filters and offset page metadata.
 - `cove-fleetd` now persists service-account records with hashed bearer tokens;
   authenticated controller requests record audit actors as
   `service-account:<name>` while local unauthenticated requests still work as

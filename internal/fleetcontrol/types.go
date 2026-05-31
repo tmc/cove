@@ -100,6 +100,24 @@ type AuditEvent struct {
 	Hash         string            `json:"hash,omitempty"`
 }
 
+type AuditListFilter struct {
+	Namespace  string `json:"namespace,omitempty"`
+	Actor      string `json:"actor,omitempty"`
+	Action     string `json:"action,omitempty"`
+	TargetType string `json:"target_type,omitempty"`
+	TargetID   string `json:"target_id,omitempty"`
+	Offset     int    `json:"offset,omitempty"`
+	Limit      int    `json:"limit,omitempty"`
+}
+
+type AuditListResult struct {
+	Events     []AuditEvent `json:"events"`
+	Count      int          `json:"count"`
+	Offset     int          `json:"offset,omitempty"`
+	Limit      int          `json:"limit,omitempty"`
+	NextOffset int          `json:"next_offset,omitempty"`
+}
+
 type AuditVerifyResult struct {
 	OK       bool              `json:"ok"`
 	Events   int               `json:"events"`

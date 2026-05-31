@@ -175,21 +175,42 @@ func handleAudit(w http.ResponseWriter, r *http.Request, store *Store) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	limit := 0
-	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
-		n, err := strconv.Atoi(raw)
-		if err != nil || n < 0 {
-			writeError(w, http.StatusBadRequest, "audit limit must be non-negative")
-			return
-		}
-		limit = n
-	}
 	identity := identityFromRequest(r, store)
 	if !requireRole(w, identity, ServiceAccountRoleViewer) {
 		return
 	}
 	namespace := namespaceFilterFromRequest(r, identity)
-	writeJSON(w, http.StatusOK, map[string]any{"events": store.ListAuditNamespace(limit, namespace)})
+	filter, err := auditListFilterFromRequest(r, namespace)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, store.ListAuditPage(filter))
+}
+
+func auditListFilterFromRequest(r *http.Request, namespace string) (AuditListFilter, error) {
+	filter := AuditListFilter{
+		Namespace:  namespace,
+		Actor:      strings.TrimSpace(r.URL.Query().Get("actor")),
+		Action:     strings.TrimSpace(r.URL.Query().Get("action")),
+		TargetType: strings.TrimSpace(r.URL.Query().Get("target_type")),
+		TargetID:   strings.TrimSpace(r.URL.Query().Get("target_id")),
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 0 {
+			return AuditListFilter{}, fmt.Errorf("audit limit must be non-negative")
+		}
+		filter.Limit = limit
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		offset, err := strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			return AuditListFilter{}, fmt.Errorf("audit offset must be non-negative")
+		}
+		filter.Offset = offset
+	}
+	return filter, nil
 }
 
 func handleAuditVerify(w http.ResponseWriter, r *http.Request, store *Store) {
