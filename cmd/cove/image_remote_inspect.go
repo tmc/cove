@@ -44,6 +44,7 @@ type ImageRemoteInspectOutput struct {
 	LayerCount          int                       `json:"layer_count"`
 	TotalLayerBytes     int64                     `json:"total_layer_bytes"`
 	DiskSize            int64                     `json:"disk_size,omitempty"`
+	DiskFormat          string                    `json:"disk_format,omitempty"`
 	DiskSHA256          string                    `json:"disk_sha256,omitempty"`
 	CompressedDiskBytes int64                     `json:"compressed_disk_bytes,omitempty"`
 	ChunkCount          int                       `json:"chunk_count,omitempty"`
@@ -189,6 +190,7 @@ func inspectRemoteCoveImageArtifact(ctx context.Context, client ociimage.Registr
 		out.ImageRef = m.Name + ":" + m.Tag
 	}
 	out.DiskSize = m.DiskSize
+	out.DiskFormat = normalizeImageDiskFormat(m.DiskFormat)
 	out.DiskSHA256 = m.DiskSHA256
 	if !m.CreatedAt.IsZero() {
 		out.Created = m.CreatedAt.UTC().Format(time.RFC3339)
@@ -263,6 +265,7 @@ func inspectRemoteVMManifest(parsed ociimage.ParsedManifest, out ImageRemoteInsp
 	default:
 		out.Format = "cove"
 		out.DiskSize = parsed.Annotations.UncompressedDiskSize
+		out.DiskFormat = parsed.Annotations.DiskFormat
 		out.BaseManifest = parsed.Annotations.BaseManifest
 		out.PullPlan = "cove chunked pull"
 		if out.BaseManifest != "" {
@@ -614,6 +617,9 @@ func writeRemoteInspectText(w io.Writer, out ImageRemoteInspectOutput) error {
 	}
 	if out.DiskSize > 0 {
 		fmt.Fprintf(w, "  disk size:       %s\n", bytefmt.Size(out.DiskSize))
+	}
+	if out.DiskFormat != "" {
+		fmt.Fprintf(w, "  disk format:     %s\n", out.DiskFormat)
 	}
 	if out.DiskSHA256 != "" {
 		fmt.Fprintf(w, "  disk sha256:     %s\n", out.DiskSHA256)

@@ -42,6 +42,7 @@ type pushPlan struct {
 	BaseBytes   int64
 	ChunkSize   int64
 	DiskSize    int64
+	DiskFormat  string
 	Chunks      []ociimage.Chunk
 	ZeroChunks  int
 	ZeroBytes   int64
@@ -177,6 +178,7 @@ func buildPushPlan(vmName, ref string, opts pushOptions) (*pushPlan, error) {
 	if err != nil {
 		return nil, err
 	}
+	diskFormat := detectImageDiskFormat(diskPath)
 	f, err := os.Open(diskPath)
 	if err != nil {
 		return nil, fmt.Errorf("open disk: %w", err)
@@ -202,6 +204,7 @@ func buildPushPlan(vmName, ref string, opts pushOptions) (*pushPlan, error) {
 	manifest, configJSON, err := ociimage.BuildManifest(ociimage.ManifestOptions{
 		UploadTime:       time.Now().UTC().Format(time.RFC3339),
 		DiskSize:         info.Size(),
+		DiskFormat:       diskFormat,
 		Chunks:           chunks,
 		ChunkDescriptors: descriptors,
 		Blobs:            blobs,
@@ -218,6 +221,7 @@ func buildPushPlan(vmName, ref string, opts pushOptions) (*pushPlan, error) {
 		BaseRef:     opts.BaseRef,
 		ChunkSize:   opts.ChunkSize,
 		DiskSize:    info.Size(),
+		DiskFormat:  diskFormat,
 		Chunks:      chunks,
 		LumeCompat:  opts.LumeCompat,
 		ExtraTags:   append([]string(nil), opts.AdditionalTags...),
@@ -540,6 +544,9 @@ func printPushResult(w io.Writer, plan *pushPlan) {
 		fmt.Fprintf(w, "  base: %s\n", plan.BaseRef)
 		fmt.Fprintf(w, "  base chunks reused: %d (%s)\n", plan.BaseChunks, bytefmt.Size(plan.BaseBytes))
 	}
+	if plan.DiskFormat != "" {
+		fmt.Fprintf(w, "  disk format: %s\n", plan.DiskFormat)
+	}
 	if len(plan.ExtraTags) > 0 {
 		fmt.Fprintf(w, "  additional tags: %s\n", strings.Join(plan.ExtraTags, ", "))
 	}
@@ -551,6 +558,9 @@ func printPushDryRun(w io.Writer, plan *pushPlan) {
 	fmt.Fprintf(w, "  ref: %s\n", plan.Ref)
 	fmt.Fprintf(w, "  disk: %s\n", plan.DiskPath)
 	fmt.Fprintf(w, "  disk size: %s\n", bytefmt.Size(plan.DiskSize))
+	if plan.DiskFormat != "" {
+		fmt.Fprintf(w, "  disk format: %s\n", plan.DiskFormat)
+	}
 	fmt.Fprintf(w, "  chunk size: %s\n", bytefmt.Size(plan.ChunkSize))
 	fmt.Fprintf(w, "  chunks: %d\n", len(plan.Chunks))
 	fmt.Fprintf(w, "  zero chunks: %d (%s)\n", plan.ZeroChunks, bytefmt.Size(plan.ZeroBytes))

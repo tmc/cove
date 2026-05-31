@@ -107,12 +107,12 @@ func TestPrintPullDryRunFormats(t *testing.T) {
 				VMDir:  "/tmp/dev",
 				Manifest: ociimage.ParsedManifest{
 					Format:      ociimage.FormatCove,
-					Annotations: ociimage.ManifestAnnotations{UncompressedDiskSize: 8192},
+					Annotations: ociimage.ManifestAnnotations{UncompressedDiskSize: 8192, DiskFormat: "asif"},
 					Chunks:      []ociimage.Chunk{{}, {}},
 					Blobs:       []ociimage.Descriptor{{}},
 				},
 			},
-			want: []string{"format: cove", "chunks: 2", "metadata blobs: 1"},
+			want: []string{"format: cove", "disk format: asif", "chunks: 2", "metadata blobs: 1"},
 		},
 	}
 	for _, tt := range tests {

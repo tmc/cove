@@ -16,6 +16,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tmc/cove/internal/diskimages2"
 	"github.com/tmc/cove/internal/ociimage"
 	"github.com/tmc/cove/internal/vmconfig"
 )
@@ -39,6 +40,11 @@ func TestBuildPushPlan(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(vmPath, "machine.id"), []byte("machine"), 0644); err != nil {
 		t.Fatalf("WriteFile(machine.id) error = %v", err)
 	}
+	oldInfo := retrieveDiskImageInfo
+	t.Cleanup(func() { retrieveDiskImageInfo = oldInfo })
+	retrieveDiskImageInfo = func(string) (*diskimages2.ImageInfo, error) {
+		return &diskimages2.ImageInfo{Raw: map[string]string{"Image Format": "ASIF"}}, nil
+	}
 
 	plan, err := buildPushPlan("dev-vm", "ghcr.io/me/dev-vm:v1", pushOptions{
 		BaseRef:        "ghcr.io/me/base:v1",
@@ -52,6 +58,9 @@ func TestBuildPushPlan(t *testing.T) {
 	}
 	if plan.DiskSize != int64(len(disk)) {
 		t.Fatalf("DiskSize = %d, want %d", plan.DiskSize, len(disk))
+	}
+	if plan.DiskFormat != "asif" {
+		t.Fatalf("DiskFormat = %q, want asif", plan.DiskFormat)
 	}
 	if got, want := len(plan.Chunks), 3; got != want {
 		t.Fatalf("chunks = %d, want %d", got, want)
@@ -71,6 +80,9 @@ func TestBuildPushPlan(t *testing.T) {
 	}
 	if !parsed.Chunks[0].Zero || !parsed.Chunks[2].Zero {
 		t.Fatalf("zero chunks = %#v, want chunks 0 and 2 sparse", parsed.Chunks)
+	}
+	if parsed.Annotations.DiskFormat != "asif" {
+		t.Fatalf("parsed disk format = %q, want asif", parsed.Annotations.DiskFormat)
 	}
 	if parsed.DiskLayers[1].Descriptor.MediaType != ociimage.MediaTypeLayerLZ4 {
 		t.Fatalf("non-zero layer media type = %q, want %q", parsed.DiskLayers[1].Descriptor.MediaType, ociimage.MediaTypeLayerLZ4)

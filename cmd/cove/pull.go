@@ -534,6 +534,9 @@ func printPullDryRun(w io.Writer, plan *pullPlan) {
 	}
 	fmt.Fprintf(w, "  format: cove\n")
 	fmt.Fprintf(w, "  disk size: %s\n", bytefmt.Size(plan.Manifest.Annotations.UncompressedDiskSize))
+	if plan.Manifest.Annotations.DiskFormat != "" {
+		fmt.Fprintf(w, "  disk format: %s\n", plan.Manifest.Annotations.DiskFormat)
+	}
 	fmt.Fprintf(w, "  chunks: %d\n", len(plan.Manifest.Chunks))
 	fmt.Fprintf(w, "  metadata blobs: %d\n", len(plan.Manifest.Blobs))
 }

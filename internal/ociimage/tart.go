@@ -19,11 +19,11 @@ import (
 
 // Tart manifest media types.
 const (
-	TartConfigMediaType   = "application/vnd.cirruslabs.tart.config.v1"
-	TartDiskV2MediaType   = "application/vnd.cirruslabs.tart.disk.v2"
-	TartDiskV1MediaType   = "application/vnd.cirruslabs.tart.disk.v1"
-	TartNVRAMMediaType    = "application/vnd.cirruslabs.tart.nvram.v1"
-	TartMediaTypePrefix   = "application/vnd.cirruslabs.tart."
+	TartConfigMediaType = "application/vnd.cirruslabs.tart.config.v1"
+	TartDiskV2MediaType = "application/vnd.cirruslabs.tart.disk.v2"
+	TartDiskV1MediaType = "application/vnd.cirruslabs.tart.disk.v1"
+	TartNVRAMMediaType  = "application/vnd.cirruslabs.tart.nvram.v1"
+	TartMediaTypePrefix = "application/vnd.cirruslabs.tart."
 )
 
 // Tart annotation keys (manifest-level and per-layer).
@@ -92,6 +92,7 @@ func hasCoveOrLumeMarkers(m Manifest) bool {
 		CoveHWModelDigest,
 		CoveAuxDigest,
 		CoveUploadTime,
+		CoveDiskFormat,
 	} {
 		if _, ok := m.Annotations[key]; ok {
 			return true

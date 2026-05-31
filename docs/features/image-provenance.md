@@ -20,6 +20,11 @@ write that digest back to the child VM's `disk.provenance`, so a later
 treats local image manifests with `source_manifest_digest` as roots for the
 local OCI content store.
 
+Cove-native OCI pushes also write the detected `raw` or `asif` disk format into
+the registry manifest. `cove pull --dry-run` and `cove image inspect -remote`
+surface that value before any disk bytes are downloaded; older cove-native
+manifests without the annotation are treated as `raw`.
+
 `cove image verify <ref>` checks that:
 
 - the manifest parses

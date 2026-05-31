@@ -79,6 +79,7 @@ type ManifestOptions struct {
 	ChunkDescriptors []Descriptor
 	Blobs            []Blob
 	BaseManifest     string
+	DiskFormat       string
 	LumeCompat       bool
 }
 
@@ -132,6 +133,14 @@ func BuildManifest(opts ManifestOptions) (Manifest, []byte, error) {
 	if len(opts.ChunkDescriptors) != 0 && len(opts.ChunkDescriptors) != len(opts.Chunks) {
 		return manifest, nil, fmt.Errorf("build manifest: chunk descriptors %d, want %d", len(opts.ChunkDescriptors), len(opts.Chunks))
 	}
+	diskFormat := "raw"
+	if opts.DiskFormat != "" {
+		var err error
+		diskFormat, err = normalizeDiskFormatAnnotation(opts.DiskFormat)
+		if err != nil {
+			return manifest, nil, fmt.Errorf("build manifest: %w", err)
+		}
+	}
 	configJSON, err := json.Marshal(imageConfig{
 		Created: opts.UploadTime,
 		RootFS:  imageRootFS{Type: "layers", DiffIDs: diffIDs(opts.Chunks)},
@@ -142,6 +151,7 @@ func BuildManifest(opts ManifestOptions) (Manifest, []byte, error) {
 
 	annotations := map[string]string{
 		CoveUncompressedDiskSize: strconv.FormatInt(opts.DiskSize, 10),
+		CoveDiskFormat:           diskFormat,
 	}
 	if opts.UploadTime != "" {
 		annotations[CoveUploadTime] = opts.UploadTime

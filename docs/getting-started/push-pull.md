@@ -33,9 +33,10 @@ the index to a same-repository image manifest before parsing. Use
 `cove image inspect -remote` to fetch the registry manifest metadata without
 pulling disks. Multiple refs are inspected as a batch, with JSON emitted as an
 array for private catalog audits. Remote inspect reports index/list resolution
-details, the selected platform, the pull plan for cove/Tart/Lume/image-store
-artifacts, cove base-chain availability/compatibility when a base manifest is
-declared, and the verification work cove will perform during pull/import.
+details, the selected platform, the disk format for cove-native and image-store
+artifacts, the pull plan for cove/Tart/Lume/image-store artifacts, cove
+base-chain availability/compatibility when a base manifest is declared, and the
+verification work cove will perform during pull/import.
 Add `-verify-blobs` to send HEAD requests for every config and layer descriptor
 so a private catalog audit can catch missing registry blobs without downloading
 VM disks. Use `--manifest` to validate local manifest JSON.
@@ -86,14 +87,18 @@ cove push <vm> <ref> --dry-run --manifest-out manifest.json
 cove push <vm> <ref> --lume-compat              # emit dual cove + lume annotations
 ```
 
-Push chunks `disk.img` into 512 MB fixed-offset chunks, LZ4-compresses each chunk, and uploads only the chunks not already on the registry. Fixed offsets make delta push and parallel uploads straightforward; `HEAD /v2/<repo>/blobs/<digest>` skips any blob the registry already has.
+Push chunks `disk.img` into 512 MB fixed-offset chunks, records the detected
+`raw` or `asif` disk format in the cove-native manifest, LZ4-compresses each
+chunk, and uploads only the chunks not already on the registry. Fixed offsets
+make delta push and parallel uploads straightforward; `HEAD
+/v2/<repo>/blobs/<digest>` skips any blob the registry already has.
 
 Delta push with `--base <ref>` pulls the base manifest first and only uploads chunks whose uncompressed content digest differs. Typical result: a fresh Xcode install on top of a vanilla macOS base uploads single-digit GBs instead of 60.
 
 Push compresses non-zero disk chunks as LZ4 OCI layers, skips sparse zero
 chunks, uploads missing blobs, and publishes the manifest tag. Use `--dry-run`
-to see how many chunks and bytes a push would produce without touching the
-network.
+to see the detected disk format plus how many chunks and bytes a push would
+produce without touching the network.
 
 ## Lume compatibility
 

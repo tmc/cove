@@ -15,9 +15,9 @@ const LumeTarLayerMediaTypePrefix = "application/vnd.oci.image.layer.v1.tar"
 // Lume sidecar file names. These are layer titles, not mediatypes — lume
 // addresses non-disk content by org.opencontainers.image.title.
 const (
-	LumeNvramTitle      = "nvram.bin"
-	LumeConfigTitle     = "config.json"
-	LumeDiskPartPrefix  = "disk.img.part."
+	LumeNvramTitle     = "nvram.bin"
+	LumeConfigTitle    = "config.json"
+	LumeDiskPartPrefix = "disk.img.part."
 )
 
 // LumeLayer pairs a sorted disk-part descriptor with its decoded part number.
@@ -50,6 +50,7 @@ func IsLumeManifest(m Manifest) bool {
 		CoveHWModelDigest,
 		CoveAuxDigest,
 		CoveUploadTime,
+		CoveDiskFormat,
 	} {
 		if _, ok := m.Annotations[key]; ok {
 			return false
@@ -172,13 +173,13 @@ func mediaTypeParam(mediaType, name string) (string, bool) {
 // fields that influence VM boot. Unknown fields are preserved by callers via
 // the raw bytes if they want to round-trip the file.
 type LumeConfig struct {
-	OS              string `json:"os,omitempty"`
-	CPU             int    `json:"cpu,omitempty"`
-	Memory          string `json:"memory,omitempty"`
-	DiskSize        string `json:"diskSize,omitempty"`
+	OS                string `json:"os,omitempty"`
+	CPU               int    `json:"cpu,omitempty"`
+	Memory            string `json:"memory,omitempty"`
+	DiskSize          string `json:"diskSize,omitempty"`
 	MachineIdentifier string `json:"machineIdentifier,omitempty"`
-	HardwareModel   string `json:"hardwareModel,omitempty"`
-	MACAddress      string `json:"macAddress,omitempty"`
+	HardwareModel     string `json:"hardwareModel,omitempty"`
+	MACAddress        string `json:"macAddress,omitempty"`
 }
 
 // DecodeLumeConfig parses the bytes of config.json into LumeConfig. Tolerates

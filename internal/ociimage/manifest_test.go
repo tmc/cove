@@ -19,6 +19,7 @@ func TestBuildManifest(t *testing.T) {
 	got, configJSON, err := BuildManifest(ManifestOptions{
 		UploadTime: "2026-04-23T00:00:00Z",
 		DiskSize:   6,
+		DiskFormat: "asif",
 		Chunks:     chunks,
 		Blobs:      []Blob{aux, hw},
 		LumeCompat: true,
@@ -53,6 +54,7 @@ func TestBuildManifest(t *testing.T) {
 		LumeUploadTime:           "2026-04-23T00:00:00Z",
 		CoveUncompressedDiskSize: "6",
 		LumeUncompressedDiskSize: "6",
+		CoveDiskFormat:           "asif",
 		CoveAuxDigest:            aux.Digest,
 		CoveHWModelDigest:        hw.Digest,
 	}
@@ -102,6 +104,7 @@ func TestBuildManifestRejectsInvalid(t *testing.T) {
 		{name: "missing role", opts: ManifestOptions{Blobs: []Blob{{Digest: testDigest(nil)}}}},
 		{name: "missing digest", opts: ManifestOptions{Blobs: []Blob{{Role: "nvram"}}}},
 		{name: "negative blob", opts: ManifestOptions{Blobs: []Blob{{Role: "nvram", Size: -1, Digest: testDigest(nil)}}}},
+		{name: "bad disk format", opts: ManifestOptions{DiskFormat: "qcow2"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -137,6 +140,9 @@ func TestParseManifest(t *testing.T) {
 	}
 	if got.Annotations.UncompressedDiskSize != 6 {
 		t.Fatalf("disk size = %d, want 6", got.Annotations.UncompressedDiskSize)
+	}
+	if got.Annotations.DiskFormat != "raw" {
+		t.Fatalf("disk format = %q, want raw", got.Annotations.DiskFormat)
 	}
 	if !reflect.DeepEqual(got.Chunks, chunks) {
 		t.Fatalf("chunks = %#v, want %#v", got.Chunks, chunks)

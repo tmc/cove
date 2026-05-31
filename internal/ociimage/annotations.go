@@ -3,6 +3,7 @@ package ociimage
 import (
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 const (
@@ -18,6 +19,7 @@ const (
 	CoveHWModelDigest             = "org.tmc.cove.hw-model-digest"
 	CoveAuxDigest                 = "org.tmc.cove.aux-digest"
 	CoveBaseManifest              = "org.tmc.cove.base-manifest"
+	CoveDiskFormat                = "org.tmc.cove.disk-format"
 
 	// LumeUncompressedSize records the legacy lume uncompressed layer size.
 	LumeUncompressedSize          = "org.trycua.lume.uncompressed-size"
@@ -56,6 +58,7 @@ type ManifestAnnotations struct {
 	HWModelDigest        string
 	AuxDigest            string
 	BaseManifest         string
+	DiskFormat           string
 }
 
 // LayerAnnotations is the normalized annotation set stored on an OCI layer.
@@ -85,6 +88,14 @@ func NormalizeManifestAnnotations(in map[string]string) (ManifestAnnotations, er
 	out.HWModelDigest, _ = annotationValue(in, CoveHWModelDigest)
 	out.AuxDigest, _ = annotationValue(in, CoveAuxDigest)
 	out.BaseManifest, _ = annotationValue(in, CoveBaseManifest)
+	out.DiskFormat = "raw"
+	if diskFormat, ok := annotationValue(in, CoveDiskFormat); ok {
+		format, err := normalizeDiskFormatAnnotation(diskFormat)
+		if err != nil {
+			return out, err
+		}
+		out.DiskFormat = format
+	}
 	return out, nil
 }
 
@@ -195,6 +206,17 @@ func parseIntAnnotation(key, value string) (int64, error) {
 		return 0, fmt.Errorf("parse annotation %s: negative value %d", key, n)
 	}
 	return n, nil
+}
+
+func normalizeDiskFormatAnnotation(value string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "raw":
+		return "raw", nil
+	case "asif":
+		return "asif", nil
+	default:
+		return "", fmt.Errorf("parse annotation %s: invalid disk format %q", CoveDiskFormat, value)
+	}
 }
 
 func missingAnnotationError(key string) error {

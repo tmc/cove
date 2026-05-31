@@ -15,6 +15,8 @@ import (
 
 func TestInspectRemoteImageCoveManifest(t *testing.T) {
 	manifest, _, _ := pullCompressedChunkedTestManifest(t, []byte("abcdefghijklmnop"), 4)
+	manifest.Annotations = cloneStringMap(manifest.Annotations)
+	manifest.Annotations[ociimage.CoveDiskFormat] = "asif"
 	srv := newOCIDispatchRegistry(t, manifest)
 	t.Cleanup(srv.Close)
 
@@ -30,6 +32,9 @@ func TestInspectRemoteImageCoveManifest(t *testing.T) {
 	}
 	if out.DiskSize != 16 || out.ChunkCount != 4 || out.DiskLayerCount != 4 {
 		t.Fatalf("disk/chunks/layers = %d/%d/%d, want 16/4/4", out.DiskSize, out.ChunkCount, out.DiskLayerCount)
+	}
+	if out.DiskFormat != "asif" {
+		t.Fatalf("disk format = %q, want asif", out.DiskFormat)
 	}
 	if out.PullPlan != "cove chunked pull" || !strings.Contains(out.Verification, "chunk digests verified") {
 		t.Fatalf("pull/verification = %q/%q", out.PullPlan, out.Verification)
@@ -225,6 +230,7 @@ func TestInspectRemoteImageCoveImageArtifact(t *testing.T) {
 		Tag:           "v1",
 		DiskSHA256:    strings.Repeat("a", 64),
 		DiskSize:      99,
+		DiskFormat:    "ASIF",
 		CreatedAt:     created,
 		BuiltAt:       created,
 	}
@@ -268,6 +274,9 @@ func TestInspectRemoteImageCoveImageArtifact(t *testing.T) {
 	}
 	if out.ImageRef != "runner:v1" || out.DiskSize != 99 || out.DiskSHA256 != config.DiskSHA256 {
 		t.Fatalf("image/disk = %q/%d/%q", out.ImageRef, out.DiskSize, out.DiskSHA256)
+	}
+	if out.DiskFormat != "asif" {
+		t.Fatalf("disk format = %q, want asif", out.DiskFormat)
 	}
 	if out.PullPlan != "cove image-store artifact" || !strings.Contains(out.Verification, "metadata blob size/digest verified") {
 		t.Fatalf("pull/verification = %q/%q", out.PullPlan, out.Verification)
@@ -356,6 +365,7 @@ func TestWriteRemoteInspectText(t *testing.T) {
 		BlobBytes:           9,
 		MissingBlobs:        []string{"layer[0]:sha256:missing"},
 		DiskSize:            16,
+		DiskFormat:          "raw",
 		CompressedDiskBytes: 8,
 		ChunkCount:          2,
 		LayerCount:          3,
@@ -373,7 +383,7 @@ func TestWriteRemoteInspectText(t *testing.T) {
 	if err != nil {
 		t.Fatalf("writeRemoteInspectText: %v", err)
 	}
-	for _, want := range []string{"Remote image ghcr.io/me/dev-vm:v1", "format:          cove", "pull plan:       cove chunked pull", "verification:    manifest parsed", "blob audit:      missing", "missing:       layer[0]:sha256:missing", "chunks:          2", "base audit:      ok", "matching_chunks=2"} {
+	for _, want := range []string{"Remote image ghcr.io/me/dev-vm:v1", "format:          cove", "pull plan:       cove chunked pull", "verification:    manifest parsed", "blob audit:      missing", "missing:       layer[0]:sha256:missing", "disk format:     raw", "chunks:          2", "base audit:      ok", "matching_chunks=2"} {
 		if !strings.Contains(b.String(), want) {
 			t.Fatalf("text missing %q:\n%s", want, b.String())
 		}

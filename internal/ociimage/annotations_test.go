@@ -21,6 +21,7 @@ func TestNormalizeManifestAnnotations(t *testing.T) {
 				CoveHWModelDigest:        "sha256:hw",
 				CoveAuxDigest:            "sha256:aux",
 				CoveBaseManifest:         "sha256:base",
+				CoveDiskFormat:           "ASIF",
 			},
 			want: ManifestAnnotations{
 				UploadTime:           "2026-04-16T12:00:00Z",
@@ -28,6 +29,7 @@ func TestNormalizeManifestAnnotations(t *testing.T) {
 				HWModelDigest:        "sha256:hw",
 				AuxDigest:            "sha256:aux",
 				BaseManifest:         "sha256:base",
+				DiskFormat:           "asif",
 			},
 		},
 		{
@@ -39,6 +41,7 @@ func TestNormalizeManifestAnnotations(t *testing.T) {
 			want: ManifestAnnotations{
 				UploadTime:           "2026-04-16T12:00:00Z",
 				UncompressedDiskSize: 42,
+				DiskFormat:           "raw",
 			},
 		},
 		{
@@ -52,6 +55,7 @@ func TestNormalizeManifestAnnotations(t *testing.T) {
 			want: ManifestAnnotations{
 				UploadTime:           "cove-time",
 				UncompressedDiskSize: 10,
+				DiskFormat:           "raw",
 			},
 		},
 		{
@@ -65,6 +69,14 @@ func TestNormalizeManifestAnnotations(t *testing.T) {
 				CoveUncompressedDiskSize: "not-an-int",
 			},
 			wantErr: "parse annotation",
+		},
+		{
+			name: "bad disk format",
+			in: map[string]string{
+				CoveUncompressedDiskSize: "10",
+				CoveDiskFormat:           "qcow2",
+			},
+			wantErr: "invalid disk format",
 		},
 	}
 

@@ -708,7 +708,7 @@ cove image rm <name[:tag]>
 |------------|-------------|
 | `build -from <vm> -tag <ref>` | Snapshot a stopped VM into the image store. The disk is APFS-clonefiled (no copy), and the manifest records whether the source disk is raw or ASIF. vmstate is excluded; cold-boot only. |
 | `list [-json]` | Show stored images with size + creation time + source VM. `-json` emits a JSON array; empty output is `[]`. |
-| `inspect <ref> [-json]` | Print manifest (size, format, sha256, base image, source manifest digest, created-at, hw.model fingerprint) plus the live downstream fork list. `-json` emits a stable schema for tooling. With `-remote <registry/ref:tag\|digest>...`, fetch only registry metadata and summarize cove-native, Tart, Lume, or cove image-store artifacts before pulling, including index/list resolution, selected platform, pull plan, verification posture, and cove base-chain audit results. Add `-verify-blobs` to HEAD every remote config/layer descriptor and report missing blobs without downloading disk content. Multiple remote refs are inspected as a batch; `-json` emits an array only in batch mode. |
+| `inspect <ref> [-json]` | Print manifest (size, format, sha256, base image, source manifest digest, created-at, hw.model fingerprint) plus the live downstream fork list. `-json` emits a stable schema for tooling. With `-remote <registry/ref:tag\|digest>...`, fetch only registry metadata and summarize cove-native, Tart, Lume, or cove image-store artifacts before pulling, including index/list resolution, selected platform, cove disk format, pull plan, verification posture, and cove base-chain audit results. Add `-verify-blobs` to HEAD every remote config/layer descriptor and report missing blobs without downloading disk content. Multiple remote refs are inspected as a batch; `-json` emits an array only in batch mode. |
 | `verify <ref> [-strict] [-json] [-quiet] [-newer-than D]` | Check freshness, provenance, and layout. Warns on stale or legacy manifests; `-strict` turns missing `execattach.v3` into a failure; `-quiet` prints only on failure for CI; `-newer-than` fails stale images such as `24h` or `7d`. |
 | `push <ref> <file> [-gzip]` | Tar an image directory to a single file (atomic temp + rename). `-gzip` compresses; the load side sniffs `.gz` / `.tgz` automatically. Pass `-` as the file to stream the tarball to stdout (refuses a TTY). |
 | `load <file> [-tag <ref>] [-force]` | Extract a tarball into the image store. Tar entries are restricted to `manifest.json`, `disk.img`, `aux.img`, `hw.model`, `machine.id` (TypeReg only); zip-slip / symlink / oversize entries are refused before any filesystem write. `-tag` rewrites the manifest's name+tag on import; `-force` overwrites an existing ref. `ParentImage` is **not** preserved across hosts -- a loaded image becomes a fresh root for forks on the destination. Pass `-` as the file to read the tarball from stdin (refuses a TTY); gzip framing is auto-detected via magic bytes. |
@@ -1405,8 +1405,9 @@ OCI image indexes and Docker manifest lists resolve to a same-repository image
 manifest before parsing. Lume-format tar-split pulls prefetch disk parts
 concurrently, then stream them in manifest order with descriptor size/digest
 checks before extraction. Use `--dry-run` to validate the manifest and target
-without writing a disk, or `cove image inspect -remote <ref>...` to fetch only
-registry metadata before a pull or private catalog audit.
+without writing a disk; cove-native dry-runs also print the registry manifest's
+disk format. Use `cove image inspect -remote <ref>...` to fetch only registry
+metadata before a pull or private catalog audit.
 
 ```
 cove pull <ref> [flags]
@@ -1430,8 +1431,9 @@ cove pull ghcr.io/trycua/macos-sequoia-vanilla:latest --as sequoia --dry-run --m
 ## push
 
 Plan or push a VM disk as an OCI image. Push compresses non-zero disk chunks as
-LZ4 OCI layers, skips sparse zero chunks, uploads missing blobs, and publishes
-the manifest tag. The source can be a VM name or an existing VM directory. Use
+LZ4 OCI layers, skips sparse zero chunks, records the detected `raw` or `asif`
+disk format in cove-native manifests, uploads missing blobs, and publishes the
+manifest tag. The source can be a VM name or an existing VM directory. Use
 `--dry-run` to inspect the plan without uploading.
 
 ```
