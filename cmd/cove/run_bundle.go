@@ -55,6 +55,8 @@ type RunBundle struct {
 	metricAgentReady bool
 	vmDir            string
 	resourceSampled  map[string]bool
+	resourceSampler  *resourceSampler
+	resourceSampleN  int64
 	screenshotN      int
 }
 
@@ -209,6 +211,7 @@ func (b *RunBundle) Finalize(exitErr error) error {
 	if b == nil {
 		return nil
 	}
+	b.stopResourceSampler()
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.finalized {

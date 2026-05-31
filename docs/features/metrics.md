@@ -58,10 +58,13 @@ truncated `error` string when `status` is `error`.
 
 `resource_sample`
 : Best-effort resource snapshot emitted for standalone runs and forked run
-bundles. `extra.phase` is `start` or `end`; guest memory fields use byte counts
-from agent info when available, and Virtualization.framework memory fields
-report configured/target memory plus balloon support when the runtime exposes
-them.
+bundles. `extra.phase` is `start`, `periodic`, or `end`; periodic samples are
+emitted roughly every 30 seconds after the guest agent becomes ready and carry
+`sample_index`. Guest memory fields use byte counts from agent info when
+available, Virtualization.framework memory fields report configured/target
+memory plus balloon support when the runtime exposes them, and host-process
+fields report the owning cove process PID, CPU percentage, RSS bytes, and start
+source when cove can resolve them.
 
 `build_step`
 : Emitted for each `cove build` step. `extra` includes `step`, `cache_hit`,

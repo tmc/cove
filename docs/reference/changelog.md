@@ -12,6 +12,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   agent-ready and before cleanup, including guest memory totals when the agent
   reports them and Virtualization.framework memory/balloon fields when the
   runtime exposes them.
+- `resource_sample` metrics now continue periodically after guest agent
+  readiness for standalone runs and forked run bundles, and include owning cove
+  process PID, CPU percent, RSS bytes, and start source when available.
 - `cove image inspect -remote` now accepts multiple registry refs for private
   catalog audits. Single-ref JSON remains an object; batch JSON is an array and
   includes per-ref errors while returning a failing exit status if any ref fails.

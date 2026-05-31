@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/tmc/cove/internal/controlserver"
 	runmetrics "github.com/tmc/cove/internal/metrics"
@@ -140,10 +141,20 @@ func TestResourceSampleMetricWritesMemory(t *testing.T) {
 			HasBalloon:       true,
 		}}, nil
 	}
+	prevServer := resourceServerInfoHook
+	resourceServerInfoHook = func(string) (RuntimeServerInfo, bool) {
+		return RuntimeServerInfo{PID: 123, StartSource: "cove run"}, true
+	}
+	prevUsage := resourceProcessUsageHook
+	resourceProcessUsageHook = func(int) (resourceProcessUsage, bool) {
+		return resourceProcessUsage{CPUPercent: 12.5, RSSBytes: 42 * 1024}, true
+	}
 	t.Cleanup(func() {
 		runsDirHook = prevRuns
 		resourceAgentInfoHook = prevInfo
 		resourceMemoryInfoHook = prevMemory
+		resourceServerInfoHook = prevServer
+		resourceProcessUsageHook = prevUsage
 	})
 
 	run, err := beginStandaloneMetricsRun("vm-x", "", "/tmp/vm-x")
@@ -167,6 +178,9 @@ func TestResourceSampleMetricWritesMemory(t *testing.T) {
 	if got.Extra["configured_memory_gb"].(float64) != 8 || got.Extra["target_memory_gb"].(float64) != 6 || got.Extra["minimum_allowed_memory_mb"].(float64) != 1024 || got.Extra["has_balloon"].(bool) != true {
 		t.Fatalf("vz memory extra = %#v", got.Extra)
 	}
+	if got.Extra["host_pid"].(float64) != 123 || got.Extra["host_cpu_percent"].(float64) != 12.5 || got.Extra["host_rss_bytes"].(float64) != 42*1024 || got.Extra["host_start_source"] != "cove run" {
+		t.Fatalf("host extra = %#v", got.Extra)
+	}
 	if events[1].Extra["phase"] != "end" {
 		t.Fatalf("end extra = %#v", events[1].Extra)
 	}
@@ -182,7 +196,9 @@ func TestRunBundleResourceSampleUsesChildVMDir(t *testing.T) {
 	runsRoot := t.TempDir()
 	prevInfo := resourceAgentInfoHook
 	prevMemory := resourceMemoryInfoHook
-	var agentDir, memoryDir string
+	prevServer := resourceServerInfoHook
+	prevUsage := resourceProcessUsageHook
+	var agentDir, memoryDir, serverDir string
 	resourceAgentInfoHook = func(vmDir string) (*controlpb.AgentInfoResponse, error) {
 		agentDir = vmDir
 		return &controlpb.AgentInfoResponse{RawJson: `{"memoryTotal":"16384","memoryAvailable":"8192"}`}, nil
@@ -191,9 +207,18 @@ func TestRunBundleResourceSampleUsesChildVMDir(t *testing.T) {
 		memoryDir = vmDir
 		return &controlpb.MemoryInfoResponse{Info: &controlpb.MemoryInfo{ConfiguredGb: 16}}, nil
 	}
+	resourceServerInfoHook = func(vmDir string) (RuntimeServerInfo, bool) {
+		serverDir = vmDir
+		return RuntimeServerInfo{PID: 456}, true
+	}
+	resourceProcessUsageHook = func(int) (resourceProcessUsage, bool) {
+		return resourceProcessUsage{CPUPercent: 1.25, RSSBytes: 64 * 1024}, true
+	}
 	t.Cleanup(func() {
 		resourceAgentInfoHook = prevInfo
 		resourceMemoryInfoHook = prevMemory
+		resourceServerInfoHook = prevServer
+		resourceProcessUsageHook = prevUsage
 	})
 
 	b, err := NewRunBundle(runsRoot, "child", "base:latest")
@@ -217,14 +242,126 @@ func TestRunBundleResourceSampleUsesChildVMDir(t *testing.T) {
 	if len(samples) != 2 {
 		t.Fatalf("resource samples = %d in %+v, want 2", len(samples), events)
 	}
-	if agentDir != "/tmp/child-vm" || memoryDir != "/tmp/child-vm" {
-		t.Fatalf("hook dirs agent=%q memory=%q, want child vm dir", agentDir, memoryDir)
+	if agentDir != "/tmp/child-vm" || memoryDir != "/tmp/child-vm" || serverDir != "/tmp/child-vm" {
+		t.Fatalf("hook dirs agent=%q memory=%q server=%q, want child vm dir", agentDir, memoryDir, serverDir)
 	}
 	if samples[0].Extra["phase"] != "start" || samples[0].Extra["memory_total_bytes"].(float64) != 16384 || samples[0].Extra["memory_available_bytes"].(float64) != 8192 {
 		t.Fatalf("start sample = %#v", samples[0].Extra)
 	}
 	if samples[1].Extra["phase"] != "end" || samples[1].Extra["configured_memory_gb"].(float64) != 16 {
 		t.Fatalf("end sample = %#v", samples[1].Extra)
+	}
+	if samples[1].Extra["host_cpu_percent"].(float64) != 1.25 || samples[1].Extra["host_rss_bytes"].(float64) != 64*1024 {
+		t.Fatalf("end host sample = %#v", samples[1].Extra)
+	}
+}
+
+func TestRunBundlePeriodicResourceSamples(t *testing.T) {
+	withTempHome(t)
+	withResourceSampleInterval(t, 5*time.Millisecond)
+	runsRoot := t.TempDir()
+	prevInfo := resourceAgentInfoHook
+	prevMemory := resourceMemoryInfoHook
+	prevServer := resourceServerInfoHook
+	prevUsage := resourceProcessUsageHook
+	calls := make(chan struct{}, 16)
+	resourceAgentInfoHook = func(string) (*controlpb.AgentInfoResponse, error) {
+		select {
+		case calls <- struct{}{}:
+		default:
+		}
+		return &controlpb.AgentInfoResponse{RawJson: `{"memoryTotal":"32768","memoryAvailable":"16384"}`}, nil
+	}
+	resourceMemoryInfoHook = func(string) (*controlpb.MemoryInfoResponse, error) { return nil, nil }
+	resourceServerInfoHook = func(string) (RuntimeServerInfo, bool) {
+		return RuntimeServerInfo{PID: 789}, true
+	}
+	resourceProcessUsageHook = func(int) (resourceProcessUsage, bool) {
+		return resourceProcessUsage{CPUPercent: 3.5, RSSBytes: 128 * 1024}, true
+	}
+	t.Cleanup(func() {
+		resourceAgentInfoHook = prevInfo
+		resourceMemoryInfoHook = prevMemory
+		resourceServerInfoHook = prevServer
+		resourceProcessUsageHook = prevUsage
+	})
+
+	b, err := NewRunBundle(runsRoot, "child", "base:latest")
+	if err != nil {
+		t.Fatalf("NewRunBundle: %v", err)
+	}
+	b.SetVMDir("/tmp/child-vm")
+	b.MarkAgentReady()
+	waitResourceHookCalls(t, calls, 2)
+	b.EmitResourceSampleMetric("end")
+	if err := b.Finalize(nil); err != nil {
+		t.Fatalf("Finalize: %v", err)
+	}
+
+	events := readMetricEvents(t, filepath.Join(b.Dir(), "metrics.jsonl"))
+	if !sawResourcePhase(events, "start") || !sawResourcePhase(events, "periodic") || !sawResourcePhase(events, "end") {
+		t.Fatalf("events = %+v, want start, periodic, and end resource samples", events)
+	}
+	for _, e := range events {
+		if e.EventType == "resource_sample" && e.Extra["phase"] == "periodic" {
+			if e.Extra["sample_index"].(float64) < 1 {
+				t.Fatalf("periodic sample index = %#v", e.Extra)
+			}
+			if e.Extra["memory_total_bytes"].(float64) != 32768 {
+				t.Fatalf("periodic sample = %#v", e.Extra)
+			}
+			if e.Extra["host_cpu_percent"].(float64) != 3.5 || e.Extra["host_rss_bytes"].(float64) != 128*1024 {
+				t.Fatalf("periodic host sample = %#v", e.Extra)
+			}
+		}
+	}
+}
+
+func TestStandaloneResourceSamplerStopsBeforeClose(t *testing.T) {
+	withTempHome(t)
+	withResourceSampleInterval(t, 5*time.Millisecond)
+	runsRoot := t.TempDir()
+	prevRuns := runsDirHook
+	runsDirHook = func() string { return runsRoot }
+	prevInfo := resourceAgentInfoHook
+	prevMemory := resourceMemoryInfoHook
+	prevServer := resourceServerInfoHook
+	prevUsage := resourceProcessUsageHook
+	calls := make(chan struct{}, 16)
+	resourceAgentInfoHook = func(string) (*controlpb.AgentInfoResponse, error) {
+		select {
+		case calls <- struct{}{}:
+		default:
+		}
+		return &controlpb.AgentInfoResponse{RawJson: `{"memory_total":4096,"memory_available":2048}`}, nil
+	}
+	resourceMemoryInfoHook = func(string) (*controlpb.MemoryInfoResponse, error) { return nil, nil }
+	resourceServerInfoHook = func(string) (RuntimeServerInfo, bool) { return RuntimeServerInfo{}, false }
+	resourceProcessUsageHook = func(int) (resourceProcessUsage, bool) { return resourceProcessUsage{}, false }
+	t.Cleanup(func() {
+		runsDirHook = prevRuns
+		resourceAgentInfoHook = prevInfo
+		resourceMemoryInfoHook = prevMemory
+		resourceServerInfoHook = prevServer
+		resourceProcessUsageHook = prevUsage
+	})
+
+	run, err := beginStandaloneMetricsRun("vm-x", "", "/tmp/vm-x")
+	if err != nil {
+		t.Fatalf("beginStandaloneMetricsRun: %v", err)
+	}
+	run.MarkAgentReady()
+	waitResourceHookCalls(t, calls, 2)
+	finishStandaloneMetricsRun(run)
+	events := readMetricEvents(t, filepath.Join(run.dir, "metrics.jsonl"))
+	count := len(events)
+	if !sawResourcePhase(events, "periodic") || !sawResourcePhase(events, "end") {
+		t.Fatalf("events = %+v, want periodic and end samples", events)
+	}
+	time.Sleep(15 * time.Millisecond)
+	events = readMetricEvents(t, filepath.Join(run.dir, "metrics.jsonl"))
+	if len(events) != count {
+		t.Fatalf("events after finish = %d, want still %d: %+v", len(events), count, events)
 	}
 }
 
@@ -264,6 +401,35 @@ func TestRunVMWithConfigEmitsRunComplete(t *testing.T) {
 	if !sawReady || !sawComplete {
 		t.Fatalf("events = %+v, want agent_ready and run_complete", events)
 	}
+}
+
+func withResourceSampleInterval(t *testing.T, interval time.Duration) {
+	t.Helper()
+	prev := resourceSampleInterval
+	resourceSampleInterval = interval
+	t.Cleanup(func() { resourceSampleInterval = prev })
+}
+
+func waitResourceHookCalls(t *testing.T, calls <-chan struct{}, n int) {
+	t.Helper()
+	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
+	for i := 0; i < n; i++ {
+		select {
+		case <-calls:
+		case <-timer.C:
+			t.Fatalf("resource hook calls = %d, want %d", i, n)
+		}
+	}
+}
+
+func sawResourcePhase(events []runmetrics.Event, phase string) bool {
+	for _, e := range events {
+		if e.EventType == "resource_sample" && e.Extra["phase"] == phase {
+			return true
+		}
+	}
+	return false
 }
 
 func readMetricEvents(t *testing.T, path string) []runmetrics.Event {

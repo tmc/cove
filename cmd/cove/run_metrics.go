@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -26,6 +28,18 @@ type standaloneMetricsRun struct {
 	mu              sync.Mutex
 	agentOK         bool
 	resourceSampled map[string]bool
+	resourceSampler *resourceSampler
+	resourceSampleN int64
+}
+
+type resourceSampler struct {
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
+type resourceProcessUsage struct {
+	CPUPercent float64
+	RSSBytes   uint64
 }
 
 type runMetricRecorder interface {
@@ -43,6 +57,14 @@ var resourceMemoryInfoHook = func(vmDir string) (*controlpb.MemoryInfoResponse, 
 	client := NewControlClient(GetControlSocketPathForVM(vmDir))
 	return client.MemoryInfo()
 }
+
+var resourceServerInfoHook = func(vmDir string) (RuntimeServerInfo, bool) {
+	return serverInfoForVMProcess(GetControlSocketPathForVM(vmDir))
+}
+
+var resourceProcessUsageHook = hostProcessUsage
+
+var resourceSampleInterval = 30 * time.Second
 
 func beginStandaloneMetricsRun(vmName, imageRef string, vmDir ...string) (*standaloneMetricsRun, error) {
 	id, err := generateRunID()
@@ -158,6 +180,7 @@ func (b *RunBundle) MarkAgentReady() {
 	b.mu.Unlock()
 	b.EmitMetricEvent("agent_ready", started, "ok", nil)
 	b.EmitResourceSampleMetric("start")
+	b.startResourceSampler()
 }
 
 func (run *standaloneMetricsRun) MarkAgentReady() {
@@ -174,42 +197,156 @@ func (run *standaloneMetricsRun) MarkAgentReady() {
 	run.mu.Unlock()
 	run.EmitMetricEvent("agent_ready", started, "ok", nil)
 	run.EmitResourceSampleMetric("start")
+	run.startResourceSampler()
 }
 
 func (b *RunBundle) EmitResourceSampleMetric(phase string) {
 	if b == nil {
 		return
 	}
+	if phase == "end" {
+		b.stopResourceSampler()
+	}
 	b.mu.Lock()
 	vmDir := b.vmDir
 	started := b.startedAt
 	b.mu.Unlock()
-	emitResourceSampleMetric(b, started, vmDir, phase, b.markResourceSampled)
+	emitResourceSampleMetric(b, started, vmDir, phase, nil, b.markResourceSampled)
 }
 
 func (run *standaloneMetricsRun) EmitResourceSampleMetric(phase string) {
 	if run == nil {
 		return
 	}
-	emitResourceSampleMetric(run, run.started, run.vmDir, phase, run.markResourceSampled)
+	if phase == "end" {
+		run.stopResourceSampler()
+	}
+	emitResourceSampleMetric(run, run.started, run.vmDir, phase, nil, run.markResourceSampled)
+}
+
+func (b *RunBundle) EmitPeriodicResourceSampleMetric() {
+	if b == nil {
+		return
+	}
+	b.mu.Lock()
+	vmDir := b.vmDir
+	started := b.startedAt
+	b.resourceSampleN++
+	sampleN := b.resourceSampleN
+	b.mu.Unlock()
+	emitResourceSampleMetric(b, started, vmDir, "periodic", map[string]any{"sample_index": sampleN}, nil)
+}
+
+func (run *standaloneMetricsRun) EmitPeriodicResourceSampleMetric() {
+	if run == nil {
+		return
+	}
+	run.mu.Lock()
+	vmDir := run.vmDir
+	started := run.started
+	run.resourceSampleN++
+	sampleN := run.resourceSampleN
+	run.mu.Unlock()
+	emitResourceSampleMetric(run, started, vmDir, "periodic", map[string]any{"sample_index": sampleN}, nil)
+}
+
+func (b *RunBundle) startResourceSampler() {
+	if b == nil || resourceSampleInterval <= 0 {
+		return
+	}
+	b.mu.Lock()
+	if b.finalized || strings.TrimSpace(b.vmDir) == "" || b.resourceSampler != nil {
+		b.mu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	sampler := &resourceSampler{cancel: cancel, done: make(chan struct{})}
+	b.resourceSampler = sampler
+	b.mu.Unlock()
+	go runResourceSampler(ctx, sampler.done, b.EmitPeriodicResourceSampleMetric)
+}
+
+func (run *standaloneMetricsRun) startResourceSampler() {
+	if run == nil || resourceSampleInterval <= 0 {
+		return
+	}
+	run.mu.Lock()
+	if strings.TrimSpace(run.vmDir) == "" || run.resourceSampler != nil {
+		run.mu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	sampler := &resourceSampler{cancel: cancel, done: make(chan struct{})}
+	run.resourceSampler = sampler
+	run.mu.Unlock()
+	go runResourceSampler(ctx, sampler.done, run.EmitPeriodicResourceSampleMetric)
+}
+
+func runResourceSampler(ctx context.Context, done chan struct{}, emit func()) {
+	defer close(done)
+	ticker := time.NewTicker(resourceSampleInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			emit()
+		}
+	}
+}
+
+func (b *RunBundle) stopResourceSampler() {
+	if b == nil {
+		return
+	}
+	b.mu.Lock()
+	sampler := b.resourceSampler
+	b.resourceSampler = nil
+	b.mu.Unlock()
+	stopResourceSampler(sampler)
+}
+
+func (run *standaloneMetricsRun) stopResourceSampler() {
+	if run == nil {
+		return
+	}
+	run.mu.Lock()
+	sampler := run.resourceSampler
+	run.resourceSampler = nil
+	run.mu.Unlock()
+	stopResourceSampler(sampler)
+}
+
+func stopResourceSampler(sampler *resourceSampler) {
+	if sampler == nil {
+		return
+	}
+	sampler.cancel()
+	<-sampler.done
 }
 
 func emitResourceSampleMetric(recorder interface {
 	EmitMetricEvent(string, time.Time, string, map[string]any)
-}, started time.Time, vmDir string, phase string, mark func(string) bool) {
+}, started time.Time, vmDir string, phase string, extra map[string]any, mark func(string) bool) bool {
 	if recorder == nil || strings.TrimSpace(vmDir) == "" {
-		return
+		return false
 	}
-	extra := map[string]any{"phase": phase}
+	if extra == nil {
+		extra = map[string]any{}
+	}
+	extra["phase"] = phase
 	added := addGuestResourceFields(vmDir, extra)
 	added = addVZMemoryResourceFields(vmDir, extra) || added
+	added = addHostProcessResourceFields(vmDir, extra) || added
 	if !added {
-		return
+		return false
 	}
 	if mark != nil && !mark(phase) {
-		return
+		return false
 	}
 	recorder.EmitMetricEvent("resource_sample", started, "ok", extra)
+	return true
 }
 
 func addGuestResourceFields(vmDir string, extra map[string]any) bool {
@@ -252,6 +389,46 @@ func addVZMemoryResourceFields(vmDir string, extra map[string]any) bool {
 	}
 	extra["has_balloon"] = mem.GetHasBalloon()
 	return true
+}
+
+func addHostProcessResourceFields(vmDir string, extra map[string]any) bool {
+	info, ok := resourceServerInfoHook(vmDir)
+	if !ok || info.PID <= 0 {
+		return false
+	}
+	extra["host_pid"] = info.PID
+	if strings.TrimSpace(info.StartSource) != "" {
+		extra["host_start_source"] = info.StartSource
+	}
+	usage, ok := resourceProcessUsageHook(info.PID)
+	if ok {
+		extra["host_cpu_percent"] = usage.CPUPercent
+		extra["host_rss_bytes"] = usage.RSSBytes
+	}
+	return true
+}
+
+func hostProcessUsage(pid int) (resourceProcessUsage, bool) {
+	if pid <= 0 {
+		return resourceProcessUsage{}, false
+	}
+	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "pcpu=,rss=").Output()
+	if err != nil {
+		return resourceProcessUsage{}, false
+	}
+	fields := strings.Fields(strings.TrimSpace(string(out)))
+	if len(fields) < 2 {
+		return resourceProcessUsage{}, false
+	}
+	cpu, err := strconv.ParseFloat(fields[0], 64)
+	if err != nil {
+		return resourceProcessUsage{}, false
+	}
+	rssKB, err := strconv.ParseUint(fields[1], 10, 64)
+	if err != nil {
+		return resourceProcessUsage{}, false
+	}
+	return resourceProcessUsage{CPUPercent: cpu, RSSBytes: rssKB * 1024}, true
 }
 
 func (b *RunBundle) markResourceSampled(phase string) bool {
