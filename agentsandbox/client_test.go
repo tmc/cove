@@ -303,6 +303,43 @@ func TestCloudClientEvents(t *testing.T) {
 	}
 }
 
+func TestCloudClientReports(t *testing.T) {
+	server := newSDKFleetServer(t)
+	ctx := context.Background()
+	client, err := NewClient(ClientOptions{
+		Provider:  ProviderCloud,
+		FleetURL:  server.URL,
+		APIKey:    "secret",
+		Namespace: "team-a",
+		SandboxID: "job-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := client.Reports(ctx, SandboxReportListOptions{
+		Role:   "exec",
+		Status: "complete",
+		Offset: 2,
+		Limit:  5,
+	})
+	if err != nil {
+		t.Fatalf("Reports: %v", err)
+	}
+	if page.Count != 1 || page.Offset != 2 || page.Limit != 5 || len(page.Reports) != 1 || page.Reports[0].Report.Stdout != "out" {
+		t.Fatalf("Reports = %+v, want exec report page", page)
+	}
+	query := server.requests[len(server.requests)-1].query
+	if query.Get("role") != "exec" || query.Get("status") != "complete" || query.Get("offset") != "2" || query.Get("limit") != "5" {
+		t.Fatalf("reports query = %q", query.Encode())
+	}
+	if _, err := client.Reports(ctx, SandboxReportListOptions{Limit: -1}); err == nil || !strings.Contains(err.Error(), "limit must be non-negative") {
+		t.Fatalf("negative report limit err = %v, want validation error", err)
+	}
+	if _, err := client.Reports(ctx, SandboxReportListOptions{Offset: -1}); err == nil || !strings.Contains(err.Error(), "offset must be non-negative") {
+		t.Fatalf("negative report offset err = %v, want validation error", err)
+	}
+}
+
 func TestExecResultCheck(t *testing.T) {
 	err := (ExecResult{ExitCode: 2, Stderr: "nope\n"}).Check()
 	if err == nil || err.Error() != "guest command exited 2: nope" {
@@ -416,6 +453,21 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 					TargetID:     "job-1",
 					AssignmentID: "assignment-1",
 					Fields:       map[string]string{"argc": "1"},
+				}},
+				Count:  1,
+				Offset: atoiDefault(r.URL.Query().Get("offset"), 0),
+				Limit:  atoiDefault(r.URL.Query().Get("limit"), 0),
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/sandboxes/job-1/reports":
+			writeSDKJSON(t, w, SandboxReportListResult{
+				Reports: []SandboxReport{{
+					Namespace:    "team-a",
+					SandboxID:    "job-1",
+					AssignmentID: "assignment-1",
+					Role:         "exec",
+					WorkerID:     "worker-1",
+					Status:       "complete",
+					Report:       WorkerReport{AssignmentID: "assignment-1", Status: "complete", ExitCode: 7, Stdout: "out", Stderr: "err"},
 				}},
 				Count:  1,
 				Offset: atoiDefault(r.URL.Query().Get("offset"), 0),

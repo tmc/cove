@@ -1025,6 +1025,56 @@ func (s *Store) ListSandboxMetering(namespace, sandboxID string) SandboxMetering
 	}
 }
 
+func (s *Store) ListSandboxReportsPage(filter SandboxReportFilter) SandboxReportListResult {
+	filter.Namespace = normalizeNamespace(filter.Namespace)
+	filter.SandboxID = strings.TrimSpace(filter.SandboxID)
+	filter.Role = strings.TrimSpace(filter.Role)
+	filter.Status = strings.TrimSpace(filter.Status)
+	if filter.Offset < 0 {
+		filter.Offset = 0
+	}
+	if filter.Limit < 0 {
+		filter.Limit = 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	reports := make([]SandboxReport, 0)
+	for _, assignment := range s.sortedAssignmentsLocked() {
+		if assignment.LastReport == nil {
+			continue
+		}
+		if assignment.SandboxID == "" {
+			continue
+		}
+		if !namespaceMatches(assignment.Namespace, filter.Namespace) {
+			continue
+		}
+		if filter.SandboxID != "" && assignment.SandboxID != filter.SandboxID {
+			continue
+		}
+		if filter.Role != "" && assignment.SandboxRole != filter.Role {
+			continue
+		}
+		if filter.Status != "" && assignment.Status != filter.Status {
+			continue
+		}
+		reports = append(reports, sandboxReportFromAssignment(assignment))
+	}
+	result := SandboxReportListResult{Offset: filter.Offset, Limit: filter.Limit}
+	if filter.Offset >= len(reports) {
+		return result
+	}
+	end := len(reports) - filter.Offset
+	start := 0
+	if filter.Limit > 0 && end > filter.Limit {
+		start = end - filter.Limit
+		result.NextOffset = filter.Offset + filter.Limit
+	}
+	result.Reports = reports[start:end]
+	result.Count = len(result.Reports)
+	return result
+}
+
 func (s *Store) OperationsSummary(namespace string) OperationsSummary {
 	namespace = normalizeNamespace(namespace)
 	s.mu.Lock()
@@ -2726,6 +2776,21 @@ func cloneSandboxMeteringRecords(in []SandboxMeteringRecord) []SandboxMeteringRe
 		out[i] = cloneSandboxMeteringRecord(in[i])
 	}
 	return out
+}
+
+func sandboxReportFromAssignment(assignment Assignment) SandboxReport {
+	report := *assignment.LastReport
+	return SandboxReport{
+		Namespace:    assignment.Namespace,
+		SandboxID:    assignment.SandboxID,
+		AssignmentID: assignment.ID,
+		Role:         assignment.SandboxRole,
+		WorkerID:     assignment.WorkerID,
+		Status:       assignment.Status,
+		Created:      assignment.Created,
+		Updated:      assignment.Updated,
+		Report:       report,
+	}
 }
 
 func cloneServiceAccountRecord(in serviceAccountRecord) serviceAccountRecord {

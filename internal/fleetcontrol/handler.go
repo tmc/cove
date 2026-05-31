@@ -588,6 +588,8 @@ func handleSandboxAction(w http.ResponseWriter, r *http.Request, store *Store, i
 		writeJSON(w, http.StatusOK, store.ListSandboxMetering(namespaceFilterFromRequest(r, identity), id))
 	case "events":
 		handleSandboxEvents(w, r, store, id, identity)
+	case "reports":
+		handleSandboxReports(w, r, store, id, identity)
 	default:
 		writeError(w, http.StatusNotFound, "sandbox route not found")
 	}
@@ -700,6 +702,51 @@ func sandboxEventsFilterFromRequest(r *http.Request, namespace, id string) (Audi
 		offset, err := strconv.Atoi(raw)
 		if err != nil || offset < 0 {
 			return AuditListFilter{}, fmt.Errorf("sandbox events offset must be non-negative")
+		}
+		filter.Offset = offset
+	}
+	return filter, nil
+}
+
+func handleSandboxReports(w http.ResponseWriter, r *http.Request, store *Store, id string, identity requestIdentity) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	sandbox, ok := store.GetSandbox(id)
+	if !ok || !canAccessNamespace(identity, sandbox.Namespace) {
+		writeError(w, http.StatusNotFound, "sandbox not found")
+		return
+	}
+	filter, err := sandboxReportsFilterFromRequest(r, sandbox.Namespace, id)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, store.ListSandboxReportsPage(filter))
+}
+
+func sandboxReportsFilterFromRequest(r *http.Request, namespace, id string) (SandboxReportFilter, error) {
+	filter := SandboxReportFilter{
+		Namespace: namespace,
+		SandboxID: id,
+		Role:      strings.TrimSpace(r.URL.Query().Get("role")),
+		Status:    strings.TrimSpace(r.URL.Query().Get("status")),
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 0 {
+			return SandboxReportFilter{}, fmt.Errorf("sandbox reports limit must be non-negative")
+		}
+		filter.Limit = limit
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		offset, err := strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			return SandboxReportFilter{}, fmt.Errorf("sandbox reports offset must be non-negative")
 		}
 		filter.Offset = offset
 	}

@@ -11,6 +11,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `cove-fleetd` now exposes `GET /v1/sandboxes/{id}/events` for sandbox-scoped
   audit history, and the Go/Python hosted sandbox clients expose matching event
   list helpers.
+- `cove-fleetd` now exposes `GET /v1/sandboxes/{id}/reports` for sandbox-scoped
+  worker report history, including exec/control stdout, stderr, errors, and
+  exit codes; the Go/Python hosted sandbox clients expose matching report-list
+  helpers.
 - `cove-fleetd` audit queries now support actor, action, target type, target
   ID, sandbox ID, offset, limit, count, and next-offset metadata for
   namespace-scoped controller audit review.
@@ -25,8 +29,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - The OpenAI Agents Python cloud provider now maps `ComputerTool`
   screenshot/key/text/mouse calls onto the sandbox control endpoint.
 - The public Go `agentsandbox` package now includes a local/cloud client for
-  hosted sandbox create/list/get/wait/lease/restart/exec/control/metering/delete
-  flows, and the Python fleet client exposes matching lifecycle helpers.
+  hosted sandbox create/list/get/wait/lease/restart/exec/control/events,
+  reports, metering, and delete flows, and the Python fleet client exposes
+  matching lifecycle helpers.
 - The public Go `agentsandbox` package and Python fleet client now expose hosted
   sandbox list filters and pagination for status, worker, image, namespace,
   offset, limit, count, and next-offset metadata.

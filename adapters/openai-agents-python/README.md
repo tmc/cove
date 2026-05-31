@@ -160,8 +160,9 @@ The cloud provider creates `POST /v1/sandboxes` handles, polls until the sandbox
 is `ready`, maps SDK `exec`/workspace file calls onto
 `POST /v1/sandboxes/{id}/exec`, maps `ComputerTool`
 screenshot/key/text/mouse calls onto `POST /v1/sandboxes/{id}/control`, and
-exposes sandbox audit history through `GET /v1/sandboxes/{id}/events`. It
-deletes the sandbox handle on close when `delete_on_close=True`. Set
+exposes sandbox audit history through `GET /v1/sandboxes/{id}/events` and
+worker reports through `GET /v1/sandboxes/{id}/reports`. It deletes the sandbox
+handle on close when `delete_on_close=True`. Set
 `COVE_FLEET_URL` and `COVE_API_KEY` (or `COVE_FLEET_TOKEN`) instead of passing
 `fleet_url` and `api_key` directly.
 
@@ -184,6 +185,7 @@ client.wait_ready(timeout=120)
 print(client.exec("sw_vers").stdout)
 print(client.metering()["summary"]["records"])
 print(client.events(action="sandbox.exec", limit=20)["count"])
+print(client.reports(role="exec", limit=20)["count"])
 client.release_lease(holder=lease["lease"]["holder"])
 client.delete_vm()
 ```

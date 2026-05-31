@@ -503,6 +503,35 @@ type SandboxMeteringResult struct {
 	Summary SandboxMeteringSummary  `json:"summary"`
 }
 
+type SandboxReportFilter struct {
+	Namespace string `json:"namespace,omitempty"`
+	SandboxID string `json:"sandbox_id,omitempty"`
+	Role      string `json:"role,omitempty"`
+	Status    string `json:"status,omitempty"`
+	Offset    int    `json:"offset,omitempty"`
+	Limit     int    `json:"limit,omitempty"`
+}
+
+type SandboxReport struct {
+	Namespace    string       `json:"namespace,omitempty"`
+	SandboxID    string       `json:"sandbox_id"`
+	AssignmentID string       `json:"assignment_id"`
+	Role         string       `json:"role,omitempty"`
+	WorkerID     string       `json:"worker_id,omitempty"`
+	Status       string       `json:"status,omitempty"`
+	Created      time.Time    `json:"created,omitempty"`
+	Updated      time.Time    `json:"updated,omitempty"`
+	Report       WorkerReport `json:"report"`
+}
+
+type SandboxReportListResult struct {
+	Reports    []SandboxReport `json:"reports"`
+	Count      int             `json:"count"`
+	Offset     int             `json:"offset,omitempty"`
+	Limit      int             `json:"limit,omitempty"`
+	NextOffset int             `json:"next_offset,omitempty"`
+}
+
 type OperationsSummary struct {
 	Time        time.Time                   `json:"time"`
 	Namespace   string                      `json:"namespace,omitempty"`

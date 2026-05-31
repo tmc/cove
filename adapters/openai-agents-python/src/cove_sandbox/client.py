@@ -519,6 +519,33 @@ class CoveFleetClient:
         page["count"] = int(page.get("count") or len(page["events"]))
         return page
 
+    def reports(
+        self,
+        *,
+        role: str = "",
+        status: str = "",
+        offset: int = 0,
+        limit: int = 0,
+    ) -> dict[str, Any]:
+        if offset < 0:
+            raise ValueError("sandbox reports offset must be non-negative")
+        if limit < 0:
+            raise ValueError("sandbox reports limit must be non-negative")
+        query = {
+            "role": role,
+            "status": status,
+            "offset": str(offset) if offset else "",
+            "limit": str(limit) if limit else "",
+        }
+        data = self._request("GET", _query_path(self._sandbox_path("reports"), query), timeout=self.timeout)
+        reports = data.get("reports") or []
+        if not isinstance(reports, list):
+            raise CoveError("GET sandbox reports: expected reports list")
+        page = dict(data)
+        page["reports"] = [dict(item) for item in reports if isinstance(item, dict)]
+        page["count"] = int(page.get("count") or len(page["reports"]))
+        return page
+
     def wait_ready(self, timeout: float = 120.0) -> None:
         deadline = time.monotonic() + timeout
         last_status = ""

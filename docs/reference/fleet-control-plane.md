@@ -335,6 +335,7 @@ curl -X POST 'http://127.0.0.1:9758/v1/sandboxes/job-1/control?timeout=30s' \
   -H 'content-type: application/json' \
   -d '{"holder":"runner-42","type":"screenshot","screenshot":{"format":"png","scale":1}}'
 curl 'http://127.0.0.1:9758/v1/sandboxes/job-1/events?action=sandbox.exec&limit=20'
+curl 'http://127.0.0.1:9758/v1/sandboxes/job-1/reports?role=exec&limit=20'
 curl 'http://127.0.0.1:9758/v1/sandboxes/job-1/metering'
 curl 'http://127.0.0.1:9758/v1/metering/sandboxes?sandbox_id=job-1'
 curl -X POST http://127.0.0.1:9758/v1/sandboxes/job-1/stop \
@@ -424,14 +425,21 @@ and worker report events for that sandbox; `actor`, `action`, `offset`, and
 `limit` query filters match the global audit-list semantics. Namespace-scoped
 service accounts receive `404` for sandboxes outside their namespace.
 
+`GET /v1/sandboxes/{id}/reports` returns the sandbox-scoped worker reports for
+run, stop, exec, and control assignments that have reported at least once.
+`role`, `status`, `offset`, and `limit` filters let clients retrieve the latest
+exec/control output without following raw assignment IDs; report rows include
+exit code, stdout, stderr, error text, worker ID, assignment ID, and timestamps.
+
 This is a scaffold for the hosted `/v1/sandboxes` lifecycle:
-create/list/get/delete/start/restart/stop/wait/exec/control, leases, events, and
-metering are present. The OpenAI Agents Python adapter and public Go
+create/list/get/delete/start/restart/stop/wait/exec/control, leases, events,
+reports, and metering are present. The OpenAI Agents Python adapter and public Go
 `agentsandbox` package can switch between local VM control and this
 cloud/control-plane path, including hosted lifecycle helpers, leases,
-metering, sandbox event history, and ComputerTool-style screenshot/key/text/mouse
-events. Both SDKs remember the holder returned by `lease` and include it on
-later hosted sandbox mutations until `release_lease`/`ReleaseLease` succeeds.
+metering, sandbox event and report history, and ComputerTool-style
+screenshot/key/text/mouse events. Both SDKs remember the holder returned by
+`lease` and include it on later hosted sandbox mutations until
+`release_lease`/`ReleaseLease` succeeds.
 
 Go SDK example:
 
@@ -480,6 +488,11 @@ if err != nil {
 	log.Fatal(err)
 }
 fmt.Printf("exec events: %d\n", events.Count)
+reports, err := sb.Reports(ctx, agentsandbox.SandboxReportListOptions{Role: "exec", Limit: 20})
+if err != nil {
+	log.Fatal(err)
+}
+fmt.Printf("exec reports: %d\n", reports.Count)
 ```
 
 Assignment endpoints:

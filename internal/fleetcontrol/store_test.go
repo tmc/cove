@@ -735,6 +735,57 @@ func TestStoreSandboxEventsIncludeAssignmentReports(t *testing.T) {
 	}
 }
 
+func TestStoreSandboxReportsPage(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}}); err != nil {
+		t.Fatal(err)
+	}
+	sandbox, err := store.CreateSandbox(SandboxRequest{Namespace: "team-a", ID: "job-1", ImageRef: "base:v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AwaitAssignment("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: sandbox.Assignment.ID, Status: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	execResult, err := store.ExecSandbox("job-1", SandboxExecRequest{Command: []string{"/bin/echo", "ok"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AwaitAssignment("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: execResult.Assignment.ID, Status: "complete", ExitCode: 7, Stdout: "out", Stderr: "err"}); err != nil {
+		t.Fatal(err)
+	}
+
+	page := store.ListSandboxReportsPage(SandboxReportFilter{Namespace: "team-a", SandboxID: "job-1", Limit: 1})
+	if page.Count != 1 || page.NextOffset != 1 || len(page.Reports) != 1 {
+		t.Fatalf("sandbox reports page = %+v, want latest report with next offset", page)
+	}
+	if page.Reports[0].Role != sandboxRoleExec || page.Reports[0].Report.ExitCode != 7 || page.Reports[0].Report.Stdout != "out" || page.Reports[0].Report.Stderr != "err" {
+		t.Fatalf("latest sandbox report = %+v, want exec output", page.Reports[0])
+	}
+	page = store.ListSandboxReportsPage(SandboxReportFilter{Namespace: "team-a", SandboxID: "job-1", Role: sandboxRoleExec, Status: "complete"})
+	if page.Count != 1 || page.Reports[0].AssignmentID != execResult.Assignment.ID {
+		t.Fatalf("exec sandbox reports = %+v, want exec assignment report", page)
+	}
+	page = store.ListSandboxReportsPage(SandboxReportFilter{Namespace: "team-a", SandboxID: "job-1", Offset: 1, Limit: 1})
+	if page.Count != 1 || page.Reports[0].Role != sandboxRoleRun || page.Reports[0].Report.Status != "ready" {
+		t.Fatalf("older sandbox reports = %+v, want run ready report", page)
+	}
+	if reports := store.ListSandboxReportsPage(SandboxReportFilter{Namespace: "team-b", SandboxID: "job-1"}).Reports; len(reports) != 0 {
+		t.Fatalf("team-b sandbox reports = %+v, want none", reports)
+	}
+}
+
 func TestStoreSandboxControlQueuesSameWorkerControl(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
@@ -3443,6 +3494,13 @@ func TestHandlerSandboxExec(t *testing.T) {
 	if execResult.Done || execResult.Assignment.SandboxRole != sandboxRoleExec || execResult.Assignment.WorkerID != "worker-1" {
 		t.Fatalf("exec result = %+v, want pending same-worker exec", execResult)
 	}
+	var execAssignment Assignment
+	getJSON(t, server.URL+"/v1/workers/worker-1/assignments", &execAssignment)
+	if execAssignment.ID != execResult.Assignment.ID {
+		t.Fatalf("leased exec assignment = %+v, want %s", execAssignment, execResult.Assignment.ID)
+	}
+	now = now.Add(time.Second)
+	postJSON(t, server.URL+"/v1/workers/worker-1/reports", WorkerReport{AssignmentID: execAssignment.ID, Status: "complete", ExitCode: 7, Stdout: "out", Stderr: "err"}, &record)
 	if code := postJSONStatus(t, server.URL+"/v1/sandboxes/job-1/exec?timeout=0", "token-b", SandboxExecRequest{Command: []string{"true"}}); code != http.StatusNotFound {
 		t.Fatalf("cross-namespace sandbox exec status = %d, want 404", code)
 	}
@@ -3462,6 +3520,11 @@ func TestHandlerSandboxExec(t *testing.T) {
 	if events.Count != 1 || len(events.Events) != 1 || events.Events[0].Action != "sandbox.exec" || events.Events[0].TargetID != "job-1" {
 		t.Fatalf("sandbox events = %+v, want sandbox.exec job-1", events)
 	}
+	var reports SandboxReportListResult
+	getJSONAuth(t, server.URL+"/v1/sandboxes/job-1/reports?role=exec&limit=1", "token-a", &reports)
+	if reports.Count != 1 || len(reports.Reports) != 1 || reports.Reports[0].AssignmentID != execAssignment.ID || reports.Reports[0].Report.ExitCode != 7 || reports.Reports[0].Report.Stdout != "out" {
+		t.Fatalf("sandbox reports = %+v, want exec report", reports)
+	}
 	getJSONAuth(t, server.URL+"/v1/audit?sandbox_id=job-1&action=sandbox.control&limit=1", "token-a", &events)
 	if events.Count != 1 || len(events.Events) != 1 || events.Events[0].Action != "sandbox.control" || events.Events[0].TargetID != "job-1" {
 		t.Fatalf("sandbox audit filter = %+v, want sandbox.control job-1", events)
@@ -3469,8 +3532,14 @@ func TestHandlerSandboxExec(t *testing.T) {
 	if code := getJSONStatus(t, server.URL+"/v1/sandboxes/job-1/events", "token-b"); code != http.StatusNotFound {
 		t.Fatalf("cross-namespace sandbox events status = %d, want 404", code)
 	}
+	if code := getJSONStatus(t, server.URL+"/v1/sandboxes/job-1/reports", "token-b"); code != http.StatusNotFound {
+		t.Fatalf("cross-namespace sandbox reports status = %d, want 404", code)
+	}
 	if code := getJSONStatus(t, server.URL+"/v1/sandboxes/job-1/events?offset=-1", "token-a"); code != http.StatusBadRequest {
 		t.Fatalf("bad sandbox events offset status = %d, want 400", code)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/sandboxes/job-1/reports?limit=-1", "token-a"); code != http.StatusBadRequest {
+		t.Fatalf("bad sandbox reports limit status = %d, want 400", code)
 	}
 }
 

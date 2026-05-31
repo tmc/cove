@@ -254,6 +254,30 @@ def test_fleet_client_events() -> None:
         server.stop()
 
 
+def test_fleet_client_reports() -> None:
+    server = _FleetHTTPServer()
+    server.start()
+    try:
+        client = CoveFleetClient(sandbox_id="job-1", fleet_url=server.url, api_key="secret", namespace="team-a")
+        page = client.reports(role="exec", status="complete", offset=2, limit=5)
+        assert page["count"] == 1
+        assert page["offset"] == 2
+        assert page["limit"] == 5
+        assert page["reports"][0]["report"]["stdout"] == "out"
+        query = server.requests[-1]["query"]
+        assert query["role"] == ["exec"]
+        assert query["status"] == ["complete"]
+        assert query["offset"] == ["2"]
+        assert query["limit"] == ["5"]
+
+        with pytest.raises(ValueError, match="limit must be non-negative"):
+            client.reports(limit=-1)
+        with pytest.raises(ValueError, match="offset must be non-negative"):
+            client.reports(offset=-1)
+    finally:
+        server.stop()
+
+
 def test_fleet_client_passes_lease_holder_to_mutations() -> None:
     server = _FleetHTTPServer()
     server.start()
@@ -449,6 +473,32 @@ class _FleetHTTPServer:
                                     "target_id": "job-1",
                                     "assignment_id": "assignment-1",
                                     "fields": {"argc": "1"},
+                                }
+                            ],
+                            "count": 1,
+                            "offset": int(query.get("offset", ["0"])[0]),
+                            "limit": int(query.get("limit", ["0"])[0]),
+                        }
+                    )
+                    return
+                if path == "/v1/sandboxes/job-1/reports":
+                    self._write(
+                        {
+                            "reports": [
+                                {
+                                    "namespace": "team-a",
+                                    "sandbox_id": "job-1",
+                                    "assignment_id": "assignment-1",
+                                    "role": "exec",
+                                    "worker_id": "worker-1",
+                                    "status": "complete",
+                                    "report": {
+                                        "assignment_id": "assignment-1",
+                                        "status": "complete",
+                                        "exit_code": 7,
+                                        "stdout": "out",
+                                        "stderr": "err",
+                                    },
                                 }
                             ],
                             "count": 1,

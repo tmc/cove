@@ -157,6 +157,44 @@ type SandboxEventListResult struct {
 	NextOffset int            `json:"next_offset,omitempty"`
 }
 
+type SandboxReport struct {
+	Namespace    string       `json:"namespace,omitempty"`
+	SandboxID    string       `json:"sandbox_id"`
+	AssignmentID string       `json:"assignment_id"`
+	Role         string       `json:"role,omitempty"`
+	WorkerID     string       `json:"worker_id,omitempty"`
+	Status       string       `json:"status,omitempty"`
+	Created      time.Time    `json:"created,omitempty"`
+	Updated      time.Time    `json:"updated,omitempty"`
+	Report       WorkerReport `json:"report"`
+}
+
+type WorkerReport struct {
+	ID           string    `json:"id"`
+	AssignmentID string    `json:"assignment_id,omitempty"`
+	Status       string    `json:"status"`
+	Error        string    `json:"error,omitempty"`
+	ExitCode     int       `json:"exit_code,omitempty"`
+	Stdout       string    `json:"stdout,omitempty"`
+	Stderr       string    `json:"stderr,omitempty"`
+	Time         time.Time `json:"time,omitempty"`
+}
+
+type SandboxReportListOptions struct {
+	Role   string
+	Status string
+	Offset int
+	Limit  int
+}
+
+type SandboxReportListResult struct {
+	Reports    []SandboxReport `json:"reports"`
+	Count      int             `json:"count,omitempty"`
+	Offset     int             `json:"offset,omitempty"`
+	Limit      int             `json:"limit,omitempty"`
+	NextOffset int             `json:"next_offset,omitempty"`
+}
+
 type WaitResult struct {
 	Done    bool          `json:"done"`
 	Sandbox SandboxStatus `json:"sandbox"`
@@ -463,6 +501,29 @@ func (o SandboxEventListOptions) query() (map[string]string, error) {
 	return query, nil
 }
 
+func (o SandboxReportListOptions) query() (map[string]string, error) {
+	if o.Limit < 0 {
+		return nil, errors.New("agentsandbox: sandbox reports limit must be non-negative")
+	}
+	if o.Offset < 0 {
+		return nil, errors.New("agentsandbox: sandbox reports offset must be non-negative")
+	}
+	query := make(map[string]string)
+	if role := strings.TrimSpace(o.Role); role != "" {
+		query["role"] = role
+	}
+	if status := strings.TrimSpace(o.Status); status != "" {
+		query["status"] = status
+	}
+	if o.Offset > 0 {
+		query["offset"] = strconv.Itoa(o.Offset)
+	}
+	if o.Limit > 0 {
+		query["limit"] = strconv.Itoa(o.Limit)
+	}
+	return query, nil
+}
+
 func (c *Client) Wait(ctx context.Context, timeout time.Duration) (WaitResult, error) {
 	if err := c.ready(); err != nil {
 		return WaitResult{}, err
@@ -637,6 +698,31 @@ func (c *Client) Events(ctx context.Context, options ...SandboxEventListOptions)
 	}
 	if result.Count == 0 && len(result.Events) > 0 {
 		result.Count = len(result.Events)
+	}
+	return result, nil
+}
+
+func (c *Client) Reports(ctx context.Context, options ...SandboxReportListOptions) (SandboxReportListResult, error) {
+	if err := c.ready(); err != nil {
+		return SandboxReportListResult{}, err
+	}
+	if c.provider != ProviderCloud {
+		return SandboxReportListResult{}, errors.New("agentsandbox: reports are only supported for cloud sandboxes")
+	}
+	opt := SandboxReportListOptions{}
+	if len(options) > 0 {
+		opt = options[0]
+	}
+	query, err := opt.query()
+	if err != nil {
+		return SandboxReportListResult{}, err
+	}
+	var result SandboxReportListResult
+	if err := c.request(ctx, http.MethodGet, c.queryPath(c.sandboxPath("reports"), query), nil, &result, c.timeout); err != nil {
+		return SandboxReportListResult{}, err
+	}
+	if result.Count == 0 && len(result.Reports) > 0 {
+		result.Count = len(result.Reports)
 	}
 	return result, nil
 }
