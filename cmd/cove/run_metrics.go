@@ -361,12 +361,47 @@ func addGuestResourceFields(vmDir string, extra map[string]any) bool {
 	added := false
 	total, okTotal := metricUint(raw, "memory_total", "memoryTotal")
 	available, okAvailable := metricUint(raw, "memory_available", "memoryAvailable")
+	diskTotal, okDiskTotal := metricUint(raw, "disk_total", "diskTotal")
+	diskAvailable, okDiskAvailable := metricUint(raw, "disk_available", "diskAvailable")
+	uptime, okUptime := metricUint(raw, "uptime_seconds", "uptimeSeconds")
+	load1, okLoad1 := metricFloat(raw, "load_avg_1", "loadAvg1")
+	load5, okLoad5 := metricFloat(raw, "load_avg_5", "loadAvg5")
+	load15, okLoad15 := metricFloat(raw, "load_avg_15", "loadAvg15")
+	userCount, okUserCount := metricStringListLen(raw, "users")
 	if okTotal {
 		extra["memory_total_bytes"] = total
 		added = true
 	}
 	if okAvailable {
 		extra["memory_available_bytes"] = available
+		added = true
+	}
+	if okDiskTotal {
+		extra["disk_total_bytes"] = diskTotal
+		added = true
+	}
+	if okDiskAvailable {
+		extra["disk_available_bytes"] = diskAvailable
+		added = true
+	}
+	if okUptime {
+		extra["guest_uptime_seconds"] = uptime
+		added = true
+	}
+	if okLoad1 {
+		extra["guest_load_avg_1"] = load1
+		added = true
+	}
+	if okLoad5 {
+		extra["guest_load_avg_5"] = load5
+		added = true
+	}
+	if okLoad15 {
+		extra["guest_load_avg_15"] = load15
+		added = true
+	}
+	if okUserCount {
+		extra["guest_user_count"] = userCount
 		added = true
 	}
 	return added
@@ -470,6 +505,37 @@ func metricUint(raw map[string]any, names ...string) (uint64, bool) {
 				return n, true
 			}
 		}
+	}
+	return 0, false
+}
+
+func metricFloat(raw map[string]any, names ...string) (float64, bool) {
+	for _, name := range names {
+		switch v := raw[name].(type) {
+		case float64:
+			if v >= 0 {
+				return v, true
+			}
+		case string:
+			n, err := strconv.ParseFloat(v, 64)
+			if err == nil && n >= 0 {
+				return n, true
+			}
+		}
+	}
+	return 0, false
+}
+
+func metricStringListLen(raw map[string]any, name string) (int, bool) {
+	v, ok := raw[name]
+	if !ok {
+		return 0, false
+	}
+	switch items := v.(type) {
+	case []any:
+		return len(items), true
+	case []string:
+		return len(items), true
 	}
 	return 0, false
 }
