@@ -111,7 +111,7 @@ readiness audit.
 | Cosign-signed images / SLSA public channel | local provenance only | yes |
 | Hosted queue (Cirrus picks a Mac) | operator owns the host or `cove fleet` | no — scope decision |
 | Multi-OS hosted CI (Linux x86_64 / Windows) | Apple Silicon only | no — out of scope |
-| GitHub Actions annotations from-guest | print plain text; renders as logs | no — UX polish, sized M |
+| GitHub Actions annotations from-guest | write `error`, `warning`, or `notice` records to `$COVE_GITHUB_ANNOTATIONS`; cove-action forwards them and copies `github-annotations.log` into the run bundle | no |
 | Guest → host artifact copy-out | cove-action `artifacts:` copies absolute guest paths into the run bundle; upload `artifact-path` from the scheduler | no |
 
 ## Questions / report bugs

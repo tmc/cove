@@ -56,7 +56,7 @@ Refresh sources checked on 2026-05-11:
 | Hosted queue semantics | Intentionally absent. Cove owns VM/image/fork execution and expects GitHub Actions, Buildkite, or an operator scheduler to schedule hosts. | Cirrus users expect queue semantics; Daytona-style products sell the API-hosted sandbox. | Keep as non-goal, but make scheduler handoff examples boring. |
 | Resource observability | Run JSONL, OTLP, daemon/fleet metrics, runs UX, and best-effort `resource_sample` events now exist for standalone runs and forked run bundles. Samples include guest memory/disk/load/uptime/user counts, bounded in-guest top-process PID/CPU/RSS attribution, VZ memory/balloon fields, and owning cove process PID/CPU/RSS/start source when available; periodic samples run after guest readiness. `cove runs show` and GitHub summary export now fold samples into memory/load/process/host peaks and pressure hints. | Cirrus users expect task resource visibility; hosted sandbox products expose operational state through APIs. | Validate thresholds against real private CI runs, then add dashboard views only if operators need longer history. |
 | Guest artifact copy-out | Run bundles, `cove runs export`, and cove-action `artifacts` copy-out now exist. Declared absolute guest paths are copied into the run bundle under `guest/`, exposed through `artifact-path`, and recorded as `artifact_copy` metrics; workflow upload remains the scheduler's job. | Cirrus artifacts are first-class. | Keep upload explicit through GitHub Actions/Buildkite artifact steps; add richer summaries only after operator feedback. |
-| GitHub annotations | Guest output is logs; `::error`/file-line annotation UX is not first-class. | CI users expect structured failures. | Parse/forward explicit annotation records or document the supported escape hatch. |
+| GitHub annotations | cove-action injects `$COVE_GITHUB_ANNOTATIONS`, copies `github-annotations.log` into the run bundle, forwards `error` / `warning` / `notice` workflow commands or JSON records to GitHub Actions stdout, and records `github_annotation_forward`. | CI users expect structured failures. | Validate against private CI suites; keep broader task-report summaries separate from annotations. |
 | Agent-facing UX | The canonical local path is `cove agent-sandbox run`: fork a local image, wait for the guest agent, run one provider loop, and write replay artifacts. The remaining gap is operator polish around default artifact summaries and background-safety expectations. | Cua leads with a clearer computer-use product. Daytona leads with API-first managed sandbox framing. | Keep `cove agent-sandbox run` as the one operator-facing path; make replay, metrics, and artifact summary defaults boring before adding new agent entrypoints. |
 | In-VM user management | First-boot provisioning creates an admin user with password and optional SSH setup, but there is no lifecycle command for creating/deleting users after boot or auditing leftover home, keychain, SSH, LaunchAgent, and group residue. | Cirrus users think in job identities; Tart and Lume leave user lifecycle mostly to scripts/SSH. A cove-owned primitive would fit the guest-agent/no-SSH story. | Add a small `cove user` plan: create/delete, admin vs standard, password/SSH key input, macOS vs Linux backend split, and dry-run residue audit. |
 | Network policy depth | Baseline policies and audit/log surfaces shipped. | Tart Softnet-style allow/block policy remains deeper. | Keep current surface for v0.6; consider DNS/egress allowlist policy only if a customer workload demands it. |
@@ -65,22 +65,20 @@ Refresh sources checked on 2026-05-11:
 
 ### Current ranking
 
-1. **GitHub annotation forwarding.** Useful for CI parity, smaller than public
-   distribution, and not blocked by privacy gates.
-2. **Canonical agent command polish.** `cove agent-sandbox run` is the one
+1. **Canonical agent command polish.** `cove agent-sandbox run` is the one
    operator-facing path; polish replay, metrics, artifact summaries, and
    background-safety wording before adding any parallel agent entrypoint.
-3. **In-VM user management.** Small differentiator if scoped to an agent-backed
+2. **In-VM user management.** Small differentiator if scoped to an agent-backed
    lifecycle command plus cleanup audit, not a new isolation boundary.
-4. **Public packaging/signing decision.** This remains high leverage but
+3. **Public packaging/signing decision.** This remains high leverage but
    user-gated. Do not let conductor loops make this decision implicitly.
 
 ### Bottom line
 
 Cove is production-plausible for private, operator-owned Apple-Silicon VM
 runners after the R122-R139 hardening. It is not done as a public product. The
-next non-gated gap to close is CI annotation polish, followed by canonical
-agent command polish. The larger public
+next non-gated gap to close is canonical agent command polish, followed by
+in-VM user management. The larger public
 catalog/signing/Marketplace story should remain gated until the repo and brand
 posture are deliberately chosen.
 

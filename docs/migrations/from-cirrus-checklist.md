@@ -66,6 +66,10 @@ mounted into the VM. For a precise host-side registry audit, keep using
 - Guest artifact copy-out uses the private action `artifacts` input. List
   absolute guest paths and upload `${{ steps.cove.outputs.artifact-path }}` from
   the host workflow.
+- Guest annotations use `$COVE_GITHUB_ANNOTATIONS`. Append raw GitHub
+  `error` / `warning` / `notice` workflow commands or JSON records there; the
+  private action forwards them and keeps `github-annotations.log` in the run
+  bundle.
 - cove runs on Apple Silicon hosts; it is not a cross-platform hosted CI
   service.
 - Soft reset probes exist for research, but CI jobs should use disposable image

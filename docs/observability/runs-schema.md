@@ -96,6 +96,7 @@ parameterized helpers `emitMetricEvent` (package main) and
 | `action_start` | `cmd/cove-action` | Private action wrapper started after the run metrics file was discovered |
 | `command_complete` | `cmd/cove-action` | Guest command finished. `extra.exit_code` records the guest command exit code. |
 | `artifact_copy` | `cmd/cove-action` | One declared guest artifact was copied into the run bundle. `extra` carries `guest_path`, `host_path`, and optional `bytes`; non-ok status records copy failure. |
+| `github_annotation_forward` | `cmd/cove-action` | Guest-created GitHub annotation records were copied from `COVE_GITHUB_ANNOTATIONS` and forwarded to GitHub Actions stdout. `extra` carries `guest_path`, `host_path`, and `count`. |
 | `action_complete` | `cmd/cove-action` | Private action wrapper finished. `extra.exit_code` records the guest command exit code when one was observed. |
 
 ### Storage budget (design 040 Phase 5)

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -55,7 +56,7 @@ func TestRunSuccess(t *testing.T) {
 	for _, want := range []string{
 		"run -fork-from ubuntu-ci -fork-name cove-action-123-2 -ephemeral -headless",
 		"shell cove-action-123-2 -- /bin/sh -lc true",
-		"env 'TOKEN=secret' 'EMPTY=' /bin/sh -lc 'echo ok'",
+		"env 'TOKEN=secret' 'EMPTY=' 'COVE_GITHUB_ANNOTATIONS=/tmp/cove-github-annotations.log' 'GITHUB_ANNOTATION_FILE=/tmp/cove-github-annotations.log' /bin/sh -lc 'echo ok'",
 		"ctl -vm cove-action-123-2 stop",
 	} {
 		if !strings.Contains(log, want) {
@@ -154,6 +155,59 @@ func TestRunArtifactCopyFailureFailsAction(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("missing artifact_copy failure in %+v", events)
+	}
+}
+
+func TestRunForwardsGitHubAnnotations(t *testing.T) {
+	dir := t.TempDir()
+	oldCleanupWait := cleanupWait
+	cleanupWait = 10 * time.Millisecond
+	t.Cleanup(func() { cleanupWait = oldCleanupWait })
+	stub := writeStubCove(t, dir, 7)
+	var stdout, stderr bytes.Buffer
+	annotations := strings.Join([]string{
+		"::error file=app.go,line=7::raw failure",
+		`{"level":"warning","message":"warn 100%","file":"pkg/a,b.go","line":9,"col":2,"title":"bad:thing"}`,
+		"::group::not an annotation",
+	}, "\n")
+	code := run([]string{"-cove-bin", stub, "-image", "ubuntu-ci", "-command", "exit 7"}, []string{
+		"HOME=" + dir,
+		"COVE_STUB_LOG=" + filepath.Join(dir, "log"),
+		"COVE_STUB_COUNT=" + filepath.Join(dir, "count"),
+		"COVE_STUB_ANNOTATIONS=" + annotations,
+	}, &stdout, &stderr)
+	if code != 7 {
+		t.Fatalf("run returned %d, want 7; stderr=%s", code, stderr.String())
+	}
+	got := stdout.String()
+	for _, want := range []string{
+		"::error file=app.go,line=7::raw failure\n",
+		"::warning file=pkg/a%2Cb.go,line=9,col=2,title=bad%3Athing::warn 100%25\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("stdout missing %q in:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "::group::") {
+		t.Fatalf("stdout forwarded non-annotation workflow command:\n%s", got)
+	}
+	runDir := filepath.Join(dir, ".vz", "runs", "stub-run")
+	if copied := readFile(t, filepath.Join(runDir, "github-annotations.log")); !strings.Contains(copied, "raw failure") {
+		t.Fatalf("annotation file not copied:\n%s", copied)
+	}
+	events := readActionMetricEventsDetailed(t, filepath.Join(runDir, "metrics.jsonl"))
+	var found bool
+	for _, e := range events {
+		if e.EventType != "github_annotation_forward" {
+			continue
+		}
+		found = true
+		if got := actionAsInt64(t, e.Extra["count"]); got != 2 {
+			t.Fatalf("annotation count = %d, want 2: %#v", got, e)
+		}
+	}
+	if !found {
+		t.Fatalf("missing github_annotation_forward in %+v", events)
 	}
 }
 
@@ -410,6 +464,45 @@ func TestArtifactHostPath(t *testing.T) {
 	}
 }
 
+func TestFormatGitHubAnnotationLine(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+		ok   bool
+	}{
+		{
+			name: "raw error command",
+			in:   "::error file=a.go,line=1::failed",
+			want: "::error file=a.go,line=1::failed",
+			ok:   true,
+		},
+		{
+			name: "json warning",
+			in:   `{"level":"warning","message":"bad % thing","file":"pkg/a,b.go","line":3,"col":4,"end_line":5,"end_column":6,"title":"t:a,b"}`,
+			want: "::warning file=pkg/a%2Cb.go,line=3,col=4,endLine=5,endColumn=6,title=t%3Aa%2Cb::bad %25 thing",
+			ok:   true,
+		},
+		{
+			name: "json type alias",
+			in:   `{"type":"NOTICE","message":"heads up"}`,
+			want: "::notice::heads up",
+			ok:   true,
+		},
+		{name: "raw group rejected", in: "::group::hidden", ok: false},
+		{name: "json missing message", in: `{"level":"error"}`, ok: false},
+		{name: "plain log rejected", in: "error: nope", ok: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := formatGitHubAnnotationLine(tt.in)
+			if ok != tt.ok || got != tt.want {
+				t.Fatalf("formatGitHubAnnotationLine(%q) = %q, %v; want %q, %v", tt.in, got, ok, tt.want, tt.ok)
+			}
+		})
+	}
+}
+
 func writeStubCove(t *testing.T, dir string, jobExit int) string {
 	t.Helper()
 	path := filepath.Join(dir, "cove-stub")
@@ -457,6 +550,15 @@ cp)
 		exit 3
 	fi
 	mkdir -p "$(dirname "$dst")"
+	case "$src" in
+	*:/tmp/cove-github-annotations.log)
+		if [ -z "${COVE_STUB_ANNOTATIONS:-}" ]; then
+			exit 1
+		fi
+		printf '%s\n' "$COVE_STUB_ANNOTATIONS" > "$dst"
+		exit 0
+		;;
+	esac
 	printf 'artifact from %s\n' "$src" > "$dst"
 	exit 0
 	;;

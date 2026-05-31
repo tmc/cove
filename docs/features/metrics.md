@@ -96,6 +96,12 @@ was observed.
 `artifacts` input. `extra` includes `guest_path`, `host_path`, and `bytes` when
 the host can stat the copied file or directory.
 
+`github_annotation_forward`
+: Emitted by `cmd/cove-action` when a guest-created annotation file is copied
+from `COVE_GITHUB_ANNOTATIONS` and scanned for GitHub Actions annotations.
+`extra` includes `guest_path`, `host_path`, and `count` for the number of
+forwarded `error`, `warning`, or `notice` records.
+
 ## OpenTelemetry
 
 Local JSONL is always available. OpenTelemetry export is optional and enabled by

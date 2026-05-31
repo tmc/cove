@@ -13,15 +13,19 @@ cove's *currently shipped* surface against the documented Cirrus surface a
 typical `.cirrus.yml` user depends on. Strategic positioning lives in
 [competitive-2026-05.md](competitive-2026-05.md); this is operator-facing.
 
-**T-1 day (2026-05-31).** The pure-engineering Cirrus secrets and guest artifact
-copy-out blockers are closed: `cove shell --secret-env` plus run-log redaction
-shipped at `29ff983` and `13ce8c0`, the private cove-action `secrets:` input
-forwards to that path at `ab7f159`, and the private cove-action `artifacts:`
-input copies declared absolute guest paths into each run bundle under `guest/`.
+**T-1 day (2026-05-31).** The pure-engineering Cirrus secrets, guest artifact
+copy-out, and GitHub annotation blockers are closed: `cove shell --secret-env`
+plus run-log redaction shipped at `29ff983` and `13ce8c0`, the private
+cove-action `secrets:` input forwards to that path at `ab7f159`, and the private
+cove-action `artifacts:` input copies declared absolute guest paths into each
+run bundle under `guest/`.
+Guest scripts can append `error` / `warning` / `notice` records to
+`$COVE_GITHUB_ANNOTATIONS`; cove-action copies `github-annotations.log`, forwards
+valid annotations to GitHub Actions stdout, and records
+`github_annotation_forward`.
 The remaining blockers are either deferred product / privacy gates (public
 Marketplace action, public image catalog, public signing/provenance channel) or
-operational polish with workable substitutes (GitHub annotations, cache server
-semantics).
+operational polish with workable substitutes (cache server semantics).
 
 ## Method
 
@@ -63,7 +67,7 @@ this doc is the readiness gap report behind it.
 
 | Cirrus surface | Workaround today | Effort to ship native |
 |---|---|---|
-| **GitHub Actions annotations** (`::error`, `::warning`, file/line) emitted from inside the guest | Print plain text; GHA renders as logs only | **M** |
+| **GitHub Actions annotations** (`::error`, `::warning`, file/line) emitted from inside the guest | Write raw annotation workflow commands or JSON records to `$COVE_GITHUB_ANNOTATIONS`; cove-action forwards `error` / `warning` / `notice` and stores `github-annotations.log` in the run bundle. | **D — shipped 2026-05-31** |
 | **Public Marketplace action** (`uses: cirrus-actions/...` analogue) | Private composite action at `.github/actions/cove-action`; copy/paste per repo | **L** — gated by privacy gate (cove repo private) |
 | **Cirrus secrets** (`ENCRYPTED[…]` URI) → guest env | `cove shell --secret-env NAME=env://VAR\|file:///path` plus redaction; cove-action `secrets:` input forwards to the same path | **D — shipped 2026-05-08** at `29ff983`, `13ce8c0`, and `ab7f159`. See [`cirrus-secrets-fix-2026-05-08.md`](cirrus-secrets-fix-2026-05-08.md). |
 | **Hosted queue** (Cirrus picks a Mac for you) | Operator owns the runner host (or fleet); GitHub `runs-on` labels do scheduling | **L** — by design, cove is operator-owned. Not a blocker; a scope decision. |
@@ -80,7 +84,7 @@ this doc is the readiness gap report behind it.
 2. Public image catalog (privacy gate)
 3. Cosign-signed images / SLSA provenance public channel (public-channel decision)
 
-Hosted queue and multi-OS hosted CI remain out of scope by design, not blockers. Items 1 and 2 are real shipping cost but both gated by the privacy gate; item 3 is coupled to the public registry/signing decision. Cirrus-style secrets → guest env and guest artifact copy-out have shipped; GitHub Actions annotations from-guest remain **M** UX polish with documented workarounds.
+Hosted queue and multi-OS hosted CI remain out of scope by design, not blockers. Items 1 and 2 are real shipping cost but both gated by the privacy gate; item 3 is coupled to the public registry/signing decision. Cirrus-style secrets → guest env, guest artifact copy-out, and GitHub Actions annotations from-guest have shipped.
 
 ## Recommended migration steps
 
@@ -102,7 +106,7 @@ For each `.cirrus.yml` task class, in this order:
 Cove's runner-shaped surface is **functionally complete for ~80% of `.cirrus.yml` task shapes** as of `d0877b8` (origin/main, 2026-05-08). The gaps that block migration are concentrated in:
 
 - **Privacy gate** — public action / public image catalog can't ship while the cove repo is private.
-- **Annotations** — UX polish, sized M; workarounds work today. Guest artifact copy-out has moved into cove-action `artifacts:`.
+- **Cache server semantics** — whole-VM cache covers common private-runner use, but Cirrus's HTTP cache service remains a separate model.
 - **Public signing/provenance channel** — local provenance exists, but public cosign/SLSA distribution remains deferred with the registry decision.
 
 Operators planning a 2026-06-01 cutover should start at step 1 today.

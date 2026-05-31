@@ -207,6 +207,39 @@ Limitations:
   not an isolated tmpfs secret mount.
 - Avoid writing secrets to disk before saving whole-VM caches.
 
+## GitHub Annotations
+
+The action injects two guest environment variables:
+
+```text
+COVE_GITHUB_ANNOTATIONS=/tmp/cove-github-annotations.log
+GITHUB_ANNOTATION_FILE=/tmp/cove-github-annotations.log
+```
+
+Guest scripts can append explicit annotation records to that file. After the
+guest command exits, the wrapper copies the file into the run bundle as
+`github-annotations.log`, forwards supported records to GitHub Actions stdout,
+and records a `github_annotation_forward` metric with the number of forwarded
+records.
+
+Supported records are GitHub annotation workflow commands:
+
+```sh
+printf '::error file=app.go,line=7::test failed\n' >>"$COVE_GITHUB_ANNOTATIONS"
+printf '::warning file=lint.go,line=12::lint warning\n' >>"$COVE_GITHUB_ANNOTATIONS"
+```
+
+or JSON lines that cove converts to workflow commands:
+
+```sh
+printf '%s\n' '{"level":"notice","message":"slow test","file":"pkg/foo_test.go","line":42,"title":"duration"}' >>"$COVE_GITHUB_ANNOTATIONS"
+```
+
+The wrapper only forwards `error`, `warning`, and `notice`. Other workflow
+commands such as `group`, `add-mask`, `set-output`, and arbitrary log lines are
+ignored. Annotation forwarding runs even when the guest command exits nonzero,
+so failed tests can still produce file and line annotations.
+
 ## Security Limits
 
 The action is for a trusted operator running untrusted job code in a local VM
@@ -263,7 +296,9 @@ records the guest exit code. The wrapper also records `command_complete` after
 the guest command returns so operators can separate wrapper time from VM boot,
 readiness, command execution, and teardown. Each copied guest artifact records an
 `artifact_copy` event with `guest_path`, `host_path`, and copied byte count when
-the host can stat the copied data.
+the host can stat the copied data. If the guest wrote annotation records, the
+wrapper records `github_annotation_forward` with `guest_path`, `host_path`, and
+`count`.
 
 Example:
 

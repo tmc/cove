@@ -29,6 +29,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   `artifacts` / `COVE_ACTION_ARTIFACTS` lists absolute guest paths, copies them
   into the run bundle under `guest/`, exposes the bundle path, and records
   `artifact_copy` metrics.
+- `cove-action` now forwards guest-created GitHub annotations: guests append
+  raw annotation workflow commands or JSON records to `COVE_GITHUB_ANNOTATIONS`,
+  cove copies `github-annotations.log` into the run bundle, forwards only
+  `error` / `warning` / `notice`, and records `github_annotation_forward`.
 - `cove image inspect -remote` now accepts multiple registry refs for private
   catalog audits. Single-ref JSON remains an object; batch JSON is an array and
   includes per-ref errors while returning a failing exit status if any ref fails.

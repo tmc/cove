@@ -91,6 +91,7 @@ Semantic changes:
 | Environment | Non-secret `KEY=VALUE` lines use the action `env` input. |
 | Secrets | Use the action `secrets` input with `KEY=env://VAR`, `KEY=file:///path`, or literal `KEY=value` entries. Cove resolves them on the host, forwards through `cove shell --secret-env`, and redacts matching log bytes. |
 | Artifacts | Use the action `artifacts` input with absolute guest paths, then upload `${{ steps.cove.outputs.artifact-path }}` from the host. Copied guest files land under `guest/` inside the run bundle. |
+| Annotations | Append raw GitHub `error` / `warning` / `notice` workflow commands or JSON records to `$COVE_GITHUB_ANNOTATIONS`; cove-action forwards them after the guest command and keeps `github-annotations.log` in the run bundle. |
 | Cache | Use whole-VM `cache-key`; it snapshots a cove image, not individual directories. |
 
 ## macOS task

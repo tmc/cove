@@ -40,6 +40,11 @@ const (
 	cacheModeOff         = "off"
 )
 
+const (
+	guestGitHubAnnotationsPath = "/tmp/cove-github-annotations.log"
+	githubAnnotationsFile      = "github-annotations.log"
+)
+
 func validateCacheMode(m string) error {
 	switch m {
 	case cacheModeRestoreSave, cacheModeRestoreOnly, cacheModeSaveOnly, cacheModeOff:
@@ -70,12 +75,13 @@ type config struct {
 }
 
 type result struct {
-	Code        int
-	MetricsPath string
-	CacheHit    bool
-	CacheImage  string
-	CacheSaved  bool
-	ArtifactDir string
+	Code                  int
+	MetricsPath           string
+	CacheHit              bool
+	CacheImage            string
+	CacheSaved            bool
+	ArtifactDir           string
+	GitHubAnnotationsPath string
 }
 
 func main() {
@@ -250,7 +256,7 @@ func runJob(cfg config) (res result, err error) {
 				deleteVM(cfg)
 			}
 		}
-		forwardGitHubAnnotations(cfg, res.MetricsPath)
+		forwardGitHubAnnotations(cfg.Stdout, res.GitHubAnnotationsPath)
 	}()
 
 	res.MetricsPath = waitForMetricsPath(ctx, cfg, actionStarted)
@@ -285,6 +291,7 @@ func runJob(cfg config) (res result, err error) {
 		status = err.Error()
 	}
 	emitActionMetric(res.MetricsPath, "command_complete", actionStarted, status, map[string]any{"exit_code": code})
+	res.GitHubAnnotationsPath = copyGitHubAnnotations(ctx, cfg, res.MetricsPath, actionStarted)
 	if err != nil {
 		return res, err
 	}
@@ -528,10 +535,11 @@ func execGuestCommand(ctx context.Context, cfg config) (int, error) {
 	if strings.TrimSpace(cfg.Script) != "" {
 		command = cfg.Script
 	}
-	if len(cfg.Env) > 0 {
+	env := actionGuestEnv(cfg.Env)
+	if len(env) > 0 {
 		var b strings.Builder
 		b.WriteString("env")
-		for _, kv := range cfg.Env {
+		for _, kv := range env {
 			b.WriteByte(' ')
 			b.WriteString(shellQuote(kv))
 		}
@@ -696,64 +704,166 @@ func artifactBytes(path string) (int64, bool) {
 	return total, err == nil
 }
 
-func forwardGitHubAnnotations(cfg config, metricsPath string) {
-	if cfg.Stdout == nil {
-		return
-	}
-	var paths []string
-	if metricsPath != "" {
-		paths = append(paths, filepath.Join(filepath.Dir(metricsPath), "github-annotations.log"))
-	}
-	if root := defaultLogPath(cfg.Environ); root != "" {
-		paths = append(paths, filepath.Join(root, cfg.VMName, "github-annotations.log"))
-	}
-	for _, path := range paths {
-		if forwardGitHubAnnotationFile(cfg.Stdout, path) {
-			return
-		}
-	}
+func actionGuestEnv(env []string) []string {
+	out := append([]string{}, env...)
+	out = append(out,
+		"COVE_GITHUB_ANNOTATIONS="+guestGitHubAnnotationsPath,
+		"GITHUB_ANNOTATION_FILE="+guestGitHubAnnotationsPath,
+	)
+	return out
 }
 
-func forwardGitHubAnnotationFile(w io.Writer, path string) bool {
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		if forwardGitHubAnnotationFileOnce(w, path) {
-			return true
-		}
-		if time.Now().After(deadline) {
-			return false
-		}
-		time.Sleep(50 * time.Millisecond)
+func copyGitHubAnnotations(ctx context.Context, cfg config, metricsPath string, started time.Time) string {
+	if metricsPath == "" {
+		return ""
 	}
+	hostPath := filepath.Join(filepath.Dir(metricsPath), githubAnnotationsFile)
+	cmd := execCommandContext(ctx, cfg.CoveBin, "cp", cfg.VMName+":"+guestGitHubAnnotationsPath, hostPath)
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
+	cmd.Env = cfg.Environ
+	if err := cmd.Run(); err != nil {
+		return ""
+	}
+	count := countGitHubAnnotationLines(hostPath)
+	emitActionMetric(metricsPath, "github_annotation_forward", started, "ok", map[string]any{
+		"guest_path": guestGitHubAnnotationsPath,
+		"host_path":  hostPath,
+		"count":      count,
+	})
+	return hostPath
 }
 
-func forwardGitHubAnnotationFileOnce(w io.Writer, path string) bool {
+func countGitHubAnnotationLines(path string) int {
 	f, err := os.Open(path)
 	if err != nil {
-		return false
+		return 0
 	}
 	defer f.Close()
-	forwarded := false
+	count := 0
 	scan := bufio.NewScanner(f)
+	scan.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scan.Scan() {
-		line := scan.Text()
-		if githubAnnotationLine(line) {
+		if _, ok := formatGitHubAnnotationLine(scan.Text()); ok {
+			count++
+		}
+	}
+	return count
+}
+
+func forwardGitHubAnnotations(w io.Writer, path string) {
+	if w == nil || path == "" {
+		return
+	}
+	_, _ = forwardGitHubAnnotationFileOnce(w, path)
+}
+
+func forwardGitHubAnnotationFileOnce(w io.Writer, path string) (found bool, forwarded bool) {
+	f, err := os.Open(path)
+	if err != nil {
+		return false, false
+	}
+	defer f.Close()
+	scan := bufio.NewScanner(f)
+	scan.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scan.Scan() {
+		if line, ok := formatGitHubAnnotationLine(scan.Text()); ok {
 			fmt.Fprintln(w, line)
 			forwarded = true
 		}
 	}
-	return forwarded
+	return true, forwarded
 }
 
-func githubAnnotationLine(line string) bool {
-	for _, name := range []string{"error", "warning", "notice"} {
-		rest, ok := strings.CutPrefix(line, "::"+name)
-		if !ok {
-			continue
-		}
-		return strings.HasPrefix(rest, "::") || (strings.HasPrefix(rest, " ") && strings.Contains(rest, "::"))
+type githubAnnotation struct {
+	Level     string `json:"level"`
+	Type      string `json:"type"`
+	Message   string `json:"message"`
+	File      string `json:"file"`
+	Line      int    `json:"line"`
+	Col       int    `json:"col"`
+	EndLine   int    `json:"end_line"`
+	EndColumn int    `json:"end_column"`
+	Title     string `json:"title"`
+}
+
+func formatGitHubAnnotationLine(line string) (string, bool) {
+	line = strings.TrimSuffix(line, "\r")
+	if githubAnnotationCommand(line) {
+		return line, true
 	}
-	return false
+	var ann githubAnnotation
+	if err := json.Unmarshal([]byte(line), &ann); err != nil {
+		return "", false
+	}
+	cmd := strings.ToLower(strings.TrimSpace(ann.Level))
+	if cmd == "" {
+		cmd = strings.ToLower(strings.TrimSpace(ann.Type))
+	}
+	if !githubAnnotationName(cmd) || ann.Message == "" {
+		return "", false
+	}
+	props := githubAnnotationProperties(ann)
+	if props == "" {
+		return fmt.Sprintf("::%s::%s", cmd, escapeGitHubCommandData(ann.Message)), true
+	}
+	return fmt.Sprintf("::%s %s::%s", cmd, props, escapeGitHubCommandData(ann.Message)), true
+}
+
+func githubAnnotationCommand(line string) bool {
+	if !strings.HasPrefix(line, "::") {
+		return false
+	}
+	head, _, ok := strings.Cut(strings.TrimPrefix(line, "::"), "::")
+	if !ok {
+		return false
+	}
+	name, _, _ := strings.Cut(head, " ")
+	return githubAnnotationName(name)
+}
+
+func githubAnnotationName(name string) bool {
+	switch strings.TrimSpace(name) {
+	case "error", "warning", "notice":
+		return true
+	default:
+		return false
+	}
+}
+
+func githubAnnotationProperties(ann githubAnnotation) string {
+	var props []string
+	add := func(name, value string) {
+		if value != "" {
+			props = append(props, name+"="+escapeGitHubCommandProperty(value))
+		}
+	}
+	addInt := func(name string, value int) {
+		if value > 0 {
+			add(name, strconv.Itoa(value))
+		}
+	}
+	add("file", ann.File)
+	addInt("line", ann.Line)
+	addInt("col", ann.Col)
+	addInt("endLine", ann.EndLine)
+	addInt("endColumn", ann.EndColumn)
+	add("title", ann.Title)
+	return strings.Join(props, ",")
+}
+
+func escapeGitHubCommandData(s string) string {
+	s = strings.ReplaceAll(s, "%", "%25")
+	s = strings.ReplaceAll(s, "\r", "%0D")
+	s = strings.ReplaceAll(s, "\n", "%0A")
+	return s
+}
+
+func escapeGitHubCommandProperty(s string) string {
+	s = escapeGitHubCommandData(s)
+	s = strings.ReplaceAll(s, ":", "%3A")
+	s = strings.ReplaceAll(s, ",", "%2C")
+	return s
 }
 
 func waitForMetricsPath(ctx context.Context, cfg config, since time.Time) string {
