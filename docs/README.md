@@ -29,6 +29,7 @@ Need Linux? `cove up -linux -user me`. Want to pull from a registry instead of i
 - [VZScript Commands](reference/vzscript-commands.md) -- guest agent and OCR automation
 - [Shared Folders Reference](reference/shared-folders.md) -- persist-vs-live VirtioFS behavior
 - [Control Socket API](reference/control-api.md) -- programmatic VM control
+- [Fleet Control Plane](reference/fleet-control-plane.md) -- private controller and worker protocol
 - [License and Virtualization Limits](reference/license-comparison.md) -- Apple SLA and project-license comparison
 - [Release Checklist](reference/release-checklist.md) -- pre-tag and publish gates
 

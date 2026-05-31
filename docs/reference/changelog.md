@@ -23,6 +23,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - Lume-format `cove pull` now prefetches tar-split disk parts concurrently,
   writes them back in manifest order, and verifies each part's OCI
   size/digest before extraction.
+- `cove-fleetd` now provides the first stateful fleet-control-plane boundary:
+  a private host-inventory store plus worker register, heartbeat,
+  await-assignment, and report-status HTTP endpoints.
 - `cove build --cache-from` and `--cache-to` now import and export cove
   build-cache artifacts through OCI refs, carrying cache entries, layer
   manifests, and block-delta blobs between runners.

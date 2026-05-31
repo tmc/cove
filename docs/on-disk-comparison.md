@@ -29,7 +29,7 @@ delegates the disk/runtime work to `tart` or `vetu`.
 | **VM-state snapshot** | VM-state snapshots plus disk clone snapshots (`snapshots.go`, `disk-snapshots/`) | suspend state only | none found | none found |
 | **Distribution** | OCI push/pull for cove images; compatibility push/pull for tart and lume formats; Lume tar-split pulls prefetch parts concurrently, preserve part order, and verify descriptor size/digest; OCI build-cache import/export; local image tar transfer for fleet (`cmd/cove/push.go`, `pull.go`, `lume_pull.go`, `fleet_image.go`) | first-class OCI registry push/pull | first-class OCI registry push/pull | pulls images onto workers through the chosen runtime |
 | **Base/delta reuse** | cove-format chunked disks support `--base`, blob mount/reuse, base-manifest annotations, resumable pulls, local base-disk reuse, persistent registry-base materialization shared by builds and pulls, and portable build-cache layers via `--cache-from` / `--cache-to` | local layer cache with digest ranges and APFS share checks | legacy chunk annotations and concurrent reassembly | runtime-dependent |
-| **Placement** | `fleet run --policy=least-loaded|image-affinity`; image-affinity can pre-stage a local image to the selected host; `fleet run --all` fans out concurrently to every non-cordoned host and pre-stages `-fork-from` only to cold targets; cordon/uncordon skips hosts for placement; short local placement leases count as pending load; `fleet health` reports remote reachability/version; repeated SSH operations reuse OpenSSH ControlMaster sockets (`cmd/cove/fleet_run.go`, `cmd/cove/fleet_health.go`, `internal/fleet/ssh.go`) | none | none | full controller/scheduler model |
+| **Placement** | `fleet run --policy=least-loaded|image-affinity`; image-affinity can pre-stage a local image to the selected host; `fleet run --all` fans out concurrently to every non-cordoned host and pre-stages `-fork-from` only to cold targets; cordon/uncordon skips hosts for placement; short local placement leases count as pending load; `fleet health` reports remote reachability/version; repeated SSH operations reuse OpenSSH ControlMaster sockets; initial `cove-fleetd` host-inventory control-plane boundary now accepts worker register/heartbeat/report dial-ins (`cmd/cove/fleet_run.go`, `cmd/cove/fleet_health.go`, `cmd/cove-fleetd`, `internal/fleetcontrol`) | none | none | full controller/scheduler model |
 
 ## Where cove now leads
 
@@ -71,9 +71,9 @@ delegates the disk/runtime work to `tart` or `vetu`.
 ## Where competitors still lead
 
 - **orchard has a real control plane.** cove's fleet support is CLI placement,
-  fan-out, and transfer with local cordon and short lease metadata; orchard
-  still owns reconciliation, durable leases, worker lifecycle, and
-  scheduler/controller concerns.
+  fan-out, transfer, local cordon, short lease metadata, and an initial
+  `cove-fleetd` host-inventory boundary; orchard still owns reconciliation,
+  durable leases, worker lifecycle, and scheduler/controller concerns.
 - **tart has the mature public image lane.** cove now speaks tart format, but
   tart still has the established image catalog and local layer-cache machinery.
 - **lume has native ecosystem defaults.** cove can interoperate with Lume
@@ -88,5 +88,6 @@ multi-format OCI distribution including concurrent verified Lume tar-split
 imports, base/delta reuse, portable OCI build caches, resumable pulls, and
 image-aware fleet placement with cordon drains, local launch leases, and
 concurrent multi-host run fan-out with cold-target image staging and reused SSH
-transports. tart and lume still lead in ecosystem maturity, and orchard still
-leads as a full fleet controller.
+transports. The first `cove-fleetd` host-inventory boundary is present, but tart
+and lume still lead in ecosystem maturity, and orchard still leads as a full
+fleet controller.

@@ -23,6 +23,7 @@
 ## Reference
 * [CLI Reference](reference/cli.md)
 * [Control Socket API](reference/control-api.md)
+* [Fleet Control Plane](reference/fleet-control-plane.md)
 * [Shared Folders Reference](reference/shared-folders.md)
 * [VZScript Commands](reference/vzscript-commands.md)
 * [License and Virtualization Limits](reference/license-comparison.md)
