@@ -27,6 +27,9 @@ func Handler(store *Store) http.Handler {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
+		if !requireUnscoped(w, r, store) {
+			return
+		}
 		if !reconcile(w, store) {
 			return
 		}
@@ -35,6 +38,9 @@ func Handler(store *Store) http.Handler {
 	mux.HandleFunc("/v1/reconcile", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		if !requireUnscoped(w, r, store) {
 			return
 		}
 		result, err := store.ReconcileActor(actorFromRequest(r, store))
@@ -95,7 +101,7 @@ func Handler(store *Store) http.Handler {
 	mux.HandleFunc("/v1/workers/", func(w http.ResponseWriter, r *http.Request) {
 		handleWorker(w, r, store)
 	})
-	return mux
+	return rejectInvalidAuth(mux, store)
 }
 
 func handleWorkerHeartbeat(w http.ResponseWriter, r *http.Request, store *Store, verb string) {
@@ -130,20 +136,26 @@ func handleAudit(w http.ResponseWriter, r *http.Request, store *Store) {
 		}
 		limit = n
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"events": store.ListAudit(limit)})
+	identity := identityFromRequest(r, store)
+	namespace := namespaceFilterFromRequest(r, identity)
+	writeJSON(w, http.StatusOK, map[string]any{"events": store.ListAuditNamespace(limit, namespace)})
 }
 
 func handleServiceAccounts(w http.ResponseWriter, r *http.Request, store *Store) {
+	identity := identityFromRequest(r, store)
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, http.StatusOK, map[string]any{"service_accounts": store.ListServiceAccounts()})
+		writeJSON(w, http.StatusOK, map[string]any{"service_accounts": store.ListServiceAccountsNamespace(namespaceFilterFromRequest(r, identity))})
 	case http.MethodPost:
 		var req ServiceAccountRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode service account: %v", err))
 			return
 		}
-		result, err := store.UpsertServiceAccountActor(actorFromRequest(r, store), req)
+		if !applyScopedNamespace(w, identity, &req.Namespace) {
+			return
+		}
+		result, err := store.UpsertServiceAccountActor(identity.Actor, req)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
@@ -160,9 +172,21 @@ func handleServiceAccount(w http.ResponseWriter, r *http.Request, store *Store) 
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	identity := identityFromRequest(r, store)
 	switch r.Method {
 	case http.MethodDelete:
-		result, err := store.DeleteServiceAccountActor(actorFromRequest(r, store), name)
+		if identity.Scoped {
+			account, ok := serviceAccountByName(store.ListServiceAccountsNamespace(identity.Namespace), name)
+			if !ok {
+				writeError(w, http.StatusNotFound, "service account not found")
+				return
+			}
+			if !canAccessNamespace(identity, account.Namespace) {
+				writeError(w, http.StatusForbidden, "namespace not allowed")
+				return
+			}
+		}
+		result, err := store.DeleteServiceAccountActor(identity.Actor, name)
 		if err != nil {
 			writeError(w, http.StatusNotFound, err.Error())
 			return
@@ -186,6 +210,9 @@ func handleWorker(w http.ResponseWriter, r *http.Request, store *Store) {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
+		if !requireUnscoped(w, r, store) {
+			return
+		}
 		if !reconcile(w, store) {
 			return
 		}
@@ -205,10 +232,16 @@ func handleWorker(w http.ResponseWriter, r *http.Request, store *Store) {
 	case "assignments":
 		handleWorkerAssignments(w, r, store, id)
 	case "cordon":
+		if !requireUnscoped(w, r, store) {
+			return
+		}
 		handleWorkerCordon(w, r, store, id)
 	case "reports":
 		handleWorkerReports(w, r, store, id)
 	case "uncordon":
+		if !requireUnscoped(w, r, store) {
+			return
+		}
 		handleWorkerUncordon(w, r, store, id)
 	default:
 		writeError(w, http.StatusNotFound, "worker route not found")
@@ -266,7 +299,11 @@ func handleImagePrepare(w http.ResponseWriter, r *http.Request, store *Store) {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode image prepare: %v", err))
 		return
 	}
-	result, err := store.PrepareImageActor(actorFromRequest(r, store), req)
+	identity := identityFromRequest(r, store)
+	if !applyScopedNamespace(w, identity, &req.Namespace) {
+		return
+	}
+	result, err := store.PrepareImageActor(identity.Actor, req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -284,7 +321,11 @@ func handleImageGC(w http.ResponseWriter, r *http.Request, store *Store) {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode image gc: %v", err))
 		return
 	}
-	result, err := store.PushImageGCActor(actorFromRequest(r, store), req)
+	identity := identityFromRequest(r, store)
+	if !applyScopedNamespace(w, identity, &req.Namespace) {
+		return
+	}
+	result, err := store.PushImageGCActor(identity.Actor, req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -302,7 +343,11 @@ func handleLifecyclePolicy(w http.ResponseWriter, r *http.Request, store *Store)
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode lifecycle policy: %v", err))
 		return
 	}
-	result, err := store.PushLifecyclePolicyActor(actorFromRequest(r, store), req)
+	identity := identityFromRequest(r, store)
+	if !applyScopedNamespace(w, identity, &req.Namespace) {
+		return
+	}
+	result, err := store.PushLifecyclePolicyActor(identity.Actor, req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -320,7 +365,11 @@ func handleStorageBudget(w http.ResponseWriter, r *http.Request, store *Store) {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode storage budget: %v", err))
 		return
 	}
-	result, err := store.PushStorageBudgetActor(actorFromRequest(r, store), req)
+	identity := identityFromRequest(r, store)
+	if !applyScopedNamespace(w, identity, &req.Namespace) {
+		return
+	}
+	result, err := store.PushStorageBudgetActor(identity.Actor, req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -338,7 +387,11 @@ func handleStoragePrune(w http.ResponseWriter, r *http.Request, store *Store) {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode storage prune: %v", err))
 		return
 	}
-	result, err := store.PushStoragePruneActor(actorFromRequest(r, store), req)
+	identity := identityFromRequest(r, store)
+	if !applyScopedNamespace(w, identity, &req.Namespace) {
+		return
+	}
+	result, err := store.PushStoragePruneActor(identity.Actor, req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -356,6 +409,10 @@ func handlePlacementPlan(w http.ResponseWriter, r *http.Request, store *Store) {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode placement plan: %v", err))
 		return
 	}
+	identity := identityFromRequest(r, store)
+	if !applyScopedNamespace(w, identity, &req.Assignment.Namespace) {
+		return
+	}
 	plan, err := store.PlanAssignment(req.Assignment, req.Limit)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -365,19 +422,23 @@ func handlePlacementPlan(w http.ResponseWriter, r *http.Request, store *Store) {
 }
 
 func handleWarmPools(w http.ResponseWriter, r *http.Request, store *Store) {
+	identity := identityFromRequest(r, store)
 	switch r.Method {
 	case http.MethodGet:
 		if !reconcile(w, store) {
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"warm_pools": store.ListWarmPools()})
+		writeJSON(w, http.StatusOK, map[string]any{"warm_pools": store.ListWarmPoolsNamespace(namespaceFilterFromRequest(r, identity))})
 	case http.MethodPost:
 		var req WarmPoolRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode warm pool: %v", err))
 			return
 		}
-		result, err := store.EnsureWarmPoolActor(actorFromRequest(r, store), req)
+		if !applyScopedNamespace(w, identity, &req.Namespace) {
+			return
+		}
+		result, err := store.EnsureWarmPoolActor(identity.Actor, req)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
@@ -394,6 +455,7 @@ func handleWarmPool(w http.ResponseWriter, r *http.Request, store *Store) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	identity := identityFromRequest(r, store)
 	switch r.Method {
 	case http.MethodGet:
 		if !reconcile(w, store) {
@@ -404,9 +466,18 @@ func handleWarmPool(w http.ResponseWriter, r *http.Request, store *Store) {
 			writeError(w, http.StatusNotFound, fmt.Sprintf("warm pool %q not found", name))
 			return
 		}
+		if !canAccessNamespace(identity, status.Namespace) {
+			writeError(w, http.StatusNotFound, fmt.Sprintf("warm pool %q not found", name))
+			return
+		}
 		writeJSON(w, http.StatusOK, status)
 	case http.MethodDelete:
-		result, err := store.DeleteWarmPoolActor(actorFromRequest(r, store), name)
+		status, ok := store.GetWarmPool(name)
+		if !ok || !canAccessNamespace(identity, status.Namespace) {
+			writeError(w, http.StatusNotFound, fmt.Sprintf("warm pool %q not found", name))
+			return
+		}
+		result, err := store.DeleteWarmPoolActor(identity.Actor, name)
 		if err != nil {
 			writeError(w, http.StatusNotFound, err.Error())
 			return
@@ -437,16 +508,86 @@ func nameFromPath(path, prefix, label string) (string, error) {
 	return name, nil
 }
 
+type requestIdentity struct {
+	Actor     string
+	Namespace string
+	Scoped    bool
+	Invalid   bool
+}
+
 func actorFromRequest(r *http.Request, store *Store) string {
+	return identityFromRequest(r, store).Actor
+}
+
+func identityFromRequest(r *http.Request, store *Store) requestIdentity {
 	auth := strings.TrimSpace(r.Header.Get("Authorization"))
 	const prefix = "bearer "
 	if len(auth) >= len(prefix) && strings.EqualFold(auth[:len(prefix)], prefix) {
 		token := strings.TrimSpace(auth[len(prefix):])
 		if account, ok := store.AuthenticateServiceAccount(token); ok {
-			return "service-account:" + account.Name
+			namespace := normalizeNamespace(account.Namespace)
+			return requestIdentity{
+				Actor:     "service-account:" + account.Name,
+				Namespace: namespace,
+				Scoped:    namespace != "",
+			}
+		}
+		return requestIdentity{Invalid: true}
+	}
+	return requestIdentity{Actor: "controller"}
+}
+
+func rejectInvalidAuth(next http.Handler, store *Store) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if identityFromRequest(r, store).Invalid {
+			writeError(w, http.StatusUnauthorized, "invalid bearer token")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func namespaceFilterFromRequest(r *http.Request, identity requestIdentity) string {
+	if identity.Scoped {
+		return identity.Namespace
+	}
+	return normalizeNamespace(r.URL.Query().Get("namespace"))
+}
+
+func applyScopedNamespace(w http.ResponseWriter, identity requestIdentity, namespace *string) bool {
+	current := normalizeNamespace(*namespace)
+	if identity.Scoped {
+		if current != "" && current != identity.Namespace {
+			writeError(w, http.StatusForbidden, "namespace not allowed")
+			return false
+		}
+		*namespace = identity.Namespace
+		return true
+	}
+	*namespace = current
+	return true
+}
+
+func canAccessNamespace(identity requestIdentity, namespace string) bool {
+	return !identity.Scoped || normalizeNamespace(namespace) == identity.Namespace
+}
+
+func requireUnscoped(w http.ResponseWriter, r *http.Request, store *Store) bool {
+	if identityFromRequest(r, store).Scoped {
+		writeError(w, http.StatusForbidden, "namespace-scoped service account cannot access fleet-global endpoint")
+		return false
+	}
+	return true
+}
+
+func serviceAccountByName(accounts []ServiceAccount, name string) (ServiceAccount, bool) {
+	name = strings.TrimSpace(name)
+	for _, account := range accounts {
+		if account.Name == name {
+			return account, true
 		}
 	}
-	return "controller"
+	return ServiceAccount{}, false
 }
 
 func handleWarmPoolClaim(w http.ResponseWriter, r *http.Request, store *Store) {
@@ -459,7 +600,11 @@ func handleWarmPoolClaim(w http.ResponseWriter, r *http.Request, store *Store) {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode warm pool claim: %v", err))
 		return
 	}
-	result, err := store.ClaimWarmPoolActor(actorFromRequest(r, store), req)
+	identity := identityFromRequest(r, store)
+	if !applyScopedNamespace(w, identity, &req.Namespace) {
+		return
+	}
+	result, err := store.ClaimWarmPoolActor(identity.Actor, req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -499,19 +644,23 @@ func handleWorkerUncordon(w http.ResponseWriter, r *http.Request, store *Store, 
 }
 
 func handleAssignments(w http.ResponseWriter, r *http.Request, store *Store) {
+	identity := identityFromRequest(r, store)
 	switch r.Method {
 	case http.MethodGet:
 		if !reconcile(w, store) {
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"assignments": store.ListAssignments()})
+		writeJSON(w, http.StatusOK, map[string]any{"assignments": store.ListAssignmentsNamespace(namespaceFilterFromRequest(r, identity))})
 	case http.MethodPost:
 		var assignment Assignment
 		if err := json.NewDecoder(r.Body).Decode(&assignment); err != nil {
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode assignment: %v", err))
 			return
 		}
-		created, err := store.CreateAssignmentActor(actorFromRequest(r, store), assignment)
+		if !applyScopedNamespace(w, identity, &assignment.Namespace) {
+			return
+		}
+		created, err := store.CreateAssignmentActor(identity.Actor, assignment)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
@@ -536,7 +685,7 @@ func handleAssignment(w http.ResponseWriter, r *http.Request, store *Store) {
 		return
 	}
 	assignment, ok := store.GetAssignment(id)
-	if !ok {
+	if !ok || !canAccessNamespace(identityFromRequest(r, store), assignment.Namespace) {
 		writeError(w, http.StatusNotFound, "assignment not found")
 		return
 	}

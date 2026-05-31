@@ -38,6 +38,7 @@ type storeFile struct {
 
 type serviceAccountRecord struct {
 	Name      string    `json:"name"`
+	Namespace string    `json:"namespace,omitempty"`
 	TokenHash string    `json:"token_sha256"`
 	Created   time.Time `json:"created,omitempty"`
 	Updated   time.Time `json:"updated,omitempty"`
@@ -87,6 +88,7 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 			continue
 		}
 		assignment.ID = id
+		assignment.Namespace = normalizeNamespace(assignment.Namespace)
 		assignment.Args = cloneStrings(assignment.Args)
 		assignment.WarmPool = strings.TrimSpace(assignment.WarmPool)
 		assignment.WarmPoolSlot = strings.TrimSpace(assignment.WarmPoolSlot)
@@ -363,6 +365,7 @@ func (s *Store) Report(r WorkerReport) (HostRecord, error) {
 			if auditReportStatus(storedStatus) {
 				s.appendAuditLocked(received, AuditEvent{
 					Actor:        "worker:" + id,
+					Namespace:    assignment.Namespace,
 					Action:       "assignment.report",
 					TargetType:   "assignment",
 					TargetID:     assignment.ID,
@@ -419,6 +422,7 @@ func (s *Store) CreateAssignmentActor(actor string, a Assignment) (Assignment, e
 		workerID = selected
 	}
 	a.ID = id
+	a.Namespace = normalizeNamespace(a.Namespace)
 	a.WorkerID = workerID
 	a.WarmPool = strings.TrimSpace(a.WarmPool)
 	a.WarmPoolSlot = strings.TrimSpace(a.WarmPoolSlot)
@@ -438,6 +442,7 @@ func (s *Store) CreateAssignmentActor(actor string, a Assignment) (Assignment, e
 	s.assignments[id] = a
 	s.appendAuditLocked(now, AuditEvent{
 		Actor:        actor,
+		Namespace:    a.Namespace,
 		Action:       "assignment.create",
 		TargetType:   "assignment",
 		TargetID:     id,
@@ -476,6 +481,7 @@ func (s *Store) PlanAssignment(a Assignment, limit int) (PlacementPlan, error) {
 		candidates = candidates[:limit]
 	}
 	plan := PlacementPlan{
+		Namespace:       normalizeNamespace(a.Namespace),
 		Policy:          policy,
 		ImageRef:        imageRef,
 		RequiredLabels:  cloneLabels(requiredLabels),
@@ -506,6 +512,9 @@ func (s *Store) EnsureWarmPoolActor(actor string, req WarmPoolRequest) (WarmPool
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if existing, ok := s.warmPools[pool.Name]; ok && !existing.Created.IsZero() {
+		if existing.Namespace != pool.Namespace {
+			return WarmPoolResult{}, fmt.Errorf("warm pool %q already exists in another namespace", pool.Name)
+		}
 		pool.Created = existing.Created
 	}
 	s.warmPools[pool.Name] = pool
@@ -514,6 +523,7 @@ func (s *Store) EnsureWarmPoolActor(actor string, req WarmPoolRequest) (WarmPool
 	status := s.warmPoolStatusLocked(pool.Name)
 	s.appendAuditLocked(now, AuditEvent{
 		Actor:      actor,
+		Namespace:  pool.Namespace,
 		Action:     "warm_pool.ensure",
 		TargetType: "warm_pool",
 		TargetID:   pool.Name,
@@ -566,10 +576,12 @@ func (s *Store) DeleteWarmPoolActor(actor, name string) (WarmPoolDeleteResult, e
 	if _, ok := s.warmPools[name]; !ok {
 		return WarmPoolDeleteResult{}, fmt.Errorf("warm pool %q not found", name)
 	}
+	namespace := s.warmPools[name].Namespace
 	delete(s.warmPools, name)
 	retired := s.retireWarmPoolLocked(now, name)
 	s.appendAuditLocked(now, AuditEvent{
 		Actor:      actor,
+		Namespace:  namespace,
 		Action:     "warm_pool.delete",
 		TargetType: "warm_pool",
 		TargetID:   name,
@@ -583,10 +595,11 @@ func (s *Store) DeleteWarmPoolActor(actor, name string) (WarmPoolDeleteResult, e
 		return WarmPoolDeleteResult{}, err
 	}
 	return WarmPoolDeleteResult{
-		Pool:     name,
-		Canceled: cloneStrings(retired.canceled),
-		Cleanup:  cloneAssignments(retired.cleanup),
-		Deferred: cloneStrings(retired.deferred),
+		Namespace: namespace,
+		Pool:      name,
+		Canceled:  cloneStrings(retired.canceled),
+		Cleanup:   cloneAssignments(retired.cleanup),
+		Deferred:  cloneStrings(retired.deferred),
 	}, nil
 }
 
@@ -617,6 +630,10 @@ func (s *Store) ClaimWarmPoolActor(actor string, req WarmPoolClaimRequest) (Warm
 	if !ok {
 		return WarmPoolClaimResult{}, fmt.Errorf("warm pool %q not found", name)
 	}
+	namespace := normalizeNamespace(req.Namespace)
+	if namespace != "" && pool.Namespace != namespace {
+		return WarmPoolClaimResult{}, fmt.Errorf("warm pool %q not found in namespace %q", name, namespace)
+	}
 	slot, ok := s.claimableWarmPoolSlotLocked(name)
 	if !ok {
 		return WarmPoolClaimResult{}, fmt.Errorf("warm pool %q has no ready slot to claim", name)
@@ -628,6 +645,7 @@ func (s *Store) ClaimWarmPoolActor(actor string, req WarmPoolClaimRequest) (Warm
 
 	assignment := Assignment{
 		ID:           s.nextAssignmentIDLocked(now),
+		Namespace:    pool.Namespace,
 		WorkerID:     slot.WorkerID,
 		WarmPoolSlot: slot.ID,
 		Verb:         "cove",
@@ -640,6 +658,7 @@ func (s *Store) ClaimWarmPoolActor(actor string, req WarmPoolClaimRequest) (Warm
 	s.ensureWarmPoolLocked(now, pool)
 	s.appendAuditLocked(now, AuditEvent{
 		Actor:        actor,
+		Namespace:    pool.Namespace,
 		Action:       "warm_pool.claim",
 		TargetType:   "warm_pool",
 		TargetID:     name,
@@ -654,6 +673,7 @@ func (s *Store) ClaimWarmPoolActor(actor string, req WarmPoolClaimRequest) (Warm
 		return WarmPoolClaimResult{}, err
 	}
 	return WarmPoolClaimResult{
+		Namespace:  pool.Namespace,
 		Pool:       name,
 		VMName:     vmName,
 		Slot:       cloneAssignment(slot),
@@ -674,6 +694,7 @@ func (s *Store) PrepareImageActor(actor string, req ImagePrepareRequest) (ImageP
 	if imageRef == "" {
 		return ImagePrepareResult{}, fmt.Errorf("image prepare image_ref required")
 	}
+	namespace := normalizeNamespace(req.Namespace)
 	labels := cloneLabels(req.RequiredLabels)
 	now := s.now().UTC()
 	actor = normalizeActor(actor)
@@ -682,6 +703,7 @@ func (s *Store) PrepareImageActor(actor string, req ImagePrepareRequest) (ImageP
 	defer s.mu.Unlock()
 	reconciled := s.reconcileLocked(now)
 	result := ImagePrepareResult{
+		Namespace: namespace,
 		SourceRef: sourceRef,
 		ImageRef:  imageRef,
 	}
@@ -704,6 +726,7 @@ func (s *Store) PrepareImageActor(actor string, req ImagePrepareRequest) (ImageP
 		}
 		assignment := Assignment{
 			ID:             s.nextAssignmentIDLocked(now),
+			Namespace:      namespace,
 			WorkerID:       host.ID,
 			ImageRef:       imageRef,
 			RequiredLabels: labels,
@@ -723,6 +746,7 @@ func (s *Store) PrepareImageActor(actor string, req ImagePrepareRequest) (ImageP
 		if len(result.Assignments) > 0 {
 			s.appendAuditLocked(now, AuditEvent{
 				Actor:      actor,
+				Namespace:  namespace,
 				Action:     "image.prepare",
 				TargetType: "image",
 				TargetID:   imageRef,
@@ -744,6 +768,7 @@ func (s *Store) PushImageGC(req ImageGCRequest) (ImageGCResult, error) {
 }
 
 func (s *Store) PushImageGCActor(actor string, req ImageGCRequest) (ImageGCResult, error) {
+	namespace := normalizeNamespace(req.Namespace)
 	labels := cloneLabels(req.RequiredLabels)
 	olderThan, err := normalizeDurationString(req.OlderThan, "image gc older_than")
 	if err != nil {
@@ -755,7 +780,7 @@ func (s *Store) PushImageGCActor(actor string, req ImageGCRequest) (ImageGCResul
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	reconciled := s.reconcileLocked(now)
-	var result ImageGCResult
+	result := ImageGCResult{Namespace: namespace}
 	for _, host := range s.sortedHostsLocked() {
 		host = s.statusLocked(host)
 		if !labelsMatch(host.Labels, labels) {
@@ -771,6 +796,7 @@ func (s *Store) PushImageGCActor(actor string, req ImageGCRequest) (ImageGCResul
 		}
 		assignment := Assignment{
 			ID:             s.nextAssignmentIDLocked(now),
+			Namespace:      namespace,
 			WorkerID:       host.ID,
 			RequiredLabels: labels,
 			Verb:           "cove",
@@ -789,6 +815,7 @@ func (s *Store) PushImageGCActor(actor string, req ImageGCRequest) (ImageGCResul
 		if len(result.Assignments) > 0 {
 			s.appendAuditLocked(now, AuditEvent{
 				Actor:      actor,
+				Namespace:  namespace,
 				Action:     "image.gc",
 				TargetType: "image",
 				Fields: map[string]string{
@@ -814,6 +841,7 @@ func (s *Store) PushLifecyclePolicyActor(actor string, req LifecyclePolicyReques
 	if err != nil {
 		return LifecyclePolicyResult{}, err
 	}
+	namespace := normalizeNamespace(req.Namespace)
 	labels := cloneLabels(req.RequiredLabels)
 	now := s.now().UTC()
 	actor = normalizeActor(actor)
@@ -821,7 +849,7 @@ func (s *Store) PushLifecyclePolicyActor(actor string, req LifecyclePolicyReques
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	reconciled := s.reconcileLocked(now)
-	result := LifecyclePolicyResult{VMName: vmName}
+	result := LifecyclePolicyResult{Namespace: namespace, VMName: vmName}
 	for _, host := range s.sortedHostsLocked() {
 		host = s.statusLocked(host)
 		if !labelsMatch(host.Labels, labels) {
@@ -837,6 +865,7 @@ func (s *Store) PushLifecyclePolicyActor(actor string, req LifecyclePolicyReques
 		}
 		assignment := Assignment{
 			ID:             s.nextAssignmentIDLocked(now),
+			Namespace:      namespace,
 			WorkerID:       host.ID,
 			RequiredLabels: labels,
 			Verb:           "cove",
@@ -855,6 +884,7 @@ func (s *Store) PushLifecyclePolicyActor(actor string, req LifecyclePolicyReques
 		if len(result.Assignments) > 0 {
 			s.appendAuditLocked(now, AuditEvent{
 				Actor:      actor,
+				Namespace:  namespace,
 				Action:     "policy.lifecycle",
 				TargetType: "vm",
 				TargetID:   vmName,
@@ -880,6 +910,7 @@ func (s *Store) PushStorageBudgetActor(actor string, req StorageBudgetRequest) (
 	if err != nil {
 		return StorageBudgetResult{}, err
 	}
+	namespace := normalizeNamespace(req.Namespace)
 	labels := cloneLabels(req.RequiredLabels)
 	now := s.now().UTC()
 	actor = normalizeActor(actor)
@@ -887,7 +918,7 @@ func (s *Store) PushStorageBudgetActor(actor string, req StorageBudgetRequest) (
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	reconciled := s.reconcileLocked(now)
-	var result StorageBudgetResult
+	result := StorageBudgetResult{Namespace: namespace}
 	for _, host := range s.sortedHostsLocked() {
 		host = s.statusLocked(host)
 		if !labelsMatch(host.Labels, labels) {
@@ -903,6 +934,7 @@ func (s *Store) PushStorageBudgetActor(actor string, req StorageBudgetRequest) (
 		}
 		assignment := Assignment{
 			ID:             s.nextAssignmentIDLocked(now),
+			Namespace:      namespace,
 			WorkerID:       host.ID,
 			RequiredLabels: labels,
 			Verb:           "cove",
@@ -921,6 +953,7 @@ func (s *Store) PushStorageBudgetActor(actor string, req StorageBudgetRequest) (
 		if len(result.Assignments) > 0 {
 			s.appendAuditLocked(now, AuditEvent{
 				Actor:      actor,
+				Namespace:  namespace,
 				Action:     "storage.budget",
 				TargetType: "storage",
 				Fields: map[string]string{
@@ -946,6 +979,7 @@ func (s *Store) PushStoragePruneActor(actor string, req StoragePruneRequest) (St
 	if err != nil {
 		return StoragePruneResult{}, err
 	}
+	namespace := normalizeNamespace(req.Namespace)
 	labels := cloneLabels(req.RequiredLabels)
 	now := s.now().UTC()
 	actor = normalizeActor(actor)
@@ -953,7 +987,7 @@ func (s *Store) PushStoragePruneActor(actor string, req StoragePruneRequest) (St
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	reconciled := s.reconcileLocked(now)
-	var result StoragePruneResult
+	result := StoragePruneResult{Namespace: namespace}
 	for _, host := range s.sortedHostsLocked() {
 		host = s.statusLocked(host)
 		if !labelsMatch(host.Labels, labels) {
@@ -969,6 +1003,7 @@ func (s *Store) PushStoragePruneActor(actor string, req StoragePruneRequest) (St
 		}
 		assignment := Assignment{
 			ID:             s.nextAssignmentIDLocked(now),
+			Namespace:      namespace,
 			WorkerID:       host.ID,
 			RequiredLabels: labels,
 			Verb:           "cove",
@@ -987,6 +1022,7 @@ func (s *Store) PushStoragePruneActor(actor string, req StoragePruneRequest) (St
 		if len(result.Assignments) > 0 {
 			s.appendAuditLocked(now, AuditEvent{
 				Actor:      actor,
+				Namespace:  namespace,
 				Action:     "storage.prune",
 				TargetType: "storage",
 				Fields: map[string]string{
@@ -1035,6 +1071,7 @@ func (s *Store) AwaitAssignment(id string) (*Assignment, error) {
 		s.assignments[assignment.ID] = assignment
 		s.appendAuditLocked(now, AuditEvent{
 			Actor:        "worker:" + id,
+			Namespace:    assignment.Namespace,
 			Action:       "assignment.lease",
 			TargetType:   "assignment",
 			TargetID:     assignment.ID,
@@ -1068,30 +1105,61 @@ func (s *Store) GetAssignment(id string) (Assignment, bool) {
 }
 
 func (s *Store) ListAssignments() []Assignment {
+	return s.ListAssignmentsNamespace("")
+}
+
+func (s *Store) ListAssignmentsNamespace(namespace string) []Assignment {
+	namespace = normalizeNamespace(namespace)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	assignments := s.sortedAssignmentsLocked()
-	for i := range assignments {
-		assignments[i] = cloneAssignment(assignments[i])
+	out := make([]Assignment, 0, len(assignments))
+	for _, assignment := range assignments {
+		if !namespaceMatches(assignment.Namespace, namespace) {
+			continue
+		}
+		out = append(out, cloneAssignment(assignment))
 	}
-	return assignments
+	return out
 }
 
 func (s *Store) ListWarmPools() []WarmPoolStatus {
+	return s.ListWarmPoolsNamespace("")
+}
+
+func (s *Store) ListWarmPoolsNamespace(namespace string) []WarmPoolStatus {
+	namespace = normalizeNamespace(namespace)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	pools := s.sortedWarmPoolsLocked()
 	out := make([]WarmPoolStatus, 0, len(pools))
 	for _, pool := range pools {
+		if !namespaceMatches(pool.Namespace, namespace) {
+			continue
+		}
 		out = append(out, s.warmPoolStatusLocked(pool.Name))
 	}
 	return out
 }
 
 func (s *Store) ListAudit(limit int) []AuditEvent {
+	return s.ListAuditNamespace(limit, "")
+}
+
+func (s *Store) ListAuditNamespace(limit int, namespace string) []AuditEvent {
+	namespace = normalizeNamespace(namespace)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	events := s.sortedAuditLocked()
+	if namespace != "" {
+		filtered := events[:0]
+		for _, event := range events {
+			if namespaceMatches(event.Namespace, namespace) {
+				filtered = append(filtered, event)
+			}
+		}
+		events = filtered
+	}
 	if limit > 0 && len(events) > limit {
 		events = events[len(events)-limit:]
 	}
@@ -1115,6 +1183,7 @@ func (s *Store) UpsertServiceAccountActor(actor string, req ServiceAccountReques
 	actor = normalizeActor(actor)
 	record := serviceAccountRecord{
 		Name:      name,
+		Namespace: normalizeNamespace(req.Namespace),
 		TokenHash: tokenHash(token),
 		Created:   now,
 		Updated:   now,
@@ -1123,11 +1192,15 @@ func (s *Store) UpsertServiceAccountActor(actor string, req ServiceAccountReques
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if old, ok := s.accounts[name]; ok && !old.Created.IsZero() {
+		if old.Namespace != record.Namespace {
+			return ServiceAccountResult{}, fmt.Errorf("service account %q already exists in another namespace", name)
+		}
 		record.Created = old.Created
 	}
 	s.accounts[name] = record
 	s.appendAuditLocked(now, AuditEvent{
 		Actor:      actor,
+		Namespace:  record.Namespace,
 		Action:     "service_account.upsert",
 		TargetType: "service_account",
 		TargetID:   name,
@@ -1159,6 +1232,7 @@ func (s *Store) DeleteServiceAccountActor(actor, name string) (ServiceAccountRes
 	delete(s.accounts, name)
 	s.appendAuditLocked(now, AuditEvent{
 		Actor:      actor,
+		Namespace:  record.Namespace,
 		Action:     "service_account.delete",
 		TargetType: "service_account",
 		TargetID:   name,
@@ -1170,11 +1244,19 @@ func (s *Store) DeleteServiceAccountActor(actor, name string) (ServiceAccountRes
 }
 
 func (s *Store) ListServiceAccounts() []ServiceAccount {
+	return s.ListServiceAccountsNamespace("")
+}
+
+func (s *Store) ListServiceAccountsNamespace(namespace string) []ServiceAccount {
+	namespace = normalizeNamespace(namespace)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	records := s.sortedServiceAccountsLocked()
 	out := make([]ServiceAccount, 0, len(records))
 	for _, record := range records {
+		if !namespaceMatches(record.Namespace, namespace) {
+			continue
+		}
 		out = append(out, publicServiceAccount(record))
 	}
 	return out
@@ -1529,9 +1611,10 @@ func cloneServiceAccountRecord(in serviceAccountRecord) serviceAccountRecord {
 
 func publicServiceAccount(record serviceAccountRecord) ServiceAccount {
 	return ServiceAccount{
-		Name:    record.Name,
-		Created: record.Created,
-		Updated: record.Updated,
+		Name:      record.Name,
+		Namespace: record.Namespace,
+		Created:   record.Created,
+		Updated:   record.Updated,
 	}
 }
 
@@ -1644,6 +1727,7 @@ func (s *Store) ensureWarmPoolLocked(now time.Time, pool WarmPool) []Assignment 
 		id := s.nextAssignmentIDLocked(now)
 		assignment := Assignment{
 			ID:              id,
+			Namespace:       pool.Namespace,
 			WorkerID:        workerID,
 			WarmPool:        pool.Name,
 			Policy:          pool.Policy,
@@ -1750,6 +1834,7 @@ func (s *Store) retireWarmPoolSlotLocked(now time.Time, assignment Assignment, r
 	vmName := WarmPoolAssignmentVMName(assignment)
 	cleanup := Assignment{
 		ID:           s.nextAssignmentIDLocked(now),
+		Namespace:    assignment.Namespace,
 		WorkerID:     assignment.WorkerID,
 		WarmPoolSlot: assignment.ID,
 		Verb:         "cove",
@@ -1819,6 +1904,7 @@ func (s *Store) claimableWarmPoolSlotLocked(name string) (Assignment, bool) {
 
 func warmPoolFromRequest(req WarmPoolRequest, now time.Time) (WarmPool, error) {
 	pool := WarmPool{
+		Namespace:      normalizeNamespace(req.Namespace),
 		Name:           strings.TrimSpace(req.Name),
 		ImageRef:       strings.TrimSpace(req.ImageRef),
 		Size:           req.Size,
@@ -1837,6 +1923,7 @@ func warmPoolFromRequest(req WarmPoolRequest, now time.Time) (WarmPool, error) {
 
 func normalizeWarmPool(pool WarmPool, now time.Time) (WarmPool, error) {
 	pool.Name = strings.TrimSpace(pool.Name)
+	pool.Namespace = normalizeNamespace(pool.Namespace)
 	pool.ImageRef = strings.TrimSpace(pool.ImageRef)
 	pool.Policy = strings.TrimSpace(pool.Policy)
 	pool.RequiredLabels = cloneLabels(pool.RequiredLabels)
@@ -2158,6 +2245,7 @@ func (s *Store) appendAuditLocked(now time.Time, event AuditEvent) AuditEvent {
 
 func normalizeAuditEvent(event AuditEvent) AuditEvent {
 	event.ID = strings.TrimSpace(event.ID)
+	event.Namespace = normalizeNamespace(event.Namespace)
 	event.Actor = strings.TrimSpace(event.Actor)
 	event.Action = strings.TrimSpace(event.Action)
 	event.TargetType = strings.TrimSpace(event.TargetType)
@@ -2174,6 +2262,7 @@ func normalizeAuditEvent(event AuditEvent) AuditEvent {
 
 func normalizeServiceAccountRecord(record serviceAccountRecord) serviceAccountRecord {
 	record.Name = strings.TrimSpace(record.Name)
+	record.Namespace = normalizeNamespace(record.Namespace)
 	record.TokenHash = strings.TrimSpace(record.TokenHash)
 	if !record.Created.IsZero() {
 		record.Created = record.Created.UTC()
@@ -2182,6 +2271,18 @@ func normalizeServiceAccountRecord(record serviceAccountRecord) serviceAccountRe
 		record.Updated = record.Updated.UTC()
 	}
 	return record
+}
+
+func normalizeNamespace(namespace string) string {
+	return strings.TrimSpace(namespace)
+}
+
+func namespaceMatches(resource, filter string) bool {
+	filter = normalizeNamespace(filter)
+	if filter == "" {
+		return true
+	}
+	return normalizeNamespace(resource) == filter
 }
 
 func tokenHash(token string) string {

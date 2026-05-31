@@ -64,6 +64,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   authenticated controller requests record audit actors as
   `service-account:<name>` while local unauthenticated requests still work as
   `controller`.
+- `cove-fleetd` service accounts can now carry a `namespace`; scoped bearer
+  tokens can only create, list, read, and audit assignment/warm-pool/service
+  account resources in that namespace, while unscoped local controller workflows
+  remain unchanged and unknown bearer tokens are rejected.
 - `cove-fleetd` assignment placement now supports `policy:"bin-pack"` plus
   `resources.vms` hints and worker `max_vms` slot caps, packing work onto the
   densest ready worker that still fits.

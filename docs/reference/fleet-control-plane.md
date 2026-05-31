@@ -76,12 +76,15 @@ Service-account and audit endpoints:
 ```bash
 curl -X POST http://127.0.0.1:9758/v1/service-accounts \
   -H 'content-type: application/json' \
-  -d '{"name":"ci","token":"local-secret"}'
+  -d '{"name":"ci","namespace":"team-a","token":"local-secret"}'
 curl http://127.0.0.1:9758/v1/service-accounts
 curl -H 'authorization: Bearer local-secret' \
   -X POST http://127.0.0.1:9758/v1/assignments \
   -H 'content-type: application/json' \
   -d '{"id":"probe-1","worker_id":"mini-1","verb":"noop"}'
+curl -H 'authorization: Bearer local-secret' \
+  http://127.0.0.1:9758/v1/assignments
+curl http://127.0.0.1:9758/v1/assignments?namespace=team-a
 curl http://127.0.0.1:9758/v1/audit
 curl http://127.0.0.1:9758/v1/audit?limit=50
 curl -X DELETE http://127.0.0.1:9758/v1/service-accounts/ci
@@ -96,7 +99,15 @@ high-entropy random tokens and keep the plaintext in their own secret manager.
 Supplying a matching bearer token on operator requests records audit actor
 `service-account:<name>`; unauthenticated local requests still record
 `controller`, and worker protocol events record `worker:<id>`. This is actor
-binding for audit, not full authorization yet.
+binding plus namespace filtering for controller resources, not full RBAC yet.
+If a service account has `namespace` set, assignment, warm-pool, service-account,
+and audit list/read/mutation requests through that bearer token are scoped to
+that namespace; attempts to write another namespace are rejected. Service
+accounts without `namespace` and unauthenticated local requests remain unscoped
+for the local-first controller workflow. Requests with an unknown bearer token
+are rejected instead of falling back to local controller identity. Worker
+registration, heartbeat, reports, and host inventory remain fleet-global in
+this slice.
 
 Image preparation endpoint:
 

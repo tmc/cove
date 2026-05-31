@@ -1925,6 +1925,98 @@ func TestHandlerServiceAccountActor(t *testing.T) {
 	}
 }
 
+func TestHandlerServiceAccountNamespaceScope(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var account ServiceAccountResult
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-a", Namespace: "team-a", Token: "token-a"}, &account)
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-b", Namespace: "team-b", Token: "token-b"}, &account)
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1"}, &record)
+	if code := getJSONStatus(t, server.URL+"/v1/assignments", "bad-token"); code != http.StatusUnauthorized {
+		t.Fatalf("invalid bearer status = %d, want 401", code)
+	}
+
+	var teamA Assignment
+	postJSONAuth(t, server.URL+"/v1/assignments", "token-a", Assignment{WorkerID: "worker-1", Verb: "noop"}, &teamA)
+	if teamA.Namespace != "team-a" {
+		t.Fatalf("team-a namespace = %q", teamA.Namespace)
+	}
+	var teamB Assignment
+	postJSONAuth(t, server.URL+"/v1/assignments", "token-b", Assignment{Namespace: "team-b", WorkerID: "worker-1", Verb: "noop"}, &teamB)
+	if teamB.Namespace != "team-b" {
+		t.Fatalf("team-b namespace = %q", teamB.Namespace)
+	}
+	if code := postJSONStatus(t, server.URL+"/v1/assignments", "token-a", Assignment{Namespace: "team-b", WorkerID: "worker-1", Verb: "noop"}); code != http.StatusForbidden {
+		t.Fatalf("cross-namespace POST status = %d, want 403", code)
+	}
+
+	var assignments struct {
+		Assignments []Assignment `json:"assignments"`
+	}
+	getJSONAuth(t, server.URL+"/v1/assignments", "token-a", &assignments)
+	if len(assignments.Assignments) != 1 || assignments.Assignments[0].ID != teamA.ID {
+		t.Fatalf("team-a assignments = %+v, want %s only", assignments.Assignments, teamA.ID)
+	}
+	getJSON(t, server.URL+"/v1/assignments?namespace=team-b", &assignments)
+	if len(assignments.Assignments) != 1 || assignments.Assignments[0].ID != teamB.ID {
+		t.Fatalf("team-b assignments = %+v, want %s only", assignments.Assignments, teamB.ID)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/assignments/"+teamB.ID, "token-a"); code != http.StatusNotFound {
+		t.Fatalf("cross-namespace GET status = %d, want 404", code)
+	}
+
+	var accounts struct {
+		ServiceAccounts []ServiceAccount `json:"service_accounts"`
+	}
+	getJSONAuth(t, server.URL+"/v1/service-accounts", "token-a", &accounts)
+	if len(accounts.ServiceAccounts) != 1 || accounts.ServiceAccounts[0].Name != "team-a" || accounts.ServiceAccounts[0].Namespace != "team-a" {
+		t.Fatalf("team-a service accounts = %+v", accounts.ServiceAccounts)
+	}
+	var audit struct {
+		Events []AuditEvent `json:"events"`
+	}
+	getJSONAuth(t, server.URL+"/v1/audit", "token-a", &audit)
+	if len(audit.Events) == 0 {
+		t.Fatal("team-a audit is empty")
+	}
+	for _, event := range audit.Events {
+		if event.Namespace != "team-a" {
+			t.Fatalf("audit event namespace = %q, want team-a: %+v", event.Namespace, event)
+		}
+	}
+}
+
+func TestHandlerWarmPoolNamespaceScope(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var account ServiceAccountResult
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-a", Namespace: "team-a", Token: "token-a"}, &account)
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-b", Namespace: "team-b", Token: "token-b"}, &account)
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}}, &record)
+
+	var ensured WarmPoolResult
+	postJSONAuth(t, server.URL+"/v1/warm-pools", "token-a", WarmPoolRequest{Name: "runner", ImageRef: "base:v1", Size: 1}, &ensured)
+	if ensured.Pool.Namespace != "team-a" || ensured.Pool.Name != "runner" {
+		t.Fatalf("warm pool = %+v, want team-a runner", ensured.Pool)
+	}
+	var list struct {
+		WarmPools []WarmPoolStatus `json:"warm_pools"`
+	}
+	getJSONAuth(t, server.URL+"/v1/warm-pools", "token-b", &list)
+	if len(list.WarmPools) != 0 {
+		t.Fatalf("team-b warm pools = %+v, want none", list.WarmPools)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/warm-pools/runner", "token-b"); code != http.StatusNotFound {
+		t.Fatalf("cross-namespace warm pool GET status = %d, want 404", code)
+	}
+}
+
 func TestHandlerReconcileEndpoint(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
 	store := NewMemoryStore(time.Minute)
@@ -1974,6 +2066,25 @@ func postJSON(t *testing.T, url string, in, out any) {
 
 func postJSONAuth(t *testing.T, url, token string, in, out any) {
 	t.Helper()
+	resp := postJSONRequest(t, url, token, in)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST %s status = %d", url, resp.StatusCode)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func postJSONStatus(t *testing.T, url, token string, in any) int {
+	t.Helper()
+	resp := postJSONRequest(t, url, token, in)
+	defer resp.Body.Close()
+	return resp.StatusCode
+}
+
+func postJSONRequest(t *testing.T, url, token string, in any) *http.Response {
+	t.Helper()
 	data, err := json.Marshal(in)
 	if err != nil {
 		t.Fatal(err)
@@ -1990,21 +2101,17 @@ func postJSONAuth(t *testing.T, url, token string, in, out any) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("POST %s status = %d", url, resp.StatusCode)
-	}
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-		t.Fatal(err)
-	}
+	return resp
 }
 
 func getJSON(t *testing.T, url string, out any) {
 	t.Helper()
-	resp, err := http.Get(url)
-	if err != nil {
-		t.Fatal(err)
-	}
+	getJSONAuth(t, url, "", out)
+}
+
+func getJSONAuth(t *testing.T, url, token string, out any) {
+	t.Helper()
+	resp := getJSONRequest(t, url, token)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET %s status = %d", url, resp.StatusCode)
@@ -2012,6 +2119,29 @@ func getJSON(t *testing.T, url string, out any) {
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func getJSONStatus(t *testing.T, url, token string) int {
+	t.Helper()
+	resp := getJSONRequest(t, url, token)
+	defer resp.Body.Close()
+	return resp.StatusCode
+}
+
+func getJSONRequest(t *testing.T, url, token string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token != "" {
+		req.Header.Set("authorization", "Bearer "+token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
 }
 
 func deleteJSON(t *testing.T, url string, out any) {

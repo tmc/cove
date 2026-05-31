@@ -79,6 +79,7 @@ type ReconcileResult struct {
 type AuditEvent struct {
 	ID           string            `json:"id"`
 	Time         time.Time         `json:"time"`
+	Namespace    string            `json:"namespace,omitempty"`
 	Actor        string            `json:"actor,omitempty"`
 	Action       string            `json:"action"`
 	TargetType   string            `json:"target_type,omitempty"`
@@ -90,14 +91,16 @@ type AuditEvent struct {
 }
 
 type ServiceAccount struct {
-	Name    string    `json:"name"`
-	Created time.Time `json:"created,omitempty"`
-	Updated time.Time `json:"updated,omitempty"`
+	Name      string    `json:"name"`
+	Namespace string    `json:"namespace,omitempty"`
+	Created   time.Time `json:"created,omitempty"`
+	Updated   time.Time `json:"updated,omitempty"`
 }
 
 type ServiceAccountRequest struct {
-	Name  string `json:"name"`
-	Token string `json:"token"`
+	Name      string `json:"name"`
+	Namespace string `json:"namespace,omitempty"`
+	Token     string `json:"token"`
 }
 
 type ServiceAccountResult struct {
@@ -109,6 +112,7 @@ type WorkerLifecycle struct {
 }
 
 type ImagePrepareRequest struct {
+	Namespace      string            `json:"namespace,omitempty"`
 	SourceRef      string            `json:"source_ref"`
 	ImageRef       string            `json:"image_ref"`
 	RequiredLabels map[string]string `json:"required_labels,omitempty"`
@@ -116,6 +120,7 @@ type ImagePrepareRequest struct {
 }
 
 type ImagePrepareResult struct {
+	Namespace   string             `json:"namespace,omitempty"`
 	SourceRef   string             `json:"source_ref"`
 	ImageRef    string             `json:"image_ref"`
 	Assignments []Assignment       `json:"assignments,omitempty"`
@@ -128,12 +133,14 @@ type ImagePrepareSkip struct {
 }
 
 type ImageGCRequest struct {
+	Namespace      string            `json:"namespace,omitempty"`
 	RequiredLabels map[string]string `json:"required_labels,omitempty"`
 	OlderThan      string            `json:"older_than,omitempty"`
 	Apply          bool              `json:"apply,omitempty"`
 }
 
 type ImageGCResult struct {
+	Namespace   string        `json:"namespace,omitempty"`
 	Assignments []Assignment  `json:"assignments,omitempty"`
 	Skipped     []ImageGCSkip `json:"skipped,omitempty"`
 }
@@ -144,6 +151,7 @@ type ImageGCSkip struct {
 }
 
 type LifecyclePolicyRequest struct {
+	Namespace      string            `json:"namespace,omitempty"`
 	VMName         string            `json:"vm_name"`
 	RequiredLabels map[string]string `json:"required_labels,omitempty"`
 	Clear          bool              `json:"clear,omitempty"`
@@ -153,6 +161,7 @@ type LifecyclePolicyRequest struct {
 }
 
 type LifecyclePolicyResult struct {
+	Namespace   string                `json:"namespace,omitempty"`
 	VMName      string                `json:"vm_name"`
 	Assignments []Assignment          `json:"assignments,omitempty"`
 	Skipped     []LifecyclePolicySkip `json:"skipped,omitempty"`
@@ -164,6 +173,7 @@ type LifecyclePolicySkip struct {
 }
 
 type StorageBudgetRequest struct {
+	Namespace      string            `json:"namespace,omitempty"`
 	RequiredLabels map[string]string `json:"required_labels,omitempty"`
 	Clear          bool              `json:"clear,omitempty"`
 	Target         string            `json:"target,omitempty"`
@@ -172,11 +182,13 @@ type StorageBudgetRequest struct {
 }
 
 type StorageBudgetResult struct {
+	Namespace   string              `json:"namespace,omitempty"`
 	Assignments []Assignment        `json:"assignments,omitempty"`
 	Skipped     []StoragePolicySkip `json:"skipped,omitempty"`
 }
 
 type StoragePruneRequest struct {
+	Namespace      string            `json:"namespace,omitempty"`
 	RequiredLabels map[string]string `json:"required_labels,omitempty"`
 	Category       string            `json:"category,omitempty"`
 	OlderThan      string            `json:"older_than,omitempty"`
@@ -184,6 +196,7 @@ type StoragePruneRequest struct {
 }
 
 type StoragePruneResult struct {
+	Namespace   string              `json:"namespace,omitempty"`
 	Assignments []Assignment        `json:"assignments,omitempty"`
 	Skipped     []StoragePolicySkip `json:"skipped,omitempty"`
 }
@@ -199,6 +212,7 @@ type PlacementPlanRequest struct {
 }
 
 type PlacementPlan struct {
+	Namespace       string               `json:"namespace,omitempty"`
 	Policy          string               `json:"policy"`
 	ImageRef        string               `json:"image_ref,omitempty"`
 	RequiredLabels  map[string]string    `json:"required_labels,omitempty"`
@@ -218,6 +232,7 @@ type PlacementCandidate struct {
 }
 
 type WarmPoolRequest struct {
+	Namespace      string            `json:"namespace,omitempty"`
 	Name           string            `json:"name,omitempty"`
 	ImageRef       string            `json:"image_ref"`
 	Size           int               `json:"size"`
@@ -228,6 +243,7 @@ type WarmPoolRequest struct {
 }
 
 type WarmPool struct {
+	Namespace      string            `json:"namespace,omitempty"`
 	Name           string            `json:"name"`
 	ImageRef       string            `json:"image_ref"`
 	Size           int               `json:"size"`
@@ -253,19 +269,22 @@ type WarmPoolResult struct {
 }
 
 type WarmPoolDeleteResult struct {
-	Pool     string       `json:"pool"`
-	Canceled []string     `json:"canceled,omitempty"`
-	Cleanup  []Assignment `json:"cleanup,omitempty"`
-	Deferred []string     `json:"deferred,omitempty"`
+	Namespace string       `json:"namespace,omitempty"`
+	Pool      string       `json:"pool"`
+	Canceled  []string     `json:"canceled,omitempty"`
+	Cleanup   []Assignment `json:"cleanup,omitempty"`
+	Deferred  []string     `json:"deferred,omitempty"`
 }
 
 type WarmPoolClaimRequest struct {
-	Name    string            `json:"name"`
-	Command []string          `json:"command"`
-	Env     map[string]string `json:"env,omitempty"`
+	Namespace string            `json:"namespace,omitempty"`
+	Name      string            `json:"name"`
+	Command   []string          `json:"command"`
+	Env       map[string]string `json:"env,omitempty"`
 }
 
 type WarmPoolClaimResult struct {
+	Namespace  string     `json:"namespace,omitempty"`
 	Pool       string     `json:"pool"`
 	VMName     string     `json:"vm_name"`
 	Slot       Assignment `json:"slot"`
@@ -274,6 +293,7 @@ type WarmPoolClaimResult struct {
 
 type Assignment struct {
 	ID              string            `json:"id"`
+	Namespace       string            `json:"namespace,omitempty"`
 	WorkerID        string            `json:"worker_id,omitempty"`
 	WarmPool        string            `json:"warm_pool,omitempty"`
 	WarmPoolSlot    string            `json:"warm_pool_slot,omitempty"`
