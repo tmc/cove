@@ -72,6 +72,7 @@ type ImageRemoteBaseManifest struct {
 	Status         string `json:"status"`
 	Format         string `json:"format,omitempty"`
 	DiskSize       int64  `json:"disk_size,omitempty"`
+	DiskFormat     string `json:"disk_format,omitempty"`
 	ChunkCount     int    `json:"chunk_count,omitempty"`
 	MatchingChunks int    `json:"matching_chunks,omitempty"`
 	BaseManifest   string `json:"base_manifest,omitempty"`
@@ -365,6 +366,7 @@ func auditRemoteBaseChain(ctx context.Context, client ociimage.RegistryClient, r
 		}
 		entry.Format = base.Format.String()
 		entry.DiskSize = base.Annotations.UncompressedDiskSize
+		entry.DiskFormat = base.Annotations.DiskFormat
 		entry.ChunkCount = len(base.Chunks)
 		entry.BaseManifest = strings.TrimSpace(base.Annotations.BaseManifest)
 		entry.MatchingChunks = len(matchingPullBaseChunks(current.DiskLayers, base.DiskLayers))
@@ -374,6 +376,9 @@ func auditRemoteBaseChain(ctx context.Context, client ociimage.RegistryClient, r
 		} else if base.Annotations.UncompressedDiskSize != current.Annotations.UncompressedDiskSize {
 			entry.Status = "incompatible"
 			entry.Error = fmt.Sprintf("disk size %d, child %d", base.Annotations.UncompressedDiskSize, current.Annotations.UncompressedDiskSize)
+		} else if base.Annotations.DiskFormat != current.Annotations.DiskFormat {
+			entry.Status = "incompatible"
+			entry.Error = fmt.Sprintf("disk format %s, child %s", base.Annotations.DiskFormat, current.Annotations.DiskFormat)
 		} else if entry.MatchingChunks == 0 {
 			entry.Status = "incompatible"
 			entry.Error = "no reusable chunk descriptors match child"
@@ -670,6 +675,9 @@ func writeRemoteInspectText(w io.Writer, out ImageRemoteInspectOutput) error {
 			fmt.Fprintf(w, "    base:          %s %s", entry.Digest, entry.Status)
 			if entry.Format != "" {
 				fmt.Fprintf(w, " format=%s", entry.Format)
+			}
+			if entry.DiskFormat != "" {
+				fmt.Fprintf(w, " disk_format=%s", entry.DiskFormat)
 			}
 			if entry.MatchingChunks > 0 {
 				fmt.Fprintf(w, " matching_chunks=%d", entry.MatchingChunks)

@@ -66,8 +66,36 @@ func TestInspectRemoteImageBaseChainAuditOK(t *testing.T) {
 		t.Fatalf("base audit = %q depth=%d chain=%+v, want one ok entry", out.BaseChainAudit, out.BaseChainDepth, out.BaseChain)
 	}
 	base := out.BaseChain[0]
-	if base.Digest != baseDigest || base.Status != "ok" || base.Format != "cove" || base.MatchingChunks == 0 {
+	if base.Digest != baseDigest || base.Status != "ok" || base.Format != "cove" || base.DiskFormat != "raw" || base.MatchingChunks == 0 {
 		t.Fatalf("base entry = %+v, want cove ok with matching chunks", base)
+	}
+}
+
+func TestInspectRemoteImageBaseChainAuditDiskFormatMismatch(t *testing.T) {
+	baseManifest, _, _ := pullCompressedChunkedTestManifest(t, []byte("abcdefghijklmnop"), 4)
+	_, baseDigest := pullTestManifestData(t, baseManifest)
+	manifest := baseManifest
+	manifest.Annotations = cloneStringMap(manifest.Annotations)
+	manifest.Annotations[ociimage.CoveDiskFormat] = "asif"
+	manifest.Annotations[ociimage.CoveBaseManifest] = baseDigest
+	srv := newRemoteInspectManifestRegistry(t, manifest, map[string]ociimage.Manifest{
+		baseDigest: baseManifest,
+	})
+	t.Cleanup(srv.Close)
+
+	out, err := InspectRemoteImage(context.Background(), "ghcr.io/me/dev-vm:v1", remoteInspectOptions{RegistryBaseURL: srv.URL})
+	if err != nil {
+		t.Fatalf("InspectRemoteImage: %v", err)
+	}
+	if out.DiskFormat != "asif" {
+		t.Fatalf("child disk format = %q, want asif", out.DiskFormat)
+	}
+	if out.BaseChainAudit != "incompatible" || len(out.BaseChain) != 1 {
+		t.Fatalf("base audit = %q chain=%+v, want incompatible", out.BaseChainAudit, out.BaseChain)
+	}
+	base := out.BaseChain[0]
+	if base.Status != "incompatible" || base.DiskFormat != "raw" || !strings.Contains(base.Error, "disk format raw, child asif") {
+		t.Fatalf("base entry = %+v, want raw/asif incompatibility", base)
 	}
 }
 
@@ -377,13 +405,14 @@ func TestWriteRemoteInspectText(t *testing.T) {
 			Digest:         "sha256:" + strings.Repeat("1", 64),
 			Status:         "ok",
 			Format:         "cove",
+			DiskFormat:     "raw",
 			MatchingChunks: 2,
 		}},
 	})
 	if err != nil {
 		t.Fatalf("writeRemoteInspectText: %v", err)
 	}
-	for _, want := range []string{"Remote image ghcr.io/me/dev-vm:v1", "format:          cove", "pull plan:       cove chunked pull", "verification:    manifest parsed", "blob audit:      missing", "missing:       layer[0]:sha256:missing", "disk format:     raw", "chunks:          2", "base audit:      ok", "matching_chunks=2"} {
+	for _, want := range []string{"Remote image ghcr.io/me/dev-vm:v1", "format:          cove", "pull plan:       cove chunked pull", "verification:    manifest parsed", "blob audit:      missing", "missing:       layer[0]:sha256:missing", "disk format:     raw", "chunks:          2", "base audit:      ok", "disk_format=raw", "matching_chunks=2"} {
 		if !strings.Contains(b.String(), want) {
 			t.Fatalf("text missing %q:\n%s", want, b.String())
 		}

@@ -101,7 +101,7 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   posture for cove, Tart, Lume, and cove image-store artifacts.
 - Remote image inspect now walks declared cove base-manifest chains by digest,
   reports missing or incompatible parents before disk download, and includes
-  matching chunk counts for reusable base layers.
+  disk format plus matching chunk counts for reusable base layers.
 - `cove image inspect -remote -verify-blobs` now audits every remote config and
   layer descriptor with HEAD requests, reporting missing registry blobs without
   downloading VM disk content.
