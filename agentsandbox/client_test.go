@@ -181,6 +181,40 @@ func TestCloudClientCreateExecControlDelete(t *testing.T) {
 	}
 }
 
+func TestCloudClientListFilters(t *testing.T) {
+	server := newSDKFleetServer(t)
+	ctx := context.Background()
+	client, err := NewClient(ClientOptions{
+		Provider:  ProviderCloud,
+		FleetURL:  server.URL,
+		APIKey:    "secret",
+		Namespace: "team-a",
+		SandboxID: "job-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	list, err := client.List(ctx, SandboxListOptions{
+		Status:   "ready",
+		WorkerID: "worker-1",
+		ImageRef: "base:v1",
+		Limit:    5,
+	})
+	if err != nil {
+		t.Fatalf("List filtered: %v", err)
+	}
+	if len(list) != 1 || list[0].ID != "job-1" {
+		t.Fatalf("List filtered = %+v, want job-1", list)
+	}
+	query := server.requests[len(server.requests)-1].query
+	if query.Get("namespace") != "team-a" || query.Get("status") != "ready" || query.Get("worker_id") != "worker-1" || query.Get("image_ref") != "base:v1" || query.Get("limit") != "5" {
+		t.Fatalf("filtered list query = %q", query.Encode())
+	}
+	if _, err := client.List(ctx, SandboxListOptions{Limit: -1}); err == nil || !strings.Contains(err.Error(), "limit must be non-negative") {
+		t.Fatalf("negative limit err = %v, want validation error", err)
+	}
+}
+
 func TestExecResultCheck(t *testing.T) {
 	err := (ExecResult{ExitCode: 2, Stderr: "nope\n"}).Check()
 	if err == nil || err.Error() != "guest command exited 2: nope" {

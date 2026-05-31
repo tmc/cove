@@ -334,6 +334,10 @@ class CoveFleetClient:
         fleet_url: str | None = None,
         api_key: str | None = None,
         namespace: str | None = None,
+        status: str | None = None,
+        worker_id: str | None = None,
+        image_ref: str | None = None,
+        limit: int | None = None,
         timeout: float = 30.0,
     ) -> list[dict[str, Any]]:
         seed = cls(
@@ -343,10 +347,33 @@ class CoveFleetClient:
             namespace=namespace,
             timeout=timeout,
         )
-        return seed.list()
+        return seed.list(
+            status=status,
+            worker_id=worker_id,
+            image_ref=image_ref,
+            limit=limit,
+        )
 
-    def list(self) -> list[dict[str, Any]]:
-        path = _query_path("/v1/sandboxes", {"namespace": self.namespace})
+    def list(
+        self,
+        *,
+        status: str | None = None,
+        worker_id: str | None = None,
+        image_ref: str | None = None,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        query: dict[str, str] = {
+            "namespace": self.namespace,
+            "status": status or "",
+            "worker_id": worker_id or "",
+            "image_ref": image_ref or "",
+        }
+        if limit is not None:
+            if limit < 0:
+                raise ValueError("limit must be non-negative")
+            if limit > 0:
+                query["limit"] = str(limit)
+        path = _query_path("/v1/sandboxes", query)
         data = self._request("GET", path, timeout=self.timeout)
         sandboxes = data.get("sandboxes") or []
         if not isinstance(sandboxes, list):

@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -64,6 +65,14 @@ type SandboxStatus struct {
 	Lease     *Lease    `json:"lease,omitempty"`
 	Created   time.Time `json:"created,omitempty"`
 	Updated   time.Time `json:"updated,omitempty"`
+}
+
+type SandboxListOptions struct {
+	Namespace string
+	Status    string
+	WorkerID  string
+	ImageRef  string
+	Limit     int
 }
 
 type Lease struct {
@@ -304,8 +313,19 @@ func (c *Client) Get(ctx context.Context) (SandboxStatus, error) {
 	return c.Status(ctx)
 }
 
-func (c *Client) List(ctx context.Context) ([]SandboxStatus, error) {
+func (c *Client) List(ctx context.Context, options ...SandboxListOptions) ([]SandboxStatus, error) {
 	if err := c.ready(); err != nil {
+		return nil, err
+	}
+	opt := SandboxListOptions{Namespace: c.namespace}
+	if len(options) > 0 {
+		opt = options[0]
+		if opt.Namespace == "" {
+			opt.Namespace = c.namespace
+		}
+	}
+	query, err := opt.query()
+	if err != nil {
 		return nil, err
 	}
 	if c.provider == ProviderLocal {
@@ -313,15 +333,50 @@ func (c *Client) List(ctx context.Context) ([]SandboxStatus, error) {
 		if err != nil {
 			return nil, err
 		}
+		if !sandboxMatchesListOptions(status, opt) {
+			return nil, nil
+		}
 		return []SandboxStatus{status}, nil
 	}
 	var result struct {
 		Sandboxes []SandboxStatus `json:"sandboxes"`
 	}
-	if err := c.request(ctx, http.MethodGet, c.queryPath("/v1/sandboxes", map[string]string{"namespace": c.namespace}), nil, &result, c.timeout); err != nil {
+	if err := c.request(ctx, http.MethodGet, c.queryPath("/v1/sandboxes", query), nil, &result, c.timeout); err != nil {
 		return nil, err
 	}
 	return result.Sandboxes, nil
+}
+
+func sandboxMatchesListOptions(status SandboxStatus, options SandboxListOptions) bool {
+	if options.Namespace != "" && status.Namespace != "" && status.Namespace != options.Namespace {
+		return false
+	}
+	if options.Status != "" && status.Status != options.Status {
+		return false
+	}
+	if options.WorkerID != "" && status.WorkerID != options.WorkerID {
+		return false
+	}
+	if options.ImageRef != "" && status.ImageRef != options.ImageRef {
+		return false
+	}
+	return true
+}
+
+func (o SandboxListOptions) query() (map[string]string, error) {
+	if o.Limit < 0 {
+		return nil, errors.New("agentsandbox: sandbox list limit must be non-negative")
+	}
+	query := map[string]string{
+		"namespace": o.Namespace,
+		"status":    o.Status,
+		"worker_id": o.WorkerID,
+		"image_ref": o.ImageRef,
+	}
+	if o.Limit > 0 {
+		query["limit"] = strconv.Itoa(o.Limit)
+	}
+	return query, nil
 }
 
 func (c *Client) Wait(ctx context.Context, timeout time.Duration) (WaitResult, error) {

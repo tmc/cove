@@ -21,6 +21,8 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - The public Go `agentsandbox` package now includes a local/cloud client for
   hosted sandbox create/list/get/wait/lease/restart/exec/control/metering/delete
   flows, and the Python fleet client exposes matching lifecycle helpers.
+- The public Go `agentsandbox` package and Python fleet client now expose hosted
+  sandbox list filters for status, worker, image, namespace, and limit.
 - `cove-fleetd` now supports admin-managed RS256 OIDC bearer bindings that map
   verified issuer/subject/audience claims onto namespace-scoped controller roles.
 - OIDC bindings can now fetch public keys from `jwks_url`, discover

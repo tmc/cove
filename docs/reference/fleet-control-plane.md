@@ -411,6 +411,15 @@ if err != nil {
 	log.Fatal(err)
 }
 defer sb.Delete(ctx)
+ready, err := sb.List(ctx, agentsandbox.SandboxListOptions{
+	Status:   "ready",
+	ImageRef: "macos-base:latest",
+	Limit:    10,
+})
+if err != nil {
+	log.Fatal(err)
+}
+_ = ready
 lease, err := sb.Lease(ctx, "runner-42", 30*time.Second)
 if err != nil {
 	log.Fatal(err)

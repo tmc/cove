@@ -81,7 +81,7 @@ delegates the disk/runtime work to `tart` or `vetu`.
   agent-ready slot claim into guest `Exec` with stop, downsize, delete
   cleanup, and per-pool lifecycle status counts, hosted-style sandbox create/list/filter/get/delete/start/restart/stop/wait/lease/exec/control/metering handles
   over fork-run assignments, OpenAI Agents Python and Go agentsandbox local/cloud
-  provider switches with hosted lifecycle, metering, and GUI events, plus persisted
+  provider switches with hosted lifecycle, list filters, metering, and GUI events, plus persisted
   per-resource sandbox usage records, a
   hash-chained controller audit feed, service-account actor binding,
   namespace-scoped controller resources, basic service-account roles, and
@@ -114,7 +114,7 @@ claim into same-worker guest `Exec` with stop, downsize, delete cleanup, and
 per-pool lifecycle status counts,
 hosted-style sandbox create/list/filter/get/delete/start/restart/stop/wait/lease/exec/control/metering
 handles over fork-run assignments, OpenAI Agents Python and Go agentsandbox local/cloud provider
-switches with hosted lifecycle, metering, and GUI events, persisted per-resource sandbox usage
+switches with hosted lifecycle, list filters, metering, and GUI events, persisted per-resource sandbox usage
 records, plus a hash-chained audit feed with service-account actor binding,
 namespace filters, basic service-account roles, and RS256 OIDC bearer bindings,
 including issuer discovery/JWKS refresh, but tart and lume still lead in
