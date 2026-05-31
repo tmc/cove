@@ -31,17 +31,34 @@ type fleetRunPrestage struct {
 	Destination fleetpkg.Entry
 }
 
+type fleetRunOptions struct {
+	Policy  string
+	All     bool
+	RunArgs []string
+}
+
+type fleetRunAllResult struct {
+	Stdout string
+	Stderr string
+}
+
 func runFleetRunCommand(ctx context.Context, args []string, path string, runner fleetRunner, out, errOut io.Writer) error {
-	policy, runArgs, err := extractFleetRunPolicy(args)
+	opts, err := extractFleetRunOptions(args)
 	if err != nil {
 		return err
 	}
-	switch policy {
+	if opts.All {
+		if opts.Policy != "" {
+			return errors.New("fleet run: --all cannot be combined with --policy")
+		}
+		return runFleetRunAllCommand(ctx, opts.RunArgs, path, runner, out, errOut)
+	}
+	switch opts.Policy {
 	case "":
-		return errors.New("usage: cove fleet run --policy=least-loaded|image-affinity [run flags]")
+		return errors.New("usage: cove fleet run --policy=least-loaded|image-affinity|--all [run flags]")
 	case "least-loaded", "image-affinity":
 	default:
-		return fmt.Errorf("fleet run: unknown policy %q", policy)
+		return fmt.Errorf("fleet run: unknown policy %q", opts.Policy)
 	}
 	cfg, err := fleetpkg.LoadPath(path)
 	if err != nil {
@@ -52,7 +69,7 @@ func runFleetRunCommand(ctx context.Context, args []string, path string, runner 
 	if err != nil {
 		return err
 	}
-	placement, err := planFleetRunPlacement(ctx, policy, runArgs, entries, leases, runner)
+	placement, err := planFleetRunPlacement(ctx, opts.Policy, opts.RunArgs, entries, leases, runner)
 	if err != nil {
 		return err
 	}
@@ -72,7 +89,67 @@ func runFleetRunCommand(ctx context.Context, args []string, path string, runner 
 	} else {
 		fmt.Fprintf(out, "selected %s\n", selected.Name)
 	}
-	return runner.Run(ctx, selected.Remote, append([]string{"run"}, runArgs...), out, errOut)
+	return runner.Run(ctx, selected.Remote, append([]string{"run"}, opts.RunArgs...), out, errOut)
+}
+
+func runFleetRunAllCommand(ctx context.Context, runArgs []string, path string, runner fleetRunner, out, errOut io.Writer) error {
+	if runner == nil {
+		return errors.New("fleet runner required")
+	}
+	cfg, err := fleetpkg.LoadPath(path)
+	if err != nil {
+		return err
+	}
+	entries := cfg.List()
+	if len(entries) == 0 {
+		return errors.New("fleet placement: no remotes configured")
+	}
+	active, skipped := fleetpkg.ActivePlacementEntries(entries)
+	if len(active) == 0 {
+		return errors.New("fleet placement: all remotes cordoned")
+	}
+	now := time.Now()
+	for _, entry := range active {
+		if err := fleetpkg.RecordPlacementLease(path, entry.Name, now, fleetpkg.DefaultPlacementLeaseTTL); err != nil {
+			return err
+		}
+	}
+	names := make([]string, 0, len(active))
+	for _, entry := range active {
+		names = append(names, entry.Name)
+	}
+	fmt.Fprintf(out, "running on %s\n", strings.Join(names, ", "))
+	if summary := fleetpkg.FormatHostLoads(skipped); summary != "" {
+		fmt.Fprintf(out, "skipped %s\n", summary)
+	}
+	results := fleetpkg.QueryAll(ctx, active, func(ctx context.Context, entry fleetpkg.Entry) (fleetRunAllResult, error) {
+		var stdout, stderr bytes.Buffer
+		err := runner.Run(ctx, entry.Remote, append([]string{"run"}, runArgs...), &stdout, &stderr)
+		result := fleetRunAllResult{Stdout: stdout.String(), Stderr: stderr.String()}
+		if err != nil {
+			msg := strings.TrimSpace(stderr.String())
+			if msg != "" {
+				return result, fmt.Errorf("%w: %s", err, msg)
+			}
+			return result, err
+		}
+		return result, nil
+	})
+	failures := 0
+	for _, result := range results {
+		writeFleetRunLines(out, result.Host, "", result.Value.Stdout)
+		writeFleetRunLines(errOut, result.Host, "stderr", result.Value.Stderr)
+		if result.Error != nil {
+			failures++
+			fmt.Fprintf(out, "%s\terror\t%s\n", result.Host, result.Error)
+			continue
+		}
+		fmt.Fprintf(out, "%s\tok\n", result.Host)
+	}
+	if failures > 0 {
+		return fmt.Errorf("fleet run --all: %d host(s) failed", failures)
+	}
+	return nil
 }
 
 func selectFleetRunHost(ctx context.Context, policy string, runArgs []string, entries []fleetpkg.Entry, runner fleetRunner) (fleetpkg.Entry, []fleetpkg.HostLoad, error) {
@@ -187,14 +264,22 @@ func runFleetVMList(ctx context.Context, entry fleetpkg.Entry, runner fleetRunne
 }
 
 func extractFleetRunPolicy(args []string) (string, []string, error) {
+	opts, err := extractFleetRunOptions(args)
+	return opts.Policy, opts.RunArgs, err
+}
+
+func extractFleetRunOptions(args []string) (fleetRunOptions, error) {
+	var opts fleetRunOptions
+	opts.RunArgs = make([]string, 0, len(args))
 	var policy string
-	runArgs := make([]string, 0, len(args))
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch {
+		case arg == "--all" || arg == "-all":
+			opts.All = true
 		case arg == "--policy" || arg == "-policy":
 			if i+1 >= len(args) {
-				return "", nil, errors.New("fleet run: --policy requires a value")
+				return fleetRunOptions{}, errors.New("fleet run: --policy requires a value")
 			}
 			policy = args[i+1]
 			i++
@@ -203,8 +288,23 @@ func extractFleetRunPolicy(args []string) (string, []string, error) {
 		case strings.HasPrefix(arg, "-policy="):
 			policy = strings.TrimPrefix(arg, "-policy=")
 		default:
-			runArgs = append(runArgs, arg)
+			opts.RunArgs = append(opts.RunArgs, arg)
 		}
 	}
-	return policy, runArgs, nil
+	opts.Policy = policy
+	return opts, nil
+}
+
+func writeFleetRunLines(w io.Writer, host, stream, text string) {
+	text = strings.TrimRight(text, "\n")
+	if text == "" {
+		return
+	}
+	for _, line := range strings.Split(text, "\n") {
+		if stream == "" {
+			fmt.Fprintf(w, "%s\t%s\n", host, line)
+			continue
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\n", host, stream, line)
+	}
 }

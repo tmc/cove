@@ -194,6 +194,70 @@ func TestFleetRunLeastLoadedCountsPlacementLease(t *testing.T) {
 	runner.assertSawCall(t, "b.local", []string{"run"})
 }
 
+func TestFleetRunAllRunsActiveHosts(t *testing.T) {
+	path := writeFleetHostsConfigWithRemotes(t, map[string]fleetpkg.Remote{
+		"a": {Host: "a.local", Cordoned: true},
+		"b": {Host: "b.local"},
+		"c": {Host: "c.local"},
+	})
+	runner := &fakeFleetRunner{outputs: map[string]string{
+		"b.local": "b done\n",
+		"c.local": "c done\n",
+	}}
+	var out bytes.Buffer
+	if err := runFleetCommandWithRunner(context.Background(), []string{"run", "--all", "-linux", "-headless"}, path, runner, &out, &bytes.Buffer{}); err != nil {
+		t.Fatalf("fleet run --all: %v", err)
+	}
+	for _, want := range []string{
+		"running on b, c",
+		"skipped a=cordoned",
+		"b\tb done",
+		"c\tc done",
+		"b\tok",
+		"c\tok",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("output missing %q:\n%s", want, out.String())
+		}
+	}
+	runner.assertCallsWithArgs(t, []string{"run", "-linux", "-headless"}, 2)
+	runner.assertSawCall(t, "b.local", []string{"run", "-linux", "-headless"})
+	runner.assertSawCall(t, "c.local", []string{"run", "-linux", "-headless"})
+	leases, err := fleetpkg.ActivePlacementLeaseCounts(path, time.Now())
+	if err != nil {
+		t.Fatalf("ActivePlacementLeaseCounts: %v", err)
+	}
+	if leases["b"] != 1 || leases["c"] != 1 || leases["a"] != 0 {
+		t.Fatalf("leases = %#v, want b and c leased", leases)
+	}
+}
+
+func TestFleetRunAllReportsFailuresAfterAllHosts(t *testing.T) {
+	path := writeFleetHostsConfig(t, "a", "b")
+	runner := &fakeFleetRunner{
+		outputs: map[string]string{"a.local": "a done\n"},
+		errs:    map[string]error{"b.local": errors.New("boom")},
+	}
+	var out bytes.Buffer
+	err := runFleetCommandWithRunner(context.Background(), []string{"run", "--all"}, path, runner, &out, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "1 host(s) failed") {
+		t.Fatalf("fleet run --all err = %v, want failure count", err)
+	}
+	for _, want := range []string{"a\tok", "b\terror\tboom"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("output missing %q:\n%s", want, out.String())
+		}
+	}
+	runner.assertCallsWithArgs(t, []string{"run"}, 2)
+}
+
+func TestFleetRunAllRejectsPolicy(t *testing.T) {
+	err := runFleetCommandWithRunner(context.Background(), []string{"run", "--all", "--policy=least-loaded"}, writeFleetTestConfig(t), &fakeFleetRunner{}, &bytes.Buffer{}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "--all cannot be combined with --policy") {
+		t.Fatalf("fleet run --all --policy err = %v, want conflict", err)
+	}
+}
+
 func TestFleetRunImageAffinitySelectsWarmHost(t *testing.T) {
 	path := writeFleetHostsConfig(t, "a", "b", "c")
 	vmListKey := fakeFleetArgsKey([]string{"vm", "list"})

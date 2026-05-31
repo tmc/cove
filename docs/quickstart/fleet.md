@@ -64,6 +64,12 @@ Start a VM on the host with the fewest running VMs:
 cove fleet run --policy=least-loaded -linux -headless -vm ubuntu
 ```
 
+Start the same run concurrently on every non-cordoned host:
+
+```sh
+cove fleet run --all -linux -headless -ephemeral
+```
+
 Temporarily take a host out of placement without removing it:
 
 ```sh
@@ -99,6 +105,6 @@ image references.
 
 Use `--fleet` only with commands that inspect or control an existing remote
 host. Least-loaded placement is opt-in through `cove fleet run
---policy=least-loaded`; default `cove run` behavior is unchanged. Cordon state
-and placement leases are local CLI metadata, not durable controller leases or
-health checks.
+--policy=least-loaded`; burst fan-out is opt-in through `cove fleet run --all`.
+Default `cove run` behavior is unchanged. Cordon state and placement leases are
+local CLI metadata, not durable controller leases or health checks.

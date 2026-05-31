@@ -967,6 +967,7 @@ cove fleet image push <ref> <dst-host>
 cove fleet image pull <ref> <src-host>
 cove fleet image sync <ref> <src-host> <dst-host>
 cove fleet run --policy=least-loaded|image-affinity [run flags...]
+cove fleet run --all [run flags...]
 cove fleet health [--json]
 cove fleet metrics [--json]
 ```
@@ -985,7 +986,8 @@ cove fleet metrics [--json]
 | `image push <ref> <dst-host>` | Stream a local image ref to another fleet host. |
 | `image pull <ref> <src-host>` | Pull an image ref from another fleet host. |
 | `image sync <ref> <src-host> <dst-host>` | Copy an image ref between two fleet hosts. |
-| `run --policy=least-loaded|image-affinity` | Place a run on a non-cordoned registered host by load or image locality, counting short local placement leases as pending load. |
+| `run --policy=least-loaded|image-affinity` | Place one run on a non-cordoned registered host by load or image locality, counting short local placement leases as pending load. |
+| `run --all` | Start the same run concurrently on every non-cordoned registered host. |
 | `health [--json]` | Check remote cove reachability and version across registered hosts. |
 | `metrics [--json]` | Aggregate fleet-wide metrics across registered hosts. |
 
@@ -996,6 +998,7 @@ cove fleet uncordon mini-1
 cove fleet vm list
 cove fleet image push macos-runner:latest mini-1
 cove fleet run --policy=least-loaded -fork-from macos-runner:latest -ephemeral
+cove fleet run --all -linux -headless -ephemeral
 cove fleet health
 ```
 

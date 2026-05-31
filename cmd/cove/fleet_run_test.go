@@ -86,6 +86,22 @@ func TestExtractFleetRunPolicy(t *testing.T) {
 	}
 }
 
+func TestExtractFleetRunOptionsAll(t *testing.T) {
+	got, err := extractFleetRunOptions([]string{"--all", "-linux", "-headless"})
+	if err != nil {
+		t.Fatalf("extractFleetRunOptions: %v", err)
+	}
+	if !got.All {
+		t.Fatal("All = false, want true")
+	}
+	if got.Policy != "" {
+		t.Fatalf("Policy = %q, want empty", got.Policy)
+	}
+	if want := []string{"-linux", "-headless"}; !reflect.DeepEqual(got.RunArgs, want) {
+		t.Fatalf("RunArgs = %#v, want %#v", got.RunArgs, want)
+	}
+}
+
 func TestFleetRunForkFrom(t *testing.T) {
 	tests := []struct {
 		name string

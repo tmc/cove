@@ -14,6 +14,8 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   leases as pending load during later least-loaded and image-affinity placement.
 - `cove fleet health [--json]` now reports remote cove reachability and version
   across registered hosts before placement.
+- `cove fleet run --all` now starts the same run concurrently on every
+  non-cordoned registered host for stateless burst fan-out.
 - `cove build --cache-from` and `--cache-to` now import and export cove
   build-cache artifacts through OCI refs, carrying cache entries, layer
   manifests, and block-delta blobs between runners.
