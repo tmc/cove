@@ -38,6 +38,7 @@ type Store struct {
 	metering      []SandboxMeteringRecord
 	accounts      map[string]serviceAccountRecord
 	oidcBindings  map[string]oidcBindingRecord
+	samlBindings  map[string]samlBindingRecord
 }
 
 type storeFile struct {
@@ -48,6 +49,7 @@ type storeFile struct {
 	MeteringRecords []SandboxMeteringRecord `json:"metering_records,omitempty"`
 	ServiceAccounts []serviceAccountRecord  `json:"service_accounts,omitempty"`
 	OIDCBindings    []oidcBindingRecord     `json:"oidc_bindings,omitempty"`
+	SAMLBindings    []samlBindingRecord     `json:"saml_bindings,omitempty"`
 }
 
 type serviceAccountRecord struct {
@@ -79,6 +81,18 @@ type oidcKeyRecord struct {
 	PEM string `json:"pem"`
 }
 
+type samlBindingRecord struct {
+	Name           string    `json:"name"`
+	EntityID       string    `json:"entity_id"`
+	SSOURL         string    `json:"sso_url"`
+	Audience       string    `json:"audience"`
+	Namespace      string    `json:"namespace,omitempty"`
+	Role           string    `json:"role,omitempty"`
+	CertificatePEM string    `json:"certificate_pem"`
+	Created        time.Time `json:"created,omitempty"`
+	Updated        time.Time `json:"updated,omitempty"`
+}
+
 const (
 	sandboxRoleRun     = "run"
 	sandboxRoleStop    = "stop"
@@ -102,6 +116,7 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		metering:      nil,
 		accounts:      make(map[string]serviceAccountRecord),
 		oidcBindings:  make(map[string]oidcBindingRecord),
+		samlBindings:  make(map[string]samlBindingRecord),
 	}
 	if s.path == "" {
 		return s, nil
@@ -185,6 +200,13 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 			continue
 		}
 		s.oidcBindings[binding.Name] = binding
+	}
+	for _, binding := range file.SAMLBindings {
+		binding, err := normalizeSAMLBindingRecord(binding)
+		if err != nil {
+			continue
+		}
+		s.samlBindings[binding.Name] = binding
 	}
 	return s, nil
 }
@@ -2379,6 +2401,110 @@ func (s *Store) ListOIDCBindingsNamespace(namespace string) []OIDCBinding {
 	return out
 }
 
+func (s *Store) UpsertSAMLBinding(req SAMLBindingRequest) (SAMLBindingResult, error) {
+	return s.UpsertSAMLBindingActor("controller", req)
+}
+
+func (s *Store) UpsertSAMLBindingActor(actor string, req SAMLBindingRequest) (SAMLBindingResult, error) {
+	record := samlBindingRecord{
+		Name:           strings.TrimSpace(req.Name),
+		EntityID:       strings.TrimSpace(req.EntityID),
+		SSOURL:         strings.TrimSpace(req.SSOURL),
+		Audience:       strings.TrimSpace(req.Audience),
+		Namespace:      normalizeNamespace(req.Namespace),
+		Role:           strings.TrimSpace(req.Role),
+		CertificatePEM: strings.TrimSpace(req.CertificatePEM),
+	}
+	var err error
+	record, err = normalizeSAMLBindingRecord(record)
+	if err != nil {
+		return SAMLBindingResult{}, err
+	}
+	now := s.now().UTC()
+	actor = normalizeActor(actor)
+	record.Created = now
+	record.Updated = now
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if old, ok := s.samlBindings[record.Name]; ok && !old.Created.IsZero() {
+		if old.Namespace != record.Namespace {
+			return SAMLBindingResult{}, fmt.Errorf("saml binding %q already exists in another namespace", record.Name)
+		}
+		record.Created = old.Created
+	}
+	s.samlBindings[record.Name] = record
+	s.appendAuditLocked(now, AuditEvent{
+		Actor:      actor,
+		Namespace:  record.Namespace,
+		Action:     "saml_binding.upsert",
+		TargetType: "saml_binding",
+		TargetID:   record.Name,
+		Fields: map[string]string{
+			"entity_id":          record.EntityID,
+			"audience":           record.Audience,
+			"role":               record.Role,
+			"sso_url":            record.SSOURL,
+			"certificate_sha256": samlCertificateSHA256(record.CertificatePEM),
+		},
+	})
+	if err := s.persistLocked(); err != nil {
+		return SAMLBindingResult{}, err
+	}
+	return SAMLBindingResult{Binding: publicSAMLBinding(record)}, nil
+}
+
+func (s *Store) DeleteSAMLBinding(name string) (SAMLBindingResult, error) {
+	return s.DeleteSAMLBindingActor("controller", name)
+}
+
+func (s *Store) DeleteSAMLBindingActor(actor, name string) (SAMLBindingResult, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return SAMLBindingResult{}, fmt.Errorf("saml binding name required")
+	}
+	now := s.now().UTC()
+	actor = normalizeActor(actor)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, ok := s.samlBindings[name]
+	if !ok {
+		return SAMLBindingResult{}, fmt.Errorf("saml binding %q not found", name)
+	}
+	delete(s.samlBindings, name)
+	s.appendAuditLocked(now, AuditEvent{
+		Actor:      actor,
+		Namespace:  record.Namespace,
+		Action:     "saml_binding.delete",
+		TargetType: "saml_binding",
+		TargetID:   name,
+	})
+	if err := s.persistLocked(); err != nil {
+		return SAMLBindingResult{}, err
+	}
+	return SAMLBindingResult{Binding: publicSAMLBinding(record)}, nil
+}
+
+func (s *Store) ListSAMLBindings() []SAMLBinding {
+	return s.ListSAMLBindingsNamespace("")
+}
+
+func (s *Store) ListSAMLBindingsNamespace(namespace string) []SAMLBinding {
+	namespace = normalizeNamespace(namespace)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	records := s.sortedSAMLBindingsLocked()
+	out := make([]SAMLBinding, 0, len(records))
+	for _, record := range records {
+		if !namespaceMatches(record.Namespace, namespace) {
+			continue
+		}
+		out = append(out, publicSAMLBinding(record))
+	}
+	return out
+}
+
 func (s *Store) Get(id string) (HostRecord, bool) {
 	id = strings.TrimSpace(id)
 	s.mu.Lock()
@@ -2575,7 +2701,8 @@ func (s *Store) persistLocked() error {
 	metering := s.sortedMeteringLocked()
 	accounts := s.sortedServiceAccountsLocked()
 	oidcBindings := s.sortedOIDCBindingsLocked()
-	data, err := json.MarshalIndent(storeFile{Hosts: hosts, Assignments: assignments, WarmPools: warmPools, AuditEvents: audit, MeteringRecords: metering, ServiceAccounts: accounts, OIDCBindings: oidcBindings}, "", "  ")
+	samlBindings := s.sortedSAMLBindingsLocked()
+	data, err := json.MarshalIndent(storeFile{Hosts: hosts, Assignments: assignments, WarmPools: warmPools, AuditEvents: audit, MeteringRecords: metering, ServiceAccounts: accounts, OIDCBindings: oidcBindings, SAMLBindings: samlBindings}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode fleet store: %w", err)
 	}
@@ -2663,6 +2790,17 @@ func (s *Store) sortedOIDCBindingsLocked() []oidcBindingRecord {
 	records := make([]oidcBindingRecord, 0, len(s.oidcBindings))
 	for _, record := range s.oidcBindings {
 		records = append(records, cloneOIDCBindingRecord(record))
+	}
+	sort.Slice(records, func(i, j int) bool {
+		return records[i].Name < records[j].Name
+	})
+	return records
+}
+
+func (s *Store) sortedSAMLBindingsLocked() []samlBindingRecord {
+	records := make([]samlBindingRecord, 0, len(s.samlBindings))
+	for _, record := range s.samlBindings {
+		records = append(records, cloneSAMLBindingRecord(record))
 	}
 	sort.Slice(records, func(i, j int) bool {
 		return records[i].Name < records[j].Name
@@ -2811,6 +2949,10 @@ func cloneOIDCKeyRecords(in []oidcKeyRecord) []oidcKeyRecord {
 	return out
 }
 
+func cloneSAMLBindingRecord(in samlBindingRecord) samlBindingRecord {
+	return in
+}
+
 func publicServiceAccount(record serviceAccountRecord) ServiceAccount {
 	return ServiceAccount{
 		Name:      record.Name,
@@ -2834,6 +2976,20 @@ func publicOIDCBinding(record oidcBindingRecord) OIDCBinding {
 		KeyIDs:      oidcKeyIDs(record.Keys),
 		Created:     record.Created,
 		Updated:     record.Updated,
+	}
+}
+
+func publicSAMLBinding(record samlBindingRecord) SAMLBinding {
+	return SAMLBinding{
+		Name:              record.Name,
+		EntityID:          record.EntityID,
+		SSOURL:            record.SSOURL,
+		Audience:          record.Audience,
+		Namespace:         record.Namespace,
+		Role:              record.Role,
+		CertificateSHA256: samlCertificateSHA256(record.CertificatePEM),
+		Created:           record.Created,
+		Updated:           record.Updated,
 	}
 }
 
@@ -4283,6 +4439,77 @@ func oidcKeyIDs(keys []oidcKeyRecord) []string {
 	}
 	sort.Strings(ids)
 	return ids
+}
+
+func normalizeSAMLBindingRecord(record samlBindingRecord) (samlBindingRecord, error) {
+	record.Name = strings.TrimSpace(record.Name)
+	if record.Name == "" {
+		return samlBindingRecord{}, fmt.Errorf("saml binding name required")
+	}
+	record.EntityID = strings.TrimSpace(record.EntityID)
+	if record.EntityID == "" {
+		return samlBindingRecord{}, fmt.Errorf("saml binding entity_id required")
+	}
+	record.SSOURL = strings.TrimSpace(record.SSOURL)
+	if record.SSOURL == "" {
+		return samlBindingRecord{}, fmt.Errorf("saml binding sso_url required")
+	}
+	var err error
+	record.SSOURL, err = normalizeOIDCURL(record.SSOURL, "saml binding sso_url")
+	if err != nil {
+		return samlBindingRecord{}, err
+	}
+	record.Audience = strings.TrimSpace(record.Audience)
+	if record.Audience == "" {
+		return samlBindingRecord{}, fmt.Errorf("saml binding audience required")
+	}
+	if strings.TrimSpace(record.Role) == "" {
+		return samlBindingRecord{}, fmt.Errorf("saml binding role required")
+	}
+	role, err := normalizeServiceAccountRole(record.Role)
+	if err != nil {
+		return samlBindingRecord{}, err
+	}
+	record.Role = role
+	record.Namespace = normalizeNamespace(record.Namespace)
+	record.CertificatePEM, err = normalizeSAMLCertificatePEM(record.CertificatePEM)
+	if err != nil {
+		return samlBindingRecord{}, err
+	}
+	if !record.Created.IsZero() {
+		record.Created = record.Created.UTC()
+	}
+	if !record.Updated.IsZero() {
+		record.Updated = record.Updated.UTC()
+	}
+	return record, nil
+}
+
+func normalizeSAMLCertificatePEM(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", fmt.Errorf("saml binding certificate_pem required")
+	}
+	block, _ := pem.Decode([]byte(raw))
+	if block == nil {
+		return "", fmt.Errorf("saml binding certificate_pem must contain a PEM certificate")
+	}
+	if block.Type != "CERTIFICATE" {
+		return "", fmt.Errorf("saml binding certificate_pem must contain a CERTIFICATE block")
+	}
+	if _, err := x509.ParseCertificate(block.Bytes); err != nil {
+		return "", fmt.Errorf("saml binding certificate_pem: %w", err)
+	}
+	return strings.TrimSpace(string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: block.Bytes}))), nil
+}
+
+func samlCertificateSHA256(certPEM string) string {
+	block, _ := pem.Decode([]byte(strings.TrimSpace(certPEM)))
+	if block == nil {
+		return ""
+	}
+	sum := sha256.Sum256(block.Bytes)
+	return hex.EncodeToString(sum[:])
 }
 
 const (

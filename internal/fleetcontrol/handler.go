@@ -77,6 +77,12 @@ func Handler(store *Store) http.Handler {
 	mux.HandleFunc("/v1/oidc-bindings", func(w http.ResponseWriter, r *http.Request) {
 		handleOIDCBindings(w, r, store)
 	})
+	mux.HandleFunc("/v1/saml-bindings/", func(w http.ResponseWriter, r *http.Request) {
+		handleSAMLBinding(w, r, store)
+	})
+	mux.HandleFunc("/v1/saml-bindings", func(w http.ResponseWriter, r *http.Request) {
+		handleSAMLBindings(w, r, store)
+	})
 	mux.HandleFunc("/v1/operations/summary", func(w http.ResponseWriter, r *http.Request) {
 		handleOperationsSummary(w, r, store)
 	})
@@ -352,6 +358,71 @@ func handleOIDCBinding(w http.ResponseWriter, r *http.Request, store *Store) {
 			}
 		}
 		result, err := store.DeleteOIDCBindingActor(identity.Actor, name)
+		if err != nil {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func handleSAMLBindings(w http.ResponseWriter, r *http.Request, store *Store) {
+	identity := identityFromRequest(r, store)
+	switch r.Method {
+	case http.MethodGet:
+		if !requireRole(w, identity, ServiceAccountRoleViewer) {
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"saml_bindings": store.ListSAMLBindingsNamespace(namespaceFilterFromRequest(r, identity))})
+	case http.MethodPost:
+		if !requireRole(w, identity, ServiceAccountRoleAdmin) {
+			return
+		}
+		var req SAMLBindingRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode saml binding: %v", err))
+			return
+		}
+		if !applyScopedNamespace(w, identity, &req.Namespace) {
+			return
+		}
+		result, err := store.UpsertSAMLBindingActor(identity.Actor, req)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func handleSAMLBinding(w http.ResponseWriter, r *http.Request, store *Store) {
+	name, err := nameFromPath(r.URL.Path, "/v1/saml-bindings/", "saml binding")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	identity := identityFromRequest(r, store)
+	switch r.Method {
+	case http.MethodDelete:
+		if !requireRole(w, identity, ServiceAccountRoleAdmin) {
+			return
+		}
+		if identity.Scoped {
+			binding, ok := samlBindingByName(store.ListSAMLBindingsNamespace(identity.Namespace), name)
+			if !ok {
+				writeError(w, http.StatusNotFound, "saml binding not found")
+				return
+			}
+			if !canAccessNamespace(identity, binding.Namespace) {
+				writeError(w, http.StatusForbidden, "namespace not allowed")
+				return
+			}
+		}
+		result, err := store.DeleteSAMLBindingActor(identity.Actor, name)
 		if err != nil {
 			writeError(w, http.StatusNotFound, err.Error())
 			return
@@ -1483,6 +1554,16 @@ func oidcBindingByName(bindings []OIDCBinding, name string) (OIDCBinding, bool) 
 		}
 	}
 	return OIDCBinding{}, false
+}
+
+func samlBindingByName(bindings []SAMLBinding, name string) (SAMLBinding, bool) {
+	name = strings.TrimSpace(name)
+	for _, binding := range bindings {
+		if binding.Name == name {
+			return binding, true
+		}
+	}
+	return SAMLBinding{}, false
 }
 
 func handleWarmPoolClaim(w http.ResponseWriter, r *http.Request, store *Store) {

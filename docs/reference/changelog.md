@@ -51,6 +51,11 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - OIDC bindings can now fetch public keys from `jwks_url`, discover
   `jwks_uri` from the issuer, cache fetched key IDs, and refresh the JWKS on
   key misses for provider key rotation.
+- `cove-fleetd` now exposes admin-managed `/v1/saml-bindings` records for
+  fail-closed SAML setup: IdP entity ID, SSO URL, audience, namespace, role, and
+  PEM signing certificate are validated, persisted, scoped, and audited while
+  assertion authentication remains disabled until a real XML signature verifier
+  lands.
 - `cove fleet cordon` and `uncordon` now mark registered hosts as skipped for
   `fleet run` placement while keeping direct `--fleet=<name>` routing intact.
 - `cove fleet run` now records short local placement leases and counts active

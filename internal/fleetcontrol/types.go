@@ -186,6 +186,32 @@ type OIDCBindingResult struct {
 	Binding OIDCBinding `json:"binding"`
 }
 
+type SAMLBinding struct {
+	Name              string    `json:"name"`
+	EntityID          string    `json:"entity_id"`
+	SSOURL            string    `json:"sso_url"`
+	Audience          string    `json:"audience"`
+	Namespace         string    `json:"namespace,omitempty"`
+	Role              string    `json:"role,omitempty"`
+	CertificateSHA256 string    `json:"certificate_sha256,omitempty"`
+	Created           time.Time `json:"created,omitempty"`
+	Updated           time.Time `json:"updated,omitempty"`
+}
+
+type SAMLBindingRequest struct {
+	Name           string `json:"name"`
+	EntityID       string `json:"entity_id"`
+	SSOURL         string `json:"sso_url"`
+	Audience       string `json:"audience"`
+	Namespace      string `json:"namespace,omitempty"`
+	Role           string `json:"role,omitempty"`
+	CertificatePEM string `json:"certificate_pem"`
+}
+
+type SAMLBindingResult struct {
+	Binding SAMLBinding `json:"binding"`
+}
+
 type WorkerLifecycle struct {
 	Reason string `json:"reason,omitempty"`
 }

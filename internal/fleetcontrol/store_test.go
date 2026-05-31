@@ -1284,6 +1284,81 @@ func TestStoreOIDCBindingRefreshesJWKSOnKeyMiss(t *testing.T) {
 	}
 }
 
+func TestStoreSAMLBindingPersistsValidatedCertificate(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	certPEM := testSAMLCertificate(t)
+	path := filepath.Join(t.TempDir(), "fleet.json")
+	store, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.now = func() time.Time { return now }
+	result, err := store.UpsertSAMLBinding(SAMLBindingRequest{
+		Name:           "okta",
+		EntityID:       "https://idp.example/saml",
+		SSOURL:         "https://idp.example/sso",
+		Audience:       "https://fleet.example/saml/acs",
+		Namespace:      "team-a",
+		Role:           ServiceAccountRoleOperator,
+		CertificatePEM: certPEM,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Binding.Name != "okta" || result.Binding.Role != ServiceAccountRoleOperator || result.Binding.CertificateSHA256 == "" {
+		t.Fatalf("binding = %+v", result.Binding)
+	}
+	if result.Binding.Namespace != "team-a" || result.Binding.EntityID != "https://idp.example/saml" {
+		t.Fatalf("binding scope/entity = %+v", result.Binding)
+	}
+	if principal, ok := store.AuthenticateBearer("saml-response-placeholder"); ok {
+		t.Fatalf("SAML binding unexpectedly authenticated bearer: %+v", principal)
+	}
+	if _, err := store.UpsertSAMLBinding(SAMLBindingRequest{
+		Name:           "bad-cert",
+		EntityID:       "https://idp.example/saml",
+		SSOURL:         "https://idp.example/sso",
+		Audience:       "https://fleet.example/saml/acs",
+		Role:           ServiceAccountRoleOperator,
+		CertificatePEM: "not pem",
+	}); err == nil || !strings.Contains(err.Error(), "certificate_pem") {
+		t.Fatalf("bad cert err = %v, want certificate_pem", err)
+	}
+	if _, err := store.UpsertSAMLBinding(SAMLBindingRequest{
+		Name:           "bad-role",
+		EntityID:       "https://idp.example/saml",
+		SSOURL:         "https://idp.example/sso",
+		Audience:       "https://fleet.example/saml/acs",
+		Role:           "owner",
+		CertificatePEM: certPEM,
+	}); err == nil || !strings.Contains(err.Error(), "unknown service account role") {
+		t.Fatalf("bad role err = %v, want role validation", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(data, []byte("PRIVATE KEY")) {
+		t.Fatalf("store file contains private key:\n%s", data)
+	}
+	if !bytes.Contains(data, []byte("BEGIN CERTIFICATE")) {
+		t.Fatalf("store file missing certificate:\n%s", data)
+	}
+	if event := auditAction(store.ListAudit(0), "saml_binding.upsert"); event == nil || event.TargetID != "okta" || event.Fields["certificate_sha256"] != result.Binding.CertificateSHA256 {
+		t.Fatalf("saml audit event = %+v", event)
+	}
+
+	reopened, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bindings := reopened.ListSAMLBindings()
+	if len(bindings) != 1 || bindings[0].Name != "okta" || bindings[0].CertificateSHA256 != result.Binding.CertificateSHA256 {
+		t.Fatalf("reopened saml bindings = %+v", bindings)
+	}
+}
+
 func TestStoreMarksStaleAfterTTL(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
 	store := NewMemoryStore(time.Minute)
@@ -3787,6 +3862,60 @@ func TestHandlerOIDCBindingAuthScopesOperator(t *testing.T) {
 	}
 }
 
+func TestHandlerSAMLBindingRBACScopes(t *testing.T) {
+	certPEM := testSAMLCertificate(t)
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var account ServiceAccountResult
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-a-admin", Namespace: "team-a", Role: ServiceAccountRoleAdmin, Token: "admin-a"}, &account)
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-a-operator", Namespace: "team-a", Role: ServiceAccountRoleOperator, Token: "operator-a"}, &account)
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-b-admin", Namespace: "team-b", Role: ServiceAccountRoleAdmin, Token: "admin-b"}, &account)
+
+	req := SAMLBindingRequest{
+		Name:           "okta",
+		EntityID:       "https://idp.example/saml",
+		SSOURL:         "https://idp.example/sso",
+		Audience:       "https://fleet.example/saml/acs",
+		Role:           ServiceAccountRoleOperator,
+		CertificatePEM: certPEM,
+	}
+	var binding SAMLBindingResult
+	postJSONAuth(t, server.URL+"/v1/saml-bindings", "admin-a", req, &binding)
+	if binding.Binding.Name != "okta" || binding.Binding.Namespace != "team-a" || binding.Binding.CertificateSHA256 == "" {
+		t.Fatalf("binding = %+v, want team-a okta with fingerprint", binding.Binding)
+	}
+	if code := postJSONStatus(t, server.URL+"/v1/saml-bindings", "operator-a", req); code != http.StatusForbidden {
+		t.Fatalf("operator saml POST status = %d, want 403", code)
+	}
+	if code := postJSONStatus(t, server.URL+"/v1/saml-bindings", "", SAMLBindingRequest{Name: "bad", EntityID: "idp", SSOURL: "https://idp.example/sso", Audience: "aud", Role: ServiceAccountRoleOperator, CertificatePEM: "not pem"}); code != http.StatusBadRequest {
+		t.Fatalf("bad saml cert status = %d, want 400", code)
+	}
+
+	var list struct {
+		SAMLBindings []SAMLBinding `json:"saml_bindings"`
+	}
+	getJSONAuth(t, server.URL+"/v1/saml-bindings", "admin-a", &list)
+	if len(list.SAMLBindings) != 1 || list.SAMLBindings[0].Name != "okta" {
+		t.Fatalf("team-a saml bindings = %+v", list.SAMLBindings)
+	}
+	getJSONAuth(t, server.URL+"/v1/saml-bindings", "admin-b", &list)
+	if len(list.SAMLBindings) != 0 {
+		t.Fatalf("team-b saml bindings = %+v, want none", list.SAMLBindings)
+	}
+	if code := deleteJSONStatusAuth(t, server.URL+"/v1/saml-bindings/okta", "admin-b"); code != http.StatusNotFound {
+		t.Fatalf("cross-namespace saml DELETE status = %d, want 404", code)
+	}
+	deleteJSONAuth(t, server.URL+"/v1/saml-bindings/okta", "admin-a", &binding)
+	if binding.Binding.Name != "okta" || binding.Binding.Namespace != "team-a" {
+		t.Fatalf("deleted binding = %+v, want team-a okta", binding.Binding)
+	}
+	if event := auditAction(store.ListAudit(0), "saml_binding.delete"); event == nil || event.Actor != "service-account:team-a-admin" || event.TargetID != "okta" {
+		t.Fatalf("saml delete audit = %+v", event)
+	}
+}
+
 func TestHandlerWarmPoolNamespaceScope(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	server := httptest.NewServer(Handler(store))
@@ -3944,9 +4073,17 @@ func getJSONRequest(t *testing.T, url, token string) *http.Response {
 
 func deleteJSON(t *testing.T, url string, out any) {
 	t.Helper()
+	deleteJSONAuth(t, url, "", out)
+}
+
+func deleteJSONAuth(t *testing.T, url, token string, out any) {
+	t.Helper()
 	req, err := http.NewRequest(http.MethodDelete, url, nil)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if token != "" {
+		req.Header.Set("authorization", "Bearer "+token)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -3963,9 +4100,17 @@ func deleteJSON(t *testing.T, url string, out any) {
 
 func deleteJSONStatus(t *testing.T, url string) int {
 	t.Helper()
+	return deleteJSONStatusAuth(t, url, "")
+}
+
+func deleteJSONStatusAuth(t *testing.T, url, token string) int {
+	t.Helper()
 	req, err := http.NewRequest(http.MethodDelete, url, nil)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if token != "" {
+		req.Header.Set("authorization", "Bearer "+token)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -3987,6 +4132,25 @@ func testOIDCKey(t *testing.T) (*rsa.PrivateKey, string) {
 	}
 	block := &pem.Block{Type: "PUBLIC KEY", Bytes: der}
 	return key, string(pem.EncodeToMemory(block))
+}
+
+func testSAMLCertificate(t *testing.T) string {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		NotBefore:    time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		NotAfter:     time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
 }
 
 func testOIDCJWK(key *rsa.PrivateKey, kid string) map[string]string {

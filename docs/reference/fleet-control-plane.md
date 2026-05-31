@@ -125,6 +125,18 @@ curl -X POST http://127.0.0.1:9758/v1/oidc-bindings \
     "jwks_url":"https://token.actions.githubusercontent.com/.well-known/jwks"
   }'
 curl http://127.0.0.1:9758/v1/oidc-bindings
+curl -X POST http://127.0.0.1:9758/v1/saml-bindings \
+  -H 'content-type: application/json' \
+  -d '{
+    "name":"okta",
+    "entity_id":"https://idp.example/saml",
+    "sso_url":"https://idp.example/sso",
+    "audience":"https://fleet.example/saml/acs",
+    "namespace":"team-a",
+    "role":"operator",
+    "certificate_pem":"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"
+  }'
+curl http://127.0.0.1:9758/v1/saml-bindings
 curl http://127.0.0.1:9758/v1/audit
 curl http://127.0.0.1:9758/v1/audit?limit=50
 curl 'http://127.0.0.1:9758/v1/audit?action=assignment.create&actor=service-account:ci&target_type=assignment&limit=50'
@@ -157,15 +169,20 @@ the first time a matching token arrives. A matching bearer JWT must verify with
 one of those public keys, must not be expired, and records audit actor
 `oidc:<binding-name>`. Cached JWKS keys persist in the fleet store and refresh
 on key misses so provider key rotation does not require rewriting the binding.
-SAML identity binding is still future work.
+`/v1/saml-bindings` adds the fail-closed SAML configuration half: admin users
+can store an IdP entity ID, SSO URL, service-provider audience, namespace, role,
+and PEM X.509 signing certificate. The controller validates and persists the
+certificate and exposes only its SHA-256 fingerprint in API responses. SAML
+assertion authentication is not accepted yet; it remains disabled until XML
+signature verification, recipient/audience checks, and replay protection land.
 If a service account has `namespace` set, assignment, warm-pool, sandbox,
 service-account, and audit list/read/mutation requests through that bearer token
 are scoped to that namespace; attempts to write another namespace are rejected.
 Service accounts also carry a `role`: `viewer` can list/read scoped resources
 and plan placements, `operator` can mutate operational resources such as
 assignments, warm-pools, image/policy/storage fan-out, and claims, and `admin`
-can manage service accounts and OIDC bindings. Omitted role defaults to `admin`
-for compatibility.
+can manage service accounts, OIDC bindings, and SAML binding records. Omitted
+role defaults to `admin` for compatibility.
 Service accounts without `namespace` and unauthenticated local requests remain
 unscoped for the local-first controller workflow. Requests with an unknown bearer token
 are rejected instead of falling back to local controller identity. Worker
