@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -84,6 +85,45 @@ func TestStoreAuditsFleetMutations(t *testing.T) {
 	}
 	if event := auditAction(reopened.ListAudit(0), "assignment.create"); event == nil || event.AssignmentID != created.ID {
 		t.Fatalf("reopened audit missing assignment create: %+v", reopened.ListAudit(0))
+	}
+}
+
+func TestStoreServiceAccountsPersistTokenHashes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "fleet.json")
+	store, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.UpsertServiceAccount(ServiceAccountRequest{Name: "ci", Token: "secret-token"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ServiceAccount.Name != "ci" {
+		t.Fatalf("service account = %+v, want ci", result.ServiceAccount)
+	}
+	if _, ok := store.AuthenticateServiceAccount("secret-token"); !ok {
+		t.Fatal("AuthenticateServiceAccount(secret-token) = false")
+	}
+	if _, ok := store.AuthenticateServiceAccount("wrong"); ok {
+		t.Fatal("AuthenticateServiceAccount(wrong) = true")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(data, []byte("secret-token")) {
+		t.Fatalf("store file contains plaintext token:\n%s", data)
+	}
+
+	reopened, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if accounts := reopened.ListServiceAccounts(); len(accounts) != 1 || accounts[0].Name != "ci" {
+		t.Fatalf("accounts = %+v, want ci", accounts)
+	}
+	if _, ok := reopened.AuthenticateServiceAccount("secret-token"); !ok {
+		t.Fatal("reopened AuthenticateServiceAccount(secret-token) = false")
 	}
 }
 
@@ -1853,6 +1893,38 @@ func TestHandlerAudit(t *testing.T) {
 	}
 }
 
+func TestHandlerServiceAccountActor(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var account ServiceAccountResult
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "ci", Token: "secret-token"}, &account)
+	if account.ServiceAccount.Name != "ci" {
+		t.Fatalf("account = %+v, want ci", account)
+	}
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1"}, &record)
+	var created Assignment
+	postJSONAuth(t, server.URL+"/v1/assignments", "secret-token", Assignment{WorkerID: "worker-1", Verb: "noop"}, &created)
+
+	var list struct {
+		Events []AuditEvent `json:"events"`
+	}
+	getJSON(t, server.URL+"/v1/audit?limit=1", &list)
+	if len(list.Events) != 1 || list.Events[0].Actor != "service-account:ci" || list.Events[0].AssignmentID != created.ID {
+		t.Fatalf("audit events = %+v, want service-account:ci assignment %s", list.Events, created.ID)
+	}
+
+	var accounts struct {
+		ServiceAccounts []ServiceAccount `json:"service_accounts"`
+	}
+	getJSON(t, server.URL+"/v1/service-accounts", &accounts)
+	if len(accounts.ServiceAccounts) != 1 || accounts.ServiceAccounts[0].Name != "ci" {
+		t.Fatalf("service accounts = %+v, want ci", accounts.ServiceAccounts)
+	}
+}
+
 func TestHandlerReconcileEndpoint(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
 	store := NewMemoryStore(time.Minute)
@@ -1897,11 +1969,24 @@ func TestHandlerRejectsMismatchedReportID(t *testing.T) {
 
 func postJSON(t *testing.T, url string, in, out any) {
 	t.Helper()
+	postJSONAuth(t, url, "", in, out)
+}
+
+func postJSONAuth(t *testing.T, url, token string, in, out any) {
+	t.Helper()
 	data, err := json.Marshal(in)
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp, err := http.Post(url, "application/json", bytes.NewReader(data))
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("content-type", "application/json")
+	if token != "" {
+		req.Header.Set("authorization", "Bearer "+token)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}

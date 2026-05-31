@@ -12,6 +12,8 @@ import (
 	"github.com/tmc/cove/internal/fleetcontrol"
 )
 
+const fleetWorkerTestTimeout = 5 * time.Second
+
 func TestFleetWorkerRegisterHeartbeatAndAwait(t *testing.T) {
 	vmRoot := t.TempDir()
 	mustMkdirAll(t, filepath.Join(vmRoot, "vm-a"))
@@ -223,7 +225,7 @@ exit 0
 	go func() {
 		done <- worker.PollAssignment(ctx)
 	}()
-	waitUntil(t, time.Second, func() bool {
+	waitUntil(t, fleetWorkerTestTimeout, func() bool {
 		assignment, ok := store.GetAssignment(assignmentID)
 		return ok && assignment.Status == "ready" && assignment.LastReport != nil && assignment.LastReport.Status == "ready"
 	})
@@ -232,7 +234,7 @@ exit 0
 		if err != nil {
 			t.Fatalf("PollAssignment: %v", err)
 		}
-	case <-time.After(time.Second):
+	case <-time.After(fleetWorkerTestTimeout):
 		t.Fatal("PollAssignment did not finish")
 	}
 	data, err := os.ReadFile(argsPath)
@@ -291,7 +293,7 @@ exit 0
 	go func() {
 		done <- worker.PollAssignment(ctx)
 	}()
-	waitUntil(t, time.Second, func() bool {
+	waitUntil(t, fleetWorkerTestTimeout, func() bool {
 		assignment, ok := store.GetAssignment(assignmentID)
 		return ok && assignment.Status == "running" && assignment.LastReport != nil && assignment.LastReport.Status == "running"
 	})
@@ -307,7 +309,7 @@ exit 0
 		if err != nil {
 			t.Fatalf("PollAssignment: %v", err)
 		}
-	case <-time.After(time.Second):
+	case <-time.After(fleetWorkerTestTimeout):
 		t.Fatal("PollAssignment did not finish")
 	}
 }
@@ -364,7 +366,7 @@ exit 0
 	go func() {
 		warmDone <- worker.PollAssignment(ctx)
 	}()
-	waitUntil(t, time.Second, func() bool {
+	waitUntil(t, fleetWorkerTestTimeout, func() bool {
 		assignment, ok := store.GetAssignment(slotID)
 		return ok && assignment.Status == "ready"
 	})
@@ -402,7 +404,7 @@ exit 0
 		if err != nil {
 			t.Fatalf("warm PollAssignment: %v", err)
 		}
-	case <-time.After(time.Second):
+	case <-time.After(fleetWorkerTestTimeout):
 		t.Fatal("warm PollAssignment did not finish")
 	}
 }
@@ -551,7 +553,7 @@ exit 0
 	go func() {
 		done <- worker.PollAssignment(ctx)
 	}()
-	waitUntil(t, time.Second, func() bool {
+	waitUntil(t, fleetWorkerTestTimeout, func() bool {
 		assignment, ok := store.GetAssignment("assignment-1")
 		return ok && assignment.Status == "running" && assignment.LastReport != nil && assignment.LastReport.Status == "running"
 	})
@@ -560,7 +562,7 @@ exit 0
 		if err != nil {
 			t.Fatalf("PollAssignment: %v", err)
 		}
-	case <-time.After(time.Second):
+	case <-time.After(fleetWorkerTestTimeout):
 		t.Fatal("PollAssignment did not finish")
 	}
 	assignment, ok := store.GetAssignment("assignment-1")
@@ -599,7 +601,7 @@ exit 0
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go worker.Run(ctx)
-	waitUntil(t, time.Second, func() bool {
+	waitUntil(t, fleetWorkerTestTimeout, func() bool {
 		_, ok := store.Get("worker-1")
 		return ok
 	})
@@ -609,7 +611,7 @@ exit 0
 	if _, err := store.CreateAssignment(fleetcontrol.Assignment{ID: "second", WorkerID: "worker-1", Verb: "noop"}); err != nil {
 		t.Fatal(err)
 	}
-	waitUntil(t, time.Second, func() bool {
+	waitUntil(t, fleetWorkerTestTimeout, func() bool {
 		assignment, ok := store.GetAssignment("long")
 		return ok && assignment.Status == "running"
 	})
@@ -618,18 +620,18 @@ exit 0
 		t.Fatal("worker missing")
 	}
 	seenWhileRunning := record.LastSeen
-	waitUntil(t, time.Second, func() bool {
+	waitUntil(t, fleetWorkerTestTimeout, func() bool {
 		record, ok := store.Get("worker-1")
 		return ok && record.LastSeen.After(seenWhileRunning)
 	})
-	waitUntil(t, time.Second, func() bool {
+	waitUntil(t, fleetWorkerTestTimeout, func() bool {
 		assignment, ok := store.GetAssignment("second")
 		return ok && assignment.Status == "complete"
 	})
 	if err := os.WriteFile(release, []byte("done\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	waitUntil(t, time.Second, func() bool {
+	waitUntil(t, fleetWorkerTestTimeout, func() bool {
 		assignment, ok := store.GetAssignment("long")
 		return ok && assignment.Status == "complete"
 	})

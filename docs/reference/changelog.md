@@ -60,6 +60,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   with optional `limit`, covering worker registration, cordon lifecycle,
   assignment creation/lease/report, reconcile changes, policy/image/storage
   fan-out, and warm-pool lifecycle operations.
+- `cove-fleetd` now persists service-account records with hashed bearer tokens;
+  authenticated controller requests record audit actors as
+  `service-account:<name>` while local unauthenticated requests still work as
+  `controller`.
 - `cove-fleetd` assignment placement now supports `policy:"bin-pack"` plus
   `resources.vms` hints and worker `max_vms` slot caps, packing work onto the
   densest ready worker that still fits.

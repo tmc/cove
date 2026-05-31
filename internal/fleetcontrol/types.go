@@ -89,6 +89,21 @@ type AuditEvent struct {
 	Fields       map[string]string `json:"fields,omitempty"`
 }
 
+type ServiceAccount struct {
+	Name    string    `json:"name"`
+	Created time.Time `json:"created,omitempty"`
+	Updated time.Time `json:"updated,omitempty"`
+}
+
+type ServiceAccountRequest struct {
+	Name  string `json:"name"`
+	Token string `json:"token"`
+}
+
+type ServiceAccountResult struct {
+	ServiceAccount ServiceAccount `json:"service_account"`
+}
+
 type WorkerLifecycle struct {
 	Reason string `json:"reason,omitempty"`
 }

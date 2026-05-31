@@ -1,6 +1,9 @@
 package fleetcontrol
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -22,13 +25,22 @@ type Store struct {
 	assignments   map[string]Assignment
 	warmPools     map[string]WarmPool
 	audit         []AuditEvent
+	accounts      map[string]serviceAccountRecord
 }
 
 type storeFile struct {
-	Hosts       []HostRecord `json:"hosts"`
-	Assignments []Assignment `json:"assignments,omitempty"`
-	WarmPools   []WarmPool   `json:"warm_pools,omitempty"`
-	AuditEvents []AuditEvent `json:"audit_events,omitempty"`
+	Hosts           []HostRecord           `json:"hosts"`
+	Assignments     []Assignment           `json:"assignments,omitempty"`
+	WarmPools       []WarmPool             `json:"warm_pools,omitempty"`
+	AuditEvents     []AuditEvent           `json:"audit_events,omitempty"`
+	ServiceAccounts []serviceAccountRecord `json:"service_accounts,omitempty"`
+}
+
+type serviceAccountRecord struct {
+	Name      string    `json:"name"`
+	TokenHash string    `json:"token_sha256"`
+	Created   time.Time `json:"created,omitempty"`
+	Updated   time.Time `json:"updated,omitempty"`
 }
 
 func OpenStore(path string, ttl time.Duration) (*Store, error) {
@@ -44,6 +56,7 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		assignments:   make(map[string]Assignment),
 		warmPools:     make(map[string]WarmPool),
 		audit:         nil,
+		accounts:      make(map[string]serviceAccountRecord),
 	}
 	if s.path == "" {
 		return s, nil
@@ -99,6 +112,13 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		}
 		s.audit = append(s.audit, event)
 	}
+	for _, account := range file.ServiceAccounts {
+		account = normalizeServiceAccountRecord(account)
+		if account.Name == "" || account.TokenHash == "" {
+			continue
+		}
+		s.accounts[account.Name] = account
+	}
 	return s, nil
 }
 
@@ -117,7 +137,12 @@ func (s *Store) SetAssignmentTTL(ttl time.Duration) {
 }
 
 func (s *Store) Reconcile() (ReconcileResult, error) {
+	return s.ReconcileActor("controller")
+}
+
+func (s *Store) ReconcileActor(actor string) (ReconcileResult, error) {
 	now := s.now().UTC()
+	actor = normalizeActor(actor)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	result := s.reconcileLocked(now)
@@ -125,7 +150,7 @@ func (s *Store) Reconcile() (ReconcileResult, error) {
 		return result, nil
 	}
 	s.appendAuditLocked(now, AuditEvent{
-		Actor:  "controller",
+		Actor:  actor,
 		Action: "fleet.reconcile",
 		Fields: map[string]string{
 			"stale_workers":        strconv.Itoa(len(result.StaleWorkers)),
@@ -195,11 +220,16 @@ func (s *Store) UpsertHeartbeat(h WorkerHeartbeat) (HostRecord, error) {
 }
 
 func (s *Store) CordonWorker(id, reason string) (HostRecord, error) {
+	return s.CordonWorkerActor("controller", id, reason)
+}
+
+func (s *Store) CordonWorkerActor(actor, id, reason string) (HostRecord, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return HostRecord{}, fmt.Errorf("worker id required")
 	}
 	now := s.now().UTC()
+	actor = normalizeActor(actor)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	record, ok := s.hosts[id]
@@ -216,7 +246,7 @@ func (s *Store) CordonWorker(id, reason string) (HostRecord, error) {
 	}
 	s.hosts[id] = record
 	s.appendAuditLocked(now, AuditEvent{
-		Actor:      "controller",
+		Actor:      actor,
 		Action:     "worker.cordon",
 		TargetType: "worker",
 		TargetID:   id,
@@ -230,11 +260,16 @@ func (s *Store) CordonWorker(id, reason string) (HostRecord, error) {
 }
 
 func (s *Store) UncordonWorker(id string) (HostRecord, error) {
+	return s.UncordonWorkerActor("controller", id)
+}
+
+func (s *Store) UncordonWorkerActor(actor, id string) (HostRecord, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return HostRecord{}, fmt.Errorf("worker id required")
 	}
 	now := s.now().UTC()
+	actor = normalizeActor(actor)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	record, ok := s.hosts[id]
@@ -251,7 +286,7 @@ func (s *Store) UncordonWorker(id string) (HostRecord, error) {
 	}
 	s.hosts[id] = record
 	s.appendAuditLocked(now, AuditEvent{
-		Actor:      "controller",
+		Actor:      actor,
 		Action:     "worker.uncordon",
 		TargetType: "worker",
 		TargetID:   id,
@@ -346,6 +381,10 @@ func (s *Store) Report(r WorkerReport) (HostRecord, error) {
 }
 
 func (s *Store) CreateAssignment(a Assignment) (Assignment, error) {
+	return s.CreateAssignmentActor("controller", a)
+}
+
+func (s *Store) CreateAssignmentActor(actor string, a Assignment) (Assignment, error) {
 	verb := strings.TrimSpace(a.Verb)
 	if verb == "" {
 		return Assignment{}, fmt.Errorf("assignment verb required")
@@ -356,6 +395,7 @@ func (s *Store) CreateAssignment(a Assignment) (Assignment, error) {
 		return Assignment{}, err
 	}
 	now := s.now().UTC()
+	actor = normalizeActor(actor)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -397,7 +437,7 @@ func (s *Store) CreateAssignment(a Assignment) (Assignment, error) {
 	a.LastReport = nil
 	s.assignments[id] = a
 	s.appendAuditLocked(now, AuditEvent{
-		Actor:        "controller",
+		Actor:        actor,
 		Action:       "assignment.create",
 		TargetType:   "assignment",
 		TargetID:     id,
@@ -452,7 +492,12 @@ func (s *Store) PlanAssignment(a Assignment, limit int) (PlacementPlan, error) {
 }
 
 func (s *Store) EnsureWarmPool(req WarmPoolRequest) (WarmPoolResult, error) {
+	return s.EnsureWarmPoolActor("controller", req)
+}
+
+func (s *Store) EnsureWarmPoolActor(actor string, req WarmPoolRequest) (WarmPoolResult, error) {
 	now := s.now().UTC()
+	actor = normalizeActor(actor)
 	pool, err := warmPoolFromRequest(req, now)
 	if err != nil {
 		return WarmPoolResult{}, err
@@ -468,7 +513,7 @@ func (s *Store) EnsureWarmPool(req WarmPoolRequest) (WarmPoolResult, error) {
 	created := s.ensureWarmPoolLocked(now, pool)
 	status := s.warmPoolStatusLocked(pool.Name)
 	s.appendAuditLocked(now, AuditEvent{
-		Actor:      "controller",
+		Actor:      actor,
 		Action:     "warm_pool.ensure",
 		TargetType: "warm_pool",
 		TargetID:   pool.Name,
@@ -505,11 +550,16 @@ func (s *Store) GetWarmPool(name string) (WarmPoolStatus, bool) {
 }
 
 func (s *Store) DeleteWarmPool(name string) (WarmPoolDeleteResult, error) {
+	return s.DeleteWarmPoolActor("controller", name)
+}
+
+func (s *Store) DeleteWarmPoolActor(actor, name string) (WarmPoolDeleteResult, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return WarmPoolDeleteResult{}, fmt.Errorf("warm pool name required")
 	}
 	now := s.now().UTC()
+	actor = normalizeActor(actor)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.reconcileLocked(now)
@@ -519,7 +569,7 @@ func (s *Store) DeleteWarmPool(name string) (WarmPoolDeleteResult, error) {
 	delete(s.warmPools, name)
 	retired := s.retireWarmPoolLocked(now, name)
 	s.appendAuditLocked(now, AuditEvent{
-		Actor:      "controller",
+		Actor:      actor,
 		Action:     "warm_pool.delete",
 		TargetType: "warm_pool",
 		TargetID:   name,
@@ -541,6 +591,10 @@ func (s *Store) DeleteWarmPool(name string) (WarmPoolDeleteResult, error) {
 }
 
 func (s *Store) ClaimWarmPool(req WarmPoolClaimRequest) (WarmPoolClaimResult, error) {
+	return s.ClaimWarmPoolActor("controller", req)
+}
+
+func (s *Store) ClaimWarmPoolActor(actor string, req WarmPoolClaimRequest) (WarmPoolClaimResult, error) {
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		return WarmPoolClaimResult{}, fmt.Errorf("warm pool name required")
@@ -554,6 +608,7 @@ func (s *Store) ClaimWarmPool(req WarmPoolClaimRequest) (WarmPoolClaimResult, er
 		return WarmPoolClaimResult{}, err
 	}
 	now := s.now().UTC()
+	actor = normalizeActor(actor)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -584,7 +639,7 @@ func (s *Store) ClaimWarmPool(req WarmPoolClaimRequest) (WarmPoolClaimResult, er
 	s.assignments[assignment.ID] = assignment
 	s.ensureWarmPoolLocked(now, pool)
 	s.appendAuditLocked(now, AuditEvent{
-		Actor:        "controller",
+		Actor:        actor,
 		Action:       "warm_pool.claim",
 		TargetType:   "warm_pool",
 		TargetID:     name,
@@ -607,6 +662,10 @@ func (s *Store) ClaimWarmPool(req WarmPoolClaimRequest) (WarmPoolClaimResult, er
 }
 
 func (s *Store) PrepareImage(req ImagePrepareRequest) (ImagePrepareResult, error) {
+	return s.PrepareImageActor("controller", req)
+}
+
+func (s *Store) PrepareImageActor(actor string, req ImagePrepareRequest) (ImagePrepareResult, error) {
 	sourceRef := strings.TrimSpace(req.SourceRef)
 	imageRef := strings.TrimSpace(req.ImageRef)
 	if sourceRef == "" {
@@ -617,6 +676,7 @@ func (s *Store) PrepareImage(req ImagePrepareRequest) (ImagePrepareResult, error
 	}
 	labels := cloneLabels(req.RequiredLabels)
 	now := s.now().UTC()
+	actor = normalizeActor(actor)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -662,7 +722,7 @@ func (s *Store) PrepareImage(req ImagePrepareRequest) (ImagePrepareResult, error
 	if len(result.Assignments) > 0 || reconciled.changed() {
 		if len(result.Assignments) > 0 {
 			s.appendAuditLocked(now, AuditEvent{
-				Actor:      "controller",
+				Actor:      actor,
 				Action:     "image.prepare",
 				TargetType: "image",
 				TargetID:   imageRef,
@@ -680,12 +740,17 @@ func (s *Store) PrepareImage(req ImagePrepareRequest) (ImagePrepareResult, error
 }
 
 func (s *Store) PushImageGC(req ImageGCRequest) (ImageGCResult, error) {
+	return s.PushImageGCActor("controller", req)
+}
+
+func (s *Store) PushImageGCActor(actor string, req ImageGCRequest) (ImageGCResult, error) {
 	labels := cloneLabels(req.RequiredLabels)
 	olderThan, err := normalizeDurationString(req.OlderThan, "image gc older_than")
 	if err != nil {
 		return ImageGCResult{}, err
 	}
 	now := s.now().UTC()
+	actor = normalizeActor(actor)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -723,7 +788,7 @@ func (s *Store) PushImageGC(req ImageGCRequest) (ImageGCResult, error) {
 	if len(result.Assignments) > 0 || reconciled.changed() {
 		if len(result.Assignments) > 0 {
 			s.appendAuditLocked(now, AuditEvent{
-				Actor:      "controller",
+				Actor:      actor,
 				Action:     "image.gc",
 				TargetType: "image",
 				Fields: map[string]string{
@@ -741,12 +806,17 @@ func (s *Store) PushImageGC(req ImageGCRequest) (ImageGCResult, error) {
 }
 
 func (s *Store) PushLifecyclePolicy(req LifecyclePolicyRequest) (LifecyclePolicyResult, error) {
+	return s.PushLifecyclePolicyActor("controller", req)
+}
+
+func (s *Store) PushLifecyclePolicyActor(actor string, req LifecyclePolicyRequest) (LifecyclePolicyResult, error) {
 	vmName, args, err := lifecyclePolicyArgs(req)
 	if err != nil {
 		return LifecyclePolicyResult{}, err
 	}
 	labels := cloneLabels(req.RequiredLabels)
 	now := s.now().UTC()
+	actor = normalizeActor(actor)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -784,7 +854,7 @@ func (s *Store) PushLifecyclePolicy(req LifecyclePolicyRequest) (LifecyclePolicy
 	if len(result.Assignments) > 0 || reconciled.changed() {
 		if len(result.Assignments) > 0 {
 			s.appendAuditLocked(now, AuditEvent{
-				Actor:      "controller",
+				Actor:      actor,
 				Action:     "policy.lifecycle",
 				TargetType: "vm",
 				TargetID:   vmName,
@@ -802,12 +872,17 @@ func (s *Store) PushLifecyclePolicy(req LifecyclePolicyRequest) (LifecyclePolicy
 }
 
 func (s *Store) PushStorageBudget(req StorageBudgetRequest) (StorageBudgetResult, error) {
+	return s.PushStorageBudgetActor("controller", req)
+}
+
+func (s *Store) PushStorageBudgetActor(actor string, req StorageBudgetRequest) (StorageBudgetResult, error) {
 	args, err := storageBudgetArgs(req)
 	if err != nil {
 		return StorageBudgetResult{}, err
 	}
 	labels := cloneLabels(req.RequiredLabels)
 	now := s.now().UTC()
+	actor = normalizeActor(actor)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -845,7 +920,7 @@ func (s *Store) PushStorageBudget(req StorageBudgetRequest) (StorageBudgetResult
 	if len(result.Assignments) > 0 || reconciled.changed() {
 		if len(result.Assignments) > 0 {
 			s.appendAuditLocked(now, AuditEvent{
-				Actor:      "controller",
+				Actor:      actor,
 				Action:     "storage.budget",
 				TargetType: "storage",
 				Fields: map[string]string{
@@ -863,12 +938,17 @@ func (s *Store) PushStorageBudget(req StorageBudgetRequest) (StorageBudgetResult
 }
 
 func (s *Store) PushStoragePrune(req StoragePruneRequest) (StoragePruneResult, error) {
+	return s.PushStoragePruneActor("controller", req)
+}
+
+func (s *Store) PushStoragePruneActor(actor string, req StoragePruneRequest) (StoragePruneResult, error) {
 	args, err := storagePruneArgs(req)
 	if err != nil {
 		return StoragePruneResult{}, err
 	}
 	labels := cloneLabels(req.RequiredLabels)
 	now := s.now().UTC()
+	actor = normalizeActor(actor)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -906,7 +986,7 @@ func (s *Store) PushStoragePrune(req StoragePruneRequest) (StoragePruneResult, e
 	if len(result.Assignments) > 0 || reconciled.changed() {
 		if len(result.Assignments) > 0 {
 			s.appendAuditLocked(now, AuditEvent{
-				Actor:      "controller",
+				Actor:      actor,
 				Action:     "storage.prune",
 				TargetType: "storage",
 				Fields: map[string]string{
@@ -1016,6 +1096,109 @@ func (s *Store) ListAudit(limit int) []AuditEvent {
 		events = events[len(events)-limit:]
 	}
 	return cloneAuditEvents(events)
+}
+
+func (s *Store) UpsertServiceAccount(req ServiceAccountRequest) (ServiceAccountResult, error) {
+	return s.UpsertServiceAccountActor("controller", req)
+}
+
+func (s *Store) UpsertServiceAccountActor(actor string, req ServiceAccountRequest) (ServiceAccountResult, error) {
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return ServiceAccountResult{}, fmt.Errorf("service account name required")
+	}
+	token := strings.TrimSpace(req.Token)
+	if token == "" {
+		return ServiceAccountResult{}, fmt.Errorf("service account token required")
+	}
+	now := s.now().UTC()
+	actor = normalizeActor(actor)
+	record := serviceAccountRecord{
+		Name:      name,
+		TokenHash: tokenHash(token),
+		Created:   now,
+		Updated:   now,
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if old, ok := s.accounts[name]; ok && !old.Created.IsZero() {
+		record.Created = old.Created
+	}
+	s.accounts[name] = record
+	s.appendAuditLocked(now, AuditEvent{
+		Actor:      actor,
+		Action:     "service_account.upsert",
+		TargetType: "service_account",
+		TargetID:   name,
+	})
+	if err := s.persistLocked(); err != nil {
+		return ServiceAccountResult{}, err
+	}
+	return ServiceAccountResult{ServiceAccount: publicServiceAccount(record)}, nil
+}
+
+func (s *Store) DeleteServiceAccount(name string) (ServiceAccountResult, error) {
+	return s.DeleteServiceAccountActor("controller", name)
+}
+
+func (s *Store) DeleteServiceAccountActor(actor, name string) (ServiceAccountResult, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ServiceAccountResult{}, fmt.Errorf("service account name required")
+	}
+	now := s.now().UTC()
+	actor = normalizeActor(actor)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, ok := s.accounts[name]
+	if !ok {
+		return ServiceAccountResult{}, fmt.Errorf("service account %q not found", name)
+	}
+	delete(s.accounts, name)
+	s.appendAuditLocked(now, AuditEvent{
+		Actor:      actor,
+		Action:     "service_account.delete",
+		TargetType: "service_account",
+		TargetID:   name,
+	})
+	if err := s.persistLocked(); err != nil {
+		return ServiceAccountResult{}, err
+	}
+	return ServiceAccountResult{ServiceAccount: publicServiceAccount(record)}, nil
+}
+
+func (s *Store) ListServiceAccounts() []ServiceAccount {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	records := s.sortedServiceAccountsLocked()
+	out := make([]ServiceAccount, 0, len(records))
+	for _, record := range records {
+		out = append(out, publicServiceAccount(record))
+	}
+	return out
+}
+
+func (s *Store) AuthenticateServiceAccount(token string) (ServiceAccount, bool) {
+	hash := tokenHash(strings.TrimSpace(token))
+	if hash == "" {
+		return ServiceAccount{}, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var match serviceAccountRecord
+	ok := false
+	for _, record := range s.accounts {
+		if subtle.ConstantTimeCompare([]byte(record.TokenHash), []byte(hash)) == 1 {
+			match = record
+			ok = true
+		}
+	}
+	if ok {
+		return publicServiceAccount(match), true
+	}
+	return ServiceAccount{}, false
 }
 
 func (s *Store) Get(id string) (HostRecord, bool) {
@@ -1191,7 +1374,8 @@ func (s *Store) persistLocked() error {
 	assignments := s.sortedAssignmentsLocked()
 	warmPools := s.sortedWarmPoolsLocked()
 	audit := s.sortedAuditLocked()
-	data, err := json.MarshalIndent(storeFile{Hosts: hosts, Assignments: assignments, WarmPools: warmPools, AuditEvents: audit}, "", "  ")
+	accounts := s.sortedServiceAccountsLocked()
+	data, err := json.MarshalIndent(storeFile{Hosts: hosts, Assignments: assignments, WarmPools: warmPools, AuditEvents: audit, ServiceAccounts: accounts}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode fleet store: %w", err)
 	}
@@ -1251,6 +1435,17 @@ func (s *Store) sortedAuditLocked() []AuditEvent {
 		return events[i].ID < events[j].ID
 	})
 	return events
+}
+
+func (s *Store) sortedServiceAccountsLocked() []serviceAccountRecord {
+	records := make([]serviceAccountRecord, 0, len(s.accounts))
+	for _, record := range s.accounts {
+		records = append(records, cloneServiceAccountRecord(record))
+	}
+	sort.Slice(records, func(i, j int) bool {
+		return records[i].Name < records[j].Name
+	})
+	return records
 }
 
 func (s *Store) nextAssignmentIDLocked(now time.Time) string {
@@ -1326,6 +1521,18 @@ func cloneAuditEvents(in []AuditEvent) []AuditEvent {
 		out[i] = cloneAuditEvent(in[i])
 	}
 	return out
+}
+
+func cloneServiceAccountRecord(in serviceAccountRecord) serviceAccountRecord {
+	return in
+}
+
+func publicServiceAccount(record serviceAccountRecord) ServiceAccount {
+	return ServiceAccount{
+		Name:    record.Name,
+		Created: record.Created,
+		Updated: record.Updated,
+	}
 }
 
 func clonePlacementCandidates(in []PlacementCandidate) []PlacementCandidate {
@@ -1963,6 +2170,35 @@ func normalizeAuditEvent(event AuditEvent) AuditEvent {
 		event.Time = event.Time.UTC()
 	}
 	return event
+}
+
+func normalizeServiceAccountRecord(record serviceAccountRecord) serviceAccountRecord {
+	record.Name = strings.TrimSpace(record.Name)
+	record.TokenHash = strings.TrimSpace(record.TokenHash)
+	if !record.Created.IsZero() {
+		record.Created = record.Created.UTC()
+	}
+	if !record.Updated.IsZero() {
+		record.Updated = record.Updated.UTC()
+	}
+	return record
+}
+
+func tokenHash(token string) string {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+func normalizeActor(actor string) string {
+	actor = strings.TrimSpace(actor)
+	if actor == "" {
+		return "controller"
+	}
+	return actor
 }
 
 func auditReportStatus(status string) bool {

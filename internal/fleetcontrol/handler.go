@@ -37,7 +37,7 @@ func Handler(store *Store) http.Handler {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
-		result, err := store.Reconcile()
+		result, err := store.ReconcileActor(actorFromRequest(r, store))
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -46,6 +46,12 @@ func Handler(store *Store) http.Handler {
 	})
 	mux.HandleFunc("/v1/audit", func(w http.ResponseWriter, r *http.Request) {
 		handleAudit(w, r, store)
+	})
+	mux.HandleFunc("/v1/service-accounts/", func(w http.ResponseWriter, r *http.Request) {
+		handleServiceAccount(w, r, store)
+	})
+	mux.HandleFunc("/v1/service-accounts", func(w http.ResponseWriter, r *http.Request) {
+		handleServiceAccounts(w, r, store)
 	})
 	mux.HandleFunc("/v1/storage/budget", func(w http.ResponseWriter, r *http.Request) {
 		handleStorageBudget(w, r, store)
@@ -125,6 +131,46 @@ func handleAudit(w http.ResponseWriter, r *http.Request, store *Store) {
 		limit = n
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"events": store.ListAudit(limit)})
+}
+
+func handleServiceAccounts(w http.ResponseWriter, r *http.Request, store *Store) {
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, map[string]any{"service_accounts": store.ListServiceAccounts()})
+	case http.MethodPost:
+		var req ServiceAccountRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode service account: %v", err))
+			return
+		}
+		result, err := store.UpsertServiceAccountActor(actorFromRequest(r, store), req)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func handleServiceAccount(w http.ResponseWriter, r *http.Request, store *Store) {
+	name, err := nameFromPath(r.URL.Path, "/v1/service-accounts/", "service account")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	switch r.Method {
+	case http.MethodDelete:
+		result, err := store.DeleteServiceAccountActor(actorFromRequest(r, store), name)
+		if err != nil {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
 }
 
 func handleWorker(w http.ResponseWriter, r *http.Request, store *Store) {
@@ -220,7 +266,7 @@ func handleImagePrepare(w http.ResponseWriter, r *http.Request, store *Store) {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode image prepare: %v", err))
 		return
 	}
-	result, err := store.PrepareImage(req)
+	result, err := store.PrepareImageActor(actorFromRequest(r, store), req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -238,7 +284,7 @@ func handleImageGC(w http.ResponseWriter, r *http.Request, store *Store) {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode image gc: %v", err))
 		return
 	}
-	result, err := store.PushImageGC(req)
+	result, err := store.PushImageGCActor(actorFromRequest(r, store), req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -256,7 +302,7 @@ func handleLifecyclePolicy(w http.ResponseWriter, r *http.Request, store *Store)
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode lifecycle policy: %v", err))
 		return
 	}
-	result, err := store.PushLifecyclePolicy(req)
+	result, err := store.PushLifecyclePolicyActor(actorFromRequest(r, store), req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -274,7 +320,7 @@ func handleStorageBudget(w http.ResponseWriter, r *http.Request, store *Store) {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode storage budget: %v", err))
 		return
 	}
-	result, err := store.PushStorageBudget(req)
+	result, err := store.PushStorageBudgetActor(actorFromRequest(r, store), req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -292,7 +338,7 @@ func handleStoragePrune(w http.ResponseWriter, r *http.Request, store *Store) {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode storage prune: %v", err))
 		return
 	}
-	result, err := store.PushStoragePrune(req)
+	result, err := store.PushStoragePruneActor(actorFromRequest(r, store), req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -331,7 +377,7 @@ func handleWarmPools(w http.ResponseWriter, r *http.Request, store *Store) {
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode warm pool: %v", err))
 			return
 		}
-		result, err := store.EnsureWarmPool(req)
+		result, err := store.EnsureWarmPoolActor(actorFromRequest(r, store), req)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
@@ -360,7 +406,7 @@ func handleWarmPool(w http.ResponseWriter, r *http.Request, store *Store) {
 		}
 		writeJSON(w, http.StatusOK, status)
 	case http.MethodDelete:
-		result, err := store.DeleteWarmPool(name)
+		result, err := store.DeleteWarmPoolActor(actorFromRequest(r, store), name)
 		if err != nil {
 			writeError(w, http.StatusNotFound, err.Error())
 			return
@@ -372,19 +418,35 @@ func handleWarmPool(w http.ResponseWriter, r *http.Request, store *Store) {
 }
 
 func warmPoolNameFromPath(path string) (string, error) {
-	raw := strings.TrimPrefix(path, "/v1/warm-pools/")
+	return nameFromPath(path, "/v1/warm-pools/", "warm pool")
+}
+
+func nameFromPath(path, prefix, label string) (string, error) {
+	raw := strings.TrimPrefix(path, prefix)
 	if raw == "" || strings.Contains(raw, "/") {
-		return "", fmt.Errorf("warm pool name required")
+		return "", fmt.Errorf("%s name required", label)
 	}
 	name, err := url.PathUnescape(raw)
 	if err != nil {
-		return "", fmt.Errorf("decode warm pool name: %w", err)
+		return "", fmt.Errorf("decode %s name: %w", label, err)
 	}
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return "", fmt.Errorf("warm pool name required")
+		return "", fmt.Errorf("%s name required", label)
 	}
 	return name, nil
+}
+
+func actorFromRequest(r *http.Request, store *Store) string {
+	auth := strings.TrimSpace(r.Header.Get("Authorization"))
+	const prefix = "bearer "
+	if len(auth) >= len(prefix) && strings.EqualFold(auth[:len(prefix)], prefix) {
+		token := strings.TrimSpace(auth[len(prefix):])
+		if account, ok := store.AuthenticateServiceAccount(token); ok {
+			return "service-account:" + account.Name
+		}
+	}
+	return "controller"
 }
 
 func handleWarmPoolClaim(w http.ResponseWriter, r *http.Request, store *Store) {
@@ -397,7 +459,7 @@ func handleWarmPoolClaim(w http.ResponseWriter, r *http.Request, store *Store) {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode warm pool claim: %v", err))
 		return
 	}
-	result, err := store.ClaimWarmPool(req)
+	result, err := store.ClaimWarmPoolActor(actorFromRequest(r, store), req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -415,7 +477,7 @@ func handleWorkerCordon(w http.ResponseWriter, r *http.Request, store *Store, id
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode worker lifecycle: %v", err))
 		return
 	}
-	record, err := store.CordonWorker(id, lifecycle.Reason)
+	record, err := store.CordonWorkerActor(actorFromRequest(r, store), id, lifecycle.Reason)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -428,7 +490,7 @@ func handleWorkerUncordon(w http.ResponseWriter, r *http.Request, store *Store, 
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	record, err := store.UncordonWorker(id)
+	record, err := store.UncordonWorkerActor(actorFromRequest(r, store), id)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -449,7 +511,7 @@ func handleAssignments(w http.ResponseWriter, r *http.Request, store *Store) {
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode assignment: %v", err))
 			return
 		}
-		created, err := store.CreateAssignment(assignment)
+		created, err := store.CreateAssignmentActor(actorFromRequest(r, store), assignment)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return

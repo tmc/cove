@@ -71,20 +71,32 @@ curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/uncordon
 curl -X POST http://127.0.0.1:9758/v1/reconcile
 ```
 
-Audit endpoint:
+Service-account and audit endpoints:
 
 ```bash
+curl -X POST http://127.0.0.1:9758/v1/service-accounts \
+  -H 'content-type: application/json' \
+  -d '{"name":"ci","token":"local-secret"}'
+curl http://127.0.0.1:9758/v1/service-accounts
+curl -H 'authorization: Bearer local-secret' \
+  -X POST http://127.0.0.1:9758/v1/assignments \
+  -H 'content-type: application/json' \
+  -d '{"id":"probe-1","worker_id":"mini-1","verb":"noop"}'
 curl http://127.0.0.1:9758/v1/audit
 curl http://127.0.0.1:9758/v1/audit?limit=50
+curl -X DELETE http://127.0.0.1:9758/v1/service-accounts/ci
 ```
 
 The controller persists audit events in the fleet store for high-value state
 changes: worker registration, cordon lifecycle, assignment creation, assignment
 leases, terminal assignment reports, fleet reconcile changes, image/policy/
-storage fan-out, and warm-pool ensure/claim/delete operations. Until the paid
-auth layer lands, `actor` is the control-plane source (`controller` or
-`worker:<id>`); the event shape is intended to carry SSO or service-account
-identity later without changing the feed.
+storage fan-out, and warm-pool ensure/claim/delete operations. Service-account
+tokens are stored only as SHA-256 hashes, so operators should provide
+high-entropy random tokens and keep the plaintext in their own secret manager.
+Supplying a matching bearer token on operator requests records audit actor
+`service-account:<name>`; unauthenticated local requests still record
+`controller`, and worker protocol events record `worker:<id>`. This is actor
+binding for audit, not full authorization yet.
 
 Image preparation endpoint:
 
