@@ -171,6 +171,8 @@ curl -X POST http://127.0.0.1:9758/v1/warm-pools/claim \
   -H 'content-type: application/json' \
   -d '{"name":"runner-14","command":["/bin/sh","-lc","make test"],"env":{"CI":"1"}}'
 curl http://127.0.0.1:9758/v1/warm-pools
+curl http://127.0.0.1:9758/v1/warm-pools/runner-14
+curl -X DELETE http://127.0.0.1:9758/v1/warm-pools/runner-14
 ```
 
 A warm pool persists a desired number of active fork slots for one image. The
@@ -192,7 +194,10 @@ creates a replacement warm slot when capacity allows. Lowering `size`
 downsizes the pool during the same reconcile pass: pending surplus slots are
 returned in `canceled`, and already-started surplus slots are marked `draining`
 while the controller queues same-worker `cove ctl -vm <generated> stop`
-assignments returned in `cleanup`.
+assignments returned in `cleanup`. `DELETE /v1/warm-pools/{name}` removes the
+pool definition, cancels pending slots, queues the same cleanup for idle
+started slots, and returns claimed slots in `deferred` so in-flight guest work
+can finish and use its existing claimed-slot stop path.
 
 Assignment endpoints:
 

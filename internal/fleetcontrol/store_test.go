@@ -1294,6 +1294,88 @@ func TestStoreDownsizesWarmPoolPendingSlots(t *testing.T) {
 	}
 }
 
+func TestStoreDeletesWarmPoolReadySlots(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 2}}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.EnsureWarmPool(WarmPoolRequest{Name: "runner", ImageRef: "base:v1", Size: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	slotID := result.Created[0].ID
+	if _, err := store.AwaitAssignment("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: slotID, Status: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+
+	now = now.Add(time.Second)
+	deleted, err := store.DeleteWarmPool("runner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted.Pool != "runner" || len(deleted.Canceled) != 0 || len(deleted.Cleanup) != 1 || len(deleted.Deferred) != 0 {
+		t.Fatalf("delete result = %+v, want one cleanup", deleted)
+	}
+	cleanup := deleted.Cleanup[0]
+	slot, ok := store.GetAssignment(slotID)
+	if !ok {
+		t.Fatal("slot missing")
+	}
+	if slot.Status != "draining" {
+		t.Fatalf("slot status = %q, want draining", slot.Status)
+	}
+	if cleanup.WorkerID != "worker-1" || cleanup.WarmPoolSlot != slotID || !equalStrings(cleanup.Args, warmPoolStopArgs(WarmPoolAssignmentVMName(slot))) {
+		t.Fatalf("cleanup = %+v", cleanup)
+	}
+	if _, ok := store.GetWarmPool("runner"); ok {
+		t.Fatal("deleted warm pool still present")
+	}
+	if pools := store.ListWarmPools(); len(pools) != 0 {
+		t.Fatalf("pools = %+v, want none", pools)
+	}
+}
+
+func TestStoreDeletesWarmPoolWithClaimedSlot(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 1}}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.EnsureWarmPool(WarmPoolRequest{Name: "runner", ImageRef: "base:v1", Size: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	slotID := result.Created[0].ID
+	if _, err := store.AwaitAssignment("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: slotID, Status: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ClaimWarmPool(WarmPoolClaimRequest{Name: "runner", Command: []string{"/bin/true"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	deleted, err := store.DeleteWarmPool("runner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deleted.Cleanup) != 0 || len(deleted.Canceled) != 0 || len(deleted.Deferred) != 1 || deleted.Deferred[0] != slotID {
+		t.Fatalf("delete result = %+v, want deferred claimed slot %s", deleted, slotID)
+	}
+	slot, _ := store.GetAssignment(slotID)
+	if slot.Status != "claimed" {
+		t.Fatalf("slot status = %q, want claimed", slot.Status)
+	}
+	if _, ok := store.GetWarmPool("runner"); ok {
+		t.Fatal("deleted warm pool still present")
+	}
+}
+
 func TestStoreWarmPoolRejectsReservedArgs(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	_, err := store.EnsureWarmPool(WarmPoolRequest{
@@ -1668,6 +1750,35 @@ func TestHandlerWarmPoolDownsize(t *testing.T) {
 	}
 }
 
+func TestHandlerWarmPoolGetDelete(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 4}}, &record)
+	var result WarmPoolResult
+	postJSON(t, server.URL+"/v1/warm-pools", WarmPoolRequest{Name: "runner", ImageRef: "base:v1", Size: 2}, &result)
+	var status WarmPoolStatus
+	getJSON(t, server.URL+"/v1/warm-pools/runner", &status)
+	if status.Name != "runner" || status.Active != 2 {
+		t.Fatalf("warm pool status = %+v, want runner active 2", status)
+	}
+	var deleted WarmPoolDeleteResult
+	deleteJSON(t, server.URL+"/v1/warm-pools/runner", &deleted)
+	if deleted.Pool != "runner" || len(deleted.Canceled) != 2 || len(deleted.Cleanup) != 0 {
+		t.Fatalf("warm pool delete = %+v, want two canceled pending slots", deleted)
+	}
+	resp, err := http.Get(server.URL + "/v1/warm-pools/runner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("GET deleted warm pool status = %d, want 404", resp.StatusCode)
+	}
+}
+
 func TestHandlerReconcileEndpoint(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
 	store := NewMemoryStore(time.Minute)
@@ -1738,6 +1849,25 @@ func getJSON(t *testing.T, url string, out any) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET %s status = %d", url, resp.StatusCode)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func deleteJSON(t *testing.T, url string, out any) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodDelete, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("DELETE %s status = %d", url, resp.StatusCode)
 	}
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
 		t.Fatal(err)

@@ -406,6 +406,44 @@ func (s *Store) EnsureWarmPool(req WarmPoolRequest) (WarmPoolResult, error) {
 	}, nil
 }
 
+func (s *Store) GetWarmPool(name string) (WarmPoolStatus, bool) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return WarmPoolStatus{}, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.warmPools[name]; !ok {
+		return WarmPoolStatus{}, false
+	}
+	return s.warmPoolStatusLocked(name), true
+}
+
+func (s *Store) DeleteWarmPool(name string) (WarmPoolDeleteResult, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return WarmPoolDeleteResult{}, fmt.Errorf("warm pool name required")
+	}
+	now := s.now().UTC()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reconcileLocked(now)
+	if _, ok := s.warmPools[name]; !ok {
+		return WarmPoolDeleteResult{}, fmt.Errorf("warm pool %q not found", name)
+	}
+	delete(s.warmPools, name)
+	retired := s.retireWarmPoolLocked(now, name)
+	if err := s.persistLocked(); err != nil {
+		return WarmPoolDeleteResult{}, err
+	}
+	return WarmPoolDeleteResult{
+		Pool:     name,
+		Canceled: cloneStrings(retired.canceled),
+		Cleanup:  cloneAssignments(retired.cleanup),
+		Deferred: cloneStrings(retired.deferred),
+	}, nil
+}
+
 func (s *Store) ClaimWarmPool(req WarmPoolClaimRequest) (WarmPoolClaimResult, error) {
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
@@ -923,12 +961,12 @@ func reconcileAssignmentStatus(status string) bool {
 }
 
 func loadAssignmentStatus(status string) bool {
-	return activeAssignmentStatus(status) || status == "claimed"
+	return activeAssignmentStatus(status) || status == "claimed" || status == "draining"
 }
 
 func assignmentLeaseStatus(status string) bool {
 	switch status {
-	case "leased", "running", "ready", "claimed":
+	case "leased", "running", "ready", "claimed", "draining":
 		return true
 	default:
 		return false
@@ -1187,6 +1225,7 @@ func (s *Store) ensureWarmPoolLocked(now time.Time, pool WarmPool) []Assignment 
 type warmPoolDownsizeResult struct {
 	canceled []string
 	cleanup  []Assignment
+	deferred []string
 }
 
 func (s *Store) downsizeWarmPoolLocked(now time.Time, pool WarmPool) warmPoolDownsizeResult {
@@ -1210,35 +1249,79 @@ func (s *Store) downsizeWarmPoolLocked(now time.Time, pool WarmPool) warmPoolDow
 		if extra == 0 {
 			break
 		}
-		if assignment.Status == "pending" || strings.TrimSpace(assignment.WorkerID) == "" {
-			assignment.Status = "canceled"
-			assignment.Updated = now
-			s.assignments[assignment.ID] = assignment
-			result.canceled = append(result.canceled, assignment.ID)
-			extra--
-			continue
-		}
-
-		vmName := WarmPoolAssignmentVMName(assignment)
-		cleanup := Assignment{
-			ID:           s.nextAssignmentIDLocked(now),
-			WorkerID:     assignment.WorkerID,
-			WarmPoolSlot: assignment.ID,
-			Verb:         "cove",
-			Args:         warmPoolStopArgs(vmName),
-			Status:       "pending",
-			Created:      now,
-			Updated:      now,
-		}
-		assignment.Status = "draining"
-		assignment.Updated = now
-		s.assignments[assignment.ID] = assignment
-		s.assignments[cleanup.ID] = cleanup
-		result.cleanup = append(result.cleanup, cloneAssignment(cleanup))
+		s.retireWarmPoolSlotLocked(now, assignment, &result)
 		extra--
 	}
 	sort.Strings(result.canceled)
 	return result
+}
+
+func (s *Store) retireWarmPoolLocked(now time.Time, name string) warmPoolDownsizeResult {
+	var slots []Assignment
+	for _, assignment := range s.sortedAssignmentsLocked() {
+		if assignment.WarmPool != name {
+			continue
+		}
+		switch assignment.Status {
+		case "pending", "leased", "running", "ready", "draining", "claimed":
+			slots = append(slots, assignment)
+		}
+	}
+	sort.Slice(slots, func(i, j int) bool {
+		a, b := slots[i], slots[j]
+		if ra, rb := warmPoolDownsizeRank(a.Status), warmPoolDownsizeRank(b.Status); ra != rb {
+			return ra < rb
+		}
+		if !a.Created.Equal(b.Created) {
+			return a.Created.After(b.Created)
+		}
+		return a.ID > b.ID
+	})
+	var result warmPoolDownsizeResult
+	for _, assignment := range slots {
+		s.retireWarmPoolSlotLocked(now, assignment, &result)
+	}
+	sort.Strings(result.canceled)
+	sort.Strings(result.deferred)
+	return result
+}
+
+func (s *Store) retireWarmPoolSlotLocked(now time.Time, assignment Assignment, result *warmPoolDownsizeResult) {
+	if assignment.Status == "pending" || strings.TrimSpace(assignment.WorkerID) == "" {
+		assignment.Status = "canceled"
+		assignment.Updated = now
+		s.assignments[assignment.ID] = assignment
+		result.canceled = append(result.canceled, assignment.ID)
+		return
+	}
+	if assignment.Status == "claimed" && s.activeWarmPoolClaimLocked(assignment.ID) {
+		result.deferred = append(result.deferred, assignment.ID)
+		return
+	}
+	if s.activeWarmPoolCleanupLocked(assignment.ID) {
+		if assignment.Status != "draining" {
+			assignment.Status = "draining"
+			assignment.Updated = now
+			s.assignments[assignment.ID] = assignment
+		}
+		return
+	}
+	vmName := WarmPoolAssignmentVMName(assignment)
+	cleanup := Assignment{
+		ID:           s.nextAssignmentIDLocked(now),
+		WorkerID:     assignment.WorkerID,
+		WarmPoolSlot: assignment.ID,
+		Verb:         "cove",
+		Args:         warmPoolStopArgs(vmName),
+		Status:       "pending",
+		Created:      now,
+		Updated:      now,
+	}
+	assignment.Status = "draining"
+	assignment.Updated = now
+	s.assignments[assignment.ID] = assignment
+	s.assignments[cleanup.ID] = cleanup
+	result.cleanup = append(result.cleanup, cloneAssignment(cleanup))
 }
 
 func warmPoolDownsizeRank(status string) int {
@@ -1251,8 +1334,12 @@ func warmPoolDownsizeRank(status string) int {
 		return 2
 	case "leased":
 		return 3
-	default:
+	case "draining":
 		return 4
+	case "claimed":
+		return 5
+	default:
+		return 6
 	}
 }
 
@@ -1583,6 +1670,30 @@ func (s *Store) activeStoragePruneLocked(workerID string) bool {
 			continue
 		}
 		if assignment.Verb == "cove" && len(assignment.Args) >= 2 && assignment.Args[0] == "storage" && assignment.Args[1] == "prune" && activeAssignmentStatus(assignment.Status) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Store) activeWarmPoolClaimLocked(slotID string) bool {
+	for _, assignment := range s.assignments {
+		if assignment.WarmPoolSlot != slotID || !activeAssignmentStatus(assignment.Status) {
+			continue
+		}
+		if assignment.Verb == "cove" && len(assignment.Args) > 0 && assignment.Args[0] == "shell" {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Store) activeWarmPoolCleanupLocked(slotID string) bool {
+	for _, assignment := range s.assignments {
+		if assignment.WarmPoolSlot != slotID || !activeAssignmentStatus(assignment.Status) {
+			continue
+		}
+		if assignment.Verb == "cove" && len(assignment.Args) >= 4 && assignment.Args[0] == "ctl" && assignment.Args[1] == "-vm" && assignment.Args[3] == "stop" {
 			return true
 		}
 	}

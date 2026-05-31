@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -62,6 +63,9 @@ func Handler(store *Store) http.Handler {
 	})
 	mux.HandleFunc("/v1/warm-pools/claim", func(w http.ResponseWriter, r *http.Request) {
 		handleWarmPoolClaim(w, r, store)
+	})
+	mux.HandleFunc("/v1/warm-pools/", func(w http.ResponseWriter, r *http.Request) {
+		handleWarmPool(w, r, store)
 	})
 	mux.HandleFunc("/v1/warm-pools", func(w http.ResponseWriter, r *http.Request) {
 		handleWarmPools(w, r, store)
@@ -315,6 +319,51 @@ func handleWarmPools(w http.ResponseWriter, r *http.Request, store *Store) {
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+func handleWarmPool(w http.ResponseWriter, r *http.Request, store *Store) {
+	name, err := warmPoolNameFromPath(r.URL.Path)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		if !reconcile(w, store) {
+			return
+		}
+		status, ok := store.GetWarmPool(name)
+		if !ok {
+			writeError(w, http.StatusNotFound, fmt.Sprintf("warm pool %q not found", name))
+			return
+		}
+		writeJSON(w, http.StatusOK, status)
+	case http.MethodDelete:
+		result, err := store.DeleteWarmPool(name)
+		if err != nil {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func warmPoolNameFromPath(path string) (string, error) {
+	raw := strings.TrimPrefix(path, "/v1/warm-pools/")
+	if raw == "" || strings.Contains(raw, "/") {
+		return "", fmt.Errorf("warm pool name required")
+	}
+	name, err := url.PathUnescape(raw)
+	if err != nil {
+		return "", fmt.Errorf("decode warm pool name: %w", err)
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", fmt.Errorf("warm pool name required")
+	}
+	return name, nil
 }
 
 func handleWarmPoolClaim(w http.ResponseWriter, r *http.Request, store *Store) {

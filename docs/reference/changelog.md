@@ -65,10 +65,11 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `cove-fleetd` now exposes `POST /v1/placements/plan` to return the retained
   top ranked feasible workers for a placement request without storing an
   assignment.
-- `cove-fleetd` now exposes `POST /v1/warm-pools` and `GET /v1/warm-pools` for
-  durable fork warm-pool quotas; reconciliation creates replenishable
-  `cove run -fork-from ... -ephemeral -keep -headless` assignments through
-  `coved`.
+- `cove-fleetd` now exposes `POST /v1/warm-pools`,
+  `GET /v1/warm-pools`, `GET /v1/warm-pools/{name}`, and
+  `DELETE /v1/warm-pools/{name}` for durable fork warm-pool quotas;
+  reconciliation creates replenishable `cove run -fork-from ... -ephemeral
+  -keep -headless` assignments through `coved`.
 - `coved -fleet-url` now marks warm-pool slots `ready` only after a successful
   `cove shell <vm> -- /bin/sh -c true` probe, so `POST /v1/warm-pools/claim`
   hands off agent-ready forks instead of merely live `cove run` processes.
@@ -81,6 +82,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `cove-fleetd` now downsizes warm-pools when `size` is lowered: never-started
   surplus slots are canceled, and already-started surplus slots get same-worker
   `cove ctl -vm <name> stop` cleanup assignments.
+- Deleting a warm-pool now removes the desired pool, cancels pending slots,
+  queues stop cleanup for idle started slots, and defers claimed slots until
+  their guest-exec assignment finishes.
 - `coved -fleet-url` now starts leased assignments asynchronously so a
   long-running `cove` assignment can keep renewing while the worker continues
   heartbeating and polling for additional assigned work.

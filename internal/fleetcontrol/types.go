@@ -224,6 +224,13 @@ type WarmPoolResult struct {
 	Cleanup  []Assignment   `json:"cleanup,omitempty"`
 }
 
+type WarmPoolDeleteResult struct {
+	Pool     string       `json:"pool"`
+	Canceled []string     `json:"canceled,omitempty"`
+	Cleanup  []Assignment `json:"cleanup,omitempty"`
+	Deferred []string     `json:"deferred,omitempty"`
+}
+
 type WarmPoolClaimRequest struct {
 	Name    string            `json:"name"`
 	Command []string          `json:"command"`
