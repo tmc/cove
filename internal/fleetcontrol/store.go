@@ -983,6 +983,114 @@ func (s *Store) ListSandboxMetering(namespace, sandboxID string) SandboxMetering
 	}
 }
 
+func (s *Store) OperationsSummary(namespace string) OperationsSummary {
+	namespace = normalizeNamespace(namespace)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.now().UTC()
+	summary := OperationsSummary{
+		Time:      now,
+		Namespace: namespace,
+		Workers: WorkerOperationsSummary{
+			ByStatus: make(map[string]int),
+		},
+		Assignments: AssignmentOperationsSummary{
+			ByStatus: make(map[string]int),
+		},
+		Sandboxes: SandboxOperationsSummary{
+			ByStatus: make(map[string]int),
+		},
+		WarmPools: WarmPoolOperationsSummary{
+			ByStatus: make(map[string]int),
+		},
+	}
+
+	for _, host := range s.sortedHostsLocked() {
+		host = s.statusLocked(host)
+		summary.Workers.Total++
+		addStatusCount(summary.Workers.ByStatus, host.Status)
+		switch host.Status {
+		case "ready":
+			summary.Workers.Ready++
+		case "cordoned":
+			summary.Workers.Cordoned++
+			summary.Workers.Attention = append(summary.Workers.Attention, host)
+		case "stale":
+			summary.Workers.Stale++
+			summary.Workers.Attention = append(summary.Workers.Attention, host)
+		default:
+			summary.Workers.Attention = append(summary.Workers.Attention, host)
+		}
+	}
+
+	for _, pool := range s.sortedWarmPoolsLocked() {
+		if !namespaceMatches(pool.Namespace, namespace) {
+			continue
+		}
+		summary.WarmPools.Total++
+		summary.WarmPools.Desired += pool.Size
+		summary.WarmPools.Pools = append(summary.WarmPools.Pools, s.warmPoolStatusLocked(pool.Name))
+	}
+
+	var metering []SandboxMeteringRecord
+	for _, assignment := range s.sortedAssignmentsLocked() {
+		if !namespaceMatches(assignment.Namespace, namespace) {
+			continue
+		}
+		status := normalizeOperationStatus(assignment.Status)
+		summary.Assignments.Total++
+		addStatusCount(summary.Assignments.ByStatus, status)
+		if openAssignmentStatus(status) {
+			summary.Assignments.Active++
+			summary.Assignments.ActiveAssignments = append(summary.Assignments.ActiveAssignments, cloneAssignment(assignment))
+		} else {
+			summary.Assignments.Terminal++
+		}
+
+		if assignment.SandboxID != "" && assignment.SandboxRole == sandboxRoleRun {
+			sandbox := sandboxStatusFromAssignment(assignment, now)
+			sandbox.Status = status
+			summary.Sandboxes.Total++
+			addStatusCount(summary.Sandboxes.ByStatus, status)
+			if sandboxTerminalStatus(status) {
+				summary.Sandboxes.Terminal++
+			} else {
+				summary.Sandboxes.Active++
+				summary.Sandboxes.ActiveSandboxes = append(summary.Sandboxes.ActiveSandboxes, sandbox)
+			}
+			if status == "draining" {
+				summary.Sandboxes.DrainingSandboxes = append(summary.Sandboxes.DrainingSandboxes, sandbox)
+			}
+		}
+
+		if assignment.WarmPool != "" {
+			summary.WarmPools.Slots++
+			addStatusCount(summary.WarmPools.ByStatus, status)
+			if openAssignmentStatus(status) {
+				summary.WarmPools.Active++
+			} else {
+				summary.WarmPools.Terminal++
+			}
+			switch status {
+			case "ready":
+				summary.WarmPools.Ready++
+			case "claimed":
+				summary.WarmPools.Claimed++
+			case "draining":
+				summary.WarmPools.Draining++
+			}
+		}
+	}
+	for _, record := range s.sortedMeteringLocked() {
+		if !namespaceMatches(record.Namespace, namespace) {
+			continue
+		}
+		metering = append(metering, record)
+	}
+	summary.Metering = sandboxMeteringSummary(namespace, "", metering)
+	return summary
+}
+
 func (s *Store) ExecSandbox(id string, req SandboxExecRequest) (SandboxExecResult, error) {
 	return s.ExecSandboxActor("controller", id, req)
 }
@@ -2246,6 +2354,23 @@ func activeAssignmentStatus(status string) bool {
 	default:
 		return false
 	}
+}
+
+func openAssignmentStatus(status string) bool {
+	return activeAssignmentStatus(status) || status == "claimed" || sandboxPendingStopStatus(status)
+}
+
+func normalizeOperationStatus(status string) string {
+	status = strings.TrimSpace(status)
+	if status == "" {
+		return "pending"
+	}
+	return status
+}
+
+func addStatusCount(counts map[string]int, status string) {
+	status = normalizeOperationStatus(status)
+	counts[status]++
 }
 
 func reconcileAssignmentStatus(status string) bool {

@@ -8,6 +8,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 ## Unreleased
 
 ### Added
+- `cove-fleetd` now exposes `GET /v1/operations/summary` for unscoped viewers,
+  aggregating worker readiness, active assignments, sandbox handles, warm-pool
+  slots, and sandbox metering for operator dashboards.
 - `cove-fleetd` now exposes `POST /v1/workers/{id}/drain`, which cordons a
   worker and stops or cancels its hosted sandbox handles through the existing
   same-worker cleanup path.

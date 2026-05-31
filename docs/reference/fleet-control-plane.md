@@ -10,9 +10,10 @@ controller-side placement can choose a ready worker by least-loaded or
 image-affinity or bin-pack policy, and the controller reconciles stale workers
 and expired assignment leases. Operators can cordon or drain workers for
 maintenance without dropping their heartbeat history, and can ask the controller
-to prepare a base image across the fleet before job placement, push VM lifecycle
-policy updates, fan out storage budget/prune policy, or keep a fork warm-pool
-quota active.
+for an operations summary across workers, assignments, sandboxes, warm pools,
+and metering. They can also prepare a base image across the fleet before job
+placement, push VM lifecycle policy updates, fan out storage budget/prune
+policy, or keep a fork warm-pool quota active.
 
 Start a private controller:
 
@@ -62,6 +63,8 @@ Inventory endpoints:
 
 ```bash
 curl http://127.0.0.1:9758/healthz
+curl http://127.0.0.1:9758/v1/operations/summary
+curl http://127.0.0.1:9758/v1/operations/summary?namespace=team-a
 curl http://127.0.0.1:9758/v1/workers
 curl http://127.0.0.1:9758/v1/workers/mini-1
 curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/cordon \
@@ -83,6 +86,15 @@ the updated worker, per-sandbox stop results, and skipped terminal sandboxes.
 The operation records both `worker.drain` and per-sandbox `sandbox.drain` audit
 events. Like cordon/uncordon, drain is a fleet-global operator action and
 requires an unscoped operator/admin identity.
+
+`GET /v1/operations/summary` is the dashboard entry point for operators. It
+reconciles first, then returns worker readiness/cordon/stale counts with
+attention workers, assignment status counts with active assignments, hosted
+sandbox status counts with active and draining handles, warm-pool desired/slot
+counts, and aggregate sandbox metering. The optional `namespace` query filters
+assignment, sandbox, warm-pool, and metering counts; worker inventory stays
+fleet-global. Because the response includes fleet-global worker state, scoped
+service-account tokens cannot read it.
 
 Service-account and audit endpoints:
 

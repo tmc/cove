@@ -77,6 +77,9 @@ func Handler(store *Store) http.Handler {
 	mux.HandleFunc("/v1/oidc-bindings", func(w http.ResponseWriter, r *http.Request) {
 		handleOIDCBindings(w, r, store)
 	})
+	mux.HandleFunc("/v1/operations/summary", func(w http.ResponseWriter, r *http.Request) {
+		handleOperationsSummary(w, r, store)
+	})
 	mux.HandleFunc("/v1/metering/sandboxes", func(w http.ResponseWriter, r *http.Request) {
 		handleSandboxMetering(w, r, store)
 	})
@@ -147,6 +150,24 @@ func handleWorkerHeartbeat(w http.ResponseWriter, r *http.Request, store *Store,
 		return
 	}
 	writeJSON(w, http.StatusOK, record)
+}
+
+func handleOperationsSummary(w http.ResponseWriter, r *http.Request, store *Store) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	if !requireUnscoped(w, r, store) {
+		return
+	}
+	if !reconcile(w, store) {
+		return
+	}
+	writeJSON(w, http.StatusOK, store.OperationsSummary(namespaceFilterFromRequest(r, identity)))
 }
 
 func handleAudit(w http.ResponseWriter, r *http.Request, store *Store) {

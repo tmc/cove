@@ -454,6 +454,55 @@ type SandboxMeteringResult struct {
 	Summary SandboxMeteringSummary  `json:"summary"`
 }
 
+type OperationsSummary struct {
+	Time        time.Time                   `json:"time"`
+	Namespace   string                      `json:"namespace,omitempty"`
+	Workers     WorkerOperationsSummary     `json:"workers"`
+	Assignments AssignmentOperationsSummary `json:"assignments"`
+	Sandboxes   SandboxOperationsSummary    `json:"sandboxes"`
+	WarmPools   WarmPoolOperationsSummary   `json:"warm_pools"`
+	Metering    SandboxMeteringSummary      `json:"metering"`
+}
+
+type WorkerOperationsSummary struct {
+	Total     int            `json:"total"`
+	Ready     int            `json:"ready"`
+	Cordoned  int            `json:"cordoned"`
+	Stale     int            `json:"stale"`
+	ByStatus  map[string]int `json:"by_status,omitempty"`
+	Attention []HostRecord   `json:"attention,omitempty"`
+}
+
+type AssignmentOperationsSummary struct {
+	Total             int            `json:"total"`
+	Active            int            `json:"active"`
+	Terminal          int            `json:"terminal"`
+	ByStatus          map[string]int `json:"by_status,omitempty"`
+	ActiveAssignments []Assignment   `json:"active_assignments,omitempty"`
+}
+
+type SandboxOperationsSummary struct {
+	Total             int             `json:"total"`
+	Active            int             `json:"active"`
+	Terminal          int             `json:"terminal"`
+	ByStatus          map[string]int  `json:"by_status,omitempty"`
+	ActiveSandboxes   []SandboxStatus `json:"active_sandboxes,omitempty"`
+	DrainingSandboxes []SandboxStatus `json:"draining_sandboxes,omitempty"`
+}
+
+type WarmPoolOperationsSummary struct {
+	Total    int              `json:"total"`
+	Desired  int              `json:"desired"`
+	Slots    int              `json:"slots"`
+	Active   int              `json:"active"`
+	Ready    int              `json:"ready"`
+	Claimed  int              `json:"claimed"`
+	Draining int              `json:"draining"`
+	Terminal int              `json:"terminal"`
+	ByStatus map[string]int   `json:"by_status,omitempty"`
+	Pools    []WarmPoolStatus `json:"pools,omitempty"`
+}
+
 type SandboxExecRequest struct {
 	Command []string          `json:"command"`
 	Env     map[string]string `json:"env,omitempty"`

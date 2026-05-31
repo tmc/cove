@@ -467,6 +467,76 @@ func TestStoreSandboxMeteringRecordsRunningIntervals(t *testing.T) {
 	}
 }
 
+func TestStoreOperationsSummary(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 4}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-2"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CordonWorker("worker-2", "maintenance"); err != nil {
+		t.Fatal(err)
+	}
+	sandbox, err := store.CreateSandbox(SandboxRequest{
+		Namespace: "team-a",
+		ID:        "job-1",
+		ImageRef:  "base:v1",
+		Resources: Capacity{CPUs: 2, MemoryBytes: 1024},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AwaitAssignment("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: sandbox.Assignment.ID, Status: "running"}); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(2 * time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: sandbox.Assignment.ID, Status: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.StopSandbox("job-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.EnsureWarmPool(WarmPoolRequest{Namespace: "team-a", Name: "runner", ImageRef: "base:v1", Size: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAssignment(Assignment{Namespace: "team-b", WorkerID: "worker-1", Verb: "noop"}); err != nil {
+		t.Fatal(err)
+	}
+
+	summary := store.OperationsSummary("team-a")
+	if summary.Namespace != "team-a" || summary.Workers.Total != 2 || summary.Workers.Ready != 1 || summary.Workers.Cordoned != 1 {
+		t.Fatalf("workers summary = %+v", summary.Workers)
+	}
+	if len(summary.Workers.Attention) != 1 || summary.Workers.Attention[0].ID != "worker-2" {
+		t.Fatalf("worker attention = %+v, want worker-2", summary.Workers.Attention)
+	}
+	if summary.Assignments.Total != 3 || summary.Assignments.Active != 3 || summary.Assignments.ByStatus["draining"] != 1 || summary.Assignments.ByStatus["pending"] != 2 {
+		t.Fatalf("assignment summary = %+v, want 3 active team-a assignments", summary.Assignments)
+	}
+	if summary.Sandboxes.Total != 1 || summary.Sandboxes.Active != 1 || len(summary.Sandboxes.DrainingSandboxes) != 1 || summary.Sandboxes.ByStatus["draining"] != 1 {
+		t.Fatalf("sandbox summary = %+v, want one draining sandbox", summary.Sandboxes)
+	}
+	if summary.WarmPools.Total != 1 || summary.WarmPools.Desired != 1 || summary.WarmPools.Slots != 1 || summary.WarmPools.Active != 1 || summary.WarmPools.ByStatus["pending"] != 1 {
+		t.Fatalf("warm-pool summary = %+v, want one pending slot", summary.WarmPools)
+	}
+	if summary.Metering.Namespace != "team-a" || summary.Metering.Records == 0 || summary.Metering.DurationMillis == 0 {
+		t.Fatalf("metering summary = %+v, want team-a usage", summary.Metering)
+	}
+	for _, assignment := range summary.Assignments.ActiveAssignments {
+		if assignment.Namespace != "team-a" {
+			t.Fatalf("active assignment namespace = %q, want team-a", assignment.Namespace)
+		}
+	}
+}
+
 func TestStoreSandboxExecQueuesSameWorkerShell(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
@@ -2541,6 +2611,30 @@ func TestHandlerWorkerDrainStopsHostedSandboxes(t *testing.T) {
 	getJSON(t, server.URL+"/v1/sandboxes/job-1", &sandbox)
 	if sandbox.Status != "draining" {
 		t.Fatalf("sandbox after drain = %+v, want draining", sandbox)
+	}
+}
+
+func TestHandlerOperationsSummary(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var account ServiceAccountResult
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-a", Namespace: "team-a", Role: ServiceAccountRoleViewer, Token: "token-a"}, &account)
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 2}}, &record)
+	var sandbox SandboxStatus
+	postJSON(t, server.URL+"/v1/sandboxes", SandboxRequest{Namespace: "team-a", ID: "job-1", ImageRef: "base:v1"}, &sandbox)
+	var assignment Assignment
+	postJSON(t, server.URL+"/v1/assignments", Assignment{Namespace: "team-b", WorkerID: "worker-1", Verb: "noop"}, &assignment)
+
+	var summary OperationsSummary
+	getJSON(t, server.URL+"/v1/operations/summary?namespace=team-a", &summary)
+	if summary.Namespace != "team-a" || summary.Workers.Total != 1 || summary.Assignments.Total != 1 || summary.Sandboxes.Total != 1 {
+		t.Fatalf("operations summary = %+v, want team-a counts only with global workers", summary)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/operations/summary", "token-a"); code != http.StatusForbidden {
+		t.Fatalf("scoped operations summary status = %d, want %d", code, http.StatusForbidden)
 	}
 }
 
