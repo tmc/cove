@@ -122,12 +122,21 @@ func TestRegistryClientFetchManifestResolvesIndex(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	got, digest, err := (RegistryClient{BaseURL: srv.URL}).FetchManifest(context.Background(), ref)
+	got, resolution, err := (RegistryClient{BaseURL: srv.URL}).FetchManifestInfo(context.Background(), ref)
 	if err != nil {
-		t.Fatalf("FetchManifest(): %v", err)
+		t.Fatalf("FetchManifestInfo(): %v", err)
 	}
-	if digest != manifestDigest {
-		t.Fatalf("digest = %q, want %q", digest, manifestDigest)
+	if resolution.Digest != manifestDigest {
+		t.Fatalf("digest = %q, want %q", resolution.Digest, manifestDigest)
+	}
+	if resolution.IndexDigest != "sha256:index" || resolution.IndexMediaType != MediaTypeImageIndex {
+		t.Fatalf("index resolution = %+v, want digest/media type", resolution)
+	}
+	if resolution.SelectedDigest != manifestDigest {
+		t.Fatalf("selected digest = %q, want %q", resolution.SelectedDigest, manifestDigest)
+	}
+	if resolution.SelectedPlatform == nil || resolution.SelectedPlatform.OS != "darwin" || resolution.SelectedPlatform.Architecture != "arm64" {
+		t.Fatalf("selected platform = %+v, want darwin/arm64", resolution.SelectedPlatform)
 	}
 	if got.SchemaVersion != want.SchemaVersion || got.Annotations[CoveUncompressedDiskSize] != "0" {
 		t.Fatalf("manifest = %#v, want %#v", got, want)

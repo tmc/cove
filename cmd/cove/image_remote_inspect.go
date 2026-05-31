@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/tmc/cove/internal/bytefmt"
@@ -23,8 +24,15 @@ type ImageRemoteInspectOutput struct {
 	Ref                 string `json:"ref"`
 	Error               string `json:"error,omitempty"`
 	ManifestDigest      string `json:"manifest_digest,omitempty"`
+	ResolvedFromIndex   bool   `json:"resolved_from_index,omitempty"`
+	IndexDigest         string `json:"index_digest,omitempty"`
+	IndexMediaType      string `json:"index_media_type,omitempty"`
+	SelectedDigest      string `json:"selected_digest,omitempty"`
+	SelectedPlatform    string `json:"selected_platform,omitempty"`
 	Kind                string `json:"kind"`
 	Format              string `json:"format"`
+	PullPlan            string `json:"pull_plan,omitempty"`
+	Verification        string `json:"verification,omitempty"`
 	MediaType           string `json:"media_type,omitempty"`
 	ConfigMediaType     string `json:"config_media_type,omitempty"`
 	LayerCount          int    `json:"layer_count"`
@@ -80,11 +88,11 @@ func InspectRemoteImage(ctx context.Context, refText string, opts remoteInspectO
 		RegistryBaseURL: opts.RegistryBaseURL,
 		RegistryToken:   opts.RegistryToken,
 	})
-	manifest, digest, err := client.FetchManifest(ctx, ref)
+	manifest, resolution, err := client.FetchManifestInfo(ctx, ref)
 	if err != nil {
 		return ImageRemoteInspectOutput{}, err
 	}
-	out := remoteInspectBase(ref, digest, manifest)
+	out := remoteInspectBase(ref, resolution, manifest)
 	if isCoveImageArtifactManifest(manifest) {
 		return inspectRemoteCoveImageArtifact(ctx, client, ref, manifest, out)
 	}
@@ -95,19 +103,24 @@ func InspectRemoteImage(ctx context.Context, refText string, opts remoteInspectO
 	return inspectRemoteVMManifest(parsed, out), nil
 }
 
-func remoteInspectBase(ref ociimage.Reference, digest string, manifest ociimage.Manifest) ImageRemoteInspectOutput {
+func remoteInspectBase(ref ociimage.Reference, resolution ociimage.ManifestResolution, manifest ociimage.Manifest) ImageRemoteInspectOutput {
 	var total int64
 	for _, layer := range manifest.Layers {
 		total += layer.Size
 	}
 	return ImageRemoteInspectOutput{
-		Ref:             ref.String(),
-		ManifestDigest:  digest,
-		Kind:            "vm-oci",
-		MediaType:       manifest.MediaType,
-		ConfigMediaType: manifest.Config.MediaType,
-		LayerCount:      len(manifest.Layers),
-		TotalLayerBytes: total,
+		Ref:               ref.String(),
+		ManifestDigest:    resolution.Digest,
+		ResolvedFromIndex: resolution.IndexDigest != "",
+		IndexDigest:       resolution.IndexDigest,
+		IndexMediaType:    resolution.IndexMediaType,
+		SelectedDigest:    resolution.SelectedDigest,
+		SelectedPlatform:  remotePlatformString(resolution.SelectedPlatform),
+		Kind:              "vm-oci",
+		MediaType:         manifest.MediaType,
+		ConfigMediaType:   manifest.Config.MediaType,
+		LayerCount:        len(manifest.Layers),
+		TotalLayerBytes:   total,
 	}
 }
 
@@ -126,6 +139,8 @@ func isCoveImageArtifactManifest(manifest ociimage.Manifest) bool {
 func inspectRemoteCoveImageArtifact(ctx context.Context, client ociimage.RegistryClient, ref ociimage.Reference, manifest ociimage.Manifest, out ImageRemoteInspectOutput) (ImageRemoteInspectOutput, error) {
 	out.Kind = "image-store"
 	out.Format = "cove-image"
+	out.PullPlan = "cove image-store artifact"
+	out.Verification = "manifest parsed; image metadata blob size/digest verified"
 	out.ConfigBytes = manifest.Config.Size
 	if manifest.Config.Digest == "" {
 		return out, fmt.Errorf("image inspect remote: cove image artifact missing config digest")
@@ -194,6 +209,8 @@ func inspectRemoteVMManifest(parsed ociimage.ParsedManifest, out ImageRemoteInsp
 	out.Format = parsed.Format.String()
 	switch parsed.Format {
 	case ociimage.FormatLume:
+		out.PullPlan = "lume tar-split import"
+		out.Verification = "manifest parsed; disk part size/digest verified during import"
 		out.DiskPartCount = len(parsed.Lume.DiskParts)
 		out.DiskLayerCount = len(parsed.Lume.DiskParts)
 		for _, part := range parsed.Lume.DiskParts {
@@ -206,6 +223,8 @@ func inspectRemoteVMManifest(parsed ociimage.ParsedManifest, out ImageRemoteInsp
 			out.NVRAMBytes = parsed.Lume.NvramLayer.Size
 		}
 	case ociimage.FormatTart:
+		out.PullPlan = "tart-compatible import"
+		out.Verification = "manifest parsed; sidecar digest and uncompressed disk digest verified during pull"
 		out.DiskSize = parsed.Tart.UncompressedDiskSize
 		out.DiskLayerCount = len(parsed.Tart.DiskLayers)
 		out.ChunkCount = len(parsed.Tart.DiskLayers)
@@ -219,6 +238,11 @@ func inspectRemoteVMManifest(parsed ociimage.ParsedManifest, out ImageRemoteInsp
 		out.Format = "cove"
 		out.DiskSize = parsed.Annotations.UncompressedDiskSize
 		out.BaseManifest = parsed.Annotations.BaseManifest
+		out.PullPlan = "cove chunked pull"
+		if out.BaseManifest != "" {
+			out.PullPlan = "cove chunked pull with base reuse"
+		}
+		out.Verification = "manifest parsed; compressed and uncompressed chunk digests verified during pull"
 		out.UploadTime = parsed.Annotations.UploadTime
 		out.ChunkCount = len(parsed.Chunks)
 		out.DiskLayerCount = len(parsed.DiskLayers)
@@ -236,6 +260,41 @@ func inspectRemoteVMManifest(parsed ociimage.ParsedManifest, out ImageRemoteInsp
 		}
 	}
 	return out
+}
+
+func remotePlatformString(platform *ociimage.Platform) string {
+	if platform == nil {
+		return ""
+	}
+	var b strings.Builder
+	if platform.OS != "" || platform.Architecture != "" {
+		b.WriteString(platform.OS)
+		if platform.OS != "" && platform.Architecture != "" {
+			b.WriteByte('/')
+		}
+		b.WriteString(platform.Architecture)
+	}
+	if platform.Variant != "" {
+		if b.Len() > 0 {
+			b.WriteByte('/')
+		}
+		b.WriteString(platform.Variant)
+	}
+	if platform.OSVersion != "" {
+		if b.Len() > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString("os.version=")
+		b.WriteString(platform.OSVersion)
+	}
+	if len(platform.Features) > 0 {
+		if b.Len() > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString("features=")
+		b.WriteString(strings.Join(platform.Features, ","))
+	}
+	return b.String()
 }
 
 func countRemoteInspectErrors(out []ImageRemoteInspectOutput) int {
@@ -287,8 +346,26 @@ func writeRemoteInspectText(w io.Writer, out ImageRemoteInspectOutput) error {
 	if out.ManifestDigest != "" {
 		fmt.Fprintf(w, "  manifest digest: %s\n", out.ManifestDigest)
 	}
+	if out.ResolvedFromIndex {
+		fmt.Fprintf(w, "  index digest:    %s\n", out.IndexDigest)
+		if out.IndexMediaType != "" {
+			fmt.Fprintf(w, "  index media:     %s\n", out.IndexMediaType)
+		}
+		if out.SelectedDigest != "" {
+			fmt.Fprintf(w, "  selected digest: %s\n", out.SelectedDigest)
+		}
+		if out.SelectedPlatform != "" {
+			fmt.Fprintf(w, "  platform:        %s\n", out.SelectedPlatform)
+		}
+	}
 	fmt.Fprintf(w, "  kind:            %s\n", out.Kind)
 	fmt.Fprintf(w, "  format:          %s\n", out.Format)
+	if out.PullPlan != "" {
+		fmt.Fprintf(w, "  pull plan:       %s\n", out.PullPlan)
+	}
+	if out.Verification != "" {
+		fmt.Fprintf(w, "  verification:    %s\n", out.Verification)
+	}
 	if out.ImageRef != "" {
 		fmt.Fprintf(w, "  image ref:       %s\n", out.ImageRef)
 	}

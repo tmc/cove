@@ -27,6 +27,17 @@ type RegistryTokenCache struct {
 	tokens map[string]string
 }
 
+// ManifestResolution describes how a registry reference resolved to an image
+// manifest.
+type ManifestResolution struct {
+	Digest           string
+	MediaType        string
+	IndexDigest      string
+	IndexMediaType   string
+	SelectedDigest   string
+	SelectedPlatform *Platform
+}
+
 const (
 	registryManifestResolveLimit = 4
 	registryManifestAccept       = MediaTypeImageManifest + ", " + MediaTypeDockerManifest + ", " + MediaTypeImageIndex + ", " + MediaTypeDockerList
@@ -41,56 +52,77 @@ func NewRegistryTokenCache() *RegistryTokenCache {
 // to an OCI image index or Docker manifest list, it resolves the best child
 // image manifest in the same repository and returns that manifest digest.
 func (c RegistryClient) FetchManifest(ctx context.Context, ref Reference) (Manifest, string, error) {
+	manifest, resolution, err := c.FetchManifestInfo(ctx, ref)
+	return manifest, resolution.Digest, err
+}
+
+// FetchManifestInfo fetches and decodes ref's OCI image manifest and returns
+// resolution details when the ref traversed an OCI index or Docker manifest
+// list.
+func (c RegistryClient) FetchManifestInfo(ctx context.Context, ref Reference) (Manifest, ManifestResolution, error) {
 	var manifest Manifest
 	target := ref.Tag
 	if ref.Digest != "" {
 		target = ref.Digest
 	}
 	if target == "" {
-		return manifest, "", fmt.Errorf("fetch manifest: reference must include tag or digest")
+		return manifest, ManifestResolution{}, fmt.Errorf("fetch manifest: reference must include tag or digest")
 	}
 	return c.fetchManifestTarget(ctx, ref, target, 0)
 }
 
-func (c RegistryClient) fetchManifestTarget(ctx context.Context, ref Reference, target string, depth int) (Manifest, string, error) {
+func (c RegistryClient) fetchManifestTarget(ctx context.Context, ref Reference, target string, depth int) (Manifest, ManifestResolution, error) {
 	var manifest Manifest
 	if depth > registryManifestResolveLimit {
-		return manifest, "", fmt.Errorf("fetch manifest: image index resolution exceeded %d hops", registryManifestResolveLimit)
+		return manifest, ManifestResolution{}, fmt.Errorf("fetch manifest: image index resolution exceeded %d hops", registryManifestResolveLimit)
 	}
 	req, err := c.newRequest(ctx, http.MethodGet, ref, "manifests/"+target)
 	if err != nil {
-		return manifest, "", err
+		return manifest, ManifestResolution{}, err
 	}
 	req.Header.Set("Accept", registryManifestAccept)
 	resp, err := c.do(req, ref, "pull")
 	if err != nil {
-		return manifest, "", fmt.Errorf("fetch manifest: %w", err)
+		return manifest, ManifestResolution{}, fmt.Errorf("fetch manifest: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return manifest, "", fmt.Errorf("fetch manifest: registry returned %s", resp.Status)
+		return manifest, ManifestResolution{}, fmt.Errorf("fetch manifest: registry returned %s", resp.Status)
 	}
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return manifest, "", fmt.Errorf("fetch manifest: read: %w", err)
+		return manifest, ManifestResolution{}, fmt.Errorf("fetch manifest: read: %w", err)
 	}
 	digest := resp.Header.Get("Docker-Content-Digest")
 	if digest == "" {
 		digest = digestBytes(data)
 	}
 	if index, ok, err := parseRegistryIndex(data); err != nil {
-		return manifest, "", err
+		return manifest, ManifestResolution{}, err
 	} else if ok {
 		child, err := selectRegistryIndexManifest(index)
 		if err != nil {
-			return manifest, "", err
+			return manifest, ManifestResolution{}, err
 		}
-		return c.fetchManifestTarget(ctx, ref, child.Digest, depth+1)
+		childManifest, resolution, err := c.fetchManifestTarget(ctx, ref, child.Digest, depth+1)
+		if err != nil {
+			return childManifest, resolution, err
+		}
+		if resolution.IndexDigest == "" {
+			resolution.IndexDigest = digest
+			resolution.IndexMediaType = index.MediaType
+			resolution.SelectedDigest = child.Digest
+			resolution.SelectedPlatform = child.Platform
+		}
+		return childManifest, resolution, nil
 	}
 	if err := json.Unmarshal(data, &manifest); err != nil {
-		return manifest, "", fmt.Errorf("fetch manifest: decode: %w", err)
+		return manifest, ManifestResolution{}, fmt.Errorf("fetch manifest: decode: %w", err)
 	}
-	return manifest, digest, nil
+	return manifest, ManifestResolution{
+		Digest:    digest,
+		MediaType: manifest.MediaType,
+	}, nil
 }
 
 // FetchBlob opens ref's blob digest for streaming.

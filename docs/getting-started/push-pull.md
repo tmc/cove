@@ -31,8 +31,10 @@ image manifest or at an OCI image index / Docker manifest list; cove resolves
 the index to a same-repository image manifest before parsing. Use
 `cove image inspect -remote` to fetch the registry manifest metadata without
 pulling disks. Multiple refs are inspected as a batch, with JSON emitted as an
-array for private catalog audits. Use `--manifest` to validate local manifest
-JSON.
+array for private catalog audits. Remote inspect reports index/list resolution
+details, the selected platform, the pull plan for cove/Tart/Lume/image-store
+artifacts, and the verification work cove will perform during pull/import. Use
+`--manifest` to validate local manifest JSON.
 
 What happens:
 

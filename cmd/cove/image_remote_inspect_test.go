@@ -31,6 +31,9 @@ func TestInspectRemoteImageCoveManifest(t *testing.T) {
 	if out.DiskSize != 16 || out.ChunkCount != 4 || out.DiskLayerCount != 4 {
 		t.Fatalf("disk/chunks/layers = %d/%d/%d, want 16/4/4", out.DiskSize, out.ChunkCount, out.DiskLayerCount)
 	}
+	if out.PullPlan != "cove chunked pull" || !strings.Contains(out.Verification, "chunk digests verified") {
+		t.Fatalf("pull/verification = %q/%q", out.PullPlan, out.Verification)
+	}
 	if out.CompressedDiskBytes == 0 {
 		t.Fatal("compressed disk bytes = 0, want non-zero")
 	}
@@ -94,6 +97,9 @@ func TestInspectRemoteImageResolvesIndex(t *testing.T) {
 	if out.ManifestDigest != manifestDigest {
 		t.Fatalf("manifest digest = %q, want %q", out.ManifestDigest, manifestDigest)
 	}
+	if !out.ResolvedFromIndex || out.IndexDigest != "sha256:index" || out.SelectedDigest != manifestDigest || out.SelectedPlatform != "darwin/arm64" {
+		t.Fatalf("resolution = index:%v index_digest:%q selected:%q platform:%q", out.ResolvedFromIndex, out.IndexDigest, out.SelectedDigest, out.SelectedPlatform)
+	}
 	if out.Format != "cove" || out.DiskSize != 16 {
 		t.Fatalf("format/disk = %s/%d, want cove/16", out.Format, out.DiskSize)
 	}
@@ -112,6 +118,9 @@ func TestInspectRemoteImageLumeManifest(t *testing.T) {
 	}
 	if out.DiskPartCount != 2 || out.CompressedDiskBytes != 192 {
 		t.Fatalf("parts/compressed = %d/%d, want 2/192", out.DiskPartCount, out.CompressedDiskBytes)
+	}
+	if out.PullPlan != "lume tar-split import" || !strings.Contains(out.Verification, "part size/digest") {
+		t.Fatalf("pull/verification = %q/%q", out.PullPlan, out.Verification)
 	}
 	if out.ConfigBytes != 32 || out.NVRAMBytes != 1024 {
 		t.Fatalf("config/nvram = %d/%d, want 32/1024", out.ConfigBytes, out.NVRAMBytes)
@@ -135,6 +144,9 @@ func TestInspectRemoteImageTartManifest(t *testing.T) {
 	}
 	if out.UploadTime != "2026-04-26T00:00:00Z" {
 		t.Fatalf("upload time = %q", out.UploadTime)
+	}
+	if out.PullPlan != "tart-compatible import" || !strings.Contains(out.Verification, "uncompressed disk digest") {
+		t.Fatalf("pull/verification = %q/%q", out.PullPlan, out.Verification)
 	}
 	if out.ConfigBytes == 0 || out.NVRAMBytes == 0 || out.CompressedDiskBytes == 0 {
 		t.Fatalf("config/nvram/compressed = %d/%d/%d, want non-zero", out.ConfigBytes, out.NVRAMBytes, out.CompressedDiskBytes)
@@ -193,6 +205,9 @@ func TestInspectRemoteImageCoveImageArtifact(t *testing.T) {
 	if out.ImageRef != "runner:v1" || out.DiskSize != 99 || out.DiskSHA256 != config.DiskSHA256 {
 		t.Fatalf("image/disk = %q/%d/%q", out.ImageRef, out.DiskSize, out.DiskSHA256)
 	}
+	if out.PullPlan != "cove image-store artifact" || !strings.Contains(out.Verification, "metadata blob size/digest verified") {
+		t.Fatalf("pull/verification = %q/%q", out.PullPlan, out.Verification)
+	}
 	if out.CompressedDiskBytes != 42 || out.MetadataBlobs != 1 || out.MetadataBytes != 7 {
 		t.Fatalf("compressed/meta = %d/%d/%d, want 42/1/7", out.CompressedDiskBytes, out.MetadataBlobs, out.MetadataBytes)
 	}
@@ -205,6 +220,8 @@ func TestWriteRemoteInspectText(t *testing.T) {
 		ManifestDigest:      "sha256:test",
 		Kind:                "vm-oci",
 		Format:              "cove",
+		PullPlan:            "cove chunked pull",
+		Verification:        "manifest parsed; compressed and uncompressed chunk digests verified during pull",
 		DiskSize:            16,
 		CompressedDiskBytes: 8,
 		ChunkCount:          2,
@@ -214,7 +231,7 @@ func TestWriteRemoteInspectText(t *testing.T) {
 	if err != nil {
 		t.Fatalf("writeRemoteInspectText: %v", err)
 	}
-	for _, want := range []string{"Remote image ghcr.io/me/dev-vm:v1", "format:          cove", "chunks:          2"} {
+	for _, want := range []string{"Remote image ghcr.io/me/dev-vm:v1", "format:          cove", "pull plan:       cove chunked pull", "verification:    manifest parsed", "chunks:          2"} {
 		if !strings.Contains(b.String(), want) {
 			t.Fatalf("text missing %q:\n%s", want, b.String())
 		}
