@@ -610,6 +610,104 @@ func (s *Store) PushLifecyclePolicy(req LifecyclePolicyRequest) (LifecyclePolicy
 	return result, nil
 }
 
+func (s *Store) PushStorageBudget(req StorageBudgetRequest) (StorageBudgetResult, error) {
+	args, err := storageBudgetArgs(req)
+	if err != nil {
+		return StorageBudgetResult{}, err
+	}
+	labels := cloneLabels(req.RequiredLabels)
+	now := s.now().UTC()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	reconciled := s.reconcileLocked(now)
+	var result StorageBudgetResult
+	for _, host := range s.sortedHostsLocked() {
+		host = s.statusLocked(host)
+		if !labelsMatch(host.Labels, labels) {
+			continue
+		}
+		if host.Status != "ready" {
+			result.Skipped = append(result.Skipped, StoragePolicySkip{WorkerID: host.ID, Reason: host.Status})
+			continue
+		}
+		if s.activeStorageBudgetLocked(host.ID) {
+			result.Skipped = append(result.Skipped, StoragePolicySkip{WorkerID: host.ID, Reason: "active"})
+			continue
+		}
+		assignment := Assignment{
+			ID:             s.nextAssignmentIDLocked(now),
+			WorkerID:       host.ID,
+			RequiredLabels: labels,
+			Verb:           "cove",
+			Args:           cloneStrings(args),
+			Status:         "pending",
+			Created:        now,
+			Updated:        now,
+		}
+		s.assignments[assignment.ID] = assignment
+		result.Assignments = append(result.Assignments, cloneAssignment(assignment))
+	}
+	if len(result.Assignments) == 0 && len(result.Skipped) == 0 {
+		return result, fmt.Errorf("no workers match storage budget")
+	}
+	if len(result.Assignments) > 0 || reconciled.changed() {
+		if err := s.persistLocked(); err != nil {
+			return result, err
+		}
+	}
+	return result, nil
+}
+
+func (s *Store) PushStoragePrune(req StoragePruneRequest) (StoragePruneResult, error) {
+	args, err := storagePruneArgs(req)
+	if err != nil {
+		return StoragePruneResult{}, err
+	}
+	labels := cloneLabels(req.RequiredLabels)
+	now := s.now().UTC()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	reconciled := s.reconcileLocked(now)
+	var result StoragePruneResult
+	for _, host := range s.sortedHostsLocked() {
+		host = s.statusLocked(host)
+		if !labelsMatch(host.Labels, labels) {
+			continue
+		}
+		if host.Status != "ready" {
+			result.Skipped = append(result.Skipped, StoragePolicySkip{WorkerID: host.ID, Reason: host.Status})
+			continue
+		}
+		if s.activeStoragePruneLocked(host.ID) {
+			result.Skipped = append(result.Skipped, StoragePolicySkip{WorkerID: host.ID, Reason: "active"})
+			continue
+		}
+		assignment := Assignment{
+			ID:             s.nextAssignmentIDLocked(now),
+			WorkerID:       host.ID,
+			RequiredLabels: labels,
+			Verb:           "cove",
+			Args:           cloneStrings(args),
+			Status:         "pending",
+			Created:        now,
+			Updated:        now,
+		}
+		s.assignments[assignment.ID] = assignment
+		result.Assignments = append(result.Assignments, cloneAssignment(assignment))
+	}
+	if len(result.Assignments) == 0 && len(result.Skipped) == 0 {
+		return result, fmt.Errorf("no workers match storage prune")
+	}
+	if len(result.Assignments) > 0 || reconciled.changed() {
+		if err := s.persistLocked(); err != nil {
+			return result, err
+		}
+	}
+	return result, nil
+}
+
 func (s *Store) AwaitAssignment(id string) (*Assignment, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -1375,6 +1473,30 @@ func (s *Store) activeLifecyclePolicyLocked(workerID, vmName string) bool {
 	return false
 }
 
+func (s *Store) activeStorageBudgetLocked(workerID string) bool {
+	for _, assignment := range s.assignments {
+		if assignment.WorkerID != workerID {
+			continue
+		}
+		if assignment.Verb == "cove" && len(assignment.Args) >= 2 && assignment.Args[0] == "storage" && assignment.Args[1] == "budget" && activeAssignmentStatus(assignment.Status) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Store) activeStoragePruneLocked(workerID string) bool {
+	for _, assignment := range s.assignments {
+		if assignment.WorkerID != workerID {
+			continue
+		}
+		if assignment.Verb == "cove" && len(assignment.Args) >= 2 && assignment.Args[0] == "storage" && assignment.Args[1] == "prune" && activeAssignmentStatus(assignment.Status) {
+			return true
+		}
+	}
+	return false
+}
+
 func imagePrepareArgs(sourceRef, imageRef string, force bool) []string {
 	args := []string{"image", "pull", "-tag", imageRef}
 	if force {
@@ -1423,6 +1545,66 @@ func lifecyclePolicyArgs(req LifecyclePolicyRequest) (string, []string, error) {
 		return "", nil, fmt.Errorf("lifecycle policy threshold required")
 	}
 	return vmName, append([]string{"policy", vmName, "set"}, fields...), nil
+}
+
+func storageBudgetArgs(req StorageBudgetRequest) ([]string, error) {
+	target := strings.TrimSpace(req.Target)
+	if req.Clear {
+		if target != "" || req.WarnPct != nil || req.HardPct != nil {
+			return nil, fmt.Errorf("storage budget clear cannot include thresholds")
+		}
+		return []string{"storage", "budget", "clear"}, nil
+	}
+	if target == "" {
+		return nil, fmt.Errorf("storage budget target required")
+	}
+	warn := 80
+	if req.WarnPct != nil {
+		warn = *req.WarnPct
+	}
+	hard := 95
+	if req.HardPct != nil {
+		hard = *req.HardPct
+	}
+	if warn < 0 || warn > 100 {
+		return nil, fmt.Errorf("storage budget warn_pct must be in [0,100]")
+	}
+	if hard < 0 || hard > 100 {
+		return nil, fmt.Errorf("storage budget hard_pct must be in [0,100]")
+	}
+	if warn > 0 && hard > 0 && warn > hard {
+		return nil, fmt.Errorf("storage budget warn_pct (%d) must not exceed hard_pct (%d)", warn, hard)
+	}
+	args := []string{"storage", "budget", "set", "-target", target}
+	if req.WarnPct != nil {
+		args = append(args, "-warn", strconv.Itoa(warn))
+	}
+	if req.HardPct != nil {
+		args = append(args, "-hard", strconv.Itoa(hard))
+	}
+	return args, nil
+}
+
+func storagePruneArgs(req StoragePruneRequest) ([]string, error) {
+	category := strings.TrimSpace(req.Category)
+	if category != "" && category != "build-scratch" {
+		return nil, fmt.Errorf("storage prune category %q unsupported", category)
+	}
+	olderThan, err := normalizeDurationString(req.OlderThan, "storage prune older_than")
+	if err != nil {
+		return nil, err
+	}
+	args := []string{"storage", "prune"}
+	if category != "" {
+		args = append(args, category)
+	}
+	if req.Apply {
+		args = append(args, "-apply")
+	}
+	if olderThan != "" {
+		args = append(args, "-older-than", olderThan)
+	}
+	return args, nil
 }
 
 func lifecyclePolicyFields(idleTimeout, maxAge string, runBudget int) []string {

@@ -53,6 +53,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `cove-fleetd` now exposes `POST /v1/policies/lifecycle` to push
   `cove policy <vm> set ...` or `clear` assignments to matching ready workers,
   and `cove policy <vm> set` now accepts multiple `field=value` updates.
+- `cove-fleetd` now exposes `POST /v1/storage/budget` and
+  `POST /v1/storage/prune` to fan out storage budget set/clear and dry-run or
+  applying prune assignments across matching ready workers.
 - `cove-fleetd` assignment placement now supports `policy:"bin-pack"` plus
   `resources.vms` hints and worker `max_vms` slot caps, packing work onto the
   densest ready worker that still fits.

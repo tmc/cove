@@ -133,6 +133,36 @@ type LifecyclePolicySkip struct {
 	Reason   string `json:"reason"`
 }
 
+type StorageBudgetRequest struct {
+	RequiredLabels map[string]string `json:"required_labels,omitempty"`
+	Clear          bool              `json:"clear,omitempty"`
+	Target         string            `json:"target,omitempty"`
+	WarnPct        *int              `json:"warn_pct,omitempty"`
+	HardPct        *int              `json:"hard_pct,omitempty"`
+}
+
+type StorageBudgetResult struct {
+	Assignments []Assignment        `json:"assignments,omitempty"`
+	Skipped     []StoragePolicySkip `json:"skipped,omitempty"`
+}
+
+type StoragePruneRequest struct {
+	RequiredLabels map[string]string `json:"required_labels,omitempty"`
+	Category       string            `json:"category,omitempty"`
+	OlderThan      string            `json:"older_than,omitempty"`
+	Apply          bool              `json:"apply,omitempty"`
+}
+
+type StoragePruneResult struct {
+	Assignments []Assignment        `json:"assignments,omitempty"`
+	Skipped     []StoragePolicySkip `json:"skipped,omitempty"`
+}
+
+type StoragePolicySkip struct {
+	WorkerID string `json:"worker_id"`
+	Reason   string `json:"reason"`
+}
+
 type PlacementPlanRequest struct {
 	Assignment
 	Limit int `json:"limit,omitempty"`

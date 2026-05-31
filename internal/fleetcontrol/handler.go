@@ -42,6 +42,12 @@ func Handler(store *Store) http.Handler {
 		}
 		writeJSON(w, http.StatusOK, result)
 	})
+	mux.HandleFunc("/v1/storage/budget", func(w http.ResponseWriter, r *http.Request) {
+		handleStorageBudget(w, r, store)
+	})
+	mux.HandleFunc("/v1/storage/prune", func(w http.ResponseWriter, r *http.Request) {
+		handleStoragePrune(w, r, store)
+	})
 	mux.HandleFunc("/v1/images/gc", func(w http.ResponseWriter, r *http.Request) {
 		handleImageGC(w, r, store)
 	})
@@ -226,6 +232,42 @@ func handleLifecyclePolicy(w http.ResponseWriter, r *http.Request, store *Store)
 		return
 	}
 	result, err := store.PushLifecyclePolicy(req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func handleStorageBudget(w http.ResponseWriter, r *http.Request, store *Store) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var req StorageBudgetRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode storage budget: %v", err))
+		return
+	}
+	result, err := store.PushStorageBudget(req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func handleStoragePrune(w http.ResponseWriter, r *http.Request, store *Store) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var req StoragePruneRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode storage prune: %v", err))
+		return
+	}
+	result, err := store.PushStoragePrune(req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

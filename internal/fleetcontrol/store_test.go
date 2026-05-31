@@ -804,6 +804,184 @@ func TestLifecyclePolicyArgs(t *testing.T) {
 	}
 }
 
+func TestStorePushesStorageBudgetAssignments(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	for _, hb := range []WorkerHeartbeat{
+		{ID: "desk", Labels: map[string]string{"zone": "desk"}},
+		{ID: "rack", Labels: map[string]string{"zone": "rack"}},
+		{ID: "drain", Labels: map[string]string{"zone": "desk"}},
+		{ID: "stale", Labels: map[string]string{"zone": "desk"}},
+	} {
+		if _, err := store.UpsertHeartbeat(hb); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.CordonWorker("drain", "maintenance"); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(2 * time.Minute)
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "desk", Labels: map[string]string{"zone": "desk"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "rack", Labels: map[string]string{"zone": "rack"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "drain", Labels: map[string]string{"zone": "desk"}}); err != nil {
+		t.Fatal(err)
+	}
+	warn, hard := 75, 90
+	result, err := store.PushStorageBudget(StorageBudgetRequest{
+		RequiredLabels: map[string]string{"zone": "desk"},
+		Target:         "500GB",
+		WarnPct:        &warn,
+		HardPct:        &hard,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Assignments) != 1 {
+		t.Fatalf("assignments = %+v, want 1", result.Assignments)
+	}
+	assignment := result.Assignments[0]
+	wantArgs := []string{"storage", "budget", "set", "-target", "500GB", "-warn", "75", "-hard", "90"}
+	if assignment.WorkerID != "desk" || assignment.Verb != "cove" || !equalStrings(assignment.Args, wantArgs) {
+		t.Fatalf("assignment = %+v, want worker desk args %+v", assignment, wantArgs)
+	}
+	if skipStoragePolicyReason(result.Skipped, "drain") != "cordoned" || skipStoragePolicyReason(result.Skipped, "stale") != "stale" || skipStoragePolicyReason(result.Skipped, "rack") != "" {
+		t.Fatalf("skipped = %+v", result.Skipped)
+	}
+
+	result, err = store.PushStorageBudget(StorageBudgetRequest{
+		RequiredLabels: map[string]string{"zone": "desk"},
+		Clear:          true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Assignments) != 0 || skipStoragePolicyReason(result.Skipped, "desk") != "active" {
+		t.Fatalf("second storage budget = %+v, want active skip for desk", result)
+	}
+}
+
+func TestStorePushesStoragePruneAssignments(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	for _, hb := range []WorkerHeartbeat{
+		{ID: "desk", Labels: map[string]string{"zone": "desk"}},
+		{ID: "rack", Labels: map[string]string{"zone": "rack"}},
+		{ID: "drain", Labels: map[string]string{"zone": "desk"}},
+		{ID: "stale", Labels: map[string]string{"zone": "desk"}},
+	} {
+		if _, err := store.UpsertHeartbeat(hb); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.CordonWorker("drain", "maintenance"); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(2 * time.Minute)
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "desk", Labels: map[string]string{"zone": "desk"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "rack", Labels: map[string]string{"zone": "rack"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "drain", Labels: map[string]string{"zone": "desk"}}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.PushStoragePrune(StoragePruneRequest{
+		RequiredLabels: map[string]string{"zone": "desk"},
+		Category:       "build-scratch",
+		OlderThan:      "48h",
+		Apply:          true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Assignments) != 1 {
+		t.Fatalf("assignments = %+v, want 1", result.Assignments)
+	}
+	assignment := result.Assignments[0]
+	wantArgs := []string{"storage", "prune", "build-scratch", "-apply", "-older-than", "48h"}
+	if assignment.WorkerID != "desk" || assignment.Verb != "cove" || !equalStrings(assignment.Args, wantArgs) {
+		t.Fatalf("assignment = %+v, want worker desk args %+v", assignment, wantArgs)
+	}
+	if skipStoragePolicyReason(result.Skipped, "drain") != "cordoned" || skipStoragePolicyReason(result.Skipped, "stale") != "stale" || skipStoragePolicyReason(result.Skipped, "rack") != "" {
+		t.Fatalf("skipped = %+v", result.Skipped)
+	}
+
+	result, err = store.PushStoragePrune(StoragePruneRequest{
+		RequiredLabels: map[string]string{"zone": "desk"},
+		OlderThan:      "48h",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Assignments) != 0 || skipStoragePolicyReason(result.Skipped, "desk") != "active" {
+		t.Fatalf("second storage prune = %+v, want active skip for desk", result)
+	}
+}
+
+func TestStoragePolicyArgs(t *testing.T) {
+	warn, hard := 0, 0
+	args, err := storageBudgetArgs(StorageBudgetRequest{Target: "1TB", WarnPct: &warn, HardPct: &hard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"storage", "budget", "set", "-target", "1TB", "-warn", "0", "-hard", "0"}; !equalStrings(args, want) {
+		t.Fatalf("budget args = %+v, want %+v", args, want)
+	}
+	args, err = storageBudgetArgs(StorageBudgetRequest{Clear: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"storage", "budget", "clear"}; !equalStrings(args, want) {
+		t.Fatalf("budget clear args = %+v, want %+v", args, want)
+	}
+	args, err = storagePruneArgs(StoragePruneRequest{OlderThan: "24h"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"storage", "prune", "-older-than", "24h"}; !equalStrings(args, want) {
+		t.Fatalf("prune args = %+v, want %+v", args, want)
+	}
+
+	tests := []struct {
+		name string
+		err  string
+		fn   func() error
+	}{
+		{name: "budget missing target", err: "target required", fn: func() error { _, err := storageBudgetArgs(StorageBudgetRequest{}); return err }},
+		{name: "budget clear with target", err: "clear cannot include thresholds", fn: func() error {
+			_, err := storageBudgetArgs(StorageBudgetRequest{Clear: true, Target: "1GB"})
+			return err
+		}},
+		{name: "budget bad warn", err: "warn_pct must be in [0,100]", fn: func() error {
+			bad := 101
+			_, err := storageBudgetArgs(StorageBudgetRequest{Target: "1GB", WarnPct: &bad})
+			return err
+		}},
+		{name: "budget warn above hard", err: "warn_pct (96) must not exceed hard_pct (95)", fn: func() error {
+			bad := 96
+			_, err := storageBudgetArgs(StorageBudgetRequest{Target: "1GB", WarnPct: &bad})
+			return err
+		}},
+		{name: "prune bad category", err: "unsupported", fn: func() error { _, err := storagePruneArgs(StoragePruneRequest{Category: "runs"}); return err }},
+		{name: "prune bad duration", err: "older_than invalid", fn: func() error { _, err := storagePruneArgs(StoragePruneRequest{OlderThan: "bad"}); return err }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.fn()
+			if err == nil || !strings.Contains(err.Error(), tt.err) {
+				t.Fatalf("err = %v, want %q", err, tt.err)
+			}
+		})
+	}
+}
+
 func TestStoreEnsuresWarmPoolAssignments(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "fleet.json")
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
@@ -1273,6 +1451,51 @@ func TestHandlerLifecyclePolicy(t *testing.T) {
 	}
 }
 
+func TestHandlerStorageBudget(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", Labels: map[string]string{"zone": "desk"}}, &record)
+	warn, hard := 70, 90
+	var result StorageBudgetResult
+	postJSON(t, server.URL+"/v1/storage/budget", StorageBudgetRequest{
+		RequiredLabels: map[string]string{"zone": "desk"},
+		Target:         "750GB",
+		WarnPct:        &warn,
+		HardPct:        &hard,
+	}, &result)
+	if len(result.Assignments) != 1 || result.Assignments[0].WorkerID != "worker-1" {
+		t.Fatalf("storage budget result = %+v", result)
+	}
+	wantArgs := []string{"storage", "budget", "set", "-target", "750GB", "-warn", "70", "-hard", "90"}
+	if !equalStrings(result.Assignments[0].Args, wantArgs) {
+		t.Fatalf("args = %+v, want %+v", result.Assignments[0].Args, wantArgs)
+	}
+}
+
+func TestHandlerStoragePrune(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", Labels: map[string]string{"zone": "desk"}}, &record)
+	var result StoragePruneResult
+	postJSON(t, server.URL+"/v1/storage/prune", StoragePruneRequest{
+		RequiredLabels: map[string]string{"zone": "desk"},
+		OlderThan:      "168h",
+	}, &result)
+	if len(result.Assignments) != 1 || result.Assignments[0].WorkerID != "worker-1" {
+		t.Fatalf("storage prune result = %+v", result)
+	}
+	wantArgs := []string{"storage", "prune", "-older-than", "168h"}
+	if !equalStrings(result.Assignments[0].Args, wantArgs) {
+		t.Fatalf("args = %+v, want %+v", result.Assignments[0].Args, wantArgs)
+	}
+}
+
 func TestHandlerWarmPools(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	server := httptest.NewServer(Handler(store))
@@ -1432,6 +1655,15 @@ func skipImageGCReason(skipped []ImageGCSkip, workerID string) string {
 }
 
 func skipLifecyclePolicyReason(skipped []LifecyclePolicySkip, workerID string) string {
+	for _, skip := range skipped {
+		if skip.WorkerID == workerID {
+			return skip.Reason
+		}
+	}
+	return ""
+}
+
+func skipStoragePolicyReason(skipped []StoragePolicySkip, workerID string) string {
 	for _, skip := range skipped {
 		if skip.WorkerID == workerID {
 			return skip.Reason

@@ -11,7 +11,8 @@ image-affinity or bin-pack policy, and the controller reconciles stale workers
 and expired assignment leases. Operators can cordon workers for maintenance
 without dropping their heartbeat history, and can ask the controller to prepare
 a base image across the fleet before job placement, push VM lifecycle policy
-updates, or keep a fork warm-pool quota active.
+updates, fan out storage budget/prune policy, or keep a fork warm-pool quota
+active.
 
 Start a private controller:
 
@@ -122,6 +123,31 @@ combined with thresholds. Workers that are cordoned or stale, or already have
 an active lifecycle-policy assignment for the same VM, are returned in
 `skipped`.
 
+Storage policy endpoints:
+
+```bash
+curl -X POST http://127.0.0.1:9758/v1/storage/budget \
+  -H 'content-type: application/json' \
+  -d '{"required_labels":{"zone":"desk"},"target":"750GB","warn_pct":80,"hard_pct":95}'
+curl -X POST http://127.0.0.1:9758/v1/storage/budget \
+  -H 'content-type: application/json' \
+  -d '{"required_labels":{"zone":"desk"},"clear":true}'
+curl -X POST http://127.0.0.1:9758/v1/storage/prune \
+  -H 'content-type: application/json' \
+  -d '{"required_labels":{"zone":"desk"},"older_than":"168h","apply":true}'
+```
+
+Storage budget push creates one `cove storage budget set -target <target>`
+assignment per matching ready worker. `warn_pct` and `hard_pct` are optional
+and default to the local CLI defaults when omitted. `clear:true` queues
+`cove storage budget clear` and cannot be combined with thresholds.
+Storage prune push creates one `cove storage prune` assignment per matching
+ready worker. It is dry-run by default; `apply:true` adds `-apply`, and
+`older_than` is an optional Go duration string passed through as `-older-than`.
+Set `category:"build-scratch"` to target `cove storage prune build-scratch`.
+Workers that are cordoned or stale, or already have an active storage
+budget/prune assignment for the same operation, are returned in `skipped`.
+
 Placement planning endpoint:
 
 ```bash
@@ -227,6 +253,7 @@ curl -X POST http://127.0.0.1:9758/v1/workers/register \
 
 This surface is intentionally private and local-first. It now has basic
 controller reconciliation, worker cordon lifecycle, fleet image preparation,
-fleet image-GC push, lifecycle-policy push, retained placement plans, and a
-first fork warm-pool quota reconciler with agent-ready slot claim and guest
-`Exec` handoff through the `cove shell` path plus claimed-slot stop cleanup.
+fleet image-GC push, lifecycle-policy push, storage budget/prune push, retained
+placement plans, and a first fork warm-pool quota reconciler with agent-ready
+slot claim and guest `Exec` handoff through the `cove shell` path plus
+claimed-slot stop cleanup.
