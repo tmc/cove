@@ -8,6 +8,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 ## Unreleased
 
 ### Added
+- `cove image inspect -remote [-json] <registry/ref:tag|digest>` now fetches
+  registry metadata without pulling disks and summarizes cove-native, Tart,
+  Lume, and cove image-store artifacts with digest, format, disk/chunk/part
+  counts, sidecar sizes, and base-manifest reuse.
 - `cove-fleetd` now exposes `GET /v1/sandboxes/{id}/events` for sandbox-scoped
   audit history, and the Go/Python hosted sandbox clients expose matching event
   list helpers.

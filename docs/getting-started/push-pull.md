@@ -21,11 +21,13 @@ Cove's pull path accepts both cove-native and lume-produced manifests, so migrat
 cove pull <ref> --dry-run                         # validate the pull target
 cove pull <ref> --as my-macos --dry-run           # name the new VM
 cove pull <ref> --dry-run --manifest manifest.json # validate a local manifest
+cove image inspect -remote <ref> -json            # inspect registry metadata only
 ```
 
-Current implementation supports registry pulls for cove-native LZ4 manifests.
-Use `--dry-run` to fetch and validate the manifest and target without writing a
-disk, or `--manifest` to validate local manifest JSON.
+Current implementation supports registry pulls for cove-native LZ4 manifests,
+Tart manifests, and Lume tar-split manifests. Use `cove image inspect -remote`
+to fetch the registry manifest metadata without pulling disks, or `--manifest`
+to validate local manifest JSON.
 
 What happens:
 

@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -161,11 +162,30 @@ func runImageInspect(env commandEnv, args []string) error {
 	fs.Usage = func() { printImageInspectUsage(fs.Output()) }
 	asJSON := fs.Bool("json", false, "emit machine-readable JSON")
 	diff := fs.Bool("diff", false, "compare two image refs")
-	if err := parseFlagsOrHelp(fs, args); err != nil {
+	remote := fs.Bool("remote", false, "inspect a registry manifest without pulling")
+	if err := parseFlagsOrHelp(fs, moveImageInspectFlagsFirst(args)); err != nil {
 		if errors.Is(err, errFlagHelp) {
 			return nil
 		}
 		return err
+	}
+	if *remote {
+		if *diff {
+			return fmt.Errorf("image inspect: -remote cannot be combined with -diff")
+		}
+		if fs.NArg() != 1 {
+			return fmt.Errorf("usage: cove image inspect [-json] -remote <registry/ref:tag|digest>")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), remoteInspectTimeout)
+		defer cancel()
+		out, err := InspectRemoteImage(ctx, fs.Arg(0), remoteInspectOptions{})
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return writeRemoteInspectJSON(env.Stdout, out)
+		}
+		return writeRemoteInspectText(env.Stdout, out)
 	}
 	if *diff {
 		if fs.NArg() != 2 {
@@ -224,6 +244,14 @@ func runImageInspect(env commandEnv, args []string) error {
 	return writeInspectText(env.Stdout, out)
 }
 
+func moveImageInspectFlagsFirst(args []string) []string {
+	return moveKnownFlagsFirst(args, map[string]bool{
+		"json":   false,
+		"diff":   false,
+		"remote": false,
+	})
+}
+
 const imageInspectWorkerDelegationEnv = "COVE_APP_SANDBOX_DELEGATE_IMAGE_INSPECT"
 
 func imageInspectWorkerDelegationEnabled() bool {
@@ -247,13 +275,16 @@ func runImageInspectViaWorker(env commandEnv, ref imagestore.Ref, asJSON bool) e
 func printImageInspectUsage(w io.Writer) {
 	fmt.Fprintln(w, `Usage: cove image inspect [-json] <name[:tag]>
        cove image inspect [-json] -diff <ref-a> <ref-b>
+       cove image inspect [-json] -remote <registry/ref:tag|digest>
 
 Show a local image manifest summary, downstream forks, and provenance. With
--diff, compare two image manifests.
+-diff, compare two image manifests. With -remote, fetch only registry manifest
+metadata for cove-native, Tart, Lume, or cove image-store artifacts.
 
 Flags:
   -json    emit machine-readable JSON
-  -diff    compare two image refs`)
+  -diff    compare two image refs
+  -remote  inspect a registry manifest without pulling blobs`)
 }
 
 func writeInspectJSON(w io.Writer, out ImageInspectOutput) error {

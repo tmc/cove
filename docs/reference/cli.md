@@ -657,6 +657,7 @@ Local pre-baked VM image store at `~/.vz/images/<name>/<tag>/`. Snapshots a stop
 cove image build -from <vm> -tag <name[:tag]>
 cove image list [-json]
 cove image inspect <name[:tag]> [-json]
+cove image inspect -remote <registry/ref:tag|digest> [-json]
 cove image verify <name[:tag]> [-strict] [-json] [-quiet] [-newer-than <duration>]
 cove image push <name[:tag]> <file> [-gzip]
 cove image load <file> [-tag <name[:tag]>] [-force]
@@ -672,7 +673,7 @@ cove image rm <name[:tag]>
 |------------|-------------|
 | `build -from <vm> -tag <ref>` | Snapshot a stopped VM into the image store. The disk is APFS-clonefiled (no copy). vmstate is excluded; cold-boot only. |
 | `list [-json]` | Show stored images with size + creation time + source VM. `-json` emits a JSON array; empty output is `[]`. |
-| `inspect <ref> [-json]` | Print manifest (size, sha256, base image, created-at, hw.model fingerprint) plus the live downstream fork list. `-json` emits a stable schema for tooling. |
+| `inspect <ref> [-json]` | Print manifest (size, sha256, base image, created-at, hw.model fingerprint) plus the live downstream fork list. `-json` emits a stable schema for tooling. With `-remote <registry/ref:tag\|digest>`, fetch only registry metadata and summarize cove-native, Tart, Lume, or cove image-store artifacts before pulling. |
 | `verify <ref> [-strict] [-json] [-quiet] [-newer-than D]` | Check freshness, provenance, and layout. Warns on stale or legacy manifests; `-strict` turns missing `execattach.v3` into a failure; `-quiet` prints only on failure for CI; `-newer-than` fails stale images such as `24h` or `7d`. |
 | `push <ref> <file> [-gzip]` | Tar an image directory to a single file (atomic temp + rename). `-gzip` compresses; the load side sniffs `.gz` / `.tgz` automatically. Pass `-` as the file to stream the tarball to stdout (refuses a TTY). |
 | `load <file> [-tag <ref>] [-force]` | Extract a tarball into the image store. Tar entries are restricted to `manifest.json`, `disk.img`, `aux.img`, `hw.model`, `machine.id` (TypeReg only); zip-slip / symlink / oversize entries are refused before any filesystem write. `-tag` rewrites the manifest's name+tag on import; `-force` overwrites an existing ref. `ParentImage` is **not** preserved across hosts -- a loaded image becomes a fresh root for forks on the destination. Pass `-` as the file to read the tarball from stdin (refuses a TTY); gzip framing is auto-detected via magic bytes. |
@@ -686,6 +687,7 @@ cove image rm <name[:tag]>
 ```bash
 cove image build -from macos-base -tag macos-runner:14.5
 cove image inspect macos-runner:14.5 -json
+cove image inspect -remote registry.example/team/macos-runner:14.5 -json
 cove image push macos-runner:14.5 /tmp/macos-runner.tar.gz -gzip
 cove image load /tmp/macos-runner.tar.gz -tag macos-runner:imported
 cove image gc -dry-run -older-than 168h
@@ -1346,7 +1348,9 @@ manifest, streams verified LZ4 disk chunks into `disk.img.partial`, restores
 macOS identity metadata, and atomically renames the verified disk into place.
 Lume-format tar-split pulls prefetch disk parts concurrently, then stream them
 in manifest order with descriptor size/digest checks before extraction.
-Use `--dry-run` to validate the manifest and target without writing a disk.
+Use `--dry-run` to validate the manifest and target without writing a disk, or
+`cove image inspect -remote <ref>` to fetch only registry metadata before a
+pull.
 
 ```
 cove pull <ref> [flags]
