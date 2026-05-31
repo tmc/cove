@@ -67,8 +67,11 @@ cove fleet run --policy=least-loaded -linux -headless -vm ubuntu
 Start the same run concurrently on every non-cordoned host:
 
 ```sh
-cove fleet run --all -linux -headless -ephemeral
+cove fleet run --all -fork-from agentkit/linux-base:latest -linux -headless -ephemeral
 ```
+
+When `--all` is combined with `-fork-from`, cove checks each target for the
+image and streams the local image only to cold hosts before starting the runs.
 
 Temporarily take a host out of placement without removing it:
 

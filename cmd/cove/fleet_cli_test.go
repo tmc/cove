@@ -251,6 +251,34 @@ func TestFleetRunAllReportsFailuresAfterAllHosts(t *testing.T) {
 	runner.assertCallsWithArgs(t, []string{"run"}, 2)
 }
 
+func TestFleetRunAllStagesMissingForkImage(t *testing.T) {
+	path := writeFleetHostsConfig(t, "a", "b")
+	inspectKey := fakeFleetArgsKey([]string{"image", "inspect", "-json", "base:latest"})
+	runner := &fakeFleetRunner{
+		streamPayload: "tarball",
+		outputsByArgs: map[string]map[string]string{
+			"a.local": {inspectKey: `{"ok":true}`},
+			"b.local": {inspectKey: ""},
+		},
+		errsByArgs: map[string]map[string]error{
+			"b.local": {inspectKey: errors.New("missing image")},
+		},
+	}
+	var out bytes.Buffer
+	if err := runFleetCommandWithRunner(context.Background(), []string{"run", "--all", "-fork-from=base:latest"}, path, runner, &out, &bytes.Buffer{}); err != nil {
+		t.Fatalf("fleet run --all: %v", err)
+	}
+	if !strings.Contains(out.String(), "staged image base:latest from local to b") {
+		t.Fatalf("output missing staged image line:\n%s", out.String())
+	}
+	runner.assertCallsWithArgs(t, []string{"image", "inspect", "-json", "base:latest"}, 2)
+	runner.assertCallsWithArgs(t, []string{"run", "-fork-from=base:latest"}, 2)
+	runner.assertCommandCalls(t, []fakeFleetCommandCall{
+		{host: "", args: []string{"image", "push", "base:latest", "-"}},
+		{host: "b.local", args: []string{"image", "load", "-"}},
+	})
+}
+
 func TestFleetRunAllRejectsPolicy(t *testing.T) {
 	err := runFleetCommandWithRunner(context.Background(), []string{"run", "--all", "--policy=least-loaded"}, writeFleetTestConfig(t), &fakeFleetRunner{}, &bytes.Buffer{}, &bytes.Buffer{})
 	if err == nil || !strings.Contains(err.Error(), "--all cannot be combined with --policy") {

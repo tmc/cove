@@ -114,6 +114,11 @@ func runFleetRunAllCommand(ctx context.Context, runArgs []string, path string, r
 			return err
 		}
 	}
+	if imageRef := fleetRunForkFrom(runArgs); imageRef != "" {
+		if err := prestageFleetRunAllImage(ctx, imageRef, active, runner, out); err != nil {
+			return err
+		}
+	}
 	names := make([]string, 0, len(active))
 	for _, entry := range active {
 		names = append(names, entry.Name)
@@ -148,6 +153,21 @@ func runFleetRunAllCommand(ctx context.Context, runArgs []string, path string, r
 	}
 	if failures > 0 {
 		return fmt.Errorf("fleet run --all: %d host(s) failed", failures)
+	}
+	return nil
+}
+
+func prestageFleetRunAllImage(ctx context.Context, imageRef string, entries []fleetpkg.Entry, runner fleetRunner, out io.Writer) error {
+	commandRunner := fleetImageCommandRunner(runner)
+	for _, entry := range entries {
+		var stdout, stderr bytes.Buffer
+		if err := runner.Run(ctx, entry.Remote, []string{"image", "inspect", "-json", imageRef}, &stdout, &stderr); err == nil {
+			continue
+		}
+		if err := fleetpkg.TransferImage(ctx, imageRef, fleetpkg.Remote{}, entry.Remote, commandRunner); err != nil {
+			return fmt.Errorf("stage image %s to %s: %w", imageRef, entry.Name, err)
+		}
+		fmt.Fprintf(out, "staged image %s from local to %s\n", imageRef, entry.Name)
 	}
 	return nil
 }

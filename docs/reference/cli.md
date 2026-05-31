@@ -987,7 +987,7 @@ cove fleet metrics [--json]
 | `image pull <ref> <src-host>` | Pull an image ref from another fleet host. |
 | `image sync <ref> <src-host> <dst-host>` | Copy an image ref between two fleet hosts. |
 | `run --policy=least-loaded|image-affinity` | Place one run on a non-cordoned registered host by load or image locality, counting short local placement leases as pending load. |
-| `run --all` | Start the same run concurrently on every non-cordoned registered host. |
+| `run --all` | Start the same run concurrently on every non-cordoned registered host; with `-fork-from`, stage the image to cold hosts first. |
 | `health [--json]` | Check remote cove reachability and version across registered hosts. |
 | `metrics [--json]` | Aggregate fleet-wide metrics across registered hosts. |
 
