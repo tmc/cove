@@ -152,7 +152,7 @@ func TestImageGCSchedulerRunsOnSchedule(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	s := NewImageGCScheduler(home, nil)
-	s.Interval = time.Millisecond
+	s.Interval = 50 * time.Millisecond
 	s.Bus = bus
 	s.Now = func() time.Time { return time.Unix(1, 0) }
 	go func() {
