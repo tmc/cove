@@ -42,6 +42,9 @@ func planPullBaseReuse(plan *pullPlan, blobStore store.Store) (*pullBaseReuse, e
 	if parsedBase.Annotations.UncompressedDiskSize != plan.Manifest.Annotations.UncompressedDiskSize {
 		return nil, nil
 	}
+	if parsedBase.Annotations.DiskFormat != plan.Manifest.Annotations.DiskFormat {
+		return nil, nil
+	}
 	matching := matchingPullBaseChunks(plan.Manifest.DiskLayers, parsedBase.DiskLayers)
 	if len(matching) == 0 {
 		return nil, nil
@@ -49,7 +52,7 @@ func planPullBaseReuse(plan *pullPlan, blobStore store.Store) (*pullBaseReuse, e
 	diskPath, ok, err := findPullBaseDiskInRoots([]string{
 		vmconfig.BaseDir(),
 		buildRegistryBaseCacheRoot(blobStore.Dir),
-	}, baseDigest, plan.Manifest.Annotations.UncompressedDiskSize, plan.VMDir)
+	}, baseDigest, parsedBase.Annotations.UncompressedDiskSize, parsedBase.Annotations.DiskFormat, plan.VMDir)
 	if err != nil {
 		return nil, err
 	}
@@ -62,9 +65,9 @@ func planPullBaseReuse(plan *pullPlan, blobStore store.Store) (*pullBaseReuse, e
 	}, nil
 }
 
-func findPullBaseDiskInRoots(roots []string, digest string, size int64, targetDir string) (string, bool, error) {
+func findPullBaseDiskInRoots(roots []string, digest string, size int64, diskFormat string, targetDir string) (string, bool, error) {
 	for _, root := range roots {
-		diskPath, ok, err := findPullBaseDisk(root, digest, size, targetDir)
+		diskPath, ok, err := findPullBaseDisk(root, digest, size, diskFormat, targetDir)
 		if err != nil || ok {
 			return diskPath, ok, err
 		}
@@ -97,7 +100,7 @@ func samePullBaseLayer(a, b ociimage.DiskLayer) bool {
 		a.Descriptor.Digest == b.Descriptor.Digest
 }
 
-func findPullBaseDisk(root, digest string, size int64, targetDir string) (string, bool, error) {
+func findPullBaseDisk(root, digest string, size int64, diskFormat string, targetDir string) (string, bool, error) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -120,6 +123,9 @@ func findPullBaseDisk(root, digest string, size int64, targetDir string) (string
 		diskPath := filepath.Join(dir, "disk.img")
 		info, err := os.Stat(diskPath)
 		if err != nil || !info.Mode().IsRegular() || info.Size() != size {
+			continue
+		}
+		if diskFormat != "" && detectImageDiskFormat(diskPath) != diskFormat {
 			continue
 		}
 		active, err := probeControlSocket(GetControlSocketPathForVM(dir), pullBaseProbeTimeout)

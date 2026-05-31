@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tmc/cove/internal/diskimages2"
 	"github.com/tmc/cove/internal/ociimage"
 	"github.com/tmc/cove/internal/store"
 )
@@ -210,6 +211,92 @@ func TestPullDiskReusesBaseDiskClone(t *testing.T) {
 	}
 	if got := diskGets.Load(); got != 1 {
 		t.Fatalf("disk blob GETs = %d, want one changed chunk", got)
+	}
+}
+
+func TestPlanPullBaseReuseRequiresManifestDiskFormatMatch(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	baseDisk := []byte("aaaabbbb")
+	targetDisk := []byte("aaaacccc")
+	baseManifest, _, _ := pullCompressedChunkedTestManifest(t, baseDisk, 4)
+	baseData, baseDigest := pullTestManifestData(t, baseManifest)
+	blobStore := store.New("")
+	if err := blobStore.StoreManifest(baseDigest, baseData); err != nil {
+		t.Fatalf("StoreManifest(base): %v", err)
+	}
+	writePullBaseVM(t, home, "base", baseDigest, baseDisk)
+
+	manifest, _, _ := pullCompressedChunkedTestManifest(t, targetDisk, 4)
+	manifest.Annotations[ociimage.CoveBaseManifest] = baseDigest
+	manifest.Annotations[ociimage.CoveDiskFormat] = "asif"
+	parsed, err := ociimage.ParseManifest(manifest)
+	if err != nil {
+		t.Fatalf("ParseManifest(target): %v", err)
+	}
+
+	reuse, err := planPullBaseReuse(&pullPlan{
+		VMDir:    filepath.Join(home, ".vz", "vms", "child"),
+		Manifest: parsed,
+	}, blobStore)
+	if err != nil {
+		t.Fatalf("planPullBaseReuse(): %v", err)
+	}
+	if reuse != nil {
+		t.Fatalf("base reuse = %+v, want nil for raw/asif mismatch", reuse)
+	}
+}
+
+func TestPlanPullBaseReuseRequiresBaseDiskFileFormat(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	oldInfo := retrieveDiskImageInfo
+	t.Cleanup(func() { retrieveDiskImageInfo = oldInfo })
+
+	baseDisk := []byte("aaaabbbb")
+	targetDisk := []byte("aaaacccc")
+	baseManifest, _, _ := pullCompressedChunkedTestManifest(t, baseDisk, 4)
+	baseManifest.Annotations[ociimage.CoveDiskFormat] = "asif"
+	baseData, baseDigest := pullTestManifestData(t, baseManifest)
+	blobStore := store.New("")
+	if err := blobStore.StoreManifest(baseDigest, baseData); err != nil {
+		t.Fatalf("StoreManifest(base): %v", err)
+	}
+	writePullBaseVM(t, home, "base", baseDigest, baseDisk)
+
+	manifest, _, _ := pullCompressedChunkedTestManifest(t, targetDisk, 4)
+	manifest.Annotations[ociimage.CoveBaseManifest] = baseDigest
+	manifest.Annotations[ociimage.CoveDiskFormat] = "asif"
+	parsed, err := ociimage.ParseManifest(manifest)
+	if err != nil {
+		t.Fatalf("ParseManifest(target): %v", err)
+	}
+	plan := &pullPlan{
+		VMDir:    filepath.Join(home, ".vz", "vms", "child"),
+		Manifest: parsed,
+	}
+
+	retrieveDiskImageInfo = func(string) (*diskimages2.ImageInfo, error) {
+		return &diskimages2.ImageInfo{Raw: map[string]string{"Image Format": "raw"}}, nil
+	}
+	reuse, err := planPullBaseReuse(plan, blobStore)
+	if err != nil {
+		t.Fatalf("planPullBaseReuse(raw): %v", err)
+	}
+	if reuse != nil {
+		t.Fatalf("base reuse with raw disk = %+v, want nil", reuse)
+	}
+
+	retrieveDiskImageInfo = func(string) (*diskimages2.ImageInfo, error) {
+		return &diskimages2.ImageInfo{Raw: map[string]string{"Image Format": "ASIF"}}, nil
+	}
+	reuse, err = planPullBaseReuse(plan, blobStore)
+	if err != nil {
+		t.Fatalf("planPullBaseReuse(asif): %v", err)
+	}
+	if reuse == nil {
+		t.Fatal("base reuse = nil, want ASIF base reuse")
 	}
 }
 

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +19,7 @@ func TestMaterializeBuildRegistryBasePullsCoveManifest(t *testing.T) {
 	t.Setenv("HOME", home)
 	diskData := []byte("registry base disk")
 	manifest, blobs := pullCompressedTestManifest(t, diskData)
+	_, manifestDigest := pullTestManifestData(t, manifest)
 	srv := pullTestRegistry(t, manifest, blobs)
 	defer srv.Close()
 
@@ -39,6 +41,17 @@ func TestMaterializeBuildRegistryBasePullsCoveManifest(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
 			t.Fatalf("stat %s: %v", name, err)
 		}
+	}
+	metaData, err := os.ReadFile(filepath.Join(dir, "build-registry-base.json"))
+	if err != nil {
+		t.Fatalf("ReadFile(build-registry-base.json): %v", err)
+	}
+	var meta buildRegistryBaseMeta
+	if err := json.Unmarshal(metaData, &meta); err != nil {
+		t.Fatalf("Unmarshal(build-registry-base.json): %v", err)
+	}
+	if meta.Format != "cove" || meta.DiskFormat != "raw" || meta.ManifestDigest != manifestDigest {
+		t.Fatalf("registry base meta = %+v, want cove raw %s", meta, manifestDigest)
 	}
 	if err := cleanup(); err != nil {
 		t.Fatalf("cleanup(): %v", err)

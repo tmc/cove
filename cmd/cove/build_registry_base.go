@@ -17,6 +17,7 @@ type buildRegistryBaseMeta struct {
 	Ref            string    `json:"ref"`
 	ManifestDigest string    `json:"manifest_digest"`
 	Format         string    `json:"format"`
+	DiskFormat     string    `json:"disk_format,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`
 }
 
@@ -67,7 +68,7 @@ func materializeBuildRegistryBase(ctx context.Context, refText string, opts buil
 		cleanupTemp()
 		return "", nil, err
 	}
-	if err := writeBuildRegistryBaseMeta(dir, refText, manifestDigest, parsed.Format); err != nil {
+	if err := writeBuildRegistryBaseMeta(dir, refText, manifestDigest, parsed.Format, parsed.Annotations.DiskFormat); err != nil {
 		cleanupTemp()
 		return "", nil, err
 	}
@@ -154,11 +155,12 @@ func validBuildRegistryBaseCache(dir, digest string) bool {
 	return true
 }
 
-func writeBuildRegistryBaseMeta(dir, refText, manifestDigest string, format ociimage.ManifestFormat) error {
+func writeBuildRegistryBaseMeta(dir, refText, manifestDigest string, format ociimage.ManifestFormat, diskFormat string) error {
 	meta := buildRegistryBaseMeta{
 		Ref:            refText,
 		ManifestDigest: manifestDigest,
 		Format:         format.String(),
+		DiskFormat:     diskFormat,
 		CreatedAt:      time.Now().UTC(),
 	}
 	return writeBuildCacheJSON(filepath.Join(dir, "build-registry-base.json"), meta)
