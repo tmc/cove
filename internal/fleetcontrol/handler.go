@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func Handler(store *Store) http.Handler {
@@ -276,9 +277,13 @@ func handleSandboxes(w http.ResponseWriter, r *http.Request, store *Store) {
 }
 
 func handleSandbox(w http.ResponseWriter, r *http.Request, store *Store) {
-	id, err := nameFromPath(r.URL.Path, "/v1/sandboxes/", "sandbox")
+	id, action, err := sandboxPath(r.URL.Path)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if action != "" {
+		handleSandboxAction(w, r, store, id, action)
 		return
 	}
 	identity := identityFromRequest(r, store)
@@ -315,6 +320,107 @@ func handleSandbox(w http.ResponseWriter, r *http.Request, store *Store) {
 		writeJSON(w, http.StatusOK, result)
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func handleSandboxAction(w http.ResponseWriter, r *http.Request, store *Store, id, action string) {
+	identity := identityFromRequest(r, store)
+	switch action {
+	case "stop":
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		if !requireRole(w, identity, ServiceAccountRoleOperator) {
+			return
+		}
+		if identity.Scoped {
+			sandbox, ok := store.GetSandbox(id)
+			if !ok || !canAccessNamespace(identity, sandbox.Namespace) {
+				writeError(w, http.StatusNotFound, "sandbox not found")
+				return
+			}
+		}
+		result, err := store.StopSandboxActor(identity.Actor, id)
+		if err != nil {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	case "wait":
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		if !requireRole(w, identity, ServiceAccountRoleViewer) {
+			return
+		}
+		result, ok, err := waitSandbox(r, store, id, identity)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if !ok {
+			writeError(w, http.StatusNotFound, "sandbox not found")
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	default:
+		writeError(w, http.StatusNotFound, "sandbox route not found")
+	}
+}
+
+func sandboxPath(path string) (id, action string, err error) {
+	rest := strings.Trim(strings.TrimPrefix(path, "/v1/sandboxes/"), "/")
+	parts := strings.Split(rest, "/")
+	if len(parts) == 0 || parts[0] == "" || len(parts) > 2 {
+		return "", "", fmt.Errorf("sandbox name required")
+	}
+	id, err = url.PathUnescape(parts[0])
+	if err != nil {
+		return "", "", fmt.Errorf("decode sandbox name: %w", err)
+	}
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return "", "", fmt.Errorf("sandbox name required")
+	}
+	if len(parts) == 2 {
+		action = strings.TrimSpace(parts[1])
+		if action == "" {
+			return "", "", fmt.Errorf("sandbox action required")
+		}
+	}
+	return id, action, nil
+}
+
+func waitSandbox(r *http.Request, store *Store, id string, identity requestIdentity) (SandboxWaitResult, bool, error) {
+	timeout := 30 * time.Second
+	if raw := strings.TrimSpace(r.URL.Query().Get("timeout")); raw != "" {
+		parsed, err := time.ParseDuration(raw)
+		if err != nil || parsed < 0 {
+			return SandboxWaitResult{}, false, fmt.Errorf("sandbox wait timeout must be a non-negative duration")
+		}
+		timeout = parsed
+	}
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		result, err := store.WaitSandbox(id)
+		if err != nil || !canAccessNamespace(identity, result.Sandbox.Namespace) {
+			return SandboxWaitResult{}, false, nil
+		}
+		if result.Done || timeout == 0 {
+			return result, true, nil
+		}
+		select {
+		case <-r.Context().Done():
+			return result, true, nil
+		case <-deadline.C:
+			return result, true, nil
+		case <-ticker.C:
+		}
 	}
 }
 

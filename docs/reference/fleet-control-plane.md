@@ -254,6 +254,8 @@ curl -X POST http://127.0.0.1:9758/v1/sandboxes \
   -d '{"id":"job-1","image_ref":"macos-runner:14.5","required_labels":{"zone":"desk"},"args":["--net","nat"]}'
 curl http://127.0.0.1:9758/v1/sandboxes
 curl http://127.0.0.1:9758/v1/sandboxes/job-1
+curl -X POST 'http://127.0.0.1:9758/v1/sandboxes/job-1/wait?timeout=30s'
+curl -X POST http://127.0.0.1:9758/v1/sandboxes/job-1/stop
 curl -X DELETE http://127.0.0.1:9758/v1/sandboxes/job-1
 ```
 
@@ -269,11 +271,15 @@ fork/source/lifetime/headless flags are reserved by the controller.
 
 `coved -fleet-url` probes sandbox run assignments with `cove shell <vm> --
 /bin/sh -c true` before reporting `ready`, matching warm-pool readiness
-semantics. `DELETE /v1/sandboxes/{id}` cancels a pending sandbox; once the
-sandbox has started, it marks the run assignment `draining` and queues a
-same-worker `cove ctl -vm <vm> stop` cleanup assignment with
-`sandbox_role:"stop"`. This is a scaffold for the hosted `/v1/sandboxes`
-lifecycle: create/list/get/delete are present, while start/stop/wait verbs,
+semantics. `POST /v1/sandboxes/{id}/wait` waits until the sandbox reaches a
+terminal status or `timeout` expires; `timeout=0` returns the current status
+without polling. `POST /v1/sandboxes/{id}/stop` cancels a pending sandbox, or
+marks a started sandbox `draining` and queues a same-worker
+`cove ctl -vm <vm> stop` cleanup assignment with `sandbox_role:"stop"`. When
+that stop assignment reports complete, the sandbox handle becomes `stopped`.
+`DELETE /v1/sandboxes/{id}` uses the same stop/cancel path and records a delete
+audit event. This is a scaffold for the hosted `/v1/sandboxes` lifecycle:
+create/list/get/delete/stop/wait are present, while restart/start from stopped,
 leases, metering, and SDK provider switching remain follow-up work.
 
 Assignment endpoints:

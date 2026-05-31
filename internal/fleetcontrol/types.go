@@ -348,6 +348,21 @@ type SandboxDeleteResult struct {
 	Cleanup    *Assignment `json:"cleanup,omitempty"`
 }
 
+type SandboxStopResult struct {
+	Namespace  string      `json:"namespace,omitempty"`
+	ID         string      `json:"id"`
+	VMName     string      `json:"vm_name"`
+	Status     string      `json:"status,omitempty"`
+	Canceled   bool        `json:"canceled,omitempty"`
+	Assignment Assignment  `json:"assignment"`
+	Cleanup    *Assignment `json:"cleanup,omitempty"`
+}
+
+type SandboxWaitResult struct {
+	Done    bool          `json:"done"`
+	Sandbox SandboxStatus `json:"sandbox"`
+}
+
 type Assignment struct {
 	ID              string            `json:"id"`
 	Namespace       string            `json:"namespace,omitempty"`

@@ -106,8 +106,11 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `cove-fleetd` now exposes hosted-style sandbox handles at
   `POST/GET/DELETE /v1/sandboxes`: create maps to an image-affinity
   `cove run -fork-from ... -ephemeral -keep -headless` assignment, `coved`
-  reports the sandbox ready after a `cove shell` probe, and delete cancels
-  pending sandboxes or queues same-worker stop cleanup.
+  reports the sandbox ready after a `cove shell` probe, and stop/delete cancel
+  pending sandboxes or queue same-worker stop cleanup.
+- `POST /v1/sandboxes/{id}/wait` now waits for a sandbox handle to reach a
+  terminal state, and sandbox stop-cleanup completion transitions the handle to
+  `stopped`.
 - `coved -fleet-url` now starts leased assignments asynchronously so a
   long-running `cove` assignment can keep renewing while the worker continues
   heartbeating and polling for additional assigned work.

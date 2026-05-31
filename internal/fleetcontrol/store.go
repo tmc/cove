@@ -374,6 +374,9 @@ func (s *Store) Report(r WorkerReport) (HostRecord, error) {
 				assignment.LeaseExpires = received.Add(s.assignmentTTL)
 			}
 			s.assignments[assignment.ID] = assignment
+			if assignment.SandboxID != "" && assignment.SandboxRole == sandboxRoleStop {
+				s.finishSandboxStopLocked(received, assignment.SandboxID, storedStatus)
+			}
 			if auditReportStatus(storedStatus) {
 				s.appendAuditLocked(received, AuditEvent{
 					Actor:        "worker:" + id,
@@ -826,80 +829,53 @@ func (s *Store) DeleteSandbox(id string) (SandboxDeleteResult, error) {
 }
 
 func (s *Store) DeleteSandboxActor(actor, id string) (SandboxDeleteResult, error) {
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return SandboxDeleteResult{}, fmt.Errorf("sandbox id required")
-	}
 	now := s.now().UTC()
-	actor = normalizeActor(actor)
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.reconcileLocked(now)
-	assignment, ok := s.sandboxRunAssignmentLocked(id)
-	if !ok {
-		return SandboxDeleteResult{}, fmt.Errorf("sandbox %q not found", id)
+	result, err := s.stopSandboxLocked(now, normalizeActor(actor), id, "sandbox.delete")
+	if err != nil {
+		return SandboxDeleteResult{}, err
 	}
-	vmName := SandboxAssignmentVMName(assignment)
-	result := SandboxDeleteResult{
-		Namespace:  assignment.Namespace,
-		ID:         id,
-		VMName:     vmName,
-		Status:     assignment.Status,
-		Assignment: cloneAssignment(assignment),
-	}
-	switch assignment.Status {
-	case "pending":
-		assignment.Status = "canceled"
-		assignment.Updated = now
-		s.assignments[assignment.ID] = assignment
-		result.Status = assignment.Status
-		result.Canceled = true
-		result.Assignment = cloneAssignment(assignment)
-	case "leased", "running", "ready", "draining":
-		cleanup, ok := s.activeSandboxCleanupLocked(id)
-		if !ok {
-			cleanup = Assignment{
-				ID:          s.nextAssignmentIDLocked(now),
-				Namespace:   assignment.Namespace,
-				WorkerID:    assignment.WorkerID,
-				SandboxID:   id,
-				SandboxRole: sandboxRoleStop,
-				Verb:        "cove",
-				Args:        sandboxStopArgs(vmName),
-				Status:      "pending",
-				Created:     now,
-				Updated:     now,
-			}
-			s.assignments[cleanup.ID] = cleanup
-		}
-		assignment.Status = "draining"
-		assignment.Updated = now
-		s.assignments[assignment.ID] = assignment
-		result.Status = assignment.Status
-		result.Assignment = cloneAssignment(assignment)
-		cleanup = cloneAssignment(cleanup)
-		result.Cleanup = &cleanup
-	}
-	s.appendAuditLocked(now, AuditEvent{
-		Actor:        actor,
-		Namespace:    assignment.Namespace,
-		Action:       "sandbox.delete",
-		TargetType:   "sandbox",
-		TargetID:     id,
-		WorkerID:     assignment.WorkerID,
-		AssignmentID: assignment.ID,
-		Fields: map[string]string{
-			"vm_name":  vmName,
-			"status":   result.Status,
-			"canceled": strconv.FormatBool(result.Canceled),
-			"cleanup":  strconv.FormatBool(result.Cleanup != nil),
-		},
-	})
 	if err := s.persistLocked(); err != nil {
 		return SandboxDeleteResult{}, err
 	}
+	return SandboxDeleteResult(result), nil
+}
+
+func (s *Store) StopSandbox(id string) (SandboxStopResult, error) {
+	return s.StopSandboxActor("controller", id)
+}
+
+func (s *Store) StopSandboxActor(actor, id string) (SandboxStopResult, error) {
+	now := s.now().UTC()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	result, err := s.stopSandboxLocked(now, normalizeActor(actor), id, "sandbox.stop")
+	if err != nil {
+		return SandboxStopResult{}, err
+	}
+	if err := s.persistLocked(); err != nil {
+		return SandboxStopResult{}, err
+	}
 	return result, nil
+}
+
+func (s *Store) WaitSandbox(id string) (SandboxWaitResult, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return SandboxWaitResult{}, fmt.Errorf("sandbox id required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	assignment, ok := s.sandboxRunAssignmentLocked(id)
+	if !ok {
+		return SandboxWaitResult{}, fmt.Errorf("sandbox %q not found", id)
+	}
+	sandbox := sandboxStatusFromAssignment(assignment)
+	return SandboxWaitResult{
+		Done:    sandboxTerminalStatus(sandbox.Status),
+		Sandbox: sandbox,
+	}, nil
 }
 
 func (s *Store) PrepareImage(req ImagePrepareRequest) (ImagePrepareResult, error) {
@@ -2159,6 +2135,89 @@ func (s *Store) activeSandboxCleanupLocked(id string) (Assignment, bool) {
 	return Assignment{}, false
 }
 
+func (s *Store) stopSandboxLocked(now time.Time, actor, id, action string) (SandboxStopResult, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return SandboxStopResult{}, fmt.Errorf("sandbox id required")
+	}
+	s.reconcileLocked(now)
+	assignment, ok := s.sandboxRunAssignmentLocked(id)
+	if !ok {
+		return SandboxStopResult{}, fmt.Errorf("sandbox %q not found", id)
+	}
+	vmName := SandboxAssignmentVMName(assignment)
+	result := SandboxStopResult{
+		Namespace:  assignment.Namespace,
+		ID:         id,
+		VMName:     vmName,
+		Status:     assignment.Status,
+		Assignment: cloneAssignment(assignment),
+	}
+	switch assignment.Status {
+	case "pending":
+		assignment.Status = "canceled"
+		assignment.Updated = now
+		s.assignments[assignment.ID] = assignment
+		result.Status = assignment.Status
+		result.Canceled = true
+		result.Assignment = cloneAssignment(assignment)
+	case "leased", "running", "ready", "draining":
+		cleanup, ok := s.activeSandboxCleanupLocked(id)
+		if !ok {
+			cleanup = Assignment{
+				ID:          s.nextAssignmentIDLocked(now),
+				Namespace:   assignment.Namespace,
+				WorkerID:    assignment.WorkerID,
+				SandboxID:   id,
+				SandboxRole: sandboxRoleStop,
+				Verb:        "cove",
+				Args:        sandboxStopArgs(vmName),
+				Status:      "pending",
+				Created:     now,
+				Updated:     now,
+			}
+			s.assignments[cleanup.ID] = cleanup
+		}
+		assignment.Status = "draining"
+		assignment.Updated = now
+		s.assignments[assignment.ID] = assignment
+		result.Status = assignment.Status
+		result.Assignment = cloneAssignment(assignment)
+		cleanup = cloneAssignment(cleanup)
+		result.Cleanup = &cleanup
+	}
+	s.appendAuditLocked(now, AuditEvent{
+		Actor:        actor,
+		Namespace:    assignment.Namespace,
+		Action:       action,
+		TargetType:   "sandbox",
+		TargetID:     id,
+		WorkerID:     assignment.WorkerID,
+		AssignmentID: assignment.ID,
+		Fields: map[string]string{
+			"vm_name":  vmName,
+			"status":   result.Status,
+			"canceled": strconv.FormatBool(result.Canceled),
+			"cleanup":  strconv.FormatBool(result.Cleanup != nil),
+		},
+	})
+	return result, nil
+}
+
+func (s *Store) finishSandboxStopLocked(now time.Time, id, stopStatus string) {
+	run, ok := s.sandboxRunAssignmentLocked(id)
+	if !ok || run.Status != "draining" {
+		return
+	}
+	if stopStatus == "complete" {
+		run.Status = "stopped"
+	} else if !assignmentLeaseStatus(stopStatus) {
+		run.Status = "failed"
+	}
+	run.Updated = now
+	s.assignments[run.ID] = run
+}
+
 func (s *Store) nextSandboxIDLocked(now time.Time) string {
 	base := fmt.Sprintf("sandbox-%d", now.UnixNano())
 	id := base
@@ -2301,6 +2360,10 @@ func sandboxRunArgs(imageRef, vmName string, extra []string) []string {
 
 func sandboxStopArgs(vmName string) []string {
 	return []string{"ctl", "-vm", vmName, "stop"}
+}
+
+func sandboxTerminalStatus(status string) bool {
+	return !activeAssignmentStatus(status) && status != "draining"
 }
 
 func sandboxVMName(id string) string {

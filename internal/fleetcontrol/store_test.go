@@ -252,6 +252,51 @@ func TestStoreDeleteRunningSandboxQueuesStop(t *testing.T) {
 	if deletedAgain.Cleanup == nil || deletedAgain.Cleanup.ID != deleted.Cleanup.ID {
 		t.Fatalf("second DeleteSandbox cleanup = %+v, want %s", deletedAgain.Cleanup, deleted.Cleanup.ID)
 	}
+	cleanup, err := store.AwaitAssignment("worker-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleanup == nil || cleanup.ID != deleted.Cleanup.ID {
+		t.Fatalf("cleanup lease = %+v, want %s", cleanup, deleted.Cleanup.ID)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: cleanup.ID, Status: "complete"}); err != nil {
+		t.Fatal(err)
+	}
+	wait, err := store.WaitSandbox("job-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !wait.Done || wait.Sandbox.Status != "stopped" {
+		t.Fatalf("WaitSandbox = %+v, want stopped done", wait)
+	}
+}
+
+func TestStoreStopSandboxPendingCancels(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateSandbox(SandboxRequest{ID: "job-1", ImageRef: "base:v1"}); err != nil {
+		t.Fatal(err)
+	}
+	stopped, err := store.StopSandbox("job-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stopped.Canceled || stopped.Status != "canceled" || stopped.Cleanup != nil {
+		t.Fatalf("StopSandbox pending = %+v, want canceled without cleanup", stopped)
+	}
+	wait, err := store.WaitSandbox("job-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !wait.Done || wait.Sandbox.Status != "canceled" {
+		t.Fatalf("WaitSandbox = %+v, want canceled done", wait)
+	}
+	if event := auditAction(store.ListAudit(0), "sandbox.stop"); event == nil || event.TargetID != "job-1" {
+		t.Fatalf("sandbox stop audit = %+v", event)
+	}
 }
 
 func TestStoreServiceAccountsPersistTokenHashes(t *testing.T) {
@@ -2096,6 +2141,17 @@ func TestHandlerSandboxes(t *testing.T) {
 	if !deleted.Canceled || deleted.ID != "job-1" {
 		t.Fatalf("deleted sandbox = %+v, want canceled job-1", deleted)
 	}
+	postJSON(t, server.URL+"/v1/sandboxes", SandboxRequest{ID: "job-2", ImageRef: "base:v1"}, &created)
+	var stopped SandboxStopResult
+	postJSON(t, server.URL+"/v1/sandboxes/job-2/stop", map[string]string{}, &stopped)
+	if !stopped.Canceled || stopped.ID != "job-2" {
+		t.Fatalf("stopped sandbox = %+v, want canceled job-2", stopped)
+	}
+	var wait SandboxWaitResult
+	postJSON(t, server.URL+"/v1/sandboxes/job-2/wait?timeout=0", map[string]string{}, &wait)
+	if !wait.Done || wait.Sandbox.ID != "job-2" || wait.Sandbox.Status != "canceled" {
+		t.Fatalf("wait sandbox = %+v, want canceled job-2", wait)
+	}
 }
 
 func TestHandlerSandboxNamespaceScope(t *testing.T) {
@@ -2116,6 +2172,9 @@ func TestHandlerSandboxNamespaceScope(t *testing.T) {
 	}
 	if code := getJSONStatus(t, server.URL+"/v1/sandboxes/job-1", "token-b"); code != http.StatusNotFound {
 		t.Fatalf("cross-namespace sandbox GET status = %d, want 404", code)
+	}
+	if code := postJSONStatus(t, server.URL+"/v1/sandboxes/job-1/stop", "token-b", map[string]string{}); code != http.StatusNotFound {
+		t.Fatalf("cross-namespace sandbox stop status = %d, want 404", code)
 	}
 	var list struct {
 		Sandboxes []SandboxStatus `json:"sandboxes"`
