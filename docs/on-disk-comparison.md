@@ -76,11 +76,12 @@ delegates the disk/runtime work to `tart` or `vetu`.
    downloads, reuse an already-materialized base disk where the manifest and
    detected disk format prove it is the right parent, and cache materialized
    registry bases with disk-format metadata for repeated builds and child pulls.
-   Pull completion reports the actual reused chunk count, bytes, disk format,
-   and base disk path when the base clone succeeds. Local images built from
-   pulled VMs preserve the source registry manifest digest, image forks restore
-   it to child `disk.provenance`, and store GC treats those image manifests as
-   roots.
+   Pull dry-runs preflight compatible local or cached base disks when a manifest
+   is available, and pull completion reports the actual reused chunk count,
+   bytes, disk format, and base disk path when the base clone succeeds. Local
+   images built from pulled VMs preserve the source registry manifest digest,
+   image forks restore it to child `disk.provenance`, and store GC treats those
+   image manifests as roots.
    Remote inspect walks declared base-manifest chains by digest and reports
    missing parents, raw/ASIF or size incompatibilities, reusable chunk counts,
    and reusable bytes before disk download. Builds can also import and export

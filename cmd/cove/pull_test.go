@@ -46,6 +46,44 @@ func TestBuildPullPlanDryRunManifest(t *testing.T) {
 	}
 }
 
+func TestBuildPullPlanDryRunReportsLocalBaseReuse(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	baseDisk := []byte("aaaabbbb")
+	targetDisk := []byte("aaaacccc")
+	baseManifest, _, _ := pullCompressedChunkedTestManifest(t, baseDisk, 4)
+	baseData, baseDigest := pullTestManifestData(t, baseManifest)
+	if err := store.New("").StoreManifest(baseDigest, baseData); err != nil {
+		t.Fatalf("StoreManifest(base): %v", err)
+	}
+	writePullBaseVM(t, home, "base", baseDigest, baseDisk)
+
+	manifest, _, _ := pullCompressedChunkedTestManifest(t, targetDisk, 4)
+	manifest.Annotations[ociimage.CoveBaseManifest] = baseDigest
+	manifestPath := writePullManifest(t, manifest)
+
+	plan, err := buildPullPlan("ghcr.io/me/dev-vm:v1", pullOptions{
+		As:           "child",
+		DryRun:       true,
+		ManifestPath: manifestPath,
+	})
+	if err != nil {
+		t.Fatalf("buildPullPlan(): %v", err)
+	}
+	if plan.BaseReusePath == "" || plan.BaseReuseDiskFormat != "raw" || plan.BaseReuseChunks != 1 || plan.BaseReuseBytes != 4 {
+		t.Fatalf("base reuse summary = path:%q format:%q chunks:%d bytes:%d, want raw one 4-byte chunk", plan.BaseReusePath, plan.BaseReuseDiskFormat, plan.BaseReuseChunks, plan.BaseReuseBytes)
+	}
+
+	var out strings.Builder
+	printPullDryRun(&out, plan)
+	for _, want := range []string{"base reuse: 1 chunks", "4 B", "format=raw", "from=" + plan.BaseReusePath} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("dry-run output %q missing %q", out.String(), want)
+		}
+	}
+}
+
 func TestBuildPullPlanDryRunWithoutManifestIsNetworkFree(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	plan, err := buildPullPlan("ghcr.io/me/dev-vm:v1", pullOptions{
@@ -738,7 +776,12 @@ func TestBuildPullPlanResumeAllowsIncompleteTarget(t *testing.T) {
 func writePullTestManifest(t *testing.T) string {
 	t.Helper()
 
-	manifest := pullTestManifest(t)
+	return writePullManifest(t, pullTestManifest(t))
+}
+
+func writePullManifest(t *testing.T, manifest ociimage.Manifest) string {
+	t.Helper()
+
 	data, err := json.Marshal(manifest)
 	if err != nil {
 		t.Fatalf("Marshal() error = %v", err)

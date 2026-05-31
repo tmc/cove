@@ -152,14 +152,20 @@ func buildPullPlan(refText string, opts pullOptions) (*pullPlan, error) {
 			return nil, err
 		}
 	}
-	return &pullPlan{
+	plan := &pullPlan{
 		Ref:            ref,
 		VMName:         name,
 		VMDir:          vmDirectory,
 		Manifest:       parsed,
 		ManifestRaw:    manifestRaw,
 		ManifestDigest: manifestDigest,
-	}, nil
+	}
+	if opts.DryRun {
+		if err := planPullDryRunBaseReuse(plan, opts); err != nil {
+			return nil, err
+		}
+	}
+	return plan, nil
 }
 
 func checkPullTarget(vmDirectory string, resume bool) error {
@@ -544,6 +550,7 @@ func printPullDryRun(w io.Writer, plan *pullPlan) {
 	}
 	fmt.Fprintf(w, "  chunks: %d\n", len(plan.Manifest.Chunks))
 	fmt.Fprintf(w, "  metadata blobs: %d\n", len(plan.Manifest.Blobs))
+	printPullBaseReuse(w, plan)
 }
 
 func printPullResult(w io.Writer, plan *pullPlan) {
@@ -551,6 +558,10 @@ func printPullResult(w io.Writer, plan *pullPlan) {
 	fmt.Fprintf(w, "  ref: %s\n", plan.Ref.String())
 	fmt.Fprintf(w, "  vm: %s\n", plan.VMName)
 	fmt.Fprintf(w, "  target: %s\n", plan.VMDir)
+	printPullBaseReuse(w, plan)
+}
+
+func printPullBaseReuse(w io.Writer, plan *pullPlan) {
 	if plan.BaseReuseChunks > 0 {
 		fmt.Fprintf(w, "  base reuse: %d chunks (%s)", plan.BaseReuseChunks, bytefmt.Size(plan.BaseReuseBytes))
 		if plan.BaseReuseDiskFormat != "" {

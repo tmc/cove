@@ -39,7 +39,10 @@ base-chain availability/compatibility when a base manifest is declared, and the
 verification work cove will perform during pull/import.
 Add `-verify-blobs` to send HEAD requests for every config and layer descriptor
 so a private catalog audit can catch missing registry blobs without downloading
-VM disks. Use `--manifest` to validate local manifest JSON.
+VM disks. Use `--manifest` to validate local manifest JSON. When a cove-native
+manifest is available during `--dry-run`, cove also checks whether a compatible
+local or registry-cache base disk can be reused and prints the reusable chunks,
+bytes, disk format, and source path.
 
 What happens:
 
@@ -93,7 +96,7 @@ chunk, and uploads only the chunks not already on the registry. Fixed offsets
 make delta push and parallel uploads straightforward; `HEAD
 /v2/<repo>/blobs/<digest>` skips any blob the registry already has.
 
-Delta push with `--base <ref>` pulls the base manifest first and only uploads chunks whose uncompressed content digest differs. Remote inspect walks declared cove base chains and reports parent disk format, size, matching chunks, and matching bytes so raw/ASIF mismatches and reuse impact are visible before pull; pull base reuse applies the same disk-format check before cloning a local or cached base disk. Typical result: a fresh Xcode install on top of a vanilla macOS base uploads single-digit GBs instead of 60.
+Delta push with `--base <ref>` pulls the base manifest first and only uploads chunks whose uncompressed content digest differs. Remote inspect walks declared cove base chains and reports parent disk format, size, matching chunks, and matching bytes so raw/ASIF mismatches and reuse impact are visible before pull; pull dry-runs check compatible local or cached base disks before download, and real pulls apply the same disk-format check before cloning one. Typical result: a fresh Xcode install on top of a vanilla macOS base uploads single-digit GBs instead of 60.
 
 When a pull actually clones a compatible local or cached base disk, the
 completion output reports the reused chunk count, reused bytes, disk format,

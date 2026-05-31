@@ -67,6 +67,18 @@ func planPullBaseReuse(plan *pullPlan, blobStore store.Store) (*pullBaseReuse, e
 	}, nil
 }
 
+func planPullDryRunBaseReuse(plan *pullPlan, opts pullOptions) error {
+	if plan == nil || !opts.DryRun || len(plan.Manifest.DiskLayers) == 0 {
+		return nil
+	}
+	baseReuse, err := planPullBaseReuse(plan, store.New(opts.StoreDir))
+	if err != nil {
+		return err
+	}
+	recordPullBaseReuse(plan, baseReuse)
+	return nil
+}
+
 func recordPullBaseReuse(plan *pullPlan, baseReuse *pullBaseReuse) {
 	if plan == nil || baseReuse == nil || len(baseReuse.MatchingChunks) == 0 {
 		return
@@ -74,13 +86,7 @@ func recordPullBaseReuse(plan *pullPlan, baseReuse *pullBaseReuse) {
 	plan.BaseReusePath = baseReuse.DiskPath
 	plan.BaseReuseDiskFormat = baseReuse.DiskFormat
 	plan.BaseReuseChunks = len(baseReuse.MatchingChunks)
-	var bytes int64
-	for _, layer := range plan.Manifest.DiskLayers {
-		if baseReuse.MatchingChunks[layer.Chunk.Index] {
-			bytes += layer.Chunk.Size
-		}
-	}
-	plan.BaseReuseBytes = bytes
+	plan.BaseReuseBytes = matchingPullBaseBytes(plan.Manifest.DiskLayers, baseReuse.MatchingChunks)
 }
 
 func findPullBaseDiskInRoots(roots []string, digest string, size int64, diskFormat string, targetDir string) (string, bool, error) {

@@ -108,6 +108,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - Cove pull completion now reports actual base reuse with reused chunk count,
   reused bytes, disk format, and source base disk path after a base clone
   succeeds.
+- Cove pull dry-runs now preflight compatible local or registry-cache base disk
+  reuse when a cove-native manifest is available, printing reusable chunks,
+  bytes, disk format, and source base path before disk download.
 - `cove image inspect -remote -verify-blobs` now audits every remote config and
   layer descriptor with HEAD requests, reporting missing registry blobs without
   downloading VM disk content.
