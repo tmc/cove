@@ -69,6 +69,7 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		assignment.ID = id
 		assignment.Args = cloneStrings(assignment.Args)
 		assignment.ImageRef = strings.TrimSpace(assignment.ImageRef)
+		assignment.AntiAffinityKey = strings.TrimSpace(assignment.AntiAffinityKey)
 		assignment.RequiredLabels = cloneLabels(assignment.RequiredLabels)
 		if assignment.Status == "" {
 			assignment.Status = "pending"
@@ -273,6 +274,7 @@ func (s *Store) CreateAssignment(a Assignment) (Assignment, error) {
 	workerID := strings.TrimSpace(a.WorkerID)
 	policy := strings.TrimSpace(a.Policy)
 	imageRef := strings.TrimSpace(a.ImageRef)
+	antiAffinityKey := strings.TrimSpace(a.AntiAffinityKey)
 	requiredLabels := cloneLabels(a.RequiredLabels)
 	resources, err := sanitizeResources(a.Resources)
 	if err != nil {
@@ -301,7 +303,7 @@ func (s *Store) CreateAssignment(a Assignment) (Assignment, error) {
 			return Assignment{}, fmt.Errorf("worker %q not registered", workerID)
 		}
 	} else if policy != "" || len(requiredLabels) > 0 {
-		selected, err := s.selectWorkerLocked(policy, imageRef, requiredLabels, resources)
+		selected, err := s.selectWorkerLocked(policy, imageRef, requiredLabels, antiAffinityKey, resources)
 		if err != nil {
 			return Assignment{}, err
 		}
@@ -311,6 +313,7 @@ func (s *Store) CreateAssignment(a Assignment) (Assignment, error) {
 	a.WorkerID = workerID
 	a.Policy = policy
 	a.ImageRef = imageRef
+	a.AntiAffinityKey = antiAffinityKey
 	a.RequiredLabels = requiredLabels
 	a.Resources = resources
 	a.Verb = verb
@@ -515,7 +518,7 @@ func (s *Store) reconcileLocked(now time.Time) ReconcileResult {
 			changed = true
 		}
 		if workerStale && assignmentCanPlace(assignment) {
-			selected, err := s.selectWorkerLocked(assignmentPolicy(assignment), assignment.ImageRef, assignment.RequiredLabels, assignment.Resources)
+			selected, err := s.selectWorkerLocked(assignmentPolicy(assignment), assignment.ImageRef, assignment.RequiredLabels, assignment.AntiAffinityKey, assignment.Resources)
 			if err == nil && selected != assignment.WorkerID {
 				assignment.WorkerID = selected
 				result.ReplacedAssignments = append(result.ReplacedAssignments, assignment.ID)
@@ -671,7 +674,7 @@ func cloneStrings(in []string) []string {
 	return out
 }
 
-func (s *Store) selectWorkerLocked(policy, imageRef string, labels map[string]string, resources Capacity) (string, error) {
+func (s *Store) selectWorkerLocked(policy, imageRef string, labels map[string]string, antiAffinityKey string, resources Capacity) (string, error) {
 	if policy == "" {
 		policy = PolicyLeastLoaded
 	}
@@ -685,6 +688,7 @@ func (s *Store) selectWorkerLocked(policy, imageRef string, labels map[string]st
 	bestSet := false
 	bestLoad := 0
 	bestHasImage := false
+	bestAntiAffinityLoad := 0
 	for _, host := range s.hosts {
 		host = s.statusLocked(host)
 		if host.Status != "ready" {
@@ -698,17 +702,20 @@ func (s *Store) selectWorkerLocked(policy, imageRef string, labels map[string]st
 			continue
 		}
 		hasImage := imageRef != "" && containsString(host.ImageRefs, imageRef)
+		antiAffinityLoad := s.antiAffinityLoadLocked(host.ID, antiAffinityKey)
 		if !bestSet {
 			best = host
 			bestSet = true
 			bestLoad = load
 			bestHasImage = hasImage
+			bestAntiAffinityLoad = antiAffinityLoad
 			continue
 		}
-		if betterHost(policy, host.ID, load, hasImage, best.ID, bestLoad, bestHasImage) {
+		if betterHost(policy, host.ID, load, hasImage, antiAffinityLoad, best.ID, bestLoad, bestHasImage, bestAntiAffinityLoad) {
 			best = host
 			bestLoad = load
 			bestHasImage = hasImage
+			bestAntiAffinityLoad = antiAffinityLoad
 		}
 	}
 	if !bestSet {
@@ -717,9 +724,12 @@ func (s *Store) selectWorkerLocked(policy, imageRef string, labels map[string]st
 	return best.ID, nil
 }
 
-func betterHost(policy, id string, load int, hasImage bool, bestID string, bestLoad int, bestHasImage bool) bool {
+func betterHost(policy, id string, load int, hasImage bool, antiAffinityLoad int, bestID string, bestLoad int, bestHasImage bool, bestAntiAffinityLoad int) bool {
 	if policy == PolicyImageAffinity && hasImage != bestHasImage {
 		return hasImage
+	}
+	if antiAffinityLoad != bestAntiAffinityLoad {
+		return antiAffinityLoad < bestAntiAffinityLoad
 	}
 	if policy == PolicyBinPack {
 		if load != bestLoad {
@@ -734,6 +744,23 @@ func betterHost(policy, id string, load int, hasImage bool, bestID string, bestL
 		return load < bestLoad
 	}
 	return id < bestID
+}
+
+func (s *Store) antiAffinityLoadLocked(workerID, key string) int {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return 0
+	}
+	var n int
+	for _, assignment := range s.assignments {
+		if assignment.AntiAffinityKey != key || !activeAssignmentStatus(assignment.Status) {
+			continue
+		}
+		if assignment.WorkerID == workerID || assignment.LeasedTo == workerID {
+			n += assignmentVMs(assignment)
+		}
+	}
+	return n
 }
 
 func (s *Store) pendingAssignmentsLocked(workerID string) int {

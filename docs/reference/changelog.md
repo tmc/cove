@@ -49,6 +49,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `cove-fleetd` assignment placement now supports `policy:"bin-pack"` plus
   `resources.vms` hints and worker `max_vms` slot caps, packing work onto the
   densest ready worker that still fits.
+- `cove-fleetd` assignment placement now supports `anti_affinity_key` to spread
+  active assignments for the same job, base image, or replica group across
+  workers before applying normal load tie-breaks.
 - `cove build --cache-from` and `--cache-to` now import and export cove
   build-cache artifacts through OCI refs, carrying cache entries, layer
   manifests, and block-delta blobs between runners.

@@ -95,18 +95,19 @@ type ImagePrepareSkip struct {
 }
 
 type Assignment struct {
-	ID             string            `json:"id"`
-	WorkerID       string            `json:"worker_id,omitempty"`
-	Policy         string            `json:"policy,omitempty"`
-	ImageRef       string            `json:"image_ref,omitempty"`
-	RequiredLabels map[string]string `json:"required_labels,omitempty"`
-	Resources      Capacity          `json:"resources,omitempty"`
-	Verb           string            `json:"verb"`
-	Args           []string          `json:"args,omitempty"`
-	Status         string            `json:"status,omitempty"`
-	Created        time.Time         `json:"created,omitempty"`
-	Updated        time.Time         `json:"updated,omitempty"`
-	LeasedTo       string            `json:"leased_to,omitempty"`
-	LeaseExpires   time.Time         `json:"lease_expires,omitempty"`
-	LastReport     *WorkerReport     `json:"last_report,omitempty"`
+	ID              string            `json:"id"`
+	WorkerID        string            `json:"worker_id,omitempty"`
+	Policy          string            `json:"policy,omitempty"`
+	ImageRef        string            `json:"image_ref,omitempty"`
+	RequiredLabels  map[string]string `json:"required_labels,omitempty"`
+	AntiAffinityKey string            `json:"anti_affinity_key,omitempty"`
+	Resources       Capacity          `json:"resources,omitempty"`
+	Verb            string            `json:"verb"`
+	Args            []string          `json:"args,omitempty"`
+	Status          string            `json:"status,omitempty"`
+	Created         time.Time         `json:"created,omitempty"`
+	Updated         time.Time         `json:"updated,omitempty"`
+	LeasedTo        string            `json:"leased_to,omitempty"`
+	LeaseExpires    time.Time         `json:"lease_expires,omitempty"`
+	LastReport      *WorkerReport     `json:"last_report,omitempty"`
 }

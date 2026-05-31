@@ -99,7 +99,7 @@ curl -X POST http://127.0.0.1:9758/v1/assignments \
   -d '{"id":"placed-1","policy":"image-affinity","image_ref":"macos-runner:latest","verb":"cove","args":["run","-fork-from","macos-runner:latest","-ephemeral"]}'
 curl -X POST http://127.0.0.1:9758/v1/assignments \
   -H 'content-type: application/json' \
-  -d '{"id":"packed-1","policy":"bin-pack","resources":{"vms":1},"verb":"cove","args":["run","-ephemeral","-headless"]}'
+  -d '{"id":"packed-1","policy":"bin-pack","anti_affinity_key":"ci/buildkite","resources":{"vms":1},"verb":"cove","args":["run","-ephemeral","-headless"]}'
 curl http://127.0.0.1:9758/v1/assignments
 curl http://127.0.0.1:9758/v1/assignments/probe-1
 ```
@@ -126,6 +126,9 @@ assignment before storing it:
 `required_labels` can restrict placement to workers with exact matching labels.
 Workers report current VM count as `vms`; `coved` defaults `max_vms` to host CPU
 count. Assignment `resources.vms` defaults to one scheduling slot when omitted.
+Set `anti_affinity_key` to spread active assignments for the same job, base, or
+replica group across workers. `image-affinity` still prefers a warm worker
+before applying the anti-affinity tie-break.
 
 Register a worker record manually:
 

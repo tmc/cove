@@ -367,6 +367,71 @@ func TestStoreSchedulesBinPackAssignment(t *testing.T) {
 	}
 }
 
+func TestStoreSchedulesBinPackWithAntiAffinity(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	for _, hb := range []WorkerHeartbeat{
+		{ID: "dense", Capacity: Capacity{VMs: 2, MaxVMs: 5}},
+		{ID: "open", Capacity: Capacity{VMs: 1, MaxVMs: 5}},
+	} {
+		if _, err := store.UpsertHeartbeat(hb); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.CreateAssignment(Assignment{
+		ID:              "existing",
+		WorkerID:        "dense",
+		AntiAffinityKey: "job-a",
+		Verb:            "cove",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assignment, err := store.CreateAssignment(Assignment{
+		ID:              "assignment-1",
+		Policy:          PolicyBinPack,
+		AntiAffinityKey: "job-a",
+		Verb:            "cove",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if assignment.WorkerID != "open" {
+		t.Fatalf("WorkerID = %q, want open", assignment.WorkerID)
+	}
+}
+
+func TestStoreImageAffinityPrefersWarmBeforeAntiAffinity(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	for _, hb := range []WorkerHeartbeat{
+		{ID: "warm", ImageRefs: []string{"macos-runner:latest"}, Capacity: Capacity{VMs: 1, MaxVMs: 5}},
+		{ID: "cold", Capacity: Capacity{VMs: 0, MaxVMs: 5}},
+	} {
+		if _, err := store.UpsertHeartbeat(hb); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.CreateAssignment(Assignment{
+		ID:              "existing",
+		WorkerID:        "warm",
+		AntiAffinityKey: "job-a",
+		Verb:            "cove",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assignment, err := store.CreateAssignment(Assignment{
+		ID:              "assignment-1",
+		Policy:          PolicyImageAffinity,
+		ImageRef:        "macos-runner:latest",
+		AntiAffinityKey: "job-a",
+		Verb:            "cove",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if assignment.WorkerID != "warm" {
+		t.Fatalf("WorkerID = %q, want warm", assignment.WorkerID)
+	}
+}
+
 func TestStoreSchedulesWithRequiredLabelsAndPendingLoad(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	for _, hb := range []WorkerHeartbeat{
