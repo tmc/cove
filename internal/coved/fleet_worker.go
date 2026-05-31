@@ -295,7 +295,7 @@ finished:
 }
 
 func (w *FleetWorker) finishCoveAssignment(ctx context.Context, assignment fleetcontrol.Assignment, report fleetcontrol.WorkerReport) fleetcontrol.WorkerReport {
-	if assignment.WarmPoolSlot != "" {
+	if assignment.WarmPoolSlot != "" && warmPoolClaimVMName(assignment.Args) != "" {
 		if err := w.stopClaimedWarmPoolVM(ctx, assignment); err != nil {
 			if report.Error != "" {
 				report.Error += "; "

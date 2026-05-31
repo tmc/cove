@@ -78,6 +78,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `coved -fleet-url` now stops a claimed warm-pool VM after the claimed
   guest-exec assignment finishes, allowing the original warm-run assignment to
   terminate and the controller to replenish capacity cleanly.
+- `cove-fleetd` now downsizes warm-pools when `size` is lowered: never-started
+  surplus slots are canceled, and already-started surplus slots get same-worker
+  `cove ctl -vm <name> stop` cleanup assignments.
 - `coved -fleet-url` now starts leased assignments asynchronously so a
   long-running `cove` assignment can keep renewing while the worker continues
   heartbeating and polling for additional assigned work.

@@ -407,6 +407,35 @@ exit 0
 	}
 }
 
+func TestFleetWorkerDoesNotCleanupWarmPoolStopAssignment(t *testing.T) {
+	stopArgs := filepath.Join(t.TempDir(), "stop-args.txt")
+	t.Setenv("COVE_TEST_STOP_ARGS", stopArgs)
+	coveBin := writeExecutable(t, `#!/bin/sh
+printf '%s\n' "$*" > "$COVE_TEST_STOP_ARGS"
+exit 0
+`)
+	worker, err := NewFleetWorker(FleetWorkerConfig{
+		ControllerURL: "http://127.0.0.1:1",
+		ID:            "worker-1",
+		CoveBin:       coveBin,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := worker.finishCoveAssignment(context.Background(), fleetcontrol.Assignment{
+		ID:           "cleanup",
+		WarmPoolSlot: "slot-1",
+		Verb:         "cove",
+		Args:         []string{"ctl", "-vm", "cove-warm-runner-slot-1", "stop"},
+	}, fleetcontrol.WorkerReport{AssignmentID: "cleanup", Status: "complete"})
+	if report.Status != "complete" || report.Error != "" {
+		t.Fatalf("report = %+v, want unchanged complete report", report)
+	}
+	if _, err := os.Stat(stopArgs); !os.IsNotExist(err) {
+		t.Fatalf("stop command ran during finish: stat err = %v", err)
+	}
+}
+
 func TestFleetWorkerRefreshesImageRefsAfterPrepare(t *testing.T) {
 	imageRoot := t.TempDir()
 	t.Setenv("COVE_TEST_IMAGE_ROOT", imageRoot)

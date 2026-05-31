@@ -267,6 +267,9 @@ func (s *Store) Report(r WorkerReport) (HostRecord, error) {
 			if assignment.WarmPool != "" && assignment.Status == "claimed" && (status == "ready" || status == "running") {
 				storedStatus = "claimed"
 			}
+			if assignment.WarmPool != "" && assignment.Status == "draining" && (status == "ready" || status == "running") {
+				storedStatus = "draining"
+			}
 			assignment.Status = storedStatus
 			assignment.Updated = received
 			assignment.LastReport = &r
@@ -389,12 +392,18 @@ func (s *Store) EnsureWarmPool(req WarmPoolRequest) (WarmPoolResult, error) {
 		pool.Created = existing.Created
 	}
 	s.warmPools[pool.Name] = pool
+	downsized := s.downsizeWarmPoolLocked(now, pool)
 	created := s.ensureWarmPoolLocked(now, pool)
 	status := s.warmPoolStatusLocked(pool.Name)
 	if err := s.persistLocked(); err != nil {
 		return WarmPoolResult{Pool: status}, err
 	}
-	return WarmPoolResult{Pool: status, Created: cloneAssignments(created)}, nil
+	return WarmPoolResult{
+		Pool:     status,
+		Created:  cloneAssignments(created),
+		Canceled: cloneStrings(downsized.canceled),
+		Cleanup:  cloneAssignments(downsized.cleanup),
+	}, nil
 }
 
 func (s *Store) ClaimWarmPool(req WarmPoolClaimRequest) (WarmPoolClaimResult, error) {
@@ -860,6 +869,11 @@ func (s *Store) reconcileLocked(now time.Time) ReconcileResult {
 		result.RequeuedAssignments = append(result.RequeuedAssignments, assignment.ID)
 	}
 	for _, pool := range s.sortedWarmPoolsLocked() {
+		downsized := s.downsizeWarmPoolLocked(now, pool)
+		result.WarmPoolCanceled = append(result.WarmPoolCanceled, downsized.canceled...)
+		for _, assignment := range downsized.cleanup {
+			result.WarmPoolCleanup = append(result.WarmPoolCleanup, assignment.ID)
+		}
 		created := s.ensureWarmPoolLocked(now, pool)
 		for _, assignment := range created {
 			result.WarmPoolAssignments = append(result.WarmPoolAssignments, assignment.ID)
@@ -869,6 +883,8 @@ func (s *Store) reconcileLocked(now time.Time) ReconcileResult {
 	sort.Strings(result.RequeuedAssignments)
 	sort.Strings(result.ReplacedAssignments)
 	sort.Strings(result.WarmPoolAssignments)
+	sort.Strings(result.WarmPoolCanceled)
+	sort.Strings(result.WarmPoolCleanup)
 	return result
 }
 
@@ -890,7 +906,7 @@ func (s *Store) statusLocked(record HostRecord) HostRecord {
 }
 
 func (r ReconcileResult) changed() bool {
-	return len(r.StaleWorkers) > 0 || len(r.RequeuedAssignments) > 0 || len(r.ReplacedAssignments) > 0 || len(r.WarmPoolAssignments) > 0
+	return len(r.StaleWorkers) > 0 || len(r.RequeuedAssignments) > 0 || len(r.ReplacedAssignments) > 0 || len(r.WarmPoolAssignments) > 0 || len(r.WarmPoolCanceled) > 0 || len(r.WarmPoolCleanup) > 0
 }
 
 func activeAssignmentStatus(status string) bool {
@@ -1168,6 +1184,78 @@ func (s *Store) ensureWarmPoolLocked(now time.Time, pool WarmPool) []Assignment 
 	return created
 }
 
+type warmPoolDownsizeResult struct {
+	canceled []string
+	cleanup  []Assignment
+}
+
+func (s *Store) downsizeWarmPoolLocked(now time.Time, pool WarmPool) warmPoolDownsizeResult {
+	active := s.warmPoolAssignmentsLocked(pool.Name)
+	extra := len(active) - pool.Size
+	if extra <= 0 {
+		return warmPoolDownsizeResult{}
+	}
+	sort.Slice(active, func(i, j int) bool {
+		a, b := active[i], active[j]
+		if ra, rb := warmPoolDownsizeRank(a.Status), warmPoolDownsizeRank(b.Status); ra != rb {
+			return ra < rb
+		}
+		if !a.Created.Equal(b.Created) {
+			return a.Created.After(b.Created)
+		}
+		return a.ID > b.ID
+	})
+	var result warmPoolDownsizeResult
+	for _, assignment := range active {
+		if extra == 0 {
+			break
+		}
+		if assignment.Status == "pending" || strings.TrimSpace(assignment.WorkerID) == "" {
+			assignment.Status = "canceled"
+			assignment.Updated = now
+			s.assignments[assignment.ID] = assignment
+			result.canceled = append(result.canceled, assignment.ID)
+			extra--
+			continue
+		}
+
+		vmName := WarmPoolAssignmentVMName(assignment)
+		cleanup := Assignment{
+			ID:           s.nextAssignmentIDLocked(now),
+			WorkerID:     assignment.WorkerID,
+			WarmPoolSlot: assignment.ID,
+			Verb:         "cove",
+			Args:         warmPoolStopArgs(vmName),
+			Status:       "pending",
+			Created:      now,
+			Updated:      now,
+		}
+		assignment.Status = "draining"
+		assignment.Updated = now
+		s.assignments[assignment.ID] = assignment
+		s.assignments[cleanup.ID] = cleanup
+		result.cleanup = append(result.cleanup, cloneAssignment(cleanup))
+		extra--
+	}
+	sort.Strings(result.canceled)
+	return result
+}
+
+func warmPoolDownsizeRank(status string) int {
+	switch status {
+	case "pending":
+		return 0
+	case "ready":
+		return 1
+	case "running":
+		return 2
+	case "leased":
+		return 3
+	default:
+		return 4
+	}
+}
+
 func (s *Store) warmPoolStatusLocked(name string) WarmPoolStatus {
 	pool, ok := s.warmPools[name]
 	if !ok {
@@ -1305,6 +1393,10 @@ func warmPoolClaimArgs(vmName string, command []string, env map[string]string) [
 	}
 	args = append(args, vmName, "--")
 	return append(args, cloneStrings(command)...)
+}
+
+func warmPoolStopArgs(vmName string) []string {
+	return []string{"ctl", "-vm", vmName, "stop"}
 }
 
 func validateWarmPoolArgs(args []string) error {

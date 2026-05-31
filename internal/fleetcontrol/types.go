@@ -72,6 +72,8 @@ type ReconcileResult struct {
 	RequeuedAssignments []string `json:"requeued_assignments,omitempty"`
 	ReplacedAssignments []string `json:"replaced_assignments,omitempty"`
 	WarmPoolAssignments []string `json:"warm_pool_assignments,omitempty"`
+	WarmPoolCanceled    []string `json:"warm_pool_canceled,omitempty"`
+	WarmPoolCleanup     []string `json:"warm_pool_cleanup,omitempty"`
 }
 
 type WorkerLifecycle struct {
@@ -216,8 +218,10 @@ type WarmPoolStatus struct {
 }
 
 type WarmPoolResult struct {
-	Pool    WarmPoolStatus `json:"pool"`
-	Created []Assignment   `json:"created,omitempty"`
+	Pool     WarmPoolStatus `json:"pool"`
+	Created  []Assignment   `json:"created,omitempty"`
+	Canceled []string       `json:"canceled,omitempty"`
+	Cleanup  []Assignment   `json:"cleanup,omitempty"`
 }
 
 type WarmPoolClaimRequest struct {

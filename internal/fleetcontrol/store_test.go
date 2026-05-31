@@ -1192,6 +1192,108 @@ func TestStoreClaimedWarmPoolSlotCountsAgainstCapacity(t *testing.T) {
 	}
 }
 
+func TestStoreDownsizesWarmPoolReadySlots(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	for _, hb := range []WorkerHeartbeat{
+		{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 2}},
+		{ID: "worker-2", ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 2}},
+	} {
+		if _, err := store.UpsertHeartbeat(hb); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result, err := store.EnsureWarmPool(WarmPoolRequest{Name: "runner", ImageRef: "base:v1", Size: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Created) != 2 {
+		t.Fatalf("created = %+v, want 2", result.Created)
+	}
+	for _, assignment := range result.Created {
+		leased, err := store.AwaitAssignment(assignment.WorkerID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if leased == nil || leased.ID != assignment.ID {
+			t.Fatalf("leased = %+v, want %s", leased, assignment.ID)
+		}
+		if _, err := store.Report(WorkerReport{ID: assignment.WorkerID, AssignmentID: assignment.ID, Status: "ready"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	now = now.Add(time.Second)
+	result, err = store.EnsureWarmPool(WarmPoolRequest{Name: "runner", ImageRef: "base:v1", Size: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Created) != 0 || len(result.Canceled) != 0 || len(result.Cleanup) != 1 {
+		t.Fatalf("downsize result = %+v, want one cleanup assignment", result)
+	}
+	cleanup := result.Cleanup[0]
+	slot, ok := store.GetAssignment(cleanup.WarmPoolSlot)
+	if !ok {
+		t.Fatalf("cleanup slot %q missing", cleanup.WarmPoolSlot)
+	}
+	if slot.Status != "draining" {
+		t.Fatalf("slot status = %q, want draining", slot.Status)
+	}
+	wantArgs := warmPoolStopArgs(WarmPoolAssignmentVMName(slot))
+	if cleanup.WorkerID != slot.WorkerID || cleanup.Verb != "cove" || !equalStrings(cleanup.Args, wantArgs) {
+		t.Fatalf("cleanup = %+v, want worker %q args %+v", cleanup, slot.WorkerID, wantArgs)
+	}
+	pools := store.ListWarmPools()
+	if len(pools) != 1 || pools[0].Active != 1 {
+		t.Fatalf("pools after downsize = %+v, want active 1", pools)
+	}
+	if _, err := store.Report(WorkerReport{ID: slot.WorkerID, AssignmentID: slot.ID, Status: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+	slot, _ = store.GetAssignment(slot.ID)
+	if slot.Status != "draining" {
+		t.Fatalf("slot status after ready report = %q, want draining", slot.Status)
+	}
+	if _, err := store.Report(WorkerReport{ID: slot.WorkerID, AssignmentID: slot.ID, Status: "complete"}); err != nil {
+		t.Fatal(err)
+	}
+	slot, _ = store.GetAssignment(slot.ID)
+	if slot.Status != "complete" {
+		t.Fatalf("slot status after complete report = %q, want complete", slot.Status)
+	}
+}
+
+func TestStoreDownsizesWarmPoolPendingSlots(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 4}}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.EnsureWarmPool(WarmPoolRequest{Name: "runner", ImageRef: "base:v1", Size: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Created) != 2 {
+		t.Fatalf("created = %+v, want 2", result.Created)
+	}
+	result, err = store.EnsureWarmPool(WarmPoolRequest{Name: "runner", ImageRef: "base:v1", Size: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Canceled) != 2 || len(result.Cleanup) != 0 || result.Pool.Active != 0 {
+		t.Fatalf("downsize result = %+v, want two canceled pending slots", result)
+	}
+	for _, id := range result.Canceled {
+		assignment, ok := store.GetAssignment(id)
+		if !ok {
+			t.Fatalf("assignment %q missing", id)
+		}
+		if assignment.Status != "canceled" {
+			t.Fatalf("assignment %s status = %q, want canceled", id, assignment.Status)
+		}
+	}
+}
+
 func TestStoreWarmPoolRejectsReservedArgs(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	_, err := store.EnsureWarmPool(WarmPoolRequest{
@@ -1545,6 +1647,24 @@ func TestHandlerWarmPools(t *testing.T) {
 	wantArgs := []string{"shell", claim.VMName, "--", "/bin/true"}
 	if claim.Assignment.WorkerID != "worker-1" || claim.Assignment.WarmPoolSlot != leased.ID || !equalStrings(claim.Assignment.Args, wantArgs) {
 		t.Fatalf("claim assignment = %+v, want args %+v", claim.Assignment, wantArgs)
+	}
+}
+
+func TestHandlerWarmPoolDownsize(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 4}}, &record)
+	var result WarmPoolResult
+	postJSON(t, server.URL+"/v1/warm-pools", WarmPoolRequest{Name: "runner", ImageRef: "base:v1", Size: 2}, &result)
+	if len(result.Created) != 2 {
+		t.Fatalf("warm pool create = %+v, want 2 created", result)
+	}
+	postJSON(t, server.URL+"/v1/warm-pools", WarmPoolRequest{Name: "runner", ImageRef: "base:v1", Size: 0}, &result)
+	if len(result.Canceled) != 2 || len(result.Cleanup) != 0 || result.Pool.Active != 0 {
+		t.Fatalf("warm pool downsize = %+v, want two canceled pending slots", result)
 	}
 }
 

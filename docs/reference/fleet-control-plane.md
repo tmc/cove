@@ -188,8 +188,11 @@ slots. `POST /v1/warm-pools/claim` claims only a `ready` slot, marks that slot
 `cove shell <generated> -- <command...>`. The claimed VM continues counting
 against host capacity; when the guest-exec assignment finishes, `coved` stops
 the claimed warm VM with `cove ctl -vm <generated> stop`, and reconciliation
-creates a replacement warm slot when capacity allows. Stopping excess slots
-after a downsize is later controller work.
+creates a replacement warm slot when capacity allows. Lowering `size`
+downsizes the pool during the same reconcile pass: pending surplus slots are
+returned in `canceled`, and already-started surplus slots are marked `draining`
+while the controller queues same-worker `cove ctl -vm <generated> stop`
+assignments returned in `cleanup`.
 
 Assignment endpoints:
 
@@ -211,13 +214,14 @@ curl http://127.0.0.1:9758/v1/assignments/probe-1
 ```
 
 Assignments are stored with `pending`, `leased`, `running`, `ready`, `claimed`,
-or worker-reported terminal status. `ready` is used for a warm-pool slot whose
-guest agent accepted a probe through `cove shell`; `claimed` is used for a
-ready warm-pool slot that has been handed to a job. A claimed slot still
-consumes host capacity but is no longer counted as an available warm slot.
-`coved` renews active `cove` assignments with `running` or `ready` reports.
-Claimed warm-pool guest-exec assignments stop the claimed VM after the guest
-command returns.
+`draining`, `canceled`, or worker-reported terminal status. `ready` is used for
+a warm-pool slot whose guest agent accepted a probe through `cove shell`;
+`claimed` is used for a ready warm-pool slot that has been handed to a job, and
+`draining` is used for a surplus warm slot while its stop assignment is pending.
+A claimed slot still consumes host capacity but is no longer counted as an
+available warm slot. `coved` renews active `cove` assignments with `running` or
+`ready` reports. Claimed warm-pool guest-exec assignments stop the claimed VM
+after the guest command returns.
 Reconciliation marks expired workers stale, requeues expired assignment leases,
 rejects late reports for reclaimed leases, and can move a policy-placed
 assignment from a stale worker to another ready worker.
@@ -256,4 +260,4 @@ controller reconciliation, worker cordon lifecycle, fleet image preparation,
 fleet image-GC push, lifecycle-policy push, storage budget/prune push, retained
 placement plans, and a first fork warm-pool quota reconciler with agent-ready
 slot claim and guest `Exec` handoff through the `cove shell` path plus
-claimed-slot stop cleanup.
+claimed-slot stop and downsize cleanup.
