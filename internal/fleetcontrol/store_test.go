@@ -76,6 +76,90 @@ func TestStoreReportRequiresRegisteredWorker(t *testing.T) {
 	}
 }
 
+func TestStoreAssignmentsLeaseReportAndPersist(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "fleet.json")
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1"}); err != nil {
+		t.Fatal(err)
+	}
+	created, err := store.CreateAssignment(Assignment{
+		ID:       "assignment-1",
+		WorkerID: "worker-1",
+		Verb:     "noop",
+		Args:     []string{"arg"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Status != "pending" || created.Created.IsZero() || created.Updated.IsZero() {
+		t.Fatalf("created assignment = %+v", created)
+	}
+	got, err := store.AwaitAssignment("worker-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.ID != "assignment-1" || got.Status != "leased" || got.LeasedTo != "worker-1" || got.LeaseExpires.IsZero() {
+		t.Fatalf("leased assignment = %+v", got)
+	}
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: "assignment-1", Status: "complete"}); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopenedAssignment, ok := reopened.GetAssignment("assignment-1")
+	if !ok {
+		t.Fatal("assignment missing after reopen")
+	}
+	if reopenedAssignment.Status != "complete" || reopenedAssignment.LastReport == nil || reopenedAssignment.LastReport.Status != "complete" {
+		t.Fatalf("reopened assignment = %+v", reopenedAssignment)
+	}
+}
+
+func TestStoreAssignmentLeaseExpires(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.assignmentTTL = time.Second
+	store.now = func() time.Time { return now }
+	for _, id := range []string{"worker-1", "worker-2"} {
+		if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: id}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.CreateAssignment(Assignment{ID: "assignment-1", Verb: "noop"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.AwaitAssignment("worker-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.LeasedTo != "worker-1" {
+		t.Fatalf("first lease = %+v", got)
+	}
+	store.now = func() time.Time { return now.Add(500 * time.Millisecond) }
+	got, err = store.AwaitAssignment("worker-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != nil {
+		t.Fatalf("assignment before expiry = %+v, want nil", got)
+	}
+	store.now = func() time.Time { return now.Add(2 * time.Second) }
+	got, err = store.AwaitAssignment("worker-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.LeasedTo != "worker-2" {
+		t.Fatalf("expired lease reassignment = %+v", got)
+	}
+}
+
 func TestHandlerWorkerProtocol(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	server := httptest.NewServer(Handler(store))
@@ -121,6 +205,49 @@ func TestHandlerWorkerProtocol(t *testing.T) {
 	getJSON(t, server.URL+"/v1/workers", &list)
 	if len(list.Workers) != 1 || list.Workers[0].ID != "mini-1" {
 		t.Fatalf("list response = %+v", list)
+	}
+}
+
+func TestHandlerAssignmentProtocol(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "mini-1"}, &record)
+	var created Assignment
+	postJSON(t, server.URL+"/v1/assignments", Assignment{
+		ID:       "assignment-1",
+		WorkerID: "mini-1",
+		Verb:     "noop",
+	}, &created)
+	if created.Status != "pending" {
+		t.Fatalf("created assignment = %+v", created)
+	}
+
+	var leased Assignment
+	getJSON(t, server.URL+"/v1/workers/mini-1/assignments", &leased)
+	if leased.ID != "assignment-1" || leased.Status != "leased" || leased.LeasedTo != "mini-1" {
+		t.Fatalf("leased assignment = %+v", leased)
+	}
+
+	postJSON(t, server.URL+"/v1/workers/mini-1/reports", WorkerReport{
+		AssignmentID: "assignment-1",
+		Status:       "complete",
+	}, &record)
+
+	var finished Assignment
+	getJSON(t, server.URL+"/v1/assignments/assignment-1", &finished)
+	if finished.Status != "complete" || finished.LastReport == nil || finished.LastReport.Status != "complete" {
+		t.Fatalf("finished assignment = %+v", finished)
+	}
+
+	var list struct {
+		Assignments []Assignment `json:"assignments"`
+	}
+	getJSON(t, server.URL+"/v1/assignments", &list)
+	if len(list.Assignments) != 1 || list.Assignments[0].ID != "assignment-1" {
+		t.Fatalf("list = %+v", list)
 	}
 }
 

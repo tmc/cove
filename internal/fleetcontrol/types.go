@@ -11,6 +11,8 @@ const (
 
 const DefaultWorkerTTL = 30 * time.Second
 
+const DefaultAssignmentTTL = 30 * time.Second
+
 type Capacity struct {
 	CPUs        int    `json:"cpus,omitempty"`
 	MemoryBytes uint64 `json:"memory_bytes,omitempty"`
@@ -49,7 +51,14 @@ type WorkerReport struct {
 }
 
 type Assignment struct {
-	ID   string   `json:"id"`
-	Verb string   `json:"verb"`
-	Args []string `json:"args,omitempty"`
+	ID           string        `json:"id"`
+	WorkerID     string        `json:"worker_id,omitempty"`
+	Verb         string        `json:"verb"`
+	Args         []string      `json:"args,omitempty"`
+	Status       string        `json:"status,omitempty"`
+	Created      time.Time     `json:"created,omitempty"`
+	Updated      time.Time     `json:"updated,omitempty"`
+	LeasedTo     string        `json:"leased_to,omitempty"`
+	LeaseExpires time.Time     `json:"lease_expires,omitempty"`
+	LastReport   *WorkerReport `json:"last_report,omitempty"`
 }

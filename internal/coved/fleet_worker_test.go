@@ -2,8 +2,6 @@ package coved
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -67,22 +65,8 @@ func TestFleetWorkerRegisterHeartbeatAndAwait(t *testing.T) {
 }
 
 func TestFleetWorkerReportsUnsupportedAssignment(t *testing.T) {
-	reports := make(chan fleetcontrol.WorkerReport, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/v1/workers/worker-1/assignments":
-			_ = json.NewEncoder(w).Encode(fleetcontrol.Assignment{ID: "assignment-1", Verb: "run"})
-		case "/v1/workers/worker-1/reports":
-			var report fleetcontrol.WorkerReport
-			if err := json.NewDecoder(r.Body).Decode(&report); err != nil {
-				t.Errorf("decode report: %v", err)
-			}
-			reports <- report
-			_ = json.NewEncoder(w).Encode(fleetcontrol.HostRecord{ID: "worker-1", Status: report.Status})
-		default:
-			http.NotFound(w, r)
-		}
-	}))
+	store := fleetcontrol.NewMemoryStore(time.Minute)
+	server := httptest.NewServer(fleetcontrol.Handler(store))
 	defer server.Close()
 
 	worker, err := NewFleetWorker(FleetWorkerConfig{
@@ -92,15 +76,57 @@ func TestFleetWorkerReportsUnsupportedAssignment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := worker.PollAssignment(context.Background()); err != nil {
+	ctx := context.Background()
+	if err := worker.Register(ctx); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if _, err := store.CreateAssignment(fleetcontrol.Assignment{ID: "assignment-1", WorkerID: "worker-1", Verb: "run"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := worker.PollAssignment(ctx); err != nil {
 		t.Fatalf("PollAssignment: %v", err)
 	}
-	report := <-reports
-	if report.ID != "worker-1" || report.AssignmentID != "assignment-1" || report.Status != "unsupported" {
+	assignment, ok := store.GetAssignment("assignment-1")
+	if !ok {
+		t.Fatal("assignment missing")
+	}
+	report := assignment.LastReport
+	if report == nil || report.ID != "worker-1" || report.AssignmentID != "assignment-1" || report.Status != "unsupported" {
 		t.Fatalf("report = %+v", report)
 	}
 	if !strings.Contains(report.Error, `unsupported assignment verb "run"`) {
 		t.Fatalf("report error = %q", report.Error)
+	}
+}
+
+func TestFleetWorkerCompletesNoopAssignment(t *testing.T) {
+	store := fleetcontrol.NewMemoryStore(time.Minute)
+	server := httptest.NewServer(fleetcontrol.Handler(store))
+	defer server.Close()
+
+	worker, err := NewFleetWorker(FleetWorkerConfig{
+		ControllerURL: server.URL,
+		ID:            "worker-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := worker.Register(ctx); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if _, err := store.CreateAssignment(fleetcontrol.Assignment{ID: "assignment-1", WorkerID: "worker-1", Verb: "noop"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := worker.PollAssignment(ctx); err != nil {
+		t.Fatalf("PollAssignment: %v", err)
+	}
+	assignment, ok := store.GetAssignment("assignment-1")
+	if !ok {
+		t.Fatal("assignment missing")
+	}
+	if assignment.Status != "complete" || assignment.LastReport == nil || assignment.LastReport.Status != "complete" {
+		t.Fatalf("assignment = %+v", assignment)
 	}
 }
 

@@ -27,6 +27,7 @@ func main() {
 	addr := flag.String("addr", "127.0.0.1:9758", "HTTP listen address")
 	storePath := flag.String("store", defaultStorePath(), "host inventory store path; empty keeps memory only")
 	workerTTL := flag.Duration("worker-ttl", fleetcontrol.DefaultWorkerTTL, "duration before a worker heartbeat is stale")
+	assignmentTTL := flag.Duration("assignment-ttl", fleetcontrol.DefaultAssignmentTTL, "duration before a leased assignment can be reclaimed")
 	showVersion := flag.Bool("version", false, "print version information")
 	flag.Parse()
 
@@ -44,6 +45,7 @@ func main() {
 		logger.Error("open store", slog.Any("err", err))
 		os.Exit(1)
 	}
+	store.SetAssignmentTTL(*assignmentTTL)
 	server := &http.Server{
 		Addr:              *addr,
 		Handler:           fleetcontrol.Handler(store),

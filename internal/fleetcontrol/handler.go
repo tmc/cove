@@ -32,6 +32,12 @@ func Handler(store *Store) http.Handler {
 	mux.HandleFunc("/v1/workers/heartbeat", func(w http.ResponseWriter, r *http.Request) {
 		handleWorkerHeartbeat(w, r, store, VerbHeartbeat)
 	})
+	mux.HandleFunc("/v1/assignments", func(w http.ResponseWriter, r *http.Request) {
+		handleAssignments(w, r, store)
+	})
+	mux.HandleFunc("/v1/assignments/", func(w http.ResponseWriter, r *http.Request) {
+		handleAssignment(w, r, store)
+	})
 	mux.HandleFunc("/v1/workers/", func(w http.ResponseWriter, r *http.Request) {
 		handleWorker(w, r, store)
 	})
@@ -130,6 +136,45 @@ func handleWorkerReports(w http.ResponseWriter, r *http.Request, store *Store, i
 		return
 	}
 	writeJSON(w, http.StatusOK, record)
+}
+
+func handleAssignments(w http.ResponseWriter, r *http.Request, store *Store) {
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, map[string]any{"assignments": store.ListAssignments()})
+	case http.MethodPost:
+		var assignment Assignment
+		if err := json.NewDecoder(r.Body).Decode(&assignment); err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode assignment: %v", err))
+			return
+		}
+		created, err := store.CreateAssignment(assignment)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, created)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func handleAssignment(w http.ResponseWriter, r *http.Request, store *Store) {
+	id := strings.Trim(strings.TrimPrefix(r.URL.Path, "/v1/assignments/"), "/")
+	if id == "" || strings.Contains(id, "/") {
+		writeError(w, http.StatusNotFound, "assignment not found")
+		return
+	}
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	assignment, ok := store.GetAssignment(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, "assignment not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, assignment)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

@@ -4,8 +4,8 @@ title: Fleet Control Plane
 # Fleet Control Plane
 
 `cove-fleetd` is the first stateful fleet-control-plane boundary. It owns host
-inventory and the worker-facing protocol surface. `coved` can now dial out as a
-worker; controller-side scheduling is the next slice.
+inventory, assignment leases, and the worker-facing protocol surface. `coved`
+can now dial out as a worker; controller-side scheduling is the next slice.
 
 Start a private controller:
 
@@ -20,6 +20,7 @@ Options:
 | `-addr <addr>` | `127.0.0.1:9758` | HTTP listen address |
 | `-store <path>` | `~/.vz/fleet-controller.json` | JSON host inventory store; empty keeps memory only |
 | `-worker-ttl <duration>` | `30s` | Time before a worker heartbeat is marked stale |
+| `-assignment-ttl <duration>` | `30s` | Time before a leased assignment can be reclaimed |
 | `-version` | false | Print build version |
 
 Start a worker:
@@ -44,7 +45,7 @@ Worker protocol:
 |------|----------|-------|
 | register | `POST /v1/workers/register` | `coved` sends host id, version, labels, CPU count, VM count, and local image count; controller stores the host record. |
 | heartbeat | `POST /v1/workers/heartbeat` | `coved` refreshes `last_seen` and capacity. |
-| await-assignment | `GET /v1/workers/<id>/assignments` | `coved` polls for work; the controller returns `204 No Content` until scheduler assignments exist. |
+| await-assignment | `GET /v1/workers/<id>/assignments` | `coved` polls for work; the controller leases one pending or expired assignment and otherwise returns `204 No Content`. |
 | report-status | `POST /v1/workers/<id>/reports` | `coved` records `noop` assignments as complete and reports other verbs as unsupported until assignment execution ships. |
 
 Inventory endpoints:
@@ -54,6 +55,20 @@ curl http://127.0.0.1:9758/healthz
 curl http://127.0.0.1:9758/v1/workers
 curl http://127.0.0.1:9758/v1/workers/mini-1
 ```
+
+Assignment endpoints:
+
+```bash
+curl -X POST http://127.0.0.1:9758/v1/assignments \
+  -H 'content-type: application/json' \
+  -d '{"id":"probe-1","worker_id":"mini-1","verb":"noop"}'
+curl http://127.0.0.1:9758/v1/assignments
+curl http://127.0.0.1:9758/v1/assignments/probe-1
+```
+
+Assignments are stored with `pending`, `leased`, or worker-reported terminal
+status. Leases expire after the controller's assignment TTL and can then be
+claimed by another eligible worker.
 
 Register a worker record manually:
 

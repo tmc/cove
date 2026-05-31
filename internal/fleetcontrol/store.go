@@ -12,15 +12,18 @@ import (
 )
 
 type Store struct {
-	mu    sync.Mutex
-	path  string
-	ttl   time.Duration
-	now   func() time.Time
-	hosts map[string]HostRecord
+	mu            sync.Mutex
+	path          string
+	ttl           time.Duration
+	assignmentTTL time.Duration
+	now           func() time.Time
+	hosts         map[string]HostRecord
+	assignments   map[string]Assignment
 }
 
 type storeFile struct {
-	Hosts []HostRecord `json:"hosts"`
+	Hosts       []HostRecord `json:"hosts"`
+	Assignments []Assignment `json:"assignments,omitempty"`
 }
 
 func OpenStore(path string, ttl time.Duration) (*Store, error) {
@@ -28,10 +31,12 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		ttl = DefaultWorkerTTL
 	}
 	s := &Store{
-		path:  strings.TrimSpace(path),
-		ttl:   ttl,
-		now:   time.Now,
-		hosts: make(map[string]HostRecord),
+		path:          strings.TrimSpace(path),
+		ttl:           ttl,
+		assignmentTTL: DefaultAssignmentTTL,
+		now:           time.Now,
+		hosts:         make(map[string]HostRecord),
+		assignments:   make(map[string]Assignment),
 	}
 	if s.path == "" {
 		return s, nil
@@ -55,12 +60,33 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		host.ID = id
 		s.hosts[id] = host
 	}
+	for _, assignment := range file.Assignments {
+		id := strings.TrimSpace(assignment.ID)
+		if id == "" {
+			continue
+		}
+		assignment.ID = id
+		assignment.Args = cloneStrings(assignment.Args)
+		if assignment.Status == "" {
+			assignment.Status = "pending"
+		}
+		s.assignments[id] = assignment
+	}
 	return s, nil
 }
 
 func NewMemoryStore(ttl time.Duration) *Store {
 	s, _ := OpenStore("", ttl)
 	return s
+}
+
+func (s *Store) SetAssignmentTTL(ttl time.Duration) {
+	if ttl <= 0 {
+		ttl = DefaultAssignmentTTL
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.assignmentTTL = ttl
 }
 
 func (s *Store) UpsertHeartbeat(h WorkerHeartbeat) (HostRecord, error) {
@@ -119,13 +145,68 @@ func (s *Store) Report(r WorkerReport) (HostRecord, error) {
 	}
 	r.ID = id
 	r.Status = status
+	if r.AssignmentID != "" {
+		if assignment, ok := s.assignments[r.AssignmentID]; ok {
+			if assignment.LeasedTo != "" && assignment.LeasedTo != id {
+				return HostRecord{}, fmt.Errorf("assignment %q leased to %q", r.AssignmentID, assignment.LeasedTo)
+			}
+		}
+	}
 	record.Report = &r
 	record.Status = status
 	s.hosts[id] = record
+	if r.AssignmentID != "" {
+		assignment, ok := s.assignments[r.AssignmentID]
+		if ok {
+			assignment.Status = status
+			assignment.Updated = r.Time
+			assignment.LastReport = &r
+			s.assignments[assignment.ID] = assignment
+		}
+	}
 	if err := s.persistLocked(); err != nil {
 		return HostRecord{}, err
 	}
 	return s.statusLocked(record), nil
+}
+
+func (s *Store) CreateAssignment(a Assignment) (Assignment, error) {
+	verb := strings.TrimSpace(a.Verb)
+	if verb == "" {
+		return Assignment{}, fmt.Errorf("assignment verb required")
+	}
+	workerID := strings.TrimSpace(a.WorkerID)
+	now := s.now().UTC()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id := strings.TrimSpace(a.ID)
+	if id == "" {
+		id = s.nextAssignmentIDLocked(now)
+	}
+	if _, ok := s.assignments[id]; ok {
+		return Assignment{}, fmt.Errorf("assignment %q already exists", id)
+	}
+	if workerID != "" {
+		if _, ok := s.hosts[workerID]; !ok {
+			return Assignment{}, fmt.Errorf("worker %q not registered", workerID)
+		}
+	}
+	a.ID = id
+	a.WorkerID = workerID
+	a.Verb = verb
+	a.Args = cloneStrings(a.Args)
+	a.Status = "pending"
+	a.Created = now
+	a.Updated = now
+	a.LeasedTo = ""
+	a.LeaseExpires = time.Time{}
+	a.LastReport = nil
+	s.assignments[id] = a
+	if err := s.persistLocked(); err != nil {
+		return Assignment{}, err
+	}
+	return cloneAssignment(a), nil
 }
 
 func (s *Store) AwaitAssignment(id string) (*Assignment, error) {
@@ -133,12 +214,53 @@ func (s *Store) AwaitAssignment(id string) (*Assignment, error) {
 	if id == "" {
 		return nil, fmt.Errorf("worker id required")
 	}
+	now := s.now().UTC()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.hosts[id]; !ok {
 		return nil, fmt.Errorf("worker %q not registered", id)
 	}
+	assignments := s.sortedAssignmentsLocked()
+	for _, assignment := range assignments {
+		if assignment.WorkerID != "" && assignment.WorkerID != id {
+			continue
+		}
+		if assignment.Status != "pending" && !(assignment.Status == "leased" && now.After(assignment.LeaseExpires)) {
+			continue
+		}
+		assignment.Status = "leased"
+		assignment.LeasedTo = id
+		assignment.LeaseExpires = now.Add(s.assignmentTTL)
+		assignment.Updated = now
+		s.assignments[assignment.ID] = assignment
+		if err := s.persistLocked(); err != nil {
+			return nil, err
+		}
+		out := cloneAssignment(assignment)
+		return &out, nil
+	}
 	return nil, nil
+}
+
+func (s *Store) GetAssignment(id string) (Assignment, bool) {
+	id = strings.TrimSpace(id)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	assignment, ok := s.assignments[id]
+	if !ok {
+		return Assignment{}, false
+	}
+	return cloneAssignment(assignment), true
+}
+
+func (s *Store) ListAssignments() []Assignment {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	assignments := s.sortedAssignmentsLocked()
+	for i := range assignments {
+		assignments[i] = cloneAssignment(assignments[i])
+	}
+	return assignments
 }
 
 func (s *Store) Get(id string) (HostRecord, bool) {
@@ -191,7 +313,8 @@ func (s *Store) persistLocked() error {
 	sort.Slice(hosts, func(i, j int) bool {
 		return hosts[i].ID < hosts[j].ID
 	})
-	data, err := json.MarshalIndent(storeFile{Hosts: hosts}, "", "  ")
+	assignments := s.sortedAssignmentsLocked()
+	data, err := json.MarshalIndent(storeFile{Hosts: hosts, Assignments: assignments}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode fleet store: %w", err)
 	}
@@ -204,6 +327,50 @@ func (s *Store) persistLocked() error {
 		return fmt.Errorf("rename fleet store: %w", err)
 	}
 	return nil
+}
+
+func (s *Store) sortedAssignmentsLocked() []Assignment {
+	assignments := make([]Assignment, 0, len(s.assignments))
+	for _, assignment := range s.assignments {
+		assignments = append(assignments, assignment)
+	}
+	sort.Slice(assignments, func(i, j int) bool {
+		if !assignments[i].Created.Equal(assignments[j].Created) {
+			return assignments[i].Created.Before(assignments[j].Created)
+		}
+		return assignments[i].ID < assignments[j].ID
+	})
+	return assignments
+}
+
+func (s *Store) nextAssignmentIDLocked(now time.Time) string {
+	base := fmt.Sprintf("assignment-%d", now.UnixNano())
+	id := base
+	for i := 2; ; i++ {
+		if _, ok := s.assignments[id]; !ok {
+			return id
+		}
+		id = fmt.Sprintf("%s-%d", base, i)
+	}
+}
+
+func cloneAssignment(in Assignment) Assignment {
+	out := in
+	out.Args = cloneStrings(in.Args)
+	if in.LastReport != nil {
+		report := *in.LastReport
+		out.LastReport = &report
+	}
+	return out
+}
+
+func cloneStrings(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, len(in))
+	copy(out, in)
+	return out
 }
 
 func cloneLabels(in map[string]string) map[string]string {

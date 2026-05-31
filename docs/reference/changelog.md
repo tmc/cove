@@ -29,6 +29,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `coved -fleet-url` can now dial out to `cove-fleetd` as a fleet worker,
   register host capacity, send periodic heartbeats, poll assignments, and report
   unsupported assignment verbs until execution lands.
+- `cove-fleetd` now persists controller assignments, exposes private
+  assignment create/list/get endpoints, leases pending work to workers, and
+  records worker reports back onto the assignment.
 - `cove build --cache-from` and `--cache-to` now import and export cove
   build-cache artifacts through OCI refs, carrying cache entries, layer
   manifests, and block-delta blobs between runners.
