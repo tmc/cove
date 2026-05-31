@@ -33,7 +33,7 @@ func TestCommandMetadata(t *testing.T) {
 		{"commands", false, false, false, true},
 		{"run", true, false, true, false},
 		{"status", false, true, false, false},
-		{"user", false, true, false, false},
+		{"user", true, true, false, false},
 		{"image", true, false, false, false},
 	}
 	for _, tt := range tests {

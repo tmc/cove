@@ -49,8 +49,8 @@ func TestCommandsJSONIncludesInventory(t *testing.T) {
 	if have["ctl"].SafeForDiscovery || !have["ctl"].RequiresRunningVM || have["ctl"].MutatesState || have["ctl"].MayBootVM {
 		t.Fatalf("ctl metadata = %+v, want running-VM control command", have["ctl"])
 	}
-	if have["user"].SafeForDiscovery || !have["user"].RequiresRunningVM || have["user"].MutatesState || have["user"].MayBootVM {
-		t.Fatalf("user metadata = %+v, want read-only running-VM command", have["user"])
+	if have["user"].SafeForDiscovery || !have["user"].RequiresRunningVM || !have["user"].MutatesState || have["user"].MayBootVM {
+		t.Fatalf("user metadata = %+v, want mutating running-VM command", have["user"])
 	}
 	if !commandsContainsString(have["user"].Outputs, "json") {
 		t.Fatalf("user outputs = %v, want json", have["user"].Outputs)

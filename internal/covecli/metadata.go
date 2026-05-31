@@ -39,7 +39,7 @@ func SafeForDiscovery(name string) bool {
 
 func MutatesState(name string) bool {
 	switch name {
-	case "action", "agent-sandbox", "agent-upgrade", "bench", "build", "clean", "clone", "compact", "config", "daemon", "disk-detach", "disk-snapshot", "export", "fleet", "fork", "forward", "gc", "helper", "image", "import", "inject", "inject-agent", "install", "network", "pin", "pit", "policy", "provision", "provision-agent", "push", "quota", "rename", "rm", "rosetta", "run", "serve", "shared-folder", "sip", "snapshot", "softreset", "storage", "store", "template", "trace", "uiscript", "unpin", "up", "verify", "vm", "vzscript":
+	case "action", "agent-sandbox", "agent-upgrade", "bench", "build", "clean", "clone", "compact", "config", "daemon", "disk-detach", "disk-snapshot", "export", "fleet", "fork", "forward", "gc", "helper", "image", "import", "inject", "inject-agent", "install", "network", "pin", "pit", "policy", "provision", "provision-agent", "push", "quota", "rename", "rm", "rosetta", "run", "serve", "shared-folder", "sip", "snapshot", "softreset", "storage", "store", "template", "trace", "uiscript", "unpin", "up", "user", "verify", "vm", "vzscript":
 		return true
 	default:
 		return false

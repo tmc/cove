@@ -74,6 +74,8 @@ var subSubHelp = []subSubHelpCase{
 	{"storage", "budget"},
 	{"storage", "prune"},
 	{"user", "audit"},
+	{"user", "create"},
+	{"user", "delete"},
 	{"vm", "delete"},
 }
 

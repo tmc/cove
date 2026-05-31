@@ -397,6 +397,14 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			printUserAuditUsage(os.Stderr)
 			return true, 0
 		}
+		if len(subargs) > 1 && subargs[0] == "create" && isHelpArg(subargs[1]) {
+			printUserCreateUsage(os.Stderr)
+			return true, 0
+		}
+		if len(subargs) > 1 && subargs[0] == "delete" && isHelpArg(subargs[1]) {
+			printUserDeleteUsage(os.Stderr)
+			return true, 0
+		}
 	case "store":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
 			printStoreUsage(os.Stderr)

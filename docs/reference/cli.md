@@ -178,11 +178,13 @@ cove status work-vm
 
 ## user
 
-Inspect guest user state through the running VM guest agent.
+Create, delete, and inspect guest users through the running VM guest agent.
 
 ```
 cove user audit <vm> --user <name> [-json]
 cove user audit --user <name> [-vm <vm>] [-json]
+cove user create <vm> --user <name> [--admin] [--password SPEC] [--ssh-key PATH] [-json]
+cove user delete <vm> --user <name> [--keep-home] [-json]
 ```
 
 `audit` is read-only. It reports whether the user exists, uid/gid, home, shell,
@@ -191,9 +193,20 @@ known cove provisioning files. macOS also reports LaunchAgents, keychains, and
 login-item storage where observable. Linux also reports sudoers and systemd
 user-unit residue.
 
+`create` defaults to a standard user; pass `--admin` for administrator access.
+If `--password` is omitted, cove prompts. `--password` accepts a literal value,
+`env://VAR`, `file:///abs/path`, or `fd://N`; secret URI values are trimmed of a
+trailing newline. `--ssh-key` installs a public key into `authorized_keys`.
+
+`delete` removes the account and the standard home directory by default. Pass
+`--keep-home` to leave the home directory in place for a later audit or manual
+cleanup.
+
 ```bash
 cove user audit macos-runner --user runner
 cove user audit --user ubuntu -vm ubuntu-runner -json
+cove user create macos-runner --user runner --admin --password env://RUNNER_PASSWORD --ssh-key ~/.ssh/id_ed25519.pub
+cove user delete macos-runner --user runner
 ```
 
 ---
@@ -1207,6 +1220,8 @@ cove forward <vm> <hostport>:<vmport>
 cove forward <vm> -reverse <vmport>:<hostport>
 cove forward <vm> udp:<hostport>:<vmport>
 cove user audit <vm> --user <name> [-json]
+cove user create <vm> --user <name> [--admin]
+cove user delete <vm> --user <name> [--keep-home]
 cove network logs <vm> [-f]
 ```
 
@@ -1216,7 +1231,7 @@ cove network logs <vm> [-f]
 | `cp [-vm name]` | Copy a file host-to-guest or guest-to-host using `vm:/absolute/path` syntax. `-vm` may appear before or after operands and must match the `vm:/path` endpoint. |
 | `diff <ref-a> <ref-b> [-json]` | Compare local image manifests/layers. |
 | `forward` | Forward TCP/UDP between host and guest; `-reverse` exposes guest-to-host direction. |
-| `user audit <vm> --user <name> [-json]` | Read-only guest user audit through the agent: identity, groups, home/SSH residue, admin/sudo state, and cove provisioning files. |
+| `user audit/create/delete` | Guest user lifecycle through the agent: read-only residue audit, standard/admin creation with password and optional SSH key, and deletion with home cleanup. |
 | `network logs <vm> [-f]` | Tail network policy audit events. |
 
 ```bash
@@ -1228,6 +1243,8 @@ cove diff macos-runner:old macos-runner:new -json
 cove forward dev 8080:80
 cove forward dev -reverse 3000:8080
 cove user audit dev --user runner -json
+cove user create dev --user runner --password fd://3 --ssh-key ~/.ssh/id_ed25519.pub
+cove user delete dev --user runner
 cove network logs dev -f
 ```
 

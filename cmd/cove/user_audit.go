@@ -63,6 +63,10 @@ func handleUserCommand(env commandEnv, args []string) error {
 	switch args[0] {
 	case "audit":
 		return runUserAuditCommand(env, args[1:], newControlUserAuditAgent)
+	case "create":
+		return runUserCreateCommand(env, args[1:], newControlUserLifecycleAgent)
+	case "delete":
+		return runUserDeleteCommand(env, args[1:], newControlUserLifecycleAgent)
 	default:
 		printUserUsage(env.Stderr)
 		return fmt.Errorf("user: unknown command %q", args[0])
@@ -135,6 +139,10 @@ func validateUserAuditName(name string) error {
 }
 
 func resolveUserAuditVM(env commandEnv, name string) (dir, label string, err error) {
+	return resolveUserVM(env, name, "user audit")
+}
+
+func resolveUserVM(env commandEnv, name, action string) (dir, label string, err error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		name = strings.TrimSpace(env.VM.Name)
@@ -145,7 +153,7 @@ func resolveUserAuditVM(env commandEnv, name string) (dir, label string, err err
 	if name == "" && strings.TrimSpace(env.VM.Dir) != "" {
 		dir = env.VM.Dir
 		if !vmconfig.Validate(dir) {
-			return "", "", fmt.Errorf("user audit: VM directory is invalid: %s", dir)
+			return "", "", fmt.Errorf("%s: VM directory is invalid: %s", action, dir)
 		}
 		return dir, filepath.Base(dir), nil
 	}
@@ -312,7 +320,9 @@ func printUserUsage(w io.Writer) {
 Manage and inspect guest user state through the running VM guest agent.
 
 Commands:
-  audit   Audit a guest user for identity and leftover state`)
+  audit    Audit a guest user for identity and leftover state
+  create   Create a guest user through the guest agent
+  delete   Delete a guest user through the guest agent`)
 }
 
 func printUserAuditUsage(w io.Writer) {

@@ -910,7 +910,7 @@ Runtime Control:
   logs            Show guest logs from a running VM (cove logs <vm> [-f])
   exec            Run a command in a running VM (cove exec <vm> <cmd>)
   shell           Open a Docker-shaped exec session in a running VM (cove shell <vm>)
-  user            Audit guest user identity and residue (cove user audit <vm> --user me)
+  user            Create, delete, and audit guest users through the agent
   trace           Manage eslogger guest traces
   agent-sandbox   Run a computer-use provider loop in a fresh VM fork
   vzscript        Run guest-agent and UI automation scripts (rsc.io/script + txtar)
