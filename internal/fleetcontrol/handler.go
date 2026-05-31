@@ -48,6 +48,9 @@ func Handler(store *Store) http.Handler {
 	mux.HandleFunc("/v1/placements/plan", func(w http.ResponseWriter, r *http.Request) {
 		handlePlacementPlan(w, r, store)
 	})
+	mux.HandleFunc("/v1/warm-pools", func(w http.ResponseWriter, r *http.Request) {
+		handleWarmPools(w, r, store)
+	})
 	mux.HandleFunc("/v1/workers/register", func(w http.ResponseWriter, r *http.Request) {
 		handleWorkerHeartbeat(w, r, store, VerbRegister)
 	})
@@ -201,6 +204,30 @@ func handlePlacementPlan(w http.ResponseWriter, r *http.Request, store *Store) {
 		return
 	}
 	writeJSON(w, http.StatusOK, plan)
+}
+
+func handleWarmPools(w http.ResponseWriter, r *http.Request, store *Store) {
+	switch r.Method {
+	case http.MethodGet:
+		if !reconcile(w, store) {
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"warm_pools": store.ListWarmPools()})
+	case http.MethodPost:
+		var req WarmPoolRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode warm pool: %v", err))
+			return
+		}
+		result, err := store.EnsureWarmPool(req)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
 }
 
 func handleWorkerCordon(w http.ResponseWriter, r *http.Request, store *Store, id string) {

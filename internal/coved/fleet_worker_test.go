@@ -183,6 +183,72 @@ exit 0
 	}
 }
 
+func TestFleetWorkerRunsWarmPoolAssignment(t *testing.T) {
+	argsPath := filepath.Join(t.TempDir(), "args.txt")
+	t.Setenv("COVE_TEST_ARGS", argsPath)
+	store := fleetcontrol.NewMemoryStore(time.Minute)
+	server := httptest.NewServer(fleetcontrol.Handler(store))
+	defer server.Close()
+	coveBin := writeExecutable(t, `#!/bin/sh
+printf '%s\n' "$*" > "$COVE_TEST_ARGS"
+sleep 0.2
+exit 0
+`)
+
+	worker, err := NewFleetWorker(FleetWorkerConfig{
+		ControllerURL:      server.URL,
+		ID:                 "worker-1",
+		CoveBin:            coveBin,
+		AssignmentInterval: 20 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := worker.Register(ctx); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	result, err := store.EnsureWarmPool(fleetcontrol.WarmPoolRequest{Name: "runner", ImageRef: "base:v1", Size: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Created) != 1 {
+		t.Fatalf("created = %+v, want 1", result.Created)
+	}
+	assignmentID := result.Created[0].ID
+	done := make(chan error, 1)
+	go func() {
+		done <- worker.PollAssignment(ctx)
+	}()
+	waitUntil(t, time.Second, func() bool {
+		assignment, ok := store.GetAssignment(assignmentID)
+		return ok && assignment.Status == "running" && assignment.LastReport != nil && assignment.LastReport.Status == "running"
+	})
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("PollAssignment: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("PollAssignment did not finish")
+	}
+	data, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.TrimSpace(string(data))
+	if !strings.Contains(got, "run -fork-from base:v1") || !strings.Contains(got, "-ephemeral -keep -headless") {
+		t.Fatalf("warm pool cove args = %q", got)
+	}
+	assignment, ok := store.GetAssignment(assignmentID)
+	if !ok {
+		t.Fatal("assignment missing")
+	}
+	if assignment.Status != "complete" || assignment.WarmPool != "runner" {
+		t.Fatalf("assignment = %+v", assignment)
+	}
+}
+
 func TestFleetWorkerRefreshesImageRefsAfterPrepare(t *testing.T) {
 	imageRoot := t.TempDir()
 	t.Setenv("COVE_TEST_IMAGE_ROOT", imageRoot)

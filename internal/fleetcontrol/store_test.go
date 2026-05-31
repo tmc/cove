@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -652,6 +653,124 @@ func TestStorePrepareImageCreatesMissingWorkerAssignments(t *testing.T) {
 	}
 }
 
+func TestStoreEnsuresWarmPoolAssignments(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "fleet.json")
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.now = func() time.Time { return now }
+	for _, hb := range []WorkerHeartbeat{
+		{ID: "warm", Labels: map[string]string{"zone": "desk"}, ImageRefs: []string{"macos-runner:latest"}, Capacity: Capacity{VMs: 0, MaxVMs: 1}},
+		{ID: "cold", Labels: map[string]string{"zone": "desk"}, Capacity: Capacity{VMs: 0, MaxVMs: 2}},
+		{ID: "rack", Labels: map[string]string{"zone": "rack"}, Capacity: Capacity{VMs: 0, MaxVMs: 2}},
+	} {
+		if _, err := store.UpsertHeartbeat(hb); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result, err := store.EnsureWarmPool(WarmPoolRequest{
+		Name:           "runner",
+		ImageRef:       "macos-runner:latest",
+		Size:           2,
+		RequiredLabels: map[string]string{"zone": "desk"},
+		Resources:      Capacity{VMs: 1},
+		Args:           []string{"--net", "nat"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Pool.Policy != PolicyImageAffinity || result.Pool.Active != 2 {
+		t.Fatalf("pool result = %+v", result.Pool)
+	}
+	if len(result.Created) != 2 {
+		t.Fatalf("created = %+v, want 2", result.Created)
+	}
+	if result.Created[0].WorkerID != "warm" || result.Created[1].WorkerID != "cold" {
+		t.Fatalf("created workers = %q, %q; want warm, cold", result.Created[0].WorkerID, result.Created[1].WorkerID)
+	}
+	for _, assignment := range result.Created {
+		if assignment.WarmPool != "runner" || assignment.Verb != "cove" || assignment.ImageRef != "macos-runner:latest" {
+			t.Fatalf("assignment = %+v", assignment)
+		}
+		wantArgs := []string{"run", "-fork-from", "macos-runner:latest", "-fork-name", warmPoolForkName("runner", assignment.ID), "-ephemeral", "-keep", "-headless", "--net", "nat"}
+		if !equalStrings(assignment.Args, wantArgs) {
+			t.Fatalf("args = %+v, want %+v", assignment.Args, wantArgs)
+		}
+	}
+	result, err = store.EnsureWarmPool(WarmPoolRequest{Name: "runner", ImageRef: "macos-runner:latest", Size: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Created) != 0 || result.Pool.Active != 2 {
+		t.Fatalf("second ensure = %+v", result)
+	}
+	reopened, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pools := reopened.ListWarmPools()
+	if len(pools) != 1 || pools[0].Name != "runner" || pools[0].Active != 2 {
+		t.Fatalf("reopened pools = %+v", pools)
+	}
+}
+
+func TestStoreReconcileReplenishesWarmPool(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 2}}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.EnsureWarmPool(WarmPoolRequest{Name: "runner", ImageRef: "base:v1", Size: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Created) != 1 {
+		t.Fatalf("created = %+v, want 1", result.Created)
+	}
+	first := result.Created[0].ID
+	leased, err := store.AwaitAssignment("worker-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leased == nil || leased.ID != first {
+		t.Fatalf("leased = %+v, want %s", leased, first)
+	}
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: first, Status: "complete"}); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	reconciled, err := store.Reconcile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reconciled.WarmPoolAssignments) != 1 {
+		t.Fatalf("reconcile result = %+v, want one warm pool assignment", reconciled)
+	}
+	if reconciled.WarmPoolAssignments[0] == first {
+		t.Fatalf("reconcile reused completed assignment id %q", first)
+	}
+	pools := store.ListWarmPools()
+	if len(pools) != 1 || pools[0].Active != 1 || pools[0].Assignments[0].ID == first {
+		t.Fatalf("pools = %+v", pools)
+	}
+}
+
+func TestStoreWarmPoolRejectsReservedArgs(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	_, err := store.EnsureWarmPool(WarmPoolRequest{
+		Name:     "runner",
+		ImageRef: "base:v1",
+		Size:     1,
+		Args:     []string{"-fork-name", "custom"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "warm pool args must not set -fork-name") {
+		t.Fatalf("EnsureWarmPool err = %v, want reserved arg error", err)
+	}
+}
+
 func TestStoreScheduleRequiresReadyWorker(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
 	store := NewMemoryStore(time.Minute)
@@ -850,6 +969,35 @@ func TestHandlerPrepareImage(t *testing.T) {
 	}, &result)
 	if len(result.Assignments) != 1 || result.Assignments[0].WorkerID != "worker-1" {
 		t.Fatalf("prepare result = %+v", result)
+	}
+}
+
+func TestHandlerWarmPools(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 2}}, &record)
+	var result WarmPoolResult
+	postJSON(t, server.URL+"/v1/warm-pools", WarmPoolRequest{
+		Name:     "runner",
+		ImageRef: "base:v1",
+		Size:     1,
+	}, &result)
+	if result.Pool.Name != "runner" || result.Pool.Active != 1 || len(result.Created) != 1 {
+		t.Fatalf("warm pool result = %+v", result)
+	}
+	if result.Created[0].WorkerID != "worker-1" || result.Created[0].WarmPool != "runner" {
+		t.Fatalf("created assignment = %+v", result.Created[0])
+	}
+
+	var list struct {
+		WarmPools []WarmPoolStatus `json:"warm_pools"`
+	}
+	getJSON(t, server.URL+"/v1/warm-pools", &list)
+	if len(list.WarmPools) != 1 || list.WarmPools[0].Name != "runner" || list.WarmPools[0].Active != 1 {
+		t.Fatalf("warm pool list = %+v", list)
 	}
 }
 

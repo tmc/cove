@@ -71,6 +71,7 @@ type ReconcileResult struct {
 	StaleWorkers        []string `json:"stale_workers,omitempty"`
 	RequeuedAssignments []string `json:"requeued_assignments,omitempty"`
 	ReplacedAssignments []string `json:"replaced_assignments,omitempty"`
+	WarmPoolAssignments []string `json:"warm_pool_assignments,omitempty"`
 }
 
 type WorkerLifecycle struct {
@@ -120,9 +121,43 @@ type PlacementCandidate struct {
 	HasImage         bool   `json:"has_image,omitempty"`
 }
 
+type WarmPoolRequest struct {
+	Name           string            `json:"name,omitempty"`
+	ImageRef       string            `json:"image_ref"`
+	Size           int               `json:"size"`
+	Policy         string            `json:"policy,omitempty"`
+	RequiredLabels map[string]string `json:"required_labels,omitempty"`
+	Resources      Capacity          `json:"resources,omitempty"`
+	Args           []string          `json:"args,omitempty"`
+}
+
+type WarmPool struct {
+	Name           string            `json:"name"`
+	ImageRef       string            `json:"image_ref"`
+	Size           int               `json:"size"`
+	Policy         string            `json:"policy,omitempty"`
+	RequiredLabels map[string]string `json:"required_labels,omitempty"`
+	Resources      Capacity          `json:"resources,omitempty"`
+	Args           []string          `json:"args,omitempty"`
+	Created        time.Time         `json:"created,omitempty"`
+	Updated        time.Time         `json:"updated,omitempty"`
+}
+
+type WarmPoolStatus struct {
+	WarmPool
+	Active      int          `json:"active"`
+	Assignments []Assignment `json:"assignments,omitempty"`
+}
+
+type WarmPoolResult struct {
+	Pool    WarmPoolStatus `json:"pool"`
+	Created []Assignment   `json:"created,omitempty"`
+}
+
 type Assignment struct {
 	ID              string            `json:"id"`
 	WorkerID        string            `json:"worker_id,omitempty"`
+	WarmPool        string            `json:"warm_pool,omitempty"`
 	Policy          string            `json:"policy,omitempty"`
 	ImageRef        string            `json:"image_ref,omitempty"`
 	RequiredLabels  map[string]string `json:"required_labels,omitempty"`

@@ -19,11 +19,13 @@ type Store struct {
 	now           func() time.Time
 	hosts         map[string]HostRecord
 	assignments   map[string]Assignment
+	warmPools     map[string]WarmPool
 }
 
 type storeFile struct {
 	Hosts       []HostRecord `json:"hosts"`
 	Assignments []Assignment `json:"assignments,omitempty"`
+	WarmPools   []WarmPool   `json:"warm_pools,omitempty"`
 }
 
 func OpenStore(path string, ttl time.Duration) (*Store, error) {
@@ -37,6 +39,7 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		now:           time.Now,
 		hosts:         make(map[string]HostRecord),
 		assignments:   make(map[string]Assignment),
+		warmPools:     make(map[string]WarmPool),
 	}
 	if s.path == "" {
 		return s, nil
@@ -68,6 +71,7 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		}
 		assignment.ID = id
 		assignment.Args = cloneStrings(assignment.Args)
+		assignment.WarmPool = strings.TrimSpace(assignment.WarmPool)
 		assignment.ImageRef = strings.TrimSpace(assignment.ImageRef)
 		assignment.AntiAffinityKey = strings.TrimSpace(assignment.AntiAffinityKey)
 		assignment.RequiredLabels = cloneLabels(assignment.RequiredLabels)
@@ -75,6 +79,13 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 			assignment.Status = "pending"
 		}
 		s.assignments[id] = assignment
+	}
+	for _, pool := range file.WarmPools {
+		pool, err := normalizeWarmPool(pool, time.Time{})
+		if err != nil {
+			continue
+		}
+		s.warmPools[pool.Name] = pool
 	}
 	return s, nil
 }
@@ -301,6 +312,7 @@ func (s *Store) CreateAssignment(a Assignment) (Assignment, error) {
 	}
 	a.ID = id
 	a.WorkerID = workerID
+	a.WarmPool = strings.TrimSpace(a.WarmPool)
 	a.Policy = policy
 	a.ImageRef = imageRef
 	a.AntiAffinityKey = antiAffinityKey
@@ -355,6 +367,27 @@ func (s *Store) PlanAssignment(a Assignment, limit int) (PlacementPlan, error) {
 		}
 	}
 	return plan, nil
+}
+
+func (s *Store) EnsureWarmPool(req WarmPoolRequest) (WarmPoolResult, error) {
+	now := s.now().UTC()
+	pool, err := warmPoolFromRequest(req, now)
+	if err != nil {
+		return WarmPoolResult{}, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if existing, ok := s.warmPools[pool.Name]; ok && !existing.Created.IsZero() {
+		pool.Created = existing.Created
+	}
+	s.warmPools[pool.Name] = pool
+	created := s.ensureWarmPoolLocked(now, pool)
+	status := s.warmPoolStatusLocked(pool.Name)
+	if err := s.persistLocked(); err != nil {
+		return WarmPoolResult{Pool: status}, err
+	}
+	return WarmPoolResult{Pool: status, Created: cloneAssignments(created)}, nil
 }
 
 func (s *Store) PrepareImage(req ImagePrepareRequest) (ImagePrepareResult, error) {
@@ -483,6 +516,17 @@ func (s *Store) ListAssignments() []Assignment {
 	return assignments
 }
 
+func (s *Store) ListWarmPools() []WarmPoolStatus {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	pools := s.sortedWarmPoolsLocked()
+	out := make([]WarmPoolStatus, 0, len(pools))
+	for _, pool := range pools {
+		out = append(out, s.warmPoolStatusLocked(pool.Name))
+	}
+	return out
+}
+
 func (s *Store) Get(id string) (HostRecord, bool) {
 	id = strings.TrimSpace(id)
 	s.mu.Lock()
@@ -558,9 +602,16 @@ func (s *Store) reconcileLocked(now time.Time) ReconcileResult {
 		s.assignments[assignment.ID] = assignment
 		result.RequeuedAssignments = append(result.RequeuedAssignments, assignment.ID)
 	}
+	for _, pool := range s.sortedWarmPoolsLocked() {
+		created := s.ensureWarmPoolLocked(now, pool)
+		for _, assignment := range created {
+			result.WarmPoolAssignments = append(result.WarmPoolAssignments, assignment.ID)
+		}
+	}
 	sort.Strings(result.StaleWorkers)
 	sort.Strings(result.RequeuedAssignments)
 	sort.Strings(result.ReplacedAssignments)
+	sort.Strings(result.WarmPoolAssignments)
 	return result
 }
 
@@ -582,7 +633,7 @@ func (s *Store) statusLocked(record HostRecord) HostRecord {
 }
 
 func (r ReconcileResult) changed() bool {
-	return len(r.StaleWorkers) > 0 || len(r.RequeuedAssignments) > 0 || len(r.ReplacedAssignments) > 0
+	return len(r.StaleWorkers) > 0 || len(r.RequeuedAssignments) > 0 || len(r.ReplacedAssignments) > 0 || len(r.WarmPoolAssignments) > 0
 }
 
 func activeAssignmentStatus(status string) bool {
@@ -629,7 +680,8 @@ func (s *Store) persistLocked() error {
 		return hosts[i].ID < hosts[j].ID
 	})
 	assignments := s.sortedAssignmentsLocked()
-	data, err := json.MarshalIndent(storeFile{Hosts: hosts, Assignments: assignments}, "", "  ")
+	warmPools := s.sortedWarmPoolsLocked()
+	data, err := json.MarshalIndent(storeFile{Hosts: hosts, Assignments: assignments, WarmPools: warmPools}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode fleet store: %w", err)
 	}
@@ -669,6 +721,17 @@ func (s *Store) sortedHostsLocked() []HostRecord {
 	return hosts
 }
 
+func (s *Store) sortedWarmPoolsLocked() []WarmPool {
+	pools := make([]WarmPool, 0, len(s.warmPools))
+	for _, pool := range s.warmPools {
+		pools = append(pools, cloneWarmPool(pool))
+	}
+	sort.Slice(pools, func(i, j int) bool {
+		return pools[i].Name < pools[j].Name
+	})
+	return pools
+}
+
 func (s *Store) nextAssignmentIDLocked(now time.Time) string {
 	base := fmt.Sprintf("assignment-%d", now.UnixNano())
 	id := base
@@ -688,6 +751,24 @@ func cloneAssignment(in Assignment) Assignment {
 		report := *in.LastReport
 		out.LastReport = &report
 	}
+	return out
+}
+
+func cloneAssignments(in []Assignment) []Assignment {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]Assignment, len(in))
+	for i := range in {
+		out[i] = cloneAssignment(in[i])
+	}
+	return out
+}
+
+func cloneWarmPool(in WarmPool) WarmPool {
+	out := in
+	out.RequiredLabels = cloneLabels(in.RequiredLabels)
+	out.Args = cloneStrings(in.Args)
 	return out
 }
 
@@ -783,6 +864,193 @@ func betterCandidate(policy string, a, b PlacementCandidate) bool {
 		return a.Load < b.Load
 	}
 	return a.WorkerID < b.WorkerID
+}
+
+func (s *Store) ensureWarmPoolLocked(now time.Time, pool WarmPool) []Assignment {
+	active := s.warmPoolAssignmentsLocked(pool.Name)
+	need := pool.Size - len(active)
+	if need <= 0 {
+		return nil
+	}
+	var created []Assignment
+	for i := 0; i < need; i++ {
+		workerID, err := s.selectWorkerLocked(pool.Policy, pool.ImageRef, pool.RequiredLabels, warmPoolAntiAffinityKey(pool.Name), pool.Resources)
+		if err != nil {
+			return created
+		}
+		id := s.nextAssignmentIDLocked(now)
+		assignment := Assignment{
+			ID:              id,
+			WorkerID:        workerID,
+			WarmPool:        pool.Name,
+			Policy:          pool.Policy,
+			ImageRef:        pool.ImageRef,
+			RequiredLabels:  cloneLabels(pool.RequiredLabels),
+			AntiAffinityKey: warmPoolAntiAffinityKey(pool.Name),
+			Resources:       pool.Resources,
+			Verb:            "cove",
+			Args:            warmPoolArgs(pool, id),
+			Status:          "pending",
+			Created:         now,
+			Updated:         now,
+		}
+		s.assignments[id] = assignment
+		created = append(created, cloneAssignment(assignment))
+	}
+	return created
+}
+
+func (s *Store) warmPoolStatusLocked(name string) WarmPoolStatus {
+	pool, ok := s.warmPools[name]
+	if !ok {
+		return WarmPoolStatus{}
+	}
+	assignments := s.warmPoolAssignmentsLocked(name)
+	return WarmPoolStatus{
+		WarmPool:    cloneWarmPool(pool),
+		Active:      len(assignments),
+		Assignments: cloneAssignments(assignments),
+	}
+}
+
+func (s *Store) warmPoolAssignmentsLocked(name string) []Assignment {
+	var assignments []Assignment
+	for _, assignment := range s.sortedAssignmentsLocked() {
+		if assignment.WarmPool != name || !activeAssignmentStatus(assignment.Status) {
+			continue
+		}
+		assignments = append(assignments, cloneAssignment(assignment))
+	}
+	return assignments
+}
+
+func warmPoolFromRequest(req WarmPoolRequest, now time.Time) (WarmPool, error) {
+	pool := WarmPool{
+		Name:           strings.TrimSpace(req.Name),
+		ImageRef:       strings.TrimSpace(req.ImageRef),
+		Size:           req.Size,
+		Policy:         strings.TrimSpace(req.Policy),
+		RequiredLabels: cloneLabels(req.RequiredLabels),
+		Resources:      req.Resources,
+		Args:           cloneStrings(req.Args),
+		Created:        now,
+		Updated:        now,
+	}
+	if pool.Name == "" {
+		pool.Name = warmPoolDefaultName(pool.ImageRef)
+	}
+	return normalizeWarmPool(pool, now)
+}
+
+func normalizeWarmPool(pool WarmPool, now time.Time) (WarmPool, error) {
+	pool.Name = strings.TrimSpace(pool.Name)
+	pool.ImageRef = strings.TrimSpace(pool.ImageRef)
+	pool.Policy = strings.TrimSpace(pool.Policy)
+	pool.RequiredLabels = cloneLabels(pool.RequiredLabels)
+	pool.Args = cloneStrings(pool.Args)
+	if err := validateWarmPoolArgs(pool.Args); err != nil {
+		return WarmPool{}, err
+	}
+	resources, err := sanitizeResources(pool.Resources)
+	if err != nil {
+		return WarmPool{}, err
+	}
+	pool.Resources = normalizeResources(resources)
+	if pool.Name == "" {
+		return WarmPool{}, fmt.Errorf("warm pool name required")
+	}
+	if pool.ImageRef == "" {
+		return WarmPool{}, fmt.Errorf("warm pool image_ref required")
+	}
+	if pool.Size < 0 {
+		return WarmPool{}, fmt.Errorf("warm pool size must not be negative")
+	}
+	if pool.Policy == "" {
+		pool.Policy = PolicyImageAffinity
+	}
+	switch pool.Policy {
+	case PolicyLeastLoaded, PolicyImageAffinity, PolicyBinPack:
+	default:
+		return WarmPool{}, fmt.Errorf("unknown warm pool policy %q", pool.Policy)
+	}
+	if pool.Created.IsZero() && !now.IsZero() {
+		pool.Created = now
+	}
+	if pool.Updated.IsZero() && !now.IsZero() {
+		pool.Updated = now
+	}
+	return pool, nil
+}
+
+func warmPoolArgs(pool WarmPool, assignmentID string) []string {
+	args := []string{
+		"run",
+		"-fork-from", pool.ImageRef,
+		"-fork-name", warmPoolForkName(pool.Name, assignmentID),
+		"-ephemeral",
+		"-keep",
+		"-headless",
+	}
+	return append(args, cloneStrings(pool.Args)...)
+}
+
+func validateWarmPoolArgs(args []string) error {
+	reserved := map[string]bool{
+		"-fork-from":  true,
+		"--fork-from": true,
+		"-fork-name":  true,
+		"--fork-name": true,
+		"-ephemeral":  true,
+		"--ephemeral": true,
+		"-keep":       true,
+		"--keep":      true,
+		"-headless":   true,
+		"--headless":  true,
+	}
+	for _, arg := range args {
+		flag := arg
+		if i := strings.IndexByte(flag, '='); i >= 0 {
+			flag = flag[:i]
+		}
+		if reserved[flag] {
+			return fmt.Errorf("warm pool args must not set %s", flag)
+		}
+	}
+	return nil
+}
+
+func warmPoolAntiAffinityKey(name string) string {
+	return "warm-pool/" + name
+}
+
+func warmPoolDefaultName(imageRef string) string {
+	return warmPoolSafeName(imageRef)
+}
+
+func warmPoolForkName(poolName, assignmentID string) string {
+	return "cove-warm-" + warmPoolSafeName(poolName) + "-" + warmPoolSafeName(assignmentID)
+}
+
+func warmPoolSafeName(s string) string {
+	s = strings.TrimSpace(s)
+	var b strings.Builder
+	dash := false
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			dash = false
+			continue
+		}
+		if !dash {
+			b.WriteByte('-')
+			dash = true
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		return "pool"
+	}
+	return strings.ToLower(out)
 }
 
 func (s *Store) antiAffinityLoadLocked(workerID, key string) int {

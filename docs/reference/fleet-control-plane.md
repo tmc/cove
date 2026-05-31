@@ -10,7 +10,8 @@ controller-side placement can choose a ready worker by least-loaded or
 image-affinity or bin-pack policy, and the controller reconciles stale workers
 and expired assignment leases. Operators can cordon workers for maintenance
 without dropping their heartbeat history, and can ask the controller to prepare
-a base image across the fleet before job placement.
+a base image across the fleet before job placement or keep a fork warm-pool
+quota active.
 
 Start a private controller:
 
@@ -98,6 +99,28 @@ an assignment. It uses the same policy, required-label, image-affinity,
 anti-affinity, and slot-cap logic as assignment creation. `limit` defaults to
 five candidates.
 
+Warm-pool endpoint:
+
+```bash
+curl -X POST http://127.0.0.1:9758/v1/warm-pools \
+  -H 'content-type: application/json' \
+  -d '{"name":"runner-14","image_ref":"macos-runner:14.5","size":3,"required_labels":{"zone":"desk"},"resources":{"vms":1}}'
+curl http://127.0.0.1:9758/v1/warm-pools
+```
+
+A warm pool persists a desired number of active fork slots for one image. The
+controller reconciles missing slots into `cove` assignments using the normal
+placement scheduler and anti-affinity key `warm-pool/<name>`. Each slot runs:
+
+```bash
+cove run -fork-from <image_ref> -fork-name <generated> -ephemeral -keep -headless
+```
+
+The first slice keeps those fork assignments active and replenishes completed or
+failed slots. Claiming a ready fork for guest `Exec`, stopping excess slots
+after a downsize, and exposing per-slot agent readiness are later controller
+work.
+
 Assignment endpoints:
 
 ```bash
@@ -154,5 +177,5 @@ curl -X POST http://127.0.0.1:9758/v1/workers/register \
 
 This surface is intentionally private and local-first. It now has basic
 controller reconciliation, worker cordon lifecycle, and fleet image
-preparation, plus retained placement plans, but it does not yet provide fork
-warm pools.
+preparation, retained placement plans, and a first fork warm-pool quota
+reconciler. Ready-slot claim and guest `Exec` handoff are not wired yet.

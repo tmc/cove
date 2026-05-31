@@ -55,6 +55,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `cove-fleetd` now exposes `POST /v1/placements/plan` to return the retained
   top ranked feasible workers for a placement request without storing an
   assignment.
+- `cove-fleetd` now exposes `POST /v1/warm-pools` and `GET /v1/warm-pools` for
+  durable fork warm-pool quotas; reconciliation creates replenishable
+  `cove run -fork-from ... -ephemeral -keep -headless` assignments through
+  `coved`.
 - `cove build --cache-from` and `--cache-to` now import and export cove
   build-cache artifacts through OCI refs, carrying cache entries, layer
   manifests, and block-delta blobs between runners.
