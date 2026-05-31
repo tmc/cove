@@ -254,6 +254,10 @@ curl -X POST http://127.0.0.1:9758/v1/sandboxes \
   -d '{"id":"job-1","image_ref":"macos-runner:14.5","required_labels":{"zone":"desk"},"args":["--net","nat"]}'
 curl http://127.0.0.1:9758/v1/sandboxes
 curl http://127.0.0.1:9758/v1/sandboxes/job-1
+curl -X POST http://127.0.0.1:9758/v1/sandboxes/job-1/lease \
+  -H 'content-type: application/json' \
+  -d '{"holder":"runner-42","ttl":"30s"}'
+curl -X DELETE 'http://127.0.0.1:9758/v1/sandboxes/job-1/lease?holder=runner-42'
 curl -X POST 'http://127.0.0.1:9758/v1/sandboxes/job-1/wait?timeout=30s'
 curl -X POST http://127.0.0.1:9758/v1/sandboxes/job-1/stop
 curl -X DELETE http://127.0.0.1:9758/v1/sandboxes/job-1
@@ -269,6 +273,14 @@ to `cove-sandbox-<id>`. The controller records the backing assignment with
 without a separate scheduler. Extra `args` are appended to `cove run`, but
 fork/source/lifetime/headless flags are reserved by the controller.
 
+`POST /v1/sandboxes/{id}/lease` acquires or renews an exclusive client lease on
+the sandbox handle. The optional `holder` defaults to the authenticated actor;
+the optional `ttl` defaults to `30s`. A different holder receives `409
+Conflict` until the current lease expires or is released. `DELETE
+/v1/sandboxes/{id}/lease?holder=<holder>` releases the lease and returns the
+updated sandbox status. Lease state is embedded in both the sandbox status and
+the backing assignment, and lease acquire/release operations are audited.
+
 `coved -fleet-url` probes sandbox run assignments with `cove shell <vm> --
 /bin/sh -c true` before reporting `ready`, matching warm-pool readiness
 semantics. `POST /v1/sandboxes/{id}/wait` waits until the sandbox reaches a
@@ -279,8 +291,8 @@ marks a started sandbox `draining` and queues a same-worker
 that stop assignment reports complete, the sandbox handle becomes `stopped`.
 `DELETE /v1/sandboxes/{id}` uses the same stop/cancel path and records a delete
 audit event. This is a scaffold for the hosted `/v1/sandboxes` lifecycle:
-create/list/get/delete/stop/wait are present, while restart/start from stopped,
-leases, metering, and SDK provider switching remain follow-up work.
+create/list/get/delete/stop/wait and leases are present, while restart/start
+from stopped, metering, and SDK provider switching remain follow-up work.
 
 Assignment endpoints:
 

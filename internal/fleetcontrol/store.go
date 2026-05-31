@@ -100,6 +100,10 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		assignment.WarmPoolSlot = strings.TrimSpace(assignment.WarmPoolSlot)
 		assignment.SandboxID = strings.TrimSpace(assignment.SandboxID)
 		assignment.SandboxRole = strings.TrimSpace(assignment.SandboxRole)
+		assignment.SandboxLeaseHolder = strings.TrimSpace(assignment.SandboxLeaseHolder)
+		if !assignment.SandboxLeaseExpires.IsZero() {
+			assignment.SandboxLeaseExpires = assignment.SandboxLeaseExpires.UTC()
+		}
 		assignment.ImageRef = strings.TrimSpace(assignment.ImageRef)
 		assignment.AntiAffinityKey = strings.TrimSpace(assignment.AntiAffinityKey)
 		assignment.RequiredLabels = cloneLabels(assignment.RequiredLabels)
@@ -441,6 +445,10 @@ func (s *Store) CreateAssignmentActor(actor string, a Assignment) (Assignment, e
 	a.WorkerID = workerID
 	a.WarmPool = strings.TrimSpace(a.WarmPool)
 	a.WarmPoolSlot = strings.TrimSpace(a.WarmPoolSlot)
+	a.SandboxID = strings.TrimSpace(a.SandboxID)
+	a.SandboxRole = strings.TrimSpace(a.SandboxRole)
+	a.SandboxLeaseHolder = ""
+	a.SandboxLeaseExpires = time.Time{}
 	a.Policy = policy
 	a.ImageRef = imageRef
 	a.AntiAffinityKey = antiAffinityKey
@@ -786,7 +794,7 @@ func (s *Store) CreateSandboxActor(actor string, req SandboxRequest) (SandboxSta
 	if err := s.persistLocked(); err != nil {
 		return SandboxStatus{}, err
 	}
-	return sandboxStatusFromAssignment(assignment), nil
+	return sandboxStatusFromAssignment(assignment, now), nil
 }
 
 func (s *Store) GetSandbox(id string) (SandboxStatus, bool) {
@@ -800,7 +808,7 @@ func (s *Store) GetSandbox(id string) (SandboxStatus, bool) {
 	if !ok {
 		return SandboxStatus{}, false
 	}
-	return sandboxStatusFromAssignment(assignment), true
+	return sandboxStatusFromAssignment(assignment, s.now().UTC()), true
 }
 
 func (s *Store) ListSandboxes() []SandboxStatus {
@@ -811,6 +819,7 @@ func (s *Store) ListSandboxesNamespace(namespace string) []SandboxStatus {
 	namespace = normalizeNamespace(namespace)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	now := s.now().UTC()
 	var sandboxes []SandboxStatus
 	for _, assignment := range s.sortedAssignmentsLocked() {
 		if assignment.SandboxID == "" || assignment.SandboxRole != sandboxRoleRun {
@@ -819,9 +828,112 @@ func (s *Store) ListSandboxesNamespace(namespace string) []SandboxStatus {
 		if !namespaceMatches(assignment.Namespace, namespace) {
 			continue
 		}
-		sandboxes = append(sandboxes, sandboxStatusFromAssignment(assignment))
+		sandboxes = append(sandboxes, sandboxStatusFromAssignment(assignment, now))
 	}
 	return sandboxes
+}
+
+func (s *Store) LeaseSandbox(id string, req SandboxLeaseRequest) (SandboxLeaseResult, error) {
+	return s.LeaseSandboxActor("controller", id, req)
+}
+
+func (s *Store) LeaseSandboxActor(actor, id string, req SandboxLeaseRequest) (SandboxLeaseResult, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return SandboxLeaseResult{}, fmt.Errorf("sandbox id required")
+	}
+	now := s.now().UTC()
+	actor = normalizeActor(actor)
+	holder, expires, err := sandboxLeaseRequest(req, actor, now)
+	if err != nil {
+		return SandboxLeaseResult{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reconcileLocked(now)
+	assignment, ok := s.sandboxRunAssignmentLocked(id)
+	if !ok {
+		return SandboxLeaseResult{}, fmt.Errorf("sandbox %q not found", id)
+	}
+	clearExpiredSandboxLease(&assignment, now)
+	if assignment.SandboxLeaseHolder != "" && assignment.SandboxLeaseHolder != holder {
+		return SandboxLeaseResult{}, fmt.Errorf("sandbox %q lease held by %q", id, assignment.SandboxLeaseHolder)
+	}
+	assignment.SandboxLeaseHolder = holder
+	assignment.SandboxLeaseExpires = expires
+	assignment.Updated = now
+	s.assignments[assignment.ID] = assignment
+	s.appendAuditLocked(now, AuditEvent{
+		Actor:        actor,
+		Namespace:    assignment.Namespace,
+		Action:       "sandbox.lease",
+		TargetType:   "sandbox",
+		TargetID:     id,
+		WorkerID:     assignment.WorkerID,
+		AssignmentID: assignment.ID,
+		Fields: map[string]string{
+			"holder":  holder,
+			"expires": expires.Format(time.RFC3339Nano),
+		},
+	})
+	if err := s.persistLocked(); err != nil {
+		return SandboxLeaseResult{}, err
+	}
+	lease := SandboxLease{Holder: holder, Expires: expires}
+	return SandboxLeaseResult{Sandbox: sandboxStatusFromAssignment(assignment, now), Lease: lease}, nil
+}
+
+func (s *Store) ReleaseSandboxLease(id, holder string) (SandboxStatus, error) {
+	return s.ReleaseSandboxLeaseActor("controller", id, holder)
+}
+
+func (s *Store) ReleaseSandboxLeaseActor(actor, id, holder string) (SandboxStatus, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return SandboxStatus{}, fmt.Errorf("sandbox id required")
+	}
+	now := s.now().UTC()
+	actor = normalizeActor(actor)
+	holder = normalizeSandboxLeaseHolder(holder, actor)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reconcileLocked(now)
+	assignment, ok := s.sandboxRunAssignmentLocked(id)
+	if !ok {
+		return SandboxStatus{}, fmt.Errorf("sandbox %q not found", id)
+	}
+	expired := clearExpiredSandboxLease(&assignment, now)
+	if assignment.SandboxLeaseHolder == "" {
+		if expired {
+			assignment.Updated = now
+			s.assignments[assignment.ID] = assignment
+			if err := s.persistLocked(); err != nil {
+				return SandboxStatus{}, err
+			}
+		}
+		return sandboxStatusFromAssignment(assignment, now), nil
+	}
+	if assignment.SandboxLeaseHolder != holder {
+		return SandboxStatus{}, fmt.Errorf("sandbox %q lease held by %q", id, assignment.SandboxLeaseHolder)
+	}
+	assignment.SandboxLeaseHolder = ""
+	assignment.SandboxLeaseExpires = time.Time{}
+	assignment.Updated = now
+	s.assignments[assignment.ID] = assignment
+	s.appendAuditLocked(now, AuditEvent{
+		Actor:        actor,
+		Namespace:    assignment.Namespace,
+		Action:       "sandbox.lease.release",
+		TargetType:   "sandbox",
+		TargetID:     id,
+		WorkerID:     assignment.WorkerID,
+		AssignmentID: assignment.ID,
+		Fields:       map[string]string{"holder": holder},
+	})
+	if err := s.persistLocked(); err != nil {
+		return SandboxStatus{}, err
+	}
+	return sandboxStatusFromAssignment(assignment, now), nil
 }
 
 func (s *Store) DeleteSandbox(id string) (SandboxDeleteResult, error) {
@@ -871,7 +983,7 @@ func (s *Store) WaitSandbox(id string) (SandboxWaitResult, error) {
 	if !ok {
 		return SandboxWaitResult{}, fmt.Errorf("sandbox %q not found", id)
 	}
-	sandbox := sandboxStatusFromAssignment(assignment)
+	sandbox := sandboxStatusFromAssignment(assignment, s.now().UTC())
 	return SandboxWaitResult{
 		Done:    sandboxTerminalStatus(sandbox.Status),
 		Sandbox: sandbox,
@@ -2331,9 +2443,10 @@ func assignmentForkName(assignment Assignment, fallback string) string {
 	return fallback
 }
 
-func sandboxStatusFromAssignment(assignment Assignment) SandboxStatus {
+func sandboxStatusFromAssignment(assignment Assignment, now time.Time) SandboxStatus {
 	assignment = cloneAssignment(assignment)
-	return SandboxStatus{
+	clearExpiredSandboxLease(&assignment, now)
+	status := SandboxStatus{
 		Namespace:  assignment.Namespace,
 		ID:         assignment.SandboxID,
 		VMName:     SandboxAssignmentVMName(assignment),
@@ -2344,6 +2457,46 @@ func sandboxStatusFromAssignment(assignment Assignment) SandboxStatus {
 		Created:    assignment.Created,
 		Updated:    assignment.Updated,
 	}
+	if assignment.SandboxLeaseHolder != "" && !assignment.SandboxLeaseExpires.IsZero() {
+		status.Lease = &SandboxLease{
+			Holder:  assignment.SandboxLeaseHolder,
+			Expires: assignment.SandboxLeaseExpires,
+		}
+	}
+	return status
+}
+
+func sandboxLeaseRequest(req SandboxLeaseRequest, actor string, now time.Time) (string, time.Time, error) {
+	holder := normalizeSandboxLeaseHolder(req.Holder, actor)
+	ttl := DefaultSandboxLeaseTTL
+	if raw := strings.TrimSpace(req.TTL); raw != "" {
+		parsed, err := time.ParseDuration(raw)
+		if err != nil || parsed <= 0 {
+			return "", time.Time{}, fmt.Errorf("sandbox lease ttl must be a positive duration")
+		}
+		ttl = parsed
+	}
+	return holder, now.Add(ttl), nil
+}
+
+func normalizeSandboxLeaseHolder(holder, actor string) string {
+	holder = strings.TrimSpace(holder)
+	if holder != "" {
+		return holder
+	}
+	return normalizeActor(actor)
+}
+
+func clearExpiredSandboxLease(assignment *Assignment, now time.Time) bool {
+	if assignment == nil || assignment.SandboxLeaseHolder == "" || assignment.SandboxLeaseExpires.IsZero() || now.IsZero() {
+		return false
+	}
+	if !now.Before(assignment.SandboxLeaseExpires) {
+		assignment.SandboxLeaseHolder = ""
+		assignment.SandboxLeaseExpires = time.Time{}
+		return true
+	}
+	return false
 }
 
 func sandboxRunArgs(imageRef, vmName string, extra []string) []string {

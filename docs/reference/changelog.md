@@ -111,6 +111,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `POST /v1/sandboxes/{id}/wait` now waits for a sandbox handle to reach a
   terminal state, and sandbox stop-cleanup completion transitions the handle to
   `stopped`.
+- `POST/DELETE /v1/sandboxes/{id}/lease` now acquires, renews, and releases
+  exclusive sandbox handle leases with TTLs, conflict responses, namespace
+  scoping, and audit events.
 - `coved -fleet-url` now starts leased assignments asynchronously so a
   long-running `cove` assignment can keep renewing while the worker continues
   heartbeating and polling for additional assigned work.

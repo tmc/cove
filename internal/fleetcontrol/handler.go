@@ -365,9 +365,85 @@ func handleSandboxAction(w http.ResponseWriter, r *http.Request, store *Store, i
 			return
 		}
 		writeJSON(w, http.StatusOK, result)
+	case "lease":
+		handleSandboxLease(w, r, store, id)
 	default:
 		writeError(w, http.StatusNotFound, "sandbox route not found")
 	}
+}
+
+func handleSandboxLease(w http.ResponseWriter, r *http.Request, store *Store, id string) {
+	identity := identityFromRequest(r, store)
+	switch r.Method {
+	case http.MethodPost:
+		if !requireRole(w, identity, ServiceAccountRoleOperator) {
+			return
+		}
+		if !sandboxVisible(w, store, id, identity) {
+			return
+		}
+		var req SandboxLeaseRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode sandbox lease: %v", err))
+			return
+		}
+		result, err := store.LeaseSandboxActor(identity.Actor, id, req)
+		if err != nil {
+			writeError(w, sandboxLeaseErrorStatus(err), err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	case http.MethodDelete:
+		if !requireRole(w, identity, ServiceAccountRoleOperator) {
+			return
+		}
+		if !sandboxVisible(w, store, id, identity) {
+			return
+		}
+		holder := strings.TrimSpace(r.URL.Query().Get("holder"))
+		var req SandboxLeaseRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode sandbox lease: %v", err))
+			return
+		}
+		if holder == "" {
+			holder = req.Holder
+		}
+		result, err := store.ReleaseSandboxLeaseActor(identity.Actor, id, holder)
+		if err != nil {
+			writeError(w, sandboxLeaseErrorStatus(err), err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func sandboxVisible(w http.ResponseWriter, store *Store, id string, identity requestIdentity) bool {
+	if !identity.Scoped {
+		return true
+	}
+	sandbox, ok := store.GetSandbox(id)
+	if !ok || !canAccessNamespace(identity, sandbox.Namespace) {
+		writeError(w, http.StatusNotFound, "sandbox not found")
+		return false
+	}
+	return true
+}
+
+func sandboxLeaseErrorStatus(err error) int {
+	if err == nil {
+		return http.StatusOK
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "not found") {
+		return http.StatusNotFound
+	}
+	if strings.Contains(msg, "lease held by") {
+		return http.StatusConflict
+	}
+	return http.StatusBadRequest
 }
 
 func sandboxPath(path string) (id, action string, err error) {

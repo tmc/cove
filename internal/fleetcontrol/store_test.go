@@ -299,6 +299,79 @@ func TestStoreStopSandboxPendingCancels(t *testing.T) {
 	}
 }
 
+func TestStoreSandboxLeaseAcquireRenewRelease(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "fleet.json")
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateSandbox(SandboxRequest{ID: "job-1", ImageRef: "base:v1"}); err != nil {
+		t.Fatal(err)
+	}
+	leased, err := store.LeaseSandbox("job-1", SandboxLeaseRequest{Holder: "client-a", TTL: "1s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leased.Lease.Holder != "client-a" || !leased.Lease.Expires.Equal(now.Add(time.Second)) {
+		t.Fatalf("lease = %+v, want client-a expiring in 1s", leased.Lease)
+	}
+	if leased.Sandbox.Lease == nil || leased.Sandbox.Assignment.SandboxLeaseHolder != "client-a" {
+		t.Fatalf("leased sandbox = %+v, want visible lease", leased.Sandbox)
+	}
+
+	reopened, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened.now = func() time.Time { return now }
+	got, ok := reopened.GetSandbox("job-1")
+	if !ok || got.Lease == nil || got.Lease.Holder != "client-a" {
+		t.Fatalf("reopened sandbox = %+v, %v, want client-a lease", got, ok)
+	}
+
+	now = now.Add(500 * time.Millisecond)
+	renewed, err := store.LeaseSandbox("job-1", SandboxLeaseRequest{Holder: "client-a", TTL: "2s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !renewed.Lease.Expires.Equal(now.Add(2 * time.Second)) {
+		t.Fatalf("renewed lease expires = %v, want %v", renewed.Lease.Expires, now.Add(2*time.Second))
+	}
+	if _, err := store.LeaseSandbox("job-1", SandboxLeaseRequest{Holder: "client-b"}); err == nil || !strings.Contains(err.Error(), "lease held by") {
+		t.Fatalf("conflicting LeaseSandbox err = %v, want held-by error", err)
+	}
+	if _, err := store.ReleaseSandboxLease("job-1", "client-b"); err == nil || !strings.Contains(err.Error(), "lease held by") {
+		t.Fatalf("wrong release err = %v, want held-by error", err)
+	}
+
+	now = now.Add(3 * time.Second)
+	leased, err = store.LeaseSandbox("job-1", SandboxLeaseRequest{Holder: "client-b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leased.Lease.Holder != "client-b" {
+		t.Fatalf("expired lease takeover = %+v, want client-b", leased.Lease)
+	}
+	released, err := store.ReleaseSandboxLease("job-1", "client-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if released.Lease != nil || released.Assignment.SandboxLeaseHolder != "" || !released.Assignment.SandboxLeaseExpires.IsZero() {
+		t.Fatalf("released sandbox = %+v, want no lease", released)
+	}
+	if event := auditAction(store.ListAudit(0), "sandbox.lease"); event == nil || event.TargetID != "job-1" || event.Fields["holder"] == "" {
+		t.Fatalf("sandbox lease audit = %+v", event)
+	}
+	if event := auditAction(store.ListAudit(0), "sandbox.lease.release"); event == nil || event.TargetID != "job-1" || event.Fields["holder"] != "client-b" {
+		t.Fatalf("sandbox lease release audit = %+v", event)
+	}
+}
+
 func TestStoreServiceAccountsPersistTokenHashes(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "fleet.json")
 	store, err := OpenStore(path, time.Minute)
@@ -2136,6 +2209,23 @@ func TestHandlerSandboxes(t *testing.T) {
 	if got.ID != "job-1" || got.VMName != "cove-sandbox-job-1" {
 		t.Fatalf("sandbox = %+v, want job-1", got)
 	}
+	var lease SandboxLeaseResult
+	postJSON(t, server.URL+"/v1/sandboxes/job-1/lease", SandboxLeaseRequest{Holder: "client-a", TTL: "1s"}, &lease)
+	if lease.Sandbox.ID != "job-1" || lease.Lease.Holder != "client-a" || lease.Sandbox.Lease == nil {
+		t.Fatalf("sandbox lease = %+v, want client-a lease on job-1", lease)
+	}
+	getJSON(t, server.URL+"/v1/sandboxes/job-1", &got)
+	if got.Lease == nil || got.Lease.Holder != "client-a" {
+		t.Fatalf("sandbox after lease = %+v, want client-a lease", got)
+	}
+	if code := postJSONStatus(t, server.URL+"/v1/sandboxes/job-1/lease", "", SandboxLeaseRequest{Holder: "client-b"}); code != http.StatusConflict {
+		t.Fatalf("conflicting sandbox lease status = %d, want 409", code)
+	}
+	var released SandboxStatus
+	deleteJSON(t, server.URL+"/v1/sandboxes/job-1/lease?holder=client-a", &released)
+	if released.Lease != nil {
+		t.Fatalf("sandbox release = %+v, want no lease", released)
+	}
 	var deleted SandboxDeleteResult
 	deleteJSON(t, server.URL+"/v1/sandboxes/job-1", &deleted)
 	if !deleted.Canceled || deleted.ID != "job-1" {
@@ -2175,6 +2265,14 @@ func TestHandlerSandboxNamespaceScope(t *testing.T) {
 	}
 	if code := postJSONStatus(t, server.URL+"/v1/sandboxes/job-1/stop", "token-b", map[string]string{}); code != http.StatusNotFound {
 		t.Fatalf("cross-namespace sandbox stop status = %d, want 404", code)
+	}
+	if code := postJSONStatus(t, server.URL+"/v1/sandboxes/job-1/lease", "token-b", SandboxLeaseRequest{Holder: "client-b"}); code != http.StatusNotFound {
+		t.Fatalf("cross-namespace sandbox lease status = %d, want 404", code)
+	}
+	var lease SandboxLeaseResult
+	postJSONAuth(t, server.URL+"/v1/sandboxes/job-1/lease", "token-a", SandboxLeaseRequest{Holder: "client-a"}, &lease)
+	if lease.Sandbox.Namespace != "team-a" || lease.Lease.Holder != "client-a" {
+		t.Fatalf("team-a sandbox lease = %+v, want team-a client-a", lease)
 	}
 	var list struct {
 		Sandboxes []SandboxStatus `json:"sandboxes"`

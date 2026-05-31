@@ -25,6 +25,8 @@ const DefaultWorkerTTL = 30 * time.Second
 
 const DefaultAssignmentTTL = 30 * time.Second
 
+const DefaultSandboxLeaseTTL = 30 * time.Second
+
 const DefaultPlacementPlanLimit = 5
 
 type Capacity struct {
@@ -327,15 +329,31 @@ type SandboxRequest struct {
 }
 
 type SandboxStatus struct {
-	Namespace  string     `json:"namespace,omitempty"`
-	ID         string     `json:"id"`
-	VMName     string     `json:"vm_name"`
-	ImageRef   string     `json:"image_ref"`
-	WorkerID   string     `json:"worker_id,omitempty"`
-	Status     string     `json:"status"`
-	Assignment Assignment `json:"assignment"`
-	Created    time.Time  `json:"created,omitempty"`
-	Updated    time.Time  `json:"updated,omitempty"`
+	Namespace  string        `json:"namespace,omitempty"`
+	ID         string        `json:"id"`
+	VMName     string        `json:"vm_name"`
+	ImageRef   string        `json:"image_ref"`
+	WorkerID   string        `json:"worker_id,omitempty"`
+	Status     string        `json:"status"`
+	Lease      *SandboxLease `json:"lease,omitempty"`
+	Assignment Assignment    `json:"assignment"`
+	Created    time.Time     `json:"created,omitempty"`
+	Updated    time.Time     `json:"updated,omitempty"`
+}
+
+type SandboxLeaseRequest struct {
+	Holder string `json:"holder,omitempty"`
+	TTL    string `json:"ttl,omitempty"`
+}
+
+type SandboxLease struct {
+	Holder  string    `json:"holder"`
+	Expires time.Time `json:"expires"`
+}
+
+type SandboxLeaseResult struct {
+	Sandbox SandboxStatus `json:"sandbox"`
+	Lease   SandboxLease  `json:"lease"`
 }
 
 type SandboxDeleteResult struct {
@@ -364,24 +382,26 @@ type SandboxWaitResult struct {
 }
 
 type Assignment struct {
-	ID              string            `json:"id"`
-	Namespace       string            `json:"namespace,omitempty"`
-	WorkerID        string            `json:"worker_id,omitempty"`
-	WarmPool        string            `json:"warm_pool,omitempty"`
-	WarmPoolSlot    string            `json:"warm_pool_slot,omitempty"`
-	SandboxID       string            `json:"sandbox_id,omitempty"`
-	SandboxRole     string            `json:"sandbox_role,omitempty"`
-	Policy          string            `json:"policy,omitempty"`
-	ImageRef        string            `json:"image_ref,omitempty"`
-	RequiredLabels  map[string]string `json:"required_labels,omitempty"`
-	AntiAffinityKey string            `json:"anti_affinity_key,omitempty"`
-	Resources       Capacity          `json:"resources,omitempty"`
-	Verb            string            `json:"verb"`
-	Args            []string          `json:"args,omitempty"`
-	Status          string            `json:"status,omitempty"`
-	Created         time.Time         `json:"created,omitempty"`
-	Updated         time.Time         `json:"updated,omitempty"`
-	LeasedTo        string            `json:"leased_to,omitempty"`
-	LeaseExpires    time.Time         `json:"lease_expires,omitempty"`
-	LastReport      *WorkerReport     `json:"last_report,omitempty"`
+	ID                  string            `json:"id"`
+	Namespace           string            `json:"namespace,omitempty"`
+	WorkerID            string            `json:"worker_id,omitempty"`
+	WarmPool            string            `json:"warm_pool,omitempty"`
+	WarmPoolSlot        string            `json:"warm_pool_slot,omitempty"`
+	SandboxID           string            `json:"sandbox_id,omitempty"`
+	SandboxRole         string            `json:"sandbox_role,omitempty"`
+	SandboxLeaseHolder  string            `json:"sandbox_lease_holder,omitempty"`
+	SandboxLeaseExpires time.Time         `json:"sandbox_lease_expires,omitempty"`
+	Policy              string            `json:"policy,omitempty"`
+	ImageRef            string            `json:"image_ref,omitempty"`
+	RequiredLabels      map[string]string `json:"required_labels,omitempty"`
+	AntiAffinityKey     string            `json:"anti_affinity_key,omitempty"`
+	Resources           Capacity          `json:"resources,omitempty"`
+	Verb                string            `json:"verb"`
+	Args                []string          `json:"args,omitempty"`
+	Status              string            `json:"status,omitempty"`
+	Created             time.Time         `json:"created,omitempty"`
+	Updated             time.Time         `json:"updated,omitempty"`
+	LeasedTo            string            `json:"leased_to,omitempty"`
+	LeaseExpires        time.Time         `json:"lease_expires,omitempty"`
+	LastReport          *WorkerReport     `json:"last_report,omitempty"`
 }
