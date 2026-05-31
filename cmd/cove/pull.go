@@ -29,6 +29,7 @@ const (
 type pullOptions struct {
 	As              string
 	DryRun          bool
+	JSON            bool
 	Resume          bool
 	ManifestPath    string
 	RegistryBaseURL string
@@ -59,6 +60,47 @@ type pullPlan struct {
 	StoreMetadataBytes  int64
 }
 
+type pullDryRunOutput struct {
+	Ref              string                    `json:"ref"`
+	VM               string                    `json:"vm"`
+	Target           string                    `json:"target"`
+	ManifestProvided bool                      `json:"manifest_provided"`
+	ManifestDigest   string                    `json:"manifest_digest,omitempty"`
+	Format           string                    `json:"format,omitempty"`
+	DiskSize         int64                     `json:"disk_size,omitempty"`
+	DiskFormat       string                    `json:"disk_format,omitempty"`
+	Chunks           int                       `json:"chunks,omitempty"`
+	MetadataBlobs    int                       `json:"metadata_blobs,omitempty"`
+	DiskParts        int                       `json:"disk_parts,omitempty"`
+	DiskLayers       int                       `json:"disk_layers,omitempty"`
+	CompressedBytes  int64                     `json:"compressed_bytes,omitempty"`
+	NVRAMBytes       int64                     `json:"nvram_bytes,omitempty"`
+	ConfigBytes      int64                     `json:"config_bytes,omitempty"`
+	UploadTime       string                    `json:"upload_time,omitempty"`
+	Transfer         *pullDryRunTransferOutput `json:"transfer,omitempty"`
+	BaseReuse        *pullBaseReuseOutput      `json:"base_reuse,omitempty"`
+}
+
+type pullDryRunTransferOutput struct {
+	DiskFetchChunks    int   `json:"disk_fetch_chunks"`
+	DiskFetchBytes     int64 `json:"disk_fetch_bytes"`
+	DiskStoreChunks    int   `json:"disk_store_chunks"`
+	DiskStoreBytes     int64 `json:"disk_store_bytes"`
+	ZeroChunks         int   `json:"zero_chunks"`
+	ZeroBytes          int64 `json:"zero_bytes"`
+	MetadataFetchBlobs int   `json:"metadata_fetch_blobs"`
+	MetadataFetchBytes int64 `json:"metadata_fetch_bytes"`
+	MetadataStoreBlobs int   `json:"metadata_store_blobs"`
+	MetadataStoreBytes int64 `json:"metadata_store_bytes"`
+}
+
+type pullBaseReuseOutput struct {
+	Path       string `json:"path,omitempty"`
+	DiskFormat string `json:"disk_format,omitempty"`
+	Chunks     int    `json:"chunks"`
+	Bytes      int64  `json:"bytes"`
+}
+
 func handlePull(env commandEnv, args []string) error {
 	opts, pos, err := parsePullArgs(args, env.Stderr)
 	if err != nil {
@@ -67,11 +109,17 @@ func handlePull(env commandEnv, args []string) error {
 	if len(pos) != 1 {
 		return fmt.Errorf("usage: cove pull [flags] <ref>")
 	}
+	if opts.JSON && !opts.DryRun {
+		return fmt.Errorf("cove pull: --json requires --dry-run")
+	}
 	plan, err := buildPullPlan(pos[0], opts)
 	if err != nil {
 		return err
 	}
 	if opts.DryRun {
+		if opts.JSON {
+			return printPullDryRunJSON(env.Stdout, plan)
+		}
 		printPullDryRun(env.Stdout, plan)
 		return nil
 	}
@@ -99,6 +147,7 @@ func parsePullArgs(args []string, w io.Writer) (pullOptions, []string, error) {
 	fs.SetOutput(w)
 	fs.StringVar(&opts.As, "as", "", "destination VM name")
 	fs.BoolVar(&opts.DryRun, "dry-run", false, "validate inputs without writing a disk")
+	fs.BoolVar(&opts.JSON, "json", false, "print dry-run plan as JSON")
 	fs.BoolVar(&opts.Resume, "resume", false, "continue an interrupted pull from disk.img.partial")
 	fs.StringVar(&opts.ManifestPath, "manifest", "", "local OCI manifest JSON instead of fetching the registry")
 	fs.Usage = func() { printPullUsage(w) }
@@ -115,6 +164,7 @@ func movePullFlagsFirst(args []string) []string {
 	return moveKnownFlagsFirst(args, map[string]bool{
 		"as":       true,
 		"dry-run":  false,
+		"json":     false,
 		"resume":   false,
 		"manifest": true,
 	})
@@ -564,6 +614,91 @@ func printPullDryRun(w io.Writer, plan *pullPlan) {
 	printPullBaseReuse(w, plan)
 }
 
+func printPullDryRunJSON(w io.Writer, plan *pullPlan) error {
+	data, err := json.MarshalIndent(pullDryRunOutputFromPlan(plan), "", "  ")
+	if err != nil {
+		return err
+	}
+	if _, err := w.Write(append(data, '\n')); err != nil {
+		return err
+	}
+	return nil
+}
+
+func pullDryRunOutputFromPlan(plan *pullPlan) pullDryRunOutput {
+	out := pullDryRunOutput{
+		Ref:              plan.Ref.String(),
+		VM:               plan.VMName,
+		Target:           plan.VMDir,
+		ManifestProvided: pullPlanHasManifest(plan),
+		ManifestDigest:   plan.ManifestDigest,
+	}
+	if !out.ManifestProvided {
+		return out
+	}
+	switch plan.Manifest.Format {
+	case ociimage.FormatLume:
+		out.Format = "lume"
+		out.DiskParts = len(plan.Manifest.Lume.DiskParts)
+		for _, p := range plan.Manifest.Lume.DiskParts {
+			out.CompressedBytes += p.Descriptor.Size
+		}
+		if plan.Manifest.Lume.NvramLayer != nil {
+			out.NVRAMBytes = plan.Manifest.Lume.NvramLayer.Size
+		}
+		if plan.Manifest.Lume.ConfigLayer != nil {
+			out.ConfigBytes = plan.Manifest.Lume.ConfigLayer.Size
+		}
+	case ociimage.FormatTart:
+		out.Format = "tart"
+		out.DiskSize = plan.Manifest.Tart.UncompressedDiskSize
+		out.DiskLayers = len(plan.Manifest.Tart.DiskLayers)
+		for _, l := range plan.Manifest.Tart.DiskLayers {
+			out.CompressedBytes += l.Descriptor.Size
+		}
+		out.NVRAMBytes = plan.Manifest.Tart.NVRAMLayer.Size
+		out.ConfigBytes = plan.Manifest.Tart.ConfigLayer.Size
+		out.UploadTime = plan.Manifest.Tart.UploadTime
+	default:
+		out.Format = "cove"
+		out.DiskSize = plan.Manifest.Annotations.UncompressedDiskSize
+		out.DiskFormat = plan.Manifest.Annotations.DiskFormat
+		out.Chunks = len(plan.Manifest.Chunks)
+		out.MetadataBlobs = len(plan.Manifest.Blobs)
+		if len(plan.Manifest.DiskLayers) > 0 {
+			out.Transfer = &pullDryRunTransferOutput{
+				DiskFetchChunks:    plan.FetchDiskChunks,
+				DiskFetchBytes:     plan.FetchDiskBytes,
+				DiskStoreChunks:    plan.StoreDiskChunks,
+				DiskStoreBytes:     plan.StoreDiskBytes,
+				ZeroChunks:         plan.ZeroDiskChunks,
+				ZeroBytes:          plan.ZeroDiskBytes,
+				MetadataFetchBlobs: plan.FetchMetadataBlobs,
+				MetadataFetchBytes: plan.FetchMetadataBytes,
+				MetadataStoreBlobs: plan.StoreMetadataBlobs,
+				MetadataStoreBytes: plan.StoreMetadataBytes,
+			}
+		}
+	}
+	if plan.BaseReuseChunks > 0 {
+		out.BaseReuse = &pullBaseReuseOutput{
+			Path:       plan.BaseReusePath,
+			DiskFormat: plan.BaseReuseDiskFormat,
+			Chunks:     plan.BaseReuseChunks,
+			Bytes:      plan.BaseReuseBytes,
+		}
+	}
+	return out
+}
+
+func pullPlanHasManifest(plan *pullPlan) bool {
+	return plan.ManifestDigest != "" ||
+		len(plan.ManifestRaw) > 0 ||
+		plan.Manifest.Format != ociimage.FormatCove ||
+		len(plan.Manifest.Chunks) > 0 ||
+		plan.Manifest.Annotations.UncompressedDiskSize != 0
+}
+
 func printPullResult(w io.Writer, plan *pullPlan) {
 	fmt.Fprintln(w, "Pull complete")
 	fmt.Fprintf(w, "  ref: %s\n", plan.Ref.String())
@@ -616,6 +751,7 @@ without writing a disk.
 Flags:
   --as <name>          Destination VM name
   --dry-run            Validate inputs without writing a disk
+  --json               Print dry-run plan as JSON
   --resume             Continue an interrupted pull from disk.img.partial
   --manifest <path>    Local OCI manifest JSON instead of fetching the registry`)
 }

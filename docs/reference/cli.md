@@ -1410,7 +1410,8 @@ disk format and, when a compatible local or cached base disk is available, the
 reusable chunks, bytes, disk format, and source base path. Manifest-backed
 cove-native dry-runs also report disk chunks already covered by the local
 content store, disk chunks still requiring registry fetches, sparse zero
-chunks, and metadata blob store/fetch counts. Use
+chunks, and metadata blob store/fetch counts. Add `--json` to emit the dry-run
+plan as structured data for CI or fleet placement decisions. Use
 `cove image inspect -remote <ref>...` to fetch only registry metadata before a
 pull or private catalog audit. When a cove pull actually reuses a cloned base
 disk, completion output includes the same base-reuse summary.
@@ -1423,11 +1424,13 @@ cove pull <ref> [flags]
 |------|---------|-------------|
 | `--as <name>` | inferred from ref | Destination VM name |
 | `--dry-run` | false | Validate inputs without writing a disk |
+| `--json` | false | Print dry-run plan as JSON |
 | `--resume` | false | Continue an interrupted pull from `disk.img.partial` |
 | `--manifest <path>` | | Local OCI manifest JSON instead of fetching the registry |
 
 ```bash
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run
+cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run --json --manifest manifest.json
 cove pull ghcr.io/example/macos-sequoia:15.2 --resume
 cove pull ghcr.io/trycua/macos-sequoia-vanilla:latest --as sequoia --dry-run --manifest manifest.json
 ```

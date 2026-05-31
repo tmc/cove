@@ -114,6 +114,8 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - Cove-native pull dry-runs now also summarize transfer coverage before disk
   download: local content-store disk chunks, registry disk chunks to fetch,
   sparse zero chunks, and metadata blobs already present or still needed.
+- `cove pull --dry-run --json` now emits the manifest format, disk metadata,
+  transfer preflight, and base-reuse summary as structured data for automation.
 - `cove image inspect -remote -verify-blobs` now audits every remote config and
   layer descriptor with HEAD requests, reporting missing registry blobs without
   downloading VM disk content.

@@ -156,6 +156,24 @@ func TestBuildPullPlanDryRunReportsTransferPreflight(t *testing.T) {
 			t.Fatalf("dry-run output %q missing %q", out.String(), want)
 		}
 	}
+
+	var jsonOut strings.Builder
+	if err := printPullDryRunJSON(&jsonOut, plan); err != nil {
+		t.Fatalf("printPullDryRunJSON(): %v", err)
+	}
+	var got pullDryRunOutput
+	if err := json.Unmarshal([]byte(jsonOut.String()), &got); err != nil {
+		t.Fatalf("Unmarshal(JSON): %v\n%s", err, jsonOut.String())
+	}
+	if !got.ManifestProvided || got.Format != "cove" || got.DiskFormat != "raw" || got.Transfer == nil || got.BaseReuse == nil {
+		t.Fatalf("JSON summary = %+v, want cove manifest with transfer and base reuse", got)
+	}
+	if got.Transfer.DiskFetchChunks != 1 || got.Transfer.DiskStoreChunks != 1 || got.Transfer.ZeroChunks != 1 || got.Transfer.MetadataFetchBlobs != 2 || got.Transfer.MetadataStoreBlobs != 1 {
+		t.Fatalf("JSON transfer = %+v, want fetch/store/zero/metadata counts", got.Transfer)
+	}
+	if got.BaseReuse.Chunks != 1 || got.BaseReuse.Bytes != 4 || got.BaseReuse.Path == "" {
+		t.Fatalf("JSON base reuse = %+v, want one reused chunk", got.BaseReuse)
+	}
 }
 
 func TestBuildPullPlanDryRunWithoutManifestIsNetworkFree(t *testing.T) {
@@ -724,6 +742,38 @@ func TestHandlePullDryRunOutput(t *testing.T) {
 	}
 }
 
+func TestHandlePullDryRunJSONOutput(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	manifestPath := writePullTestManifest(t)
+
+	var out strings.Builder
+	env := commandTestEnv()
+	env.Stdout = &out
+	if err := handlePull(env, []string{
+		"--dry-run",
+		"--json",
+		"--manifest", manifestPath,
+		"--as", "local-dev",
+		"ghcr.io/me/dev-vm:v1",
+	}); err != nil {
+		t.Fatalf("handlePull(): %v", err)
+	}
+	var got pullDryRunOutput
+	if err := json.Unmarshal([]byte(out.String()), &got); err != nil {
+		t.Fatalf("Unmarshal(output): %v\n%s", err, out.String())
+	}
+	if got.Ref != "ghcr.io/me/dev-vm:v1" || got.VM != "local-dev" || got.Format != "cove" || !got.ManifestProvided || got.Chunks != 1 {
+		t.Fatalf("JSON output = %+v, want cove dry-run plan", got)
+	}
+}
+
+func TestHandlePullJSONRequiresDryRun(t *testing.T) {
+	err := handlePull(commandTestEnv(), []string{"--json", "ghcr.io/me/dev-vm:v1"})
+	if err == nil || !strings.Contains(err.Error(), "--json requires --dry-run") {
+		t.Fatalf("handlePull() error = %v, want --json requires --dry-run", err)
+	}
+}
+
 func TestHandlePullRequiresRef(t *testing.T) {
 	err := handlePull(commandTestEnv(), []string{"--dry-run"})
 	if err == nil || !strings.Contains(err.Error(), "usage: cove pull") {
@@ -736,13 +786,14 @@ func TestParsePullArgs(t *testing.T) {
 		"--as", "local-dev",
 		"--resume",
 		"--dry-run",
+		"--json",
 		"--manifest", "manifest.json",
 		"ghcr.io/me/dev-vm:v1",
 	}, ioDiscard{})
 	if err != nil {
 		t.Fatalf("parsePullArgs(): %v", err)
 	}
-	if !opts.DryRun || !opts.Resume || opts.As != "local-dev" || opts.ManifestPath != "manifest.json" {
+	if !opts.DryRun || !opts.JSON || !opts.Resume || opts.As != "local-dev" || opts.ManifestPath != "manifest.json" {
 		t.Fatalf("opts = %#v", opts)
 	}
 	if strings.Join(pos, ",") != "ghcr.io/me/dev-vm:v1" {
@@ -758,7 +809,7 @@ func TestParsePullArgsHelpReturnsNoError(t *testing.T) {
 	if pos != nil {
 		t.Fatalf("parsePullArgs(-h) pos = %#v, want nil", pos)
 	}
-	if opts.DryRun || opts.Resume || opts.As != "" || opts.ManifestPath != "" {
+	if opts.DryRun || opts.JSON || opts.Resume || opts.As != "" || opts.ManifestPath != "" {
 		t.Fatalf("parsePullArgs(-h) opts = %#v, want zero", opts)
 	}
 }
@@ -785,6 +836,7 @@ func TestParsePullArgsAllowsTrailingFlags(t *testing.T) {
 	opts, pos, err := parsePullArgs([]string{
 		"registry.example/cove/vm:latest",
 		"--dry-run",
+		"--json",
 		"--resume",
 		"--as", "vm",
 		"--manifest=manifest.json",
@@ -792,7 +844,7 @@ func TestParsePullArgsAllowsTrailingFlags(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parsePullArgs trailing flags: %v", err)
 	}
-	if !opts.DryRun || !opts.Resume || opts.As != "vm" || opts.ManifestPath != "manifest.json" {
+	if !opts.DryRun || !opts.JSON || !opts.Resume || opts.As != "vm" || opts.ManifestPath != "manifest.json" {
 		t.Fatalf("opts = %#v, want dry-run/as/manifest", opts)
 	}
 	if strings.Join(pos, ",") != "registry.example/cove/vm:latest" {
