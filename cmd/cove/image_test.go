@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tmc/cove/internal/diskimages2"
 	"github.com/tmc/cove/internal/imagestore"
 	"github.com/tmc/cove/internal/vmconfig"
 )
@@ -194,6 +195,9 @@ func TestBuildImage_HappyPath(t *testing.T) {
 	if manifest.SourceManifestDigest != imageTestManifestDigest {
 		t.Errorf("manifest.SourceManifestDigest = %q, want %q", manifest.SourceManifestDigest, imageTestManifestDigest)
 	}
+	if manifest.DiskFormat != "raw" {
+		t.Errorf("manifest.DiskFormat = %q, want raw", manifest.DiskFormat)
+	}
 	if manifest.BuiltAt.IsZero() {
 		t.Error("manifest.BuiltAt is zero")
 	}
@@ -246,12 +250,34 @@ func TestBuildImage_HappyPath(t *testing.T) {
 	if got.SourceManifestDigest != imageTestManifestDigest {
 		t.Fatalf("loaded SourceManifestDigest = %q, want %q", got.SourceManifestDigest, imageTestManifestDigest)
 	}
+	if got.DiskFormat != "raw" {
+		t.Fatalf("loaded DiskFormat = %q, want raw", got.DiskFormat)
+	}
 
 	// Source VM unchanged.
 	if data, err := os.ReadFile(filepath.Join(srcDir, "disk.img")); err != nil {
 		t.Errorf("source disk gone: %v", err)
 	} else if string(data) != "image-source-disk-bytes" {
 		t.Errorf("source disk mutated: %q", string(data))
+	}
+}
+
+func TestBuildImageRecordsASIFDiskFormat(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	old := retrieveDiskImageInfo
+	t.Cleanup(func() { retrieveDiskImageInfo = old })
+	retrieveDiskImageInfo = func(string) (*diskimages2.ImageInfo, error) {
+		return &diskimages2.ImageInfo{Raw: map[string]string{"Image Format": "ASIF"}}, nil
+	}
+	stageMacOSVMForImage(t, "asif-src")
+	ref, _ := ParseImageRef("asif:v1")
+
+	manifest, err := BuildImage(BuildImageOptions{SourceVM: "asif-src", Ref: ref})
+	if err != nil {
+		t.Fatalf("BuildImage: %v", err)
+	}
+	if manifest.DiskFormat != "asif" {
+		t.Fatalf("DiskFormat = %q, want asif", manifest.DiskFormat)
 	}
 }
 

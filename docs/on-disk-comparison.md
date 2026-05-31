@@ -21,7 +21,7 @@ delegates the disk/runtime work to `tart` or `vetu`.
 
 | Dimension | cove | tart | lume | orchard |
 |-----------|------|------|------|---------|
-| **Disk format** | `raw` by default, optional **ASIF** via `-disk-format=asif` (`cmd/cove/utils.go`, `internal/diskimages2/create.go`) | `raw` or **ASIF** via `diskutil image create --format ASIF` | OCI gzip single-layer or legacy LZ4 chunks; active disk is raw `disk.img` | n/a (delegates to runtime) |
+| **Disk format** | `raw` by default, optional **ASIF** via `-disk-format=asif`; local image manifests record `disk_format` so ASIF snapshots remain inspectable/verifiable (`cmd/cove/utils.go`, `internal/diskimages2/create.go`, `cmd/cove/image.go`) | `raw` or **ASIF** via `diskutil image create --format ASIF` | OCI gzip single-layer or legacy LZ4 chunks; active disk is raw `disk.img` | n/a (delegates to runtime) |
 | **Clone** | explicit `unix.Clonefile()` CoW, byte-copy fallback (`fork.go`, image materialization) | `FileManager.copyItem` -> implicit APFS CoW | OCI pull + reassemble; local `lume clone` | shells out to runtime clone |
 | **Ephemeral reset** | **RAM-overlay** read-only parent with writes in host RAM (`fork_ephemeral.go`) | none; clone, boot, delete | none found | none; clone/delete lifecycle |
 | **Layout** | `~/.vz/vms/<name>/`; images under `~/.vz/images/<name>/<tag>/`; OCI blobs/manifests in the content store | `<home>/vms/`; OCI cache under `<cache>/OCIs/<host>/<digest>` | configurable `LumeSettings.vmLocations` | generated worker VM dirs such as `orchard-<name>-<uid>-<restartCount>` |
@@ -61,7 +61,13 @@ delegates the disk/runtime work to `tart` or `vetu`.
    descriptor without downloading disks, and multiple refs can be inspected as
    one batch for private catalog audits.
 
-4. **Base-aware distribution.** cove-format pushes can reference a base image,
+4. **ASIF-aware local images.** cove can create ASIF VM disks with
+   DiskImages2 and local image manifests now record whether a captured disk is
+   `raw` or `asif`. `image inspect` and `image verify` surface the format, so
+   an ASIF-backed baseline stays auditable after it is snapshot into the local
+   fork image store.
+
+5. **Base-aware distribution.** cove-format pushes can reference a base image,
    skip zero chunks, mount already-present blobs in the destination registry, and
    annotate the result with the base manifest. Pulls can resume interrupted
    downloads, reuse an already-materialized base disk where the manifest proves
@@ -75,7 +81,7 @@ delegates the disk/runtime work to `tart` or `vetu`.
    images, so cache entries and block-delta blobs can move between runners
    through the same private registry path as images.
 
-5. **Image-aware, drainable fleet placement.** cove is not orchard's controller,
+6. **Image-aware, drainable fleet placement.** cove is not orchard's controller,
    but its fleet CLI now understands image locality, operator drain intent, and
    short local placement leases, concurrent fan-out, reused SSH transports, and
    explicit reachability checks: it skips cordoned hosts, counts recent local

@@ -135,6 +135,7 @@ func runImageBuild(env commandEnv, args []string) (err error) {
 	fmt.Fprintf(env.Stdout, "Built image %s from %s\n", ref, *from)
 	fmt.Fprintf(env.Stdout, "  path:   %s\n", ref.Path())
 	fmt.Fprintf(env.Stdout, "  disk:   %d bytes\n", manifest.DiskSize)
+	fmt.Fprintf(env.Stdout, "  format: %s\n", manifest.DiskFormat)
 	fmt.Fprintf(env.Stdout, "  sha256: %s\n", manifest.DiskSHA256)
 	return nil
 }

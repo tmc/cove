@@ -40,6 +40,9 @@ func TestVerifyImagePassesOnFreshImage(t *testing.T) {
 	if report.Manifest.CoveCommit == "" || report.Manifest.AgentCommit == "" {
 		t.Fatalf("manifest provenance incomplete: %#v", report.Manifest)
 	}
+	if got := imageVerifyCheckStatus(report, "disk format"); got != imageVerifyPass {
+		t.Fatalf("disk format check = %s, want PASS (%#v)", got, report.Checks)
+	}
 	if got := imageVerifyCheckStatus(report, "source manifest"); got != imageVerifyInfo {
 		t.Fatalf("source manifest check = %s, want INFO (%#v)", got, report.Checks)
 	}
@@ -57,6 +60,34 @@ func TestVerifyImagePassesOnFreshImage(t *testing.T) {
 	}
 	if roundTrip.Verdict != imageVerifyPass || roundTrip.Ref != ref.String() {
 		t.Fatalf("round-trip report = %#v", roundTrip)
+	}
+}
+
+func TestVerifyImageWarnsOnUnknownDiskFormat(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	stageMacOSVMForImage(t, "src")
+	ref, err := ParseImageRef("format:v1")
+	if err != nil {
+		t.Fatalf("ParseImageRef: %v", err)
+	}
+	if _, err := BuildImage(BuildImageOptions{SourceVM: "src", Ref: ref}); err != nil {
+		t.Fatalf("BuildImage: %v", err)
+	}
+	manifest, err := LoadImageManifest(ref)
+	if err != nil {
+		t.Fatalf("LoadImageManifest: %v", err)
+	}
+	manifest.DiskFormat = "qcow2"
+	if err := writeImageManifest(ref.Path(), manifest); err != nil {
+		t.Fatalf("writeImageManifest: %v", err)
+	}
+
+	report := VerifyImage(ref, imageVerifyOptions{})
+	if got := imageVerifyCheckStatus(report, "disk format"); got != imageVerifyWarn {
+		t.Fatalf("disk format check = %s, want WARN (%#v)", got, report.Checks)
+	}
+	if report.Verdict != imageVerifyWarn {
+		t.Fatalf("Verdict = %s, want WARN", report.Verdict)
 	}
 }
 

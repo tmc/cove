@@ -27,6 +27,7 @@ type Manifest struct {
 	BuiltAt              time.Time        `json:"built_at,omitempty"`
 	DefaultNetwork       string           `json:"default_network,omitempty"`
 	DefaultSandbox       string           `json:"default_sandbox,omitempty"`
+	DiskFormat           string           `json:"disk_format,omitempty"`
 	DiskSHA256           string           `json:"diskSHA256"`
 	DiskSize             int64            `json:"diskSize"`
 	CreatedAt            time.Time        `json:"createdAt"`

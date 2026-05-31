@@ -72,6 +72,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   digest as `source_manifest_digest`; image forks restore it to child
   `disk.provenance`, run summaries expose it, and store GC treats those image
   manifests as content-store roots.
+- Local image manifests now record `disk_format` (`raw` or `asif`), and image
+  build, inspect, and verify surface that format so ASIF-backed images remain
+  auditable after snapshotting.
 - `--net egress:<domain,ip,cidr...>` now records a custom per-run egress
   allowlist in `network.log` and `cove network audit`, giving CI and agent
   runs an explicit network intent artifact while Virtualization.framework NAT

@@ -43,6 +43,7 @@ type ImageInspectOutput struct {
 	BuiltAt              string   `json:"built_at,omitempty"`
 	DefaultNetwork       string   `json:"default_network,omitempty"`
 	DefaultSandbox       string   `json:"default_sandbox,omitempty"`
+	DiskFormat           string   `json:"disk_format,omitempty"`
 	LegacyManifest       bool     `json:"legacy_manifest,omitempty"`
 	MachineModelID       string   `json:"machine_model_id,omitempty"`
 	Forks                []string `json:"forks"`
@@ -125,6 +126,7 @@ func inspectImageOutput(ref imagestore.Ref, imageDir string, manifest *imagestor
 		SourceManifestDigest: manifest.SourceManifestDigest,
 		DefaultNetwork:       manifest.DefaultNetwork,
 		DefaultSandbox:       manifest.DefaultSandbox,
+		DiskFormat:           normalizeImageDiskFormat(manifest.DiskFormat),
 		LegacyManifest:       legacyImageManifest(manifest),
 		Forks:                forks,
 		ForkCount:            len(forks),
@@ -442,6 +444,7 @@ func imageInspectFieldRank(field string) int {
 		"build_recipe",
 		"source_image",
 		"source_manifest_digest",
+		"disk_format",
 		"baseImage",
 		"diskSHA256",
 		"diskSize",
@@ -632,6 +635,9 @@ func writeInspectText(w io.Writer, out ImageInspectOutput) error {
 	}
 	if out.DefaultSandbox != "" {
 		fmt.Fprintf(w, "  sandbox:     %s\n", out.DefaultSandbox)
+	}
+	if out.DiskFormat != "" {
+		fmt.Fprintf(w, "  disk format: %s\n", out.DiskFormat)
 	}
 	if out.MachineModelID != "" {
 		fmt.Fprintf(w, "  hw.model:    sha256:%s\n", out.MachineModelID)

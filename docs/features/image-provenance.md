@@ -11,6 +11,7 @@
 - `built_at`
 - `default_network`
 - `default_sandbox`
+- `disk_format`
 
 When the source VM came from `cove pull`, Tart pull, or Lume pull,
 `disk.provenance` is copied into `source_manifest_digest`. Image-backed forks
@@ -24,6 +25,7 @@ local OCI content store.
 - the manifest parses
 - required image files are present
 - the disk size matches the manifest
+- the recorded disk format is `raw` or `asif`
 - the image advertises `execattach.v3`
 - the image was built by the current `cove` binary or a compatible version
 - the optional source registry manifest digest is well-formed when present

@@ -129,7 +129,8 @@ func BuildImage(opts BuildImageOptions) (*imagestore.Manifest, error) {
 		now = func() time.Time { return time.Now().UTC() }
 	}
 	nowTime := now().UTC()
-	hash, size, err := sha256AndSize(vmPrimaryDiskPath(imgDir))
+	diskPath := vmPrimaryDiskPath(imgDir)
+	hash, size, err := sha256AndSize(diskPath)
 	if err != nil {
 		cleanup()
 		return nil, fmt.Errorf("image build: hash disk: %w", err)
@@ -176,6 +177,7 @@ func BuildImage(opts BuildImageOptions) (*imagestore.Manifest, error) {
 		BuiltAt:              nowTime,
 		DefaultNetwork:       strings.TrimSpace(networkMode),
 		DefaultSandbox:       effectiveSandboxMode(),
+		DiskFormat:           detectImageDiskFormat(diskPath),
 		DiskSHA256:           hash,
 		DiskSize:             size,
 		CreatedAt:            nowTime,

@@ -67,6 +67,9 @@ func VerifyImage(ref imagestore.Ref, opts imageVerifyOptions) imageVerifyReport 
 		report.addCheck("layout", imageVerifyPass, strings.Join(imageLayoutRequiredFiles(manifest.OSType), ", ")+" present")
 	}
 
+	diskFormatStatus, diskFormatDetail := verifyImageDiskFormat(manifest)
+	report.addCheck("disk format", diskFormatStatus, diskFormatDetail)
+
 	agentStatus, detail := verifyImageAgentFeatures(manifest, opts.Strict)
 	report.addCheck("agent features", agentStatus, detail)
 
@@ -213,6 +216,17 @@ func verifyImageSourceManifest(manifest *imagestore.Manifest) (imageVerifyStatus
 		return imageVerifyWarn, fmt.Sprintf("invalid digest %q", digest)
 	}
 	return imageVerifyPass, digest
+}
+
+func verifyImageDiskFormat(manifest *imagestore.Manifest) (imageVerifyStatus, string) {
+	value := strings.TrimSpace(manifest.DiskFormat)
+	if value == "" {
+		return imageVerifyInfo, "not recorded"
+	}
+	if format, ok := knownImageDiskFormat(value); ok {
+		return imageVerifyPass, format
+	}
+	return imageVerifyWarn, fmt.Sprintf("unknown disk_format %q", value)
 }
 
 func validSHA256Digest(digest string) bool {

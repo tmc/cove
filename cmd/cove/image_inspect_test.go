@@ -47,6 +47,9 @@ func TestInspectImage_Manifest(t *testing.T) {
 	if len(out.DiskSHA256) != 64 {
 		t.Errorf("DiskSHA256 length = %d, want 64", len(out.DiskSHA256))
 	}
+	if out.DiskFormat != "raw" {
+		t.Errorf("DiskFormat = %q, want raw", out.DiskFormat)
+	}
 	if !strings.HasSuffix(out.ManifestPath, "/manifest.json") {
 		t.Errorf("ManifestPath = %q, want suffix /manifest.json", out.ManifestPath)
 	}
@@ -77,6 +80,9 @@ func TestInspectImage_Manifest(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "source manifest: "+imageTestManifestDigest) {
 		t.Fatalf("inspect text missing source manifest:\n%s", buf.String())
+	}
+	if !strings.Contains(buf.String(), "disk format: raw") {
+		t.Fatalf("inspect text missing disk format:\n%s", buf.String())
 	}
 }
 
