@@ -1013,7 +1013,7 @@ cove fleet health
 The one-shot `cove daemon` command starts, stops, or queries that daemon.
 
 ```
-coved [-fleet-url <url>] [-fleet-id <id>] [-fleet-label key=value] [-fleet-assignment-interval <duration>]
+coved [-fleet-url <url>] [-fleet-id <id>] [-fleet-cove-bin <path>] [-fleet-label key=value] [-fleet-assignment-interval <duration>]
 cove daemon start [-coved <path>]
 cove daemon stop
 cove daemon status [--json]

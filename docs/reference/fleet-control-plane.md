@@ -5,7 +5,8 @@ title: Fleet Control Plane
 
 `cove-fleetd` is the first stateful fleet-control-plane boundary. It owns host
 inventory, assignment leases, and the worker-facing protocol surface. `coved`
-can now dial out as a worker; controller-side scheduling is the next slice.
+can now dial out as a worker and execute leased `cove` assignments;
+controller-side scheduling is the next slice.
 
 Start a private controller:
 
@@ -35,8 +36,10 @@ Worker flags:
 |------|---------|-------------|
 | `-fleet-url <url>` | empty | Controller URL; empty disables worker dial-out |
 | `-fleet-id <id>` | hostname | Stable worker id registered with the controller |
+| `-fleet-cove-bin <path>` | sibling `cove` or `cove` on `PATH` | Binary used for `cove` assignments |
 | `-fleet-heartbeat-interval <duration>` | `10s` | Heartbeat cadence |
 | `-fleet-assignment-interval <duration>` | `5s` | Assignment poll cadence |
+| `-fleet-assignment-timeout <duration>` | `30m` | Timeout for one `cove` assignment |
 | `-fleet-label key=value` | none | Worker label; repeat for multiple labels |
 
 Worker protocol:
@@ -46,7 +49,7 @@ Worker protocol:
 | register | `POST /v1/workers/register` | `coved` sends host id, version, labels, CPU count, VM count, and local image count; controller stores the host record. |
 | heartbeat | `POST /v1/workers/heartbeat` | `coved` refreshes `last_seen` and capacity. |
 | await-assignment | `GET /v1/workers/<id>/assignments` | `coved` polls for work; the controller leases one pending or expired assignment and otherwise returns `204 No Content`. |
-| report-status | `POST /v1/workers/<id>/reports` | `coved` records `noop` assignments as complete and reports other verbs as unsupported until assignment execution ships. |
+| report-status | `POST /v1/workers/<id>/reports` | `coved` records `noop` as complete, executes `cove` assignments with bounded stdout/stderr capture, and reports other verbs as unsupported. |
 
 Inventory endpoints:
 
@@ -62,6 +65,9 @@ Assignment endpoints:
 curl -X POST http://127.0.0.1:9758/v1/assignments \
   -H 'content-type: application/json' \
   -d '{"id":"probe-1","worker_id":"mini-1","verb":"noop"}'
+curl -X POST http://127.0.0.1:9758/v1/assignments \
+  -H 'content-type: application/json' \
+  -d '{"id":"run-1","worker_id":"mini-1","verb":"cove","args":["run","-ephemeral","-headless"]}'
 curl http://127.0.0.1:9758/v1/assignments
 curl http://127.0.0.1:9758/v1/assignments/probe-1
 ```
@@ -79,5 +85,5 @@ curl -X POST http://127.0.0.1:9758/v1/workers/register \
 ```
 
 This surface is intentionally private and local-first. It does not yet replace
-`cove fleet` SSH placement, execute VM assignments, or provide Orchard-style
+`cove fleet` SSH placement, choose hosts for new work, or provide Orchard-style
 reconciliation.

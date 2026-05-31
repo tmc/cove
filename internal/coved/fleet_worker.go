@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -19,8 +20,10 @@ import (
 )
 
 const (
-	DefaultFleetHeartbeatInterval  = 10 * time.Second
-	DefaultFleetAssignmentInterval = 5 * time.Second
+	DefaultFleetHeartbeatInterval     = 10 * time.Second
+	DefaultFleetAssignmentInterval    = 5 * time.Second
+	DefaultFleetAssignmentTimeout     = 30 * time.Minute
+	DefaultFleetAssignmentOutputLimit = 64 << 10
 )
 
 type FleetWorkerConfig struct {
@@ -33,8 +36,11 @@ type FleetWorkerConfig struct {
 	Labels             map[string]string
 	HTTPClient         *http.Client
 	Log                *slog.Logger
+	CoveBin            string
 	HeartbeatInterval  time.Duration
 	AssignmentInterval time.Duration
+	AssignmentTimeout  time.Duration
+	OutputLimit        int64
 }
 
 type FleetWorker struct {
@@ -47,8 +53,11 @@ type FleetWorker struct {
 	labels             map[string]string
 	httpClient         *http.Client
 	log                *slog.Logger
+	coveBin            string
 	heartbeatInterval  time.Duration
 	assignmentInterval time.Duration
+	assignmentTimeout  time.Duration
+	outputLimit        int64
 }
 
 func NewFleetWorker(cfg FleetWorkerConfig) (*FleetWorker, error) {
@@ -89,6 +98,18 @@ func NewFleetWorker(cfg FleetWorkerConfig) (*FleetWorker, error) {
 	if assignmentInterval <= 0 {
 		assignmentInterval = DefaultFleetAssignmentInterval
 	}
+	assignmentTimeout := cfg.AssignmentTimeout
+	if assignmentTimeout <= 0 {
+		assignmentTimeout = DefaultFleetAssignmentTimeout
+	}
+	outputLimit := cfg.OutputLimit
+	if outputLimit <= 0 {
+		outputLimit = DefaultFleetAssignmentOutputLimit
+	}
+	coveBin := strings.TrimSpace(cfg.CoveBin)
+	if coveBin == "" {
+		coveBin = "cove"
+	}
 	return &FleetWorker{
 		base:               base,
 		id:                 id,
@@ -99,8 +120,11 @@ func NewFleetWorker(cfg FleetWorkerConfig) (*FleetWorker, error) {
 		labels:             cloneStringMap(cfg.Labels),
 		httpClient:         client,
 		log:                cfg.Log,
+		coveBin:            coveBin,
 		heartbeatInterval:  heartbeatInterval,
 		assignmentInterval: assignmentInterval,
+		assignmentTimeout:  assignmentTimeout,
+		outputLimit:        outputLimit,
 	}, nil
 }
 
@@ -171,18 +195,51 @@ func (w *FleetWorker) PollAssignment(ctx context.Context) error {
 }
 
 func (w *FleetWorker) HandleAssignment(ctx context.Context, assignment fleetcontrol.Assignment) error {
-	status := "unsupported"
-	errText := fmt.Sprintf("unsupported assignment verb %q", assignment.Verb)
-	if strings.TrimSpace(assignment.Verb) == "noop" {
-		status = "complete"
-		errText = ""
-	}
-	_, err := w.ReportStatus(ctx, fleetcontrol.WorkerReport{
+	report := fleetcontrol.WorkerReport{
 		AssignmentID: assignment.ID,
-		Status:       status,
-		Error:        errText,
-	})
+		Status:       "unsupported",
+		Error:        fmt.Sprintf("unsupported assignment verb %q", assignment.Verb),
+	}
+	switch strings.TrimSpace(assignment.Verb) {
+	case "noop":
+		report.Status = "complete"
+		report.Error = ""
+	case "cove":
+		report = w.runCoveAssignment(ctx, assignment)
+	}
+	_, err := w.ReportStatus(ctx, report)
 	return err
+}
+
+func (w *FleetWorker) runCoveAssignment(ctx context.Context, assignment fleetcontrol.Assignment) fleetcontrol.WorkerReport {
+	report := fleetcontrol.WorkerReport{
+		AssignmentID: assignment.ID,
+		Status:       "failed",
+		ExitCode:     -1,
+	}
+	runCtx, cancel := context.WithTimeout(ctx, w.assignmentTimeout)
+	defer cancel()
+	var stdout, stderr bytes.Buffer
+	cmd := exec.CommandContext(runCtx, w.coveBin, assignment.Args...)
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	report.Stdout = trimReportOutput(stdout.String(), w.outputLimit)
+	report.Stderr = trimReportOutput(stderr.String(), w.outputLimit)
+	if cmd.ProcessState != nil {
+		report.ExitCode = cmd.ProcessState.ExitCode()
+	}
+	if runCtx.Err() == context.DeadlineExceeded {
+		report.Error = fmt.Sprintf("assignment timed out after %s", w.assignmentTimeout)
+		return report
+	}
+	if err != nil {
+		report.Error = err.Error()
+		return report
+	}
+	report.Status = "complete"
+	report.Error = ""
+	return report
 }
 
 func (w *FleetWorker) ReportStatus(ctx context.Context, report fleetcontrol.WorkerReport) (fleetcontrol.HostRecord, error) {
@@ -310,4 +367,15 @@ func cloneStringMap(in map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+func trimReportOutput(s string, limit int64) string {
+	if limit <= 0 || int64(len(s)) <= limit {
+		return s
+	}
+	n := int(limit)
+	if limit < 20 {
+		return s[:n]
+	}
+	return s[:n] + "\n[truncated]\n"
 }

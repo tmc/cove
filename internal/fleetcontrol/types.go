@@ -47,6 +47,9 @@ type WorkerReport struct {
 	AssignmentID string    `json:"assignment_id,omitempty"`
 	Status       string    `json:"status"`
 	Error        string    `json:"error,omitempty"`
+	ExitCode     int       `json:"exit_code,omitempty"`
+	Stdout       string    `json:"stdout,omitempty"`
+	Stderr       string    `json:"stderr,omitempty"`
 	Time         time.Time `json:"time,omitempty"`
 }
 

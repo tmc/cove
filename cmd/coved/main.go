@@ -37,8 +37,10 @@ func main() {
 	storagePollInterval := flag.Duration("storage-poll-interval", defaultStoragePollInterval(), "storage budget poll interval (0 disables)")
 	fleetURL := flag.String("fleet-url", "", "fleet controller URL for worker dial-out")
 	fleetID := flag.String("fleet-id", "", "fleet worker id (default hostname)")
+	fleetCoveBin := flag.String("fleet-cove-bin", defaultFleetCoveBin(), "cove binary used for fleet cove assignments")
 	fleetHeartbeatInterval := flag.Duration("fleet-heartbeat-interval", coved.DefaultFleetHeartbeatInterval, "fleet heartbeat interval")
 	fleetAssignmentInterval := flag.Duration("fleet-assignment-interval", coved.DefaultFleetAssignmentInterval, "fleet assignment poll interval")
+	fleetAssignmentTimeout := flag.Duration("fleet-assignment-timeout", coved.DefaultFleetAssignmentTimeout, "fleet cove assignment timeout")
 	var fleetLabels stringList
 	flag.Var(&fleetLabels, "fleet-label", "fleet worker label key=value (repeatable)")
 	flag.Parse()
@@ -105,8 +107,10 @@ func main() {
 			ImageRoot:          imagestore.BaseDir(),
 			Labels:             labels,
 			Log:                logger,
+			CoveBin:            *fleetCoveBin,
 			HeartbeatInterval:  *fleetHeartbeatInterval,
 			AssignmentInterval: *fleetAssignmentInterval,
+			AssignmentTimeout:  *fleetAssignmentTimeout,
 		})
 		if err != nil {
 			slog.Error("configure fleet worker", slog.Any("err", err))
@@ -196,6 +200,18 @@ func defaultSocketPath() string {
 func defaultPIDPath() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".vz", "cove.pid")
+}
+
+func defaultFleetCoveBin() string {
+	exe, err := os.Executable()
+	if err != nil || exe == "" {
+		return "cove"
+	}
+	candidate := filepath.Join(filepath.Dir(exe), "cove")
+	if st, err := os.Stat(candidate); err == nil && !st.IsDir() {
+		return candidate
+	}
+	return "cove"
 }
 
 func writePIDFile(path string) error {

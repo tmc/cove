@@ -32,6 +32,8 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `cove-fleetd` now persists controller assignments, exposes private
   assignment create/list/get endpoints, leases pending work to workers, and
   records worker reports back onto the assignment.
+- `coved` now executes leased `cove` assignments with a configurable local cove
+  binary, timeout, exit code, and bounded stdout/stderr reporting.
 - `cove build --cache-from` and `--cache-to` now import and export cove
   build-cache artifacts through OCI refs, carrying cache entries, layer
   manifests, and block-delta blobs between runners.

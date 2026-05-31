@@ -130,6 +130,97 @@ func TestFleetWorkerCompletesNoopAssignment(t *testing.T) {
 	}
 }
 
+func TestFleetWorkerRunsCoveAssignment(t *testing.T) {
+	store := fleetcontrol.NewMemoryStore(time.Minute)
+	server := httptest.NewServer(fleetcontrol.Handler(store))
+	defer server.Close()
+	coveBin := writeExecutable(t, `#!/bin/sh
+printf 'stdout:%s\n' "$*"
+printf 'stderr:%s\n' "$*" >&2
+exit 0
+`)
+
+	worker, err := NewFleetWorker(FleetWorkerConfig{
+		ControllerURL: server.URL,
+		ID:            "worker-1",
+		CoveBin:       coveBin,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := worker.Register(ctx); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if _, err := store.CreateAssignment(fleetcontrol.Assignment{
+		ID:       "assignment-1",
+		WorkerID: "worker-1",
+		Verb:     "cove",
+		Args:     []string{"run", "-ephemeral"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := worker.PollAssignment(ctx); err != nil {
+		t.Fatalf("PollAssignment: %v", err)
+	}
+	assignment, ok := store.GetAssignment("assignment-1")
+	if !ok {
+		t.Fatal("assignment missing")
+	}
+	report := assignment.LastReport
+	if assignment.Status != "complete" || report == nil || report.ExitCode != 0 {
+		t.Fatalf("assignment = %+v", assignment)
+	}
+	if !strings.Contains(report.Stdout, "stdout:run -ephemeral") || !strings.Contains(report.Stderr, "stderr:run -ephemeral") {
+		t.Fatalf("report output = stdout %q stderr %q", report.Stdout, report.Stderr)
+	}
+}
+
+func TestFleetWorkerReportsCoveAssignmentFailure(t *testing.T) {
+	store := fleetcontrol.NewMemoryStore(time.Minute)
+	server := httptest.NewServer(fleetcontrol.Handler(store))
+	defer server.Close()
+	coveBin := writeExecutable(t, `#!/bin/sh
+printf 'this output is deliberately long\n'
+printf 'boom\n' >&2
+exit 7
+`)
+
+	worker, err := NewFleetWorker(FleetWorkerConfig{
+		ControllerURL: server.URL,
+		ID:            "worker-1",
+		CoveBin:       coveBin,
+		OutputLimit:   12,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := worker.Register(ctx); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if _, err := store.CreateAssignment(fleetcontrol.Assignment{ID: "assignment-1", WorkerID: "worker-1", Verb: "cove"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := worker.PollAssignment(ctx); err != nil {
+		t.Fatalf("PollAssignment: %v", err)
+	}
+	assignment, ok := store.GetAssignment("assignment-1")
+	if !ok {
+		t.Fatal("assignment missing")
+	}
+	report := assignment.LastReport
+	if assignment.Status != "failed" || report == nil || report.ExitCode != 7 {
+		t.Fatalf("assignment = %+v", assignment)
+	}
+	if !strings.Contains(report.Error, "exit status 7") {
+		t.Fatalf("report error = %q", report.Error)
+	}
+	if report.Stdout != "this output " {
+		t.Fatalf("stdout = %q, want truncated output", report.Stdout)
+	}
+}
+
 func mustMkdirAll(t *testing.T, path string) {
 	t.Helper()
 	if err := os.MkdirAll(path, 0755); err != nil {
@@ -146,4 +237,13 @@ func writeManifest(t *testing.T, root string, parts ...string) {
 	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte("{}\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func writeExecutable(t *testing.T, script string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "fake-cove")
+	if err := os.WriteFile(path, []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
