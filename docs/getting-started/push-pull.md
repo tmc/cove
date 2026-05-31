@@ -21,7 +21,9 @@ Cove's pull path accepts both cove-native and lume-produced manifests, so migrat
 cove pull <ref> --dry-run                         # validate the pull target
 cove pull <ref> --as my-macos --dry-run           # name the new VM
 cove pull <ref> --dry-run --manifest manifest.json # validate a local manifest
+cove pull <ref> --dry-run --fetch-manifest        # fetch registry metadata only
 cove pull <ref> --dry-run --json --manifest manifest.json # machine-readable pull plan
+cove pull <ref> --dry-run --fetch-manifest --json # machine-readable registry pull plan
 cove image inspect -remote <ref> -json            # inspect registry metadata only
 cove image inspect -remote -verify-blobs <ref>    # HEAD every referenced blob
 cove image inspect -remote <ref> <ref> -json      # audit several registry refs
@@ -40,14 +42,16 @@ base-chain availability/compatibility when a base manifest is declared, and the
 verification work cove will perform during pull/import.
 Add `-verify-blobs` to send HEAD requests for every config and layer descriptor
 so a private catalog audit can catch missing registry blobs without downloading
-VM disks. Use `--manifest` to validate local manifest JSON. When a cove-native
-manifest is available during `--dry-run`, cove also checks whether a compatible
-local or registry-cache base disk can be reused and prints the reusable chunks,
-bytes, disk format, and source path. The same dry-run also reports cove-native
-transfer coverage: disk chunks already in the local content store, disk chunks
-that still need registry fetches, sparse zero chunks, and metadata blobs already
-present or still needed. Add `--json` to emit that dry-run as structured data
-for CI jobs or fleet controllers deciding which host should pull the image.
+VM disks. Plain `--dry-run` is network-free. Use `--manifest` to validate local
+manifest JSON, or `--fetch-manifest` to fetch only the registry manifest without
+downloading disk blobs. When a cove-native manifest is available during
+`--dry-run`, cove also checks whether a compatible local or registry-cache base
+disk can be reused and prints the reusable chunks, bytes, disk format, and
+source path. The same dry-run also reports cove-native transfer coverage: disk
+chunks already in the local content store, disk chunks that still need registry
+fetches, sparse zero chunks, and metadata blobs already present or still needed.
+Add `--json` to emit that dry-run as structured data for CI jobs or fleet
+controllers deciding which host should pull the image.
 
 What happens:
 

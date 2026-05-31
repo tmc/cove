@@ -1404,8 +1404,10 @@ macOS identity metadata, and atomically renames the verified disk into place.
 OCI image indexes and Docker manifest lists resolve to a same-repository image
 manifest before parsing. Lume-format tar-split pulls prefetch disk parts
 concurrently, then stream them in manifest order with descriptor size/digest
-checks before extraction. Use `--dry-run` to validate the manifest and target
-without writing a disk; cove-native dry-runs also print the registry manifest's
+checks before extraction. Use `--dry-run` to validate the target without writing
+a disk. Plain dry-runs are network-free; add `--manifest` to validate local
+manifest JSON or `--fetch-manifest` to fetch only registry manifest metadata
+without downloading disk blobs. Cove-native dry-runs also print the manifest's
 disk format and, when a compatible local or cached base disk is available, the
 reusable chunks, bytes, disk format, and source base path. Manifest-backed
 cove-native dry-runs also report disk chunks already covered by the local
@@ -1424,12 +1426,15 @@ cove pull <ref> [flags]
 |------|---------|-------------|
 | `--as <name>` | inferred from ref | Destination VM name |
 | `--dry-run` | false | Validate inputs without writing a disk |
+| `--fetch-manifest` | false | Fetch registry manifest during dry-run |
 | `--json` | false | Print dry-run plan as JSON |
 | `--resume` | false | Continue an interrupted pull from `disk.img.partial` |
 | `--manifest <path>` | | Local OCI manifest JSON instead of fetching the registry |
 
 ```bash
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run
+cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run --fetch-manifest
+cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run --fetch-manifest --json
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run --json --manifest manifest.json
 cove pull ghcr.io/example/macos-sequoia:15.2 --resume
 cove pull ghcr.io/trycua/macos-sequoia-vanilla:latest --as sequoia --dry-run --manifest manifest.json

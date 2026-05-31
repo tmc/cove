@@ -30,6 +30,7 @@ type pullOptions struct {
 	As              string
 	DryRun          bool
 	JSON            bool
+	FetchManifest   bool
 	Resume          bool
 	ManifestPath    string
 	RegistryBaseURL string
@@ -112,6 +113,12 @@ func handlePull(env commandEnv, args []string) error {
 	if opts.JSON && !opts.DryRun {
 		return fmt.Errorf("cove pull: --json requires --dry-run")
 	}
+	if opts.FetchManifest && !opts.DryRun {
+		return fmt.Errorf("cove pull: --fetch-manifest requires --dry-run")
+	}
+	if opts.FetchManifest && opts.ManifestPath != "" {
+		return fmt.Errorf("cove pull: --fetch-manifest cannot be used with --manifest")
+	}
 	plan, err := buildPullPlan(pos[0], opts)
 	if err != nil {
 		return err
@@ -148,6 +155,7 @@ func parsePullArgs(args []string, w io.Writer) (pullOptions, []string, error) {
 	fs.StringVar(&opts.As, "as", "", "destination VM name")
 	fs.BoolVar(&opts.DryRun, "dry-run", false, "validate inputs without writing a disk")
 	fs.BoolVar(&opts.JSON, "json", false, "print dry-run plan as JSON")
+	fs.BoolVar(&opts.FetchManifest, "fetch-manifest", false, "fetch registry manifest during dry-run")
 	fs.BoolVar(&opts.Resume, "resume", false, "continue an interrupted pull from disk.img.partial")
 	fs.StringVar(&opts.ManifestPath, "manifest", "", "local OCI manifest JSON instead of fetching the registry")
 	fs.Usage = func() { printPullUsage(w) }
@@ -162,11 +170,12 @@ func parsePullArgs(args []string, w io.Writer) (pullOptions, []string, error) {
 
 func movePullFlagsFirst(args []string) []string {
 	return moveKnownFlagsFirst(args, map[string]bool{
-		"as":       true,
-		"dry-run":  false,
-		"json":     false,
-		"resume":   false,
-		"manifest": true,
+		"as":             true,
+		"dry-run":        false,
+		"json":           false,
+		"fetch-manifest": false,
+		"resume":         false,
+		"manifest":       true,
 	})
 }
 
@@ -201,9 +210,10 @@ func buildPullPlan(refText string, opts pullOptions) (*pullPlan, error) {
 			return nil, err
 		}
 		manifestRaw, _ = os.ReadFile(opts.ManifestPath)
-	} else if opts.DryRun && opts.RegistryBaseURL == "" {
+	} else if opts.DryRun && !opts.FetchManifest && opts.RegistryBaseURL == "" {
 		// Keep plain dry runs network-free. Use --manifest when the
-		// caller wants manifest validation without pulling disk data.
+		// caller has local manifest JSON, or --fetch-manifest to query
+		// registry metadata without pulling disk data.
 	} else {
 		ctx, cancel := context.WithTimeout(context.Background(), pullManifestFetchTimeout)
 		defer cancel()
@@ -752,6 +762,7 @@ Flags:
   --as <name>          Destination VM name
   --dry-run            Validate inputs without writing a disk
   --json               Print dry-run plan as JSON
+  --fetch-manifest     Fetch registry manifest during dry-run
   --resume             Continue an interrupted pull from disk.img.partial
   --manifest <path>    Local OCI manifest JSON instead of fetching the registry`)
 }

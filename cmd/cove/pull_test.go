@@ -192,6 +192,57 @@ func TestBuildPullPlanDryRunWithoutManifestIsNetworkFree(t *testing.T) {
 	}
 }
 
+func TestBuildPullPlanDryRunFetchManifest(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	diskData := []byte("bootable")
+	manifest, blobs := pullCompressedTestManifest(t, diskData)
+	manifestData, manifestDigest := pullTestManifestData(t, manifest)
+	var blobGets atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v2/me/dev-vm/manifests/v1":
+			w.Header().Set("Docker-Content-Digest", manifestDigest)
+			_, _ = w.Write(manifestData)
+		default:
+			const prefix = "/v2/me/dev-vm/blobs/"
+			if !strings.HasPrefix(r.URL.Path, prefix) {
+				t.Fatalf("path = %q", r.URL.Path)
+			}
+			blobGets.Add(1)
+			digest := strings.TrimPrefix(r.URL.Path, prefix)
+			data, ok := blobs[digest]
+			if !ok {
+				http.NotFound(w, r)
+				return
+			}
+			_, _ = w.Write(data)
+		}
+	}))
+	defer srv.Close()
+
+	plan, err := buildPullPlan("ghcr.io/me/dev-vm:v1", pullOptions{
+		DryRun:          true,
+		FetchManifest:   true,
+		RegistryBaseURL: srv.URL,
+	})
+	if err != nil {
+		t.Fatalf("buildPullPlan(): %v", err)
+	}
+	if plan.ManifestDigest != manifestDigest {
+		t.Fatalf("ManifestDigest = %q, want %q", plan.ManifestDigest, manifestDigest)
+	}
+	if got := len(plan.Manifest.Chunks); got != 1 {
+		t.Fatalf("chunks = %d, want 1", got)
+	}
+	if plan.FetchDiskChunks != 1 || plan.FetchMetadataBlobs != 3 {
+		t.Fatalf("fetch preflight = disk:%d metadata:%d, want disk 1 metadata 3", plan.FetchDiskChunks, plan.FetchMetadataBlobs)
+	}
+	if got := blobGets.Load(); got != 0 {
+		t.Fatalf("blob GETs = %d, want zero for manifest-only dry-run", got)
+	}
+}
+
 func TestPullDiskDownloadsRegistryChunks(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -774,6 +825,25 @@ func TestHandlePullJSONRequiresDryRun(t *testing.T) {
 	}
 }
 
+func TestHandlePullFetchManifestRequiresDryRun(t *testing.T) {
+	err := handlePull(commandTestEnv(), []string{"--fetch-manifest", "ghcr.io/me/dev-vm:v1"})
+	if err == nil || !strings.Contains(err.Error(), "--fetch-manifest requires --dry-run") {
+		t.Fatalf("handlePull() error = %v, want --fetch-manifest requires --dry-run", err)
+	}
+}
+
+func TestHandlePullRejectsFetchManifestWithManifest(t *testing.T) {
+	err := handlePull(commandTestEnv(), []string{
+		"--dry-run",
+		"--fetch-manifest",
+		"--manifest", "manifest.json",
+		"ghcr.io/me/dev-vm:v1",
+	})
+	if err == nil || !strings.Contains(err.Error(), "--fetch-manifest cannot be used with --manifest") {
+		t.Fatalf("handlePull() error = %v, want --fetch-manifest/--manifest conflict", err)
+	}
+}
+
 func TestHandlePullRequiresRef(t *testing.T) {
 	err := handlePull(commandTestEnv(), []string{"--dry-run"})
 	if err == nil || !strings.Contains(err.Error(), "usage: cove pull") {
@@ -809,7 +879,7 @@ func TestParsePullArgsHelpReturnsNoError(t *testing.T) {
 	if pos != nil {
 		t.Fatalf("parsePullArgs(-h) pos = %#v, want nil", pos)
 	}
-	if opts.DryRun || opts.JSON || opts.Resume || opts.As != "" || opts.ManifestPath != "" {
+	if opts.DryRun || opts.JSON || opts.FetchManifest || opts.Resume || opts.As != "" || opts.ManifestPath != "" {
 		t.Fatalf("parsePullArgs(-h) opts = %#v, want zero", opts)
 	}
 }
@@ -829,6 +899,24 @@ func TestPrintPullUsageShowsFlagsBeforeArgs(t *testing.T) {
 	}
 	if !strings.Contains(b.String(), "--resume") {
 		t.Fatalf("usage = %q, want --resume", b.String())
+	}
+}
+
+func TestParsePullArgsFetchManifest(t *testing.T) {
+	opts, pos, err := parsePullArgs([]string{
+		"registry.example/cove/vm:latest",
+		"--dry-run",
+		"--fetch-manifest",
+		"--json",
+	}, ioDiscard{})
+	if err != nil {
+		t.Fatalf("parsePullArgs fetch manifest: %v", err)
+	}
+	if !opts.DryRun || !opts.FetchManifest || !opts.JSON {
+		t.Fatalf("opts = %#v, want dry-run/fetch-manifest/json", opts)
+	}
+	if strings.Join(pos, ",") != "registry.example/cove/vm:latest" {
+		t.Fatalf("pos = %#v", pos)
 	}
 }
 
