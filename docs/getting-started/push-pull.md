@@ -22,6 +22,7 @@ cove pull <ref> --dry-run                         # validate the pull target
 cove pull <ref> --as my-macos --dry-run           # name the new VM
 cove pull <ref> --dry-run --manifest manifest.json # validate a local manifest
 cove image inspect -remote <ref> -json            # inspect registry metadata only
+cove image inspect -remote <ref> <ref> -json      # audit several registry refs
 ```
 
 Current implementation supports registry pulls for cove-native LZ4 manifests,
@@ -29,7 +30,9 @@ Tart manifests, and Lume tar-split manifests. Tags may point directly at an
 image manifest or at an OCI image index / Docker manifest list; cove resolves
 the index to a same-repository image manifest before parsing. Use
 `cove image inspect -remote` to fetch the registry manifest metadata without
-pulling disks, or `--manifest` to validate local manifest JSON.
+pulling disks. Multiple refs are inspected as a batch, with JSON emitted as an
+array for private catalog audits. Use `--manifest` to validate local manifest
+JSON.
 
 What happens:
 

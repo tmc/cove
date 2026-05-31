@@ -36,6 +36,29 @@ func TestInspectRemoteImageCoveManifest(t *testing.T) {
 	}
 }
 
+func TestInspectRemoteImagesBatchReportsErrors(t *testing.T) {
+	manifest, _, _ := pullCompressedChunkedTestManifest(t, []byte("abcdefghijklmnop"), 4)
+	srv := newOCIDispatchRegistry(t, manifest)
+	t.Cleanup(srv.Close)
+
+	out, err := InspectRemoteImages(context.Background(), []string{
+		"ghcr.io/me/dev-vm:v1",
+		"ghcr.io/me/dev-vm",
+	}, remoteInspectOptions{RegistryBaseURL: srv.URL})
+	if err == nil || !strings.Contains(err.Error(), "1 of 2 refs failed") {
+		t.Fatalf("InspectRemoteImages error = %v, want failed summary", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("outputs = %d, want 2", len(out))
+	}
+	if out[0].Format != "cove" || out[0].Error != "" {
+		t.Fatalf("first output = %+v, want cove success", out[0])
+	}
+	if out[1].Ref != "ghcr.io/me/dev-vm" || !strings.Contains(out[1].Error, "must include a tag or digest") {
+		t.Fatalf("second output = %+v, want ref error", out[1])
+	}
+}
+
 func TestInspectRemoteImageResolvesIndex(t *testing.T) {
 	manifest, _, _ := pullCompressedChunkedTestManifest(t, []byte("abcdefghijklmnop"), 4)
 	manifestData, manifestDigest := pullTestManifestData(t, manifest)
@@ -194,6 +217,41 @@ func TestWriteRemoteInspectText(t *testing.T) {
 	for _, want := range []string{"Remote image ghcr.io/me/dev-vm:v1", "format:          cove", "chunks:          2"} {
 		if !strings.Contains(b.String(), want) {
 			t.Fatalf("text missing %q:\n%s", want, b.String())
+		}
+	}
+}
+
+func TestWriteRemoteInspectBatchJSON(t *testing.T) {
+	var b strings.Builder
+	err := writeRemoteInspectJSONList(&b, []ImageRemoteInspectOutput{
+		{Ref: "ghcr.io/me/a:v1", Kind: "vm-oci", Format: "cove"},
+		{Ref: "ghcr.io/me/b", Error: "missing tag"},
+	})
+	if err != nil {
+		t.Fatalf("writeRemoteInspectJSONList: %v", err)
+	}
+	var out []ImageRemoteInspectOutput
+	if err := json.Unmarshal([]byte(b.String()), &out); err != nil {
+		t.Fatalf("unmarshal batch json: %v\n%s", err, b.String())
+	}
+	if len(out) != 2 || out[0].Format != "cove" || out[1].Error != "missing tag" {
+		t.Fatalf("batch json = %+v", out)
+	}
+}
+
+func TestWriteRemoteInspectBatchText(t *testing.T) {
+	var b strings.Builder
+	err := writeRemoteInspectTextList(&b, []ImageRemoteInspectOutput{
+		{Ref: "ghcr.io/me/a:v1", Kind: "vm-oci", Format: "cove"},
+		{Ref: "ghcr.io/me/b", Error: "missing tag"},
+	})
+	if err != nil {
+		t.Fatalf("writeRemoteInspectTextList: %v", err)
+	}
+	text := b.String()
+	for _, want := range []string{"Remote image ghcr.io/me/a:v1", "format:          cove", "Remote image ghcr.io/me/b", "error:           missing tag"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("batch text missing %q:\n%s", want, text)
 		}
 	}
 }

@@ -21,6 +21,7 @@ type remoteInspectOptions struct {
 
 type ImageRemoteInspectOutput struct {
 	Ref                 string `json:"ref"`
+	Error               string `json:"error,omitempty"`
 	ManifestDigest      string `json:"manifest_digest,omitempty"`
 	Kind                string `json:"kind"`
 	Format              string `json:"format"`
@@ -46,6 +47,25 @@ type ImageRemoteInspectOutput struct {
 	ImageTag            string `json:"image_tag,omitempty"`
 	Created             string `json:"created,omitempty"`
 	BuiltAt             string `json:"built_at,omitempty"`
+}
+
+func InspectRemoteImages(ctx context.Context, refs []string, opts remoteInspectOptions) ([]ImageRemoteInspectOutput, error) {
+	var firstErr error
+	out := make([]ImageRemoteInspectOutput, 0, len(refs))
+	for _, ref := range refs {
+		result, err := InspectRemoteImage(ctx, ref, opts)
+		if err != nil {
+			result = ImageRemoteInspectOutput{Ref: ref, Error: err.Error()}
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
+		out = append(out, result)
+	}
+	if firstErr != nil {
+		return out, fmt.Errorf("image inspect remote: %d of %d refs failed: %w", countRemoteInspectErrors(out), len(out), firstErr)
+	}
+	return out, nil
 }
 
 func InspectRemoteImage(ctx context.Context, refText string, opts remoteInspectOptions) (ImageRemoteInspectOutput, error) {
@@ -218,6 +238,16 @@ func inspectRemoteVMManifest(parsed ociimage.ParsedManifest, out ImageRemoteInsp
 	return out
 }
 
+func countRemoteInspectErrors(out []ImageRemoteInspectOutput) int {
+	var n int
+	for _, result := range out {
+		if result.Error != "" {
+			n++
+		}
+	}
+	return n
+}
+
 func writeRemoteInspectJSON(w io.Writer, out ImageRemoteInspectOutput) error {
 	data, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
@@ -227,8 +257,33 @@ func writeRemoteInspectJSON(w io.Writer, out ImageRemoteInspectOutput) error {
 	return err
 }
 
+func writeRemoteInspectJSONList(w io.Writer, out []ImageRemoteInspectOutput) error {
+	data, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode remote inspect output: %w", err)
+	}
+	_, err = w.Write(append(data, '\n'))
+	return err
+}
+
+func writeRemoteInspectTextList(w io.Writer, out []ImageRemoteInspectOutput) error {
+	for i, result := range out {
+		if i > 0 {
+			fmt.Fprintln(w)
+		}
+		if err := writeRemoteInspectText(w, result); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func writeRemoteInspectText(w io.Writer, out ImageRemoteInspectOutput) error {
 	fmt.Fprintf(w, "Remote image %s\n", out.Ref)
+	if out.Error != "" {
+		fmt.Fprintf(w, "  error:           %s\n", out.Error)
+		return nil
+	}
 	if out.ManifestDigest != "" {
 		fmt.Fprintf(w, "  manifest digest: %s\n", out.ManifestDigest)
 	}

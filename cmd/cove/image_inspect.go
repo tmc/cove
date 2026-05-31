@@ -173,19 +173,32 @@ func runImageInspect(env commandEnv, args []string) error {
 		if *diff {
 			return fmt.Errorf("image inspect: -remote cannot be combined with -diff")
 		}
-		if fs.NArg() != 1 {
-			return fmt.Errorf("usage: cove image inspect [-json] -remote <registry/ref:tag|digest>")
+		if fs.NArg() < 1 {
+			return fmt.Errorf("usage: cove image inspect [-json] -remote <registry/ref:tag|digest>...")
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), remoteInspectTimeout)
 		defer cancel()
-		out, err := InspectRemoteImage(ctx, fs.Arg(0), remoteInspectOptions{})
-		if err != nil {
+		if fs.NArg() == 1 {
+			out, err := InspectRemoteImage(ctx, fs.Arg(0), remoteInspectOptions{})
+			if err != nil {
+				return err
+			}
+			if *asJSON {
+				return writeRemoteInspectJSON(env.Stdout, out)
+			}
+			return writeRemoteInspectText(env.Stdout, out)
+		}
+		out, err := InspectRemoteImages(ctx, fs.Args(), remoteInspectOptions{})
+		if *asJSON {
+			if writeErr := writeRemoteInspectJSONList(env.Stdout, out); writeErr != nil {
+				return writeErr
+			}
 			return err
 		}
-		if *asJSON {
-			return writeRemoteInspectJSON(env.Stdout, out)
+		if writeErr := writeRemoteInspectTextList(env.Stdout, out); writeErr != nil {
+			return writeErr
 		}
-		return writeRemoteInspectText(env.Stdout, out)
+		return err
 	}
 	if *diff {
 		if fs.NArg() != 2 {
@@ -275,11 +288,12 @@ func runImageInspectViaWorker(env commandEnv, ref imagestore.Ref, asJSON bool) e
 func printImageInspectUsage(w io.Writer) {
 	fmt.Fprintln(w, `Usage: cove image inspect [-json] <name[:tag]>
        cove image inspect [-json] -diff <ref-a> <ref-b>
-       cove image inspect [-json] -remote <registry/ref:tag|digest>
+       cove image inspect [-json] -remote <registry/ref:tag|digest>...
 
 Show a local image manifest summary, downstream forks, and provenance. With
 -diff, compare two image manifests. With -remote, fetch only registry manifest
-metadata for cove-native, Tart, Lume, or cove image-store artifacts.
+metadata for cove-native, Tart, Lume, or cove image-store artifacts. Multiple
+remote refs are inspected as a batch; JSON output is an array only in batch mode.
 
 Flags:
   -json    emit machine-readable JSON
