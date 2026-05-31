@@ -21,12 +21,14 @@ type Store struct {
 	hosts         map[string]HostRecord
 	assignments   map[string]Assignment
 	warmPools     map[string]WarmPool
+	audit         []AuditEvent
 }
 
 type storeFile struct {
 	Hosts       []HostRecord `json:"hosts"`
 	Assignments []Assignment `json:"assignments,omitempty"`
 	WarmPools   []WarmPool   `json:"warm_pools,omitempty"`
+	AuditEvents []AuditEvent `json:"audit_events,omitempty"`
 }
 
 func OpenStore(path string, ttl time.Duration) (*Store, error) {
@@ -41,6 +43,7 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		hosts:         make(map[string]HostRecord),
 		assignments:   make(map[string]Assignment),
 		warmPools:     make(map[string]WarmPool),
+		audit:         nil,
 	}
 	if s.path == "" {
 		return s, nil
@@ -89,6 +92,13 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		}
 		s.warmPools[pool.Name] = pool
 	}
+	for _, event := range file.AuditEvents {
+		event = normalizeAuditEvent(event)
+		if event.ID == "" || event.Action == "" || event.Time.IsZero() {
+			continue
+		}
+		s.audit = append(s.audit, event)
+	}
 	return s, nil
 }
 
@@ -114,6 +124,18 @@ func (s *Store) Reconcile() (ReconcileResult, error) {
 	if !result.changed() {
 		return result, nil
 	}
+	s.appendAuditLocked(now, AuditEvent{
+		Actor:  "controller",
+		Action: "fleet.reconcile",
+		Fields: map[string]string{
+			"stale_workers":        strconv.Itoa(len(result.StaleWorkers)),
+			"requeued_assignments": strconv.Itoa(len(result.RequeuedAssignments)),
+			"replaced_assignments": strconv.Itoa(len(result.ReplacedAssignments)),
+			"warm_pool_created":    strconv.Itoa(len(result.WarmPoolAssignments)),
+			"warm_pool_canceled":   strconv.Itoa(len(result.WarmPoolCanceled)),
+			"warm_pool_cleanup":    strconv.Itoa(len(result.WarmPoolCleanup)),
+		},
+	})
 	if err := s.persistLocked(); err != nil {
 		return result, err
 	}
@@ -144,6 +166,7 @@ func (s *Store) UpsertHeartbeat(h WorkerHeartbeat) (HostRecord, error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	_, existed := s.hosts[id]
 	if old, ok := s.hosts[id]; ok {
 		if record.Host == "" {
 			record.Host = old.Host
@@ -156,6 +179,15 @@ func (s *Store) UpsertHeartbeat(h WorkerHeartbeat) (HostRecord, error) {
 		}
 	}
 	s.hosts[id] = record
+	if !existed {
+		s.appendAuditLocked(now, AuditEvent{
+			Actor:      "worker:" + id,
+			Action:     "worker.register",
+			TargetType: "worker",
+			TargetID:   id,
+			WorkerID:   id,
+		})
+	}
 	if err := s.persistLocked(); err != nil {
 		return HostRecord{}, err
 	}
@@ -183,6 +215,14 @@ func (s *Store) CordonWorker(id, reason string) (HostRecord, error) {
 		record.Status = "cordoned"
 	}
 	s.hosts[id] = record
+	s.appendAuditLocked(now, AuditEvent{
+		Actor:      "controller",
+		Action:     "worker.cordon",
+		TargetType: "worker",
+		TargetID:   id,
+		WorkerID:   id,
+		Fields:     map[string]string{"reason": record.CordonReason},
+	})
 	if err := s.persistLocked(); err != nil {
 		return HostRecord{}, err
 	}
@@ -210,6 +250,13 @@ func (s *Store) UncordonWorker(id string) (HostRecord, error) {
 		record.Status = "ready"
 	}
 	s.hosts[id] = record
+	s.appendAuditLocked(now, AuditEvent{
+		Actor:      "controller",
+		Action:     "worker.uncordon",
+		TargetType: "worker",
+		TargetID:   id,
+		WorkerID:   id,
+	})
 	if err := s.persistLocked(); err != nil {
 		return HostRecord{}, err
 	}
@@ -278,6 +325,18 @@ func (s *Store) Report(r WorkerReport) (HostRecord, error) {
 				assignment.LeaseExpires = received.Add(s.assignmentTTL)
 			}
 			s.assignments[assignment.ID] = assignment
+			if auditReportStatus(storedStatus) {
+				s.appendAuditLocked(received, AuditEvent{
+					Actor:        "worker:" + id,
+					Action:       "assignment.report",
+					TargetType:   "assignment",
+					TargetID:     assignment.ID,
+					WorkerID:     id,
+					AssignmentID: assignment.ID,
+					Status:       storedStatus,
+					Fields:       map[string]string{"exit_code": strconv.Itoa(r.ExitCode)},
+				})
+			}
 		}
 	}
 	if err := s.persistLocked(); err != nil {
@@ -337,6 +396,19 @@ func (s *Store) CreateAssignment(a Assignment) (Assignment, error) {
 	a.LeaseExpires = time.Time{}
 	a.LastReport = nil
 	s.assignments[id] = a
+	s.appendAuditLocked(now, AuditEvent{
+		Actor:        "controller",
+		Action:       "assignment.create",
+		TargetType:   "assignment",
+		TargetID:     id,
+		WorkerID:     workerID,
+		AssignmentID: id,
+		Fields: map[string]string{
+			"verb":      verb,
+			"policy":    policy,
+			"image_ref": imageRef,
+		},
+	})
 	if err := s.persistLocked(); err != nil {
 		return Assignment{}, err
 	}
@@ -395,6 +467,19 @@ func (s *Store) EnsureWarmPool(req WarmPoolRequest) (WarmPoolResult, error) {
 	downsized := s.downsizeWarmPoolLocked(now, pool)
 	created := s.ensureWarmPoolLocked(now, pool)
 	status := s.warmPoolStatusLocked(pool.Name)
+	s.appendAuditLocked(now, AuditEvent{
+		Actor:      "controller",
+		Action:     "warm_pool.ensure",
+		TargetType: "warm_pool",
+		TargetID:   pool.Name,
+		Fields: map[string]string{
+			"size":      strconv.Itoa(pool.Size),
+			"created":   strconv.Itoa(len(created)),
+			"canceled":  strconv.Itoa(len(downsized.canceled)),
+			"cleanup":   strconv.Itoa(len(downsized.cleanup)),
+			"image_ref": pool.ImageRef,
+		},
+	})
 	if err := s.persistLocked(); err != nil {
 		return WarmPoolResult{Pool: status}, err
 	}
@@ -433,6 +518,17 @@ func (s *Store) DeleteWarmPool(name string) (WarmPoolDeleteResult, error) {
 	}
 	delete(s.warmPools, name)
 	retired := s.retireWarmPoolLocked(now, name)
+	s.appendAuditLocked(now, AuditEvent{
+		Actor:      "controller",
+		Action:     "warm_pool.delete",
+		TargetType: "warm_pool",
+		TargetID:   name,
+		Fields: map[string]string{
+			"canceled": strconv.Itoa(len(retired.canceled)),
+			"cleanup":  strconv.Itoa(len(retired.cleanup)),
+			"deferred": strconv.Itoa(len(retired.deferred)),
+		},
+	})
 	if err := s.persistLocked(); err != nil {
 		return WarmPoolDeleteResult{}, err
 	}
@@ -487,6 +583,18 @@ func (s *Store) ClaimWarmPool(req WarmPoolClaimRequest) (WarmPoolClaimResult, er
 	}
 	s.assignments[assignment.ID] = assignment
 	s.ensureWarmPoolLocked(now, pool)
+	s.appendAuditLocked(now, AuditEvent{
+		Actor:        "controller",
+		Action:       "warm_pool.claim",
+		TargetType:   "warm_pool",
+		TargetID:     name,
+		WorkerID:     slot.WorkerID,
+		AssignmentID: assignment.ID,
+		Fields: map[string]string{
+			"slot":    slot.ID,
+			"vm_name": vmName,
+		},
+	})
 	if err := s.persistLocked(); err != nil {
 		return WarmPoolClaimResult{}, err
 	}
@@ -552,6 +660,18 @@ func (s *Store) PrepareImage(req ImagePrepareRequest) (ImagePrepareResult, error
 		return result, fmt.Errorf("no workers match image prepare")
 	}
 	if len(result.Assignments) > 0 || reconciled.changed() {
+		if len(result.Assignments) > 0 {
+			s.appendAuditLocked(now, AuditEvent{
+				Actor:      "controller",
+				Action:     "image.prepare",
+				TargetType: "image",
+				TargetID:   imageRef,
+				Fields: map[string]string{
+					"source_ref":  sourceRef,
+					"assignments": strconv.Itoa(len(result.Assignments)),
+				},
+			})
+		}
 		if err := s.persistLocked(); err != nil {
 			return result, err
 		}
@@ -601,6 +721,18 @@ func (s *Store) PushImageGC(req ImageGCRequest) (ImageGCResult, error) {
 		return result, fmt.Errorf("no workers match image gc")
 	}
 	if len(result.Assignments) > 0 || reconciled.changed() {
+		if len(result.Assignments) > 0 {
+			s.appendAuditLocked(now, AuditEvent{
+				Actor:      "controller",
+				Action:     "image.gc",
+				TargetType: "image",
+				Fields: map[string]string{
+					"assignments": strconv.Itoa(len(result.Assignments)),
+					"apply":       strconv.FormatBool(req.Apply),
+					"older_than":  olderThan,
+				},
+			})
+		}
 		if err := s.persistLocked(); err != nil {
 			return result, err
 		}
@@ -650,6 +782,18 @@ func (s *Store) PushLifecyclePolicy(req LifecyclePolicyRequest) (LifecyclePolicy
 		return result, fmt.Errorf("no workers match lifecycle policy")
 	}
 	if len(result.Assignments) > 0 || reconciled.changed() {
+		if len(result.Assignments) > 0 {
+			s.appendAuditLocked(now, AuditEvent{
+				Actor:      "controller",
+				Action:     "policy.lifecycle",
+				TargetType: "vm",
+				TargetID:   vmName,
+				Fields: map[string]string{
+					"assignments": strconv.Itoa(len(result.Assignments)),
+					"clear":       strconv.FormatBool(req.Clear),
+				},
+			})
+		}
 		if err := s.persistLocked(); err != nil {
 			return result, err
 		}
@@ -699,6 +843,18 @@ func (s *Store) PushStorageBudget(req StorageBudgetRequest) (StorageBudgetResult
 		return result, fmt.Errorf("no workers match storage budget")
 	}
 	if len(result.Assignments) > 0 || reconciled.changed() {
+		if len(result.Assignments) > 0 {
+			s.appendAuditLocked(now, AuditEvent{
+				Actor:      "controller",
+				Action:     "storage.budget",
+				TargetType: "storage",
+				Fields: map[string]string{
+					"assignments": strconv.Itoa(len(result.Assignments)),
+					"clear":       strconv.FormatBool(req.Clear),
+					"target":      strings.TrimSpace(req.Target),
+				},
+			})
+		}
 		if err := s.persistLocked(); err != nil {
 			return result, err
 		}
@@ -748,6 +904,18 @@ func (s *Store) PushStoragePrune(req StoragePruneRequest) (StoragePruneResult, e
 		return result, fmt.Errorf("no workers match storage prune")
 	}
 	if len(result.Assignments) > 0 || reconciled.changed() {
+		if len(result.Assignments) > 0 {
+			s.appendAuditLocked(now, AuditEvent{
+				Actor:      "controller",
+				Action:     "storage.prune",
+				TargetType: "storage",
+				Fields: map[string]string{
+					"assignments": strconv.Itoa(len(result.Assignments)),
+					"apply":       strconv.FormatBool(req.Apply),
+					"category":    strings.TrimSpace(req.Category),
+				},
+			})
+		}
 		if err := s.persistLocked(); err != nil {
 			return result, err
 		}
@@ -785,6 +953,15 @@ func (s *Store) AwaitAssignment(id string) (*Assignment, error) {
 		assignment.LeaseExpires = now.Add(s.assignmentTTL)
 		assignment.Updated = now
 		s.assignments[assignment.ID] = assignment
+		s.appendAuditLocked(now, AuditEvent{
+			Actor:        "worker:" + id,
+			Action:       "assignment.lease",
+			TargetType:   "assignment",
+			TargetID:     assignment.ID,
+			WorkerID:     id,
+			AssignmentID: assignment.ID,
+			Status:       "leased",
+		})
 		if err := s.persistLocked(); err != nil {
 			return nil, err
 		}
@@ -829,6 +1006,16 @@ func (s *Store) ListWarmPools() []WarmPoolStatus {
 		out = append(out, s.warmPoolStatusLocked(pool.Name))
 	}
 	return out
+}
+
+func (s *Store) ListAudit(limit int) []AuditEvent {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	events := s.sortedAuditLocked()
+	if limit > 0 && len(events) > limit {
+		events = events[len(events)-limit:]
+	}
+	return cloneAuditEvents(events)
 }
 
 func (s *Store) Get(id string) (HostRecord, bool) {
@@ -1003,7 +1190,8 @@ func (s *Store) persistLocked() error {
 	})
 	assignments := s.sortedAssignmentsLocked()
 	warmPools := s.sortedWarmPoolsLocked()
-	data, err := json.MarshalIndent(storeFile{Hosts: hosts, Assignments: assignments, WarmPools: warmPools}, "", "  ")
+	audit := s.sortedAuditLocked()
+	data, err := json.MarshalIndent(storeFile{Hosts: hosts, Assignments: assignments, WarmPools: warmPools, AuditEvents: audit}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode fleet store: %w", err)
 	}
@@ -1054,11 +1242,40 @@ func (s *Store) sortedWarmPoolsLocked() []WarmPool {
 	return pools
 }
 
+func (s *Store) sortedAuditLocked() []AuditEvent {
+	events := cloneAuditEvents(s.audit)
+	sort.Slice(events, func(i, j int) bool {
+		if !events[i].Time.Equal(events[j].Time) {
+			return events[i].Time.Before(events[j].Time)
+		}
+		return events[i].ID < events[j].ID
+	})
+	return events
+}
+
 func (s *Store) nextAssignmentIDLocked(now time.Time) string {
 	base := fmt.Sprintf("assignment-%d", now.UnixNano())
 	id := base
 	for i := 2; ; i++ {
 		if _, ok := s.assignments[id]; !ok {
+			return id
+		}
+		id = fmt.Sprintf("%s-%d", base, i)
+	}
+}
+
+func (s *Store) nextAuditIDLocked(now time.Time) string {
+	base := fmt.Sprintf("audit-%d", now.UnixNano())
+	id := base
+	for i := 2; ; i++ {
+		found := false
+		for _, event := range s.audit {
+			if event.ID == id {
+				found = true
+				break
+			}
+		}
+		if !found {
 			return id
 		}
 		id = fmt.Sprintf("%s-%d", base, i)
@@ -1091,6 +1308,23 @@ func cloneWarmPool(in WarmPool) WarmPool {
 	out := in
 	out.RequiredLabels = cloneLabels(in.RequiredLabels)
 	out.Args = cloneStrings(in.Args)
+	return out
+}
+
+func cloneAuditEvent(in AuditEvent) AuditEvent {
+	out := in
+	out.Fields = cloneLabels(in.Fields)
+	return out
+}
+
+func cloneAuditEvents(in []AuditEvent) []AuditEvent {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]AuditEvent, len(in))
+	for i := range in {
+		out[i] = cloneAuditEvent(in[i])
+	}
 	return out
 }
 
@@ -1698,6 +1932,46 @@ func (s *Store) activeWarmPoolCleanupLocked(slotID string) bool {
 		}
 	}
 	return false
+}
+
+func (s *Store) appendAuditLocked(now time.Time, event AuditEvent) AuditEvent {
+	event = normalizeAuditEvent(event)
+	if event.Time.IsZero() {
+		event.Time = now
+	}
+	if event.ID == "" {
+		event.ID = s.nextAuditIDLocked(event.Time)
+	}
+	if event.Actor == "" {
+		event.Actor = "controller"
+	}
+	s.audit = append(s.audit, cloneAuditEvent(event))
+	return event
+}
+
+func normalizeAuditEvent(event AuditEvent) AuditEvent {
+	event.ID = strings.TrimSpace(event.ID)
+	event.Actor = strings.TrimSpace(event.Actor)
+	event.Action = strings.TrimSpace(event.Action)
+	event.TargetType = strings.TrimSpace(event.TargetType)
+	event.TargetID = strings.TrimSpace(event.TargetID)
+	event.WorkerID = strings.TrimSpace(event.WorkerID)
+	event.AssignmentID = strings.TrimSpace(event.AssignmentID)
+	event.Status = strings.TrimSpace(event.Status)
+	event.Fields = cloneLabels(event.Fields)
+	if !event.Time.IsZero() {
+		event.Time = event.Time.UTC()
+	}
+	return event
+}
+
+func auditReportStatus(status string) bool {
+	switch status {
+	case "running", "ready", "leased", "claimed", "draining":
+		return false
+	default:
+		return strings.TrimSpace(status) != ""
+	}
 }
 
 func imagePrepareArgs(sourceRef, imageRef string, force bool) []string {

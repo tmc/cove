@@ -43,6 +43,50 @@ func TestStoreHeartbeatPersistsAndSorts(t *testing.T) {
 	}
 }
 
+func TestStoreAuditsFleetMutations(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "fleet.json")
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1"}); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.CordonWorker("worker-1", "maintenance"); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.UncordonWorker("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	created, err := store.CreateAssignment(Assignment{WorkerID: "worker-1", Verb: "noop"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := store.ListAudit(0)
+	for _, want := range []string{"worker.register", "worker.cordon", "worker.uncordon", "assignment.create"} {
+		if auditAction(events, want) == nil {
+			t.Fatalf("audit events missing %q: %+v", want, events)
+		}
+	}
+	event := auditAction(events, "assignment.create")
+	if event.AssignmentID != created.ID || event.WorkerID != "worker-1" || event.Fields["verb"] != "noop" {
+		t.Fatalf("assignment audit = %+v, want assignment %s worker-1 noop", event, created.ID)
+	}
+
+	reopened, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event := auditAction(reopened.ListAudit(0), "assignment.create"); event == nil || event.AssignmentID != created.ID {
+		t.Fatalf("reopened audit missing assignment create: %+v", reopened.ListAudit(0))
+	}
+}
+
 func TestStoreMarksStaleAfterTTL(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
 	store := NewMemoryStore(time.Minute)
@@ -120,6 +164,9 @@ func TestStoreAssignmentsLeaseReportAndPersist(t *testing.T) {
 	}
 	if reopenedAssignment.Status != "complete" || reopenedAssignment.LastReport == nil || reopenedAssignment.LastReport.Status != "complete" {
 		t.Fatalf("reopened assignment = %+v", reopenedAssignment)
+	}
+	if event := auditAction(reopened.ListAudit(0), "assignment.report"); event == nil || event.AssignmentID != "assignment-1" || event.Status != "complete" {
+		t.Fatalf("reopened audit missing terminal report: %+v", reopened.ListAudit(0))
 	}
 }
 
@@ -1779,6 +1826,33 @@ func TestHandlerWarmPoolGetDelete(t *testing.T) {
 	}
 }
 
+func TestHandlerAudit(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1"}, &record)
+	var created Assignment
+	postJSON(t, server.URL+"/v1/assignments", Assignment{WorkerID: "worker-1", Verb: "noop"}, &created)
+
+	var list struct {
+		Events []AuditEvent `json:"events"`
+	}
+	getJSON(t, server.URL+"/v1/audit?limit=1", &list)
+	if len(list.Events) != 1 || list.Events[0].Action != "assignment.create" || list.Events[0].AssignmentID != created.ID {
+		t.Fatalf("audit events = %+v, want latest assignment.create %s", list.Events, created.ID)
+	}
+	resp, err := http.Get(server.URL + "/v1/audit?limit=bad")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("bad audit limit status = %d, want 400", resp.StatusCode)
+	}
+}
+
 func TestHandlerReconcileEndpoint(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
 	store := NewMemoryStore(time.Minute)
@@ -1872,6 +1946,15 @@ func deleteJSON(t *testing.T, url string, out any) {
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func auditAction(events []AuditEvent, action string) *AuditEvent {
+	for i := range events {
+		if events[i].Action == action {
+			return &events[i]
+		}
+	}
+	return nil
 }
 
 func equalStrings(a, b []string) bool {

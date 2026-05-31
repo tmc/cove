@@ -289,7 +289,9 @@ governance/hosted, with scheduling as the free adoption driver — not the SKU.
 - **Audit log:** single-host `~/.vz/metrics.jsonl` stays MIT; the fleet-wide
   "user X forced-stopped tenant Z's VM" log lives on the controller (paid),
   appending the authenticated SSO/service-account identity to worker-reported
-  lifecycle events.
+  lifecycle events. The first controller audit feed exists now with
+  `controller`/`worker:<id>` actors; the remaining work is authenticated actor
+  binding and authorization filters.
 
 ## Hosted offering (use case C)
 
@@ -335,7 +337,7 @@ Each slice is independently shippable. The MIT/paid boundary is at **Slice 5**.
 | 6 | Fleet-wide policy & GC | controller pushes lifecycle policy, image-GC, and storage budget/prune down worker streams; workers report results | PAID | Slice 5 | Fulfills 034-deferred fleet-wide policy; image-GC, VM lifecycle-policy, and storage budget/prune push have landed. |
 | 7 | Top-k bin-pack scheduler + base-image affinity + warm-pool | controller-side placement replacing client-side least-loaded; base-image affinity; fork-warm-pool quota plus agent-ready slot claim, downsize, delete, and cleanup | PAID | Slice 5 | Resolves oversubscription races; lights up cove's image-locality edge for CI/agent pools. |
 | 8 | Hosted API + SDK provider abstraction + metering | REST `/v1/sandboxes` surface; `provider=local\|cloud` SDK; per-resource metering; BYO-LLM-key | PAID (hosted) | Slice 7 | Use case C; competes with Daytona/Cua on the macOS wedge. |
-| 9 | Fleet RBAC / SSO / audit | SAML/OIDC, namespaces, fleet audit log | PAID | Slice 5 | Enterprise-governance monetization axis (Teleport line); the durable revenue, not the scheduler. |
+| 9 | Fleet RBAC / SSO / audit | SAML/OIDC, namespaces, fleet audit log; initial persisted audit feed has started | PAID | Slice 5 | Enterprise-governance monetization axis (Teleport line); the durable revenue, not the scheduler. |
 | — | Federation (deferred) | independent per-site controllers, no cross-site consensus | PAID | Slice 7 | Multi-datacenter scale; deliberately deferred to avoid premature distributed-systems complexity. |
 
 *(Inferences in this plan: the `cove-fleetd` binary name, the `--fleet-url`

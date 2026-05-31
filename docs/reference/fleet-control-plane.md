@@ -71,6 +71,21 @@ curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/uncordon
 curl -X POST http://127.0.0.1:9758/v1/reconcile
 ```
 
+Audit endpoint:
+
+```bash
+curl http://127.0.0.1:9758/v1/audit
+curl http://127.0.0.1:9758/v1/audit?limit=50
+```
+
+The controller persists audit events in the fleet store for high-value state
+changes: worker registration, cordon lifecycle, assignment creation, assignment
+leases, terminal assignment reports, fleet reconcile changes, image/policy/
+storage fan-out, and warm-pool ensure/claim/delete operations. Until the paid
+auth layer lands, `actor` is the control-plane source (`controller` or
+`worker:<id>`); the event shape is intended to carry SSO or service-account
+identity later without changing the feed.
+
 Image preparation endpoint:
 
 ```bash
@@ -265,4 +280,4 @@ controller reconciliation, worker cordon lifecycle, fleet image preparation,
 fleet image-GC push, lifecycle-policy push, storage budget/prune push, retained
 placement plans, and a first fork warm-pool quota reconciler with agent-ready
 slot claim and guest `Exec` handoff through the `cove shell` path plus
-claimed-slot stop and downsize cleanup.
+claimed-slot stop and downsize cleanup, plus a persistent fleet audit feed.

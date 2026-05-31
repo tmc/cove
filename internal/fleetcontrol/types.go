@@ -76,6 +76,19 @@ type ReconcileResult struct {
 	WarmPoolCleanup     []string `json:"warm_pool_cleanup,omitempty"`
 }
 
+type AuditEvent struct {
+	ID           string            `json:"id"`
+	Time         time.Time         `json:"time"`
+	Actor        string            `json:"actor,omitempty"`
+	Action       string            `json:"action"`
+	TargetType   string            `json:"target_type,omitempty"`
+	TargetID     string            `json:"target_id,omitempty"`
+	WorkerID     string            `json:"worker_id,omitempty"`
+	AssignmentID string            `json:"assignment_id,omitempty"`
+	Status       string            `json:"status,omitempty"`
+	Fields       map[string]string `json:"fields,omitempty"`
+}
+
 type WorkerLifecycle struct {
 	Reason string `json:"reason,omitempty"`
 }

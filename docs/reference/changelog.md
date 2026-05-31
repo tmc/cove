@@ -56,6 +56,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `cove-fleetd` now exposes `POST /v1/storage/budget` and
   `POST /v1/storage/prune` to fan out storage budget set/clear and dry-run or
   applying prune assignments across matching ready workers.
+- `cove-fleetd` now persists controller audit events and exposes `GET /v1/audit`
+  with optional `limit`, covering worker registration, cordon lifecycle,
+  assignment creation/lease/report, reconcile changes, policy/image/storage
+  fan-out, and warm-pool lifecycle operations.
 - `cove-fleetd` assignment placement now supports `policy:"bin-pack"` plus
   `resources.vms` hints and worker `max_vms` slot caps, packing work onto the
   densest ready worker that still fits.

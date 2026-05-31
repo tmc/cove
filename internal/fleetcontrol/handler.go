@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -42,6 +43,9 @@ func Handler(store *Store) http.Handler {
 			return
 		}
 		writeJSON(w, http.StatusOK, result)
+	})
+	mux.HandleFunc("/v1/audit", func(w http.ResponseWriter, r *http.Request) {
+		handleAudit(w, r, store)
 	})
 	mux.HandleFunc("/v1/storage/budget", func(w http.ResponseWriter, r *http.Request) {
 		handleStorageBudget(w, r, store)
@@ -104,6 +108,23 @@ func handleWorkerHeartbeat(w http.ResponseWriter, r *http.Request, store *Store,
 		return
 	}
 	writeJSON(w, http.StatusOK, record)
+}
+
+func handleAudit(w http.ResponseWriter, r *http.Request, store *Store) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	limit := 0
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 0 {
+			writeError(w, http.StatusBadRequest, "audit limit must be non-negative")
+			return
+		}
+		limit = n
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"events": store.ListAudit(limit)})
 }
 
 func handleWorker(w http.ResponseWriter, r *http.Request, store *Store) {
