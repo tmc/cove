@@ -699,6 +699,7 @@ type SandboxMeteringRecord struct {
 type SandboxMeteringSummary struct {
 	Namespace        string `json:"namespace,omitempty"`
 	SandboxID        string `json:"sandbox_id,omitempty"`
+	AssignmentID     string `json:"assignment_id,omitempty"`
 	WorkerID         string `json:"worker_id,omitempty"`
 	Records          int    `json:"records"`
 	DurationMillis   int64  `json:"duration_millis"`

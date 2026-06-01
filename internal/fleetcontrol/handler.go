@@ -2320,6 +2320,9 @@ func handleAssignment(w http.ResponseWriter, r *http.Request, store *Store) {
 		case "events":
 			handleAssignmentEvents(w, r, store, parts[0])
 			return
+		case "metering":
+			handleAssignmentMetering(w, r, store, parts[0])
+			return
 		case "reports":
 			handleAssignmentReports(w, r, store, parts[0])
 			return
@@ -2406,6 +2409,27 @@ func assignmentEventsFilterFromRequest(r *http.Request, namespace, id string) (A
 		filter.Offset = offset
 	}
 	return filter, nil
+}
+
+func handleAssignmentMetering(w http.ResponseWriter, r *http.Request, store *Store, id string) {
+	if id == "" || r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	if !reconcile(w, store) {
+		return
+	}
+	assignment, ok := store.GetAssignment(id)
+	if !ok || !canAccessNamespace(identity, assignment.Namespace) {
+		writeError(w, http.StatusNotFound, "assignment not found")
+		return
+	}
+	status := strings.TrimSpace(r.URL.Query().Get("status"))
+	writeJSON(w, http.StatusOK, store.ListAssignmentMetering(assignment.Namespace, id, status))
 }
 
 func handleAssignmentReports(w http.ResponseWriter, r *http.Request, store *Store, id string) {

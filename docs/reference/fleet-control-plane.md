@@ -711,6 +711,7 @@ curl 'http://127.0.0.1:9758/v1/assignments?verb=cove&image_ref=macos-runner:late
 curl http://127.0.0.1:9758/v1/assignments/probe-1
 curl 'http://127.0.0.1:9758/v1/assignments/probe-1/events?limit=50'
 curl 'http://127.0.0.1:9758/v1/assignments/probe-1/reports?limit=50'
+curl 'http://127.0.0.1:9758/v1/assignments/probe-1/metering?status=running'
 curl -X POST http://127.0.0.1:9758/v1/assignments/probe-1/cancel \
   -H 'content-type: application/json' \
   -d '{"reason":"bad input"}'
@@ -743,6 +744,10 @@ service-account tokens can only read assignment events in their namespace.
 for the assignment, including active `running` or `ready` renewals and terminal
 status reports with captured stdout, stderr, error, and exit code. It accepts
 `worker_id`, `status`, `offset`, and `limit`, and is namespace-scoped like the
+assignment itself.
+`GET /v1/assignments/{id}/metering` returns persisted sandbox active-interval
+metering records for the assignment plus aggregate duration, VM, CPU, and
+memory summaries. It accepts `status` and is namespace-scoped like the
 assignment itself.
 Reconciliation marks expired workers stale, requeues expired assignment leases,
 rejects late reports for reclaimed leases, and can move a policy-placed

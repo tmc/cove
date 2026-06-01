@@ -866,6 +866,10 @@ func TestStoreSandboxMeteringRecordsRunningIntervals(t *testing.T) {
 	if len(workerMetering.Records) != 1 || workerMetering.Summary.WorkerID != "worker-1" || workerMetering.Summary.DurationMillis != 2000 || workerMetering.Summary.CPUMillis != 4000 {
 		t.Fatalf("worker running metering = %+v, want one 2s worker record", workerMetering)
 	}
+	assignmentMetering := store.ListAssignmentMetering("team-a", sandbox.Assignment.ID, "running")
+	if len(assignmentMetering.Records) != 1 || assignmentMetering.Summary.AssignmentID != sandbox.Assignment.ID || assignmentMetering.Summary.DurationMillis != 2000 || assignmentMetering.Summary.CPUMillis != 4000 {
+		t.Fatalf("assignment running metering = %+v, want one 2s assignment record", assignmentMetering)
+	}
 	reopened, err := OpenStore(path, time.Minute)
 	if err != nil {
 		t.Fatal(err)
@@ -5412,6 +5416,10 @@ func TestHandlerSandboxMetering(t *testing.T) {
 	if len(metering.Records) != 1 || metering.Summary.WorkerID != "worker-1" || metering.Summary.DurationMillis != 2000 || metering.Summary.CPUMillis != 4000 {
 		t.Fatalf("worker metering = %+v, want worker-1 running 2s/4cpu-s", metering)
 	}
+	getJSON(t, server.URL+"/v1/assignments/"+leased.ID+"/metering?status=running", &metering)
+	if len(metering.Records) != 1 || metering.Summary.AssignmentID != leased.ID || metering.Summary.DurationMillis != 2000 || metering.Summary.CPUMillis != 4000 {
+		t.Fatalf("assignment metering = %+v, want assignment running 2s/4cpu-s", metering)
+	}
 	getJSONAuth(t, server.URL+"/v1/metering/sandboxes?sandbox_id=job-1", "token-a", &metering)
 	if len(metering.Records) != 2 || metering.Summary.Namespace != "team-a" {
 		t.Fatalf("team-a metering = %+v, want scoped records", metering)
@@ -5425,6 +5433,12 @@ func TestHandlerSandboxMetering(t *testing.T) {
 	}
 	if code := getJSONStatus(t, server.URL+"/v1/workers/missing/metering", ""); code != http.StatusNotFound {
 		t.Fatalf("missing worker metering status = %d, want 404", code)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/assignments/missing/metering", ""); code != http.StatusNotFound {
+		t.Fatalf("missing assignment metering status = %d, want 404", code)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/assignments/"+leased.ID+"/metering", "token-b"); code != http.StatusNotFound {
+		t.Fatalf("cross-namespace assignment metering status = %d, want 404", code)
 	}
 	if code := getJSONStatus(t, server.URL+"/v1/workers/worker-1/metering", "token-a"); code != http.StatusForbidden {
 		t.Fatalf("scoped worker metering status = %d, want 403", code)

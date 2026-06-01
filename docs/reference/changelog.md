@@ -17,6 +17,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `cove-fleetd` now exposes `GET /v1/workers/{id}/sandboxes` for
   worker-scoped hosted sandbox inventory with namespace, status, image ref,
   offset, and limit filters.
+- `cove-fleetd` now exposes `GET /v1/assignments/{id}/metering` for
+  assignment-scoped sandbox usage records with status filtering and aggregate
+  duration, VM, CPU, and memory summaries.
 - `cove-fleetd` now exposes `GET /v1/assignments/{id}/events` for
   assignment-scoped audit history, and global audit queries now accept
   `assignment_id`.
