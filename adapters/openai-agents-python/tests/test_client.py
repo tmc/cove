@@ -104,6 +104,7 @@ def test_backend_options_round_trip_without_agents() -> None:
         required_labels={"zone": "desk"},
         required_capabilities=("ram-overlay", "gui"),
         max_active_sandboxes=3,
+        priority=5,
         fleet_url="http://127.0.0.1:9758",
         workspace_root="/tmp/work",
         gui=True,
@@ -117,6 +118,7 @@ def test_backend_options_round_trip_without_agents() -> None:
     assert opts.model_dump()["required_labels"] == {"zone": "desk"}
     assert opts.model_dump()["required_capabilities"] == ("ram-overlay", "gui")
     assert opts.model_dump()["max_active_sandboxes"] == 3
+    assert opts.model_dump()["priority"] == 5
     assert opts.model_dump()["fleet_url"] == "http://127.0.0.1:9758"
     assert opts.model_dump()["extra_run_args"] == ("-disposable",)
 
@@ -149,6 +151,7 @@ def test_fleet_client_create_wait_exec_and_delete() -> None:
             sandbox_id="job-1",
             namespace="team-a",
             max_active_sandboxes=3,
+            priority=5,
         )
         sandboxes = client.list()
         assert sandboxes[0]["id"] == "job-1"
@@ -202,6 +205,7 @@ def test_fleet_client_create_wait_exec_and_delete() -> None:
         assert create["body"]["required_labels"] == {"zone": "desk"}
         assert create["body"]["required_capabilities"] == ["ram-overlay", "gui"]
         assert create["body"]["max_active_sandboxes"] == 3
+        assert create["body"]["priority"] == 5
         assert create["body"]["namespace"] == "team-a"
         assert server.requests[1]["query"]["namespace"] == ["team-a"]
         assert server.requests[2]["query"]["namespace"] == ["team-a"]
@@ -225,6 +229,13 @@ def test_fleet_client_create_validation() -> None:
             api_key="secret",
             image_ref="base:v1",
             max_active_sandboxes=-1,
+        )
+    with pytest.raises(ValueError, match="priority must be non-negative"):
+        CoveFleetClient.create_sandbox(
+            fleet_url="https://fleet.example",
+            api_key="secret",
+            image_ref="base:v1",
+            priority=-1,
         )
 
 
@@ -980,6 +991,7 @@ def test_fleet_client_inventory() -> None:
             required_capabilities=("ram-overlay", "asif", ""),
             anti_affinity_key="ci/buildkite",
             resources={"vms": 1, "cpus": 4},
+            priority=8,
             verb="cove",
             args=("run", "-fork-from", "base:v1", "-ephemeral"),
         )
@@ -987,6 +999,7 @@ def test_fleet_client_inventory() -> None:
         assert created["worker_id"] == "worker-1"
         assert created["policy"] == "bin-pack"
         assert created["resources"]["cpus"] == 4
+        assert created["priority"] == 8
 
         assignments = CoveFleetClient.list_assignments(
             fleet_url=server.url,
@@ -1035,6 +1048,7 @@ def test_fleet_client_inventory() -> None:
         assert create_body["required_capabilities"] == ["ram-overlay", "asif"]
         assert create_body["anti_affinity_key"] == "ci/buildkite"
         assert create_body["resources"] == {"vms": 1, "cpus": 4}
+        assert create_body["priority"] == 8
         assert create_body["args"] == ["run", "-fork-from", "base:v1", "-ephemeral"]
         assert server.requests[-2]["query"]["namespace"] == ["team-a"]
         assert server.requests[-2]["query"]["sandbox_id"] == ["job-1"]
@@ -1052,6 +1066,13 @@ def test_fleet_client_inventory_validation() -> None:
         CoveFleetClient.list_assignments(fleet_url="https://fleet.example", api_key="secret", offset=-1)
     with pytest.raises(ValueError, match="assignment verb is required"):
         CoveFleetClient.create_assignment(fleet_url="https://fleet.example", api_key="secret", verb="")
+    with pytest.raises(ValueError, match="assignment priority must be non-negative"):
+        CoveFleetClient.create_assignment(
+            fleet_url="https://fleet.example",
+            api_key="secret",
+            verb="noop",
+            priority=-1,
+        )
     with pytest.raises(ValueError, match="assignment id is required"):
         CoveFleetClient.get_assignment(fleet_url="https://fleet.example", api_key="secret", assignment_id="")
 
@@ -1999,6 +2020,7 @@ def _created_assignment() -> dict[str, object]:
     assignment["required_capabilities"] = ["ram-overlay", "asif"]
     assignment["anti_affinity_key"] = "ci/buildkite"
     assignment["resources"] = {"vms": 1, "cpus": 4}
+    assignment["priority"] = 8
     return assignment
 
 

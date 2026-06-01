@@ -1033,6 +1033,9 @@ func (s *Store) CreateAssignmentActor(actor string, a Assignment) (Assignment, e
 	if verb == "" {
 		return Assignment{}, fmt.Errorf("assignment verb required")
 	}
+	if a.Priority < 0 {
+		return Assignment{}, fmt.Errorf("assignment priority must be non-negative")
+	}
 	workerID := strings.TrimSpace(a.WorkerID)
 	policy, imageRef, imageManifestDigest, antiAffinityKey, requiredLabels, requiredCapabilities, resources, err := normalizePlacementFields(a)
 	if err != nil {
@@ -1093,6 +1096,14 @@ func (s *Store) CreateAssignmentActor(actor string, a Assignment) (Assignment, e
 	a.LeaseExpires = time.Time{}
 	a.LastReport = nil
 	s.assignments[id] = a
+	fields := map[string]string{
+		"verb":      verb,
+		"policy":    policy,
+		"image_ref": imageRef,
+	}
+	if a.Priority > 0 {
+		fields["priority"] = strconv.Itoa(a.Priority)
+	}
 	s.appendAuditLocked(now, AuditEvent{
 		Actor:        actor,
 		Namespace:    a.Namespace,
@@ -1101,11 +1112,7 @@ func (s *Store) CreateAssignmentActor(actor string, a Assignment) (Assignment, e
 		TargetID:     id,
 		WorkerID:     workerID,
 		AssignmentID: id,
-		Fields: map[string]string{
-			"verb":      verb,
-			"policy":    policy,
-			"image_ref": imageRef,
-		},
+		Fields:       fields,
 	})
 	if err := s.persistLocked(); err != nil {
 		return Assignment{}, err
@@ -1588,6 +1595,9 @@ func (s *Store) CreateSandboxActor(actor string, req SandboxRequest) (SandboxSta
 	if req.MaxActiveSandboxes < 0 {
 		return SandboxStatus{}, fmt.Errorf("sandbox max_active_sandboxes must be non-negative")
 	}
+	if req.Priority < 0 {
+		return SandboxStatus{}, fmt.Errorf("sandbox priority must be non-negative")
+	}
 	args := cloneStrings(req.Args)
 	if err := validateForkRunArgs(args, "sandbox"); err != nil {
 		return SandboxStatus{}, err
@@ -1604,6 +1614,7 @@ func (s *Store) CreateSandboxActor(actor string, req SandboxRequest) (SandboxSta
 		RequiredCapabilities: sortedUniqueStrings(req.RequiredCapabilities),
 		AntiAffinityKey:      strings.TrimSpace(req.AntiAffinityKey),
 		Resources:            req.Resources,
+		Priority:             req.Priority,
 	}
 	policy, imageRef, imageManifestDigest, antiAffinityKey, requiredLabels, requiredCapabilities, resources, err := normalizePlacementFields(assignment)
 	if err != nil {
@@ -1660,6 +1671,7 @@ func (s *Store) CreateSandboxActor(actor string, req SandboxRequest) (SandboxSta
 		RequiredCapabilities: requiredCapabilities,
 		AntiAffinityKey:      antiAffinityKey,
 		Resources:            normalizeResources(resources),
+		Priority:             req.Priority,
 		Verb:                 "cove",
 		Args:                 sandboxRunArgs(imageRef, vmName, args),
 		Status:               "pending",
@@ -2092,6 +2104,7 @@ func (s *Store) ExecSandboxActor(actor, id string, req SandboxExecRequest) (Sand
 		WorkerID:    sandbox.WorkerID,
 		SandboxID:   id,
 		SandboxRole: sandboxRoleExec,
+		Priority:    sandbox.Priority,
 		Verb:        "cove",
 		Args:        sandboxExecArgs(vmName, command, env),
 		Status:      "pending",
@@ -2157,6 +2170,7 @@ func (s *Store) ControlSandboxActor(actor, id string, req SandboxControlRequest)
 		WorkerID:    sandbox.WorkerID,
 		SandboxID:   id,
 		SandboxRole: sandboxRoleControl,
+		Priority:    sandbox.Priority,
 		Verb:        "cove-control",
 		Args:        []string{vmName, string(payload)},
 		Status:      "pending",
@@ -2367,6 +2381,7 @@ func (s *Store) RestartSandboxActor(actor, id string, reqs ...SandboxMutationReq
 				WorkerID:    assignment.WorkerID,
 				SandboxID:   id,
 				SandboxRole: sandboxRoleStop,
+				Priority:    assignment.Priority,
 				Verb:        "cove",
 				Args:        sandboxStopArgs(vmName),
 				Status:      "pending",
@@ -3366,7 +3381,7 @@ func (s *Store) AwaitAssignment(id string) (*Assignment, error) {
 		}
 		return nil, nil
 	}
-	assignments := s.sortedAssignmentsLocked()
+	assignments := s.sortedLeaseAssignmentsLocked()
 	for _, assignment := range assignments {
 		direct := assignment.WorkerID == id
 		if assignment.WorkerID != "" && !direct {
@@ -4460,6 +4475,14 @@ func (s *Store) sortedAssignmentsLocked() []Assignment {
 			return assignments[i].Created.Before(assignments[j].Created)
 		}
 		return assignments[i].ID < assignments[j].ID
+	})
+	return assignments
+}
+
+func (s *Store) sortedLeaseAssignmentsLocked() []Assignment {
+	assignments := s.sortedAssignmentsLocked()
+	sort.SliceStable(assignments, func(i, j int) bool {
+		return assignments[i].Priority > assignments[j].Priority
 	})
 	return assignments
 }
@@ -5947,6 +5970,7 @@ func (s *Store) stopSandboxLocked(now time.Time, actor, id, action, holder strin
 				WorkerID:    assignment.WorkerID,
 				SandboxID:   id,
 				SandboxRole: sandboxRoleStop,
+				Priority:    assignment.Priority,
 				Verb:        "cove",
 				Args:        sandboxStopArgs(vmName),
 				Status:      "pending",

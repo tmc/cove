@@ -45,6 +45,7 @@ type ClientOptions struct {
 	RequiredCapabilities []string
 	PlacementLimit       int
 	MaxActiveSandboxes   int
+	Priority             int
 	VMName               string
 	Timeout              time.Duration
 	HTTP                 *http.Client
@@ -193,6 +194,7 @@ type Assignment struct {
 	RequiredCapabilities []string          `json:"required_capabilities,omitempty"`
 	AntiAffinityKey      string            `json:"anti_affinity_key,omitempty"`
 	Resources            Capacity          `json:"resources,omitempty"`
+	Priority             int               `json:"priority,omitempty"`
 	Verb                 string            `json:"verb"`
 	Args                 []string          `json:"args,omitempty"`
 	Status               string            `json:"status,omitempty"`
@@ -1038,6 +1040,7 @@ type AssignmentCreateOptions struct {
 	RequiredCapabilities []string
 	AntiAffinityKey      string
 	Resources            Capacity
+	Priority             int
 	Verb                 string
 	Args                 []string
 	Timeout              time.Duration
@@ -1601,6 +1604,9 @@ func Create(ctx context.Context, opts ClientOptions) (*Client, error) {
 	if opts.MaxActiveSandboxes < 0 {
 		return nil, errors.New("agentsandbox: max active sandboxes must be non-negative")
 	}
+	if opts.Priority < 0 {
+		return nil, errors.New("agentsandbox: priority must be non-negative")
+	}
 	seed := opts
 	seed.SandboxID = "pending"
 	c, err := NewClient(seed)
@@ -1637,6 +1643,9 @@ func Create(ctx context.Context, opts ClientOptions) (*Client, error) {
 	}
 	if opts.MaxActiveSandboxes > 0 {
 		body["max_active_sandboxes"] = opts.MaxActiveSandboxes
+	}
+	if opts.Priority > 0 {
+		body["priority"] = opts.Priority
 	}
 	var status SandboxStatus
 	if err := c.request(ctx, http.MethodPost, "/v1/sandboxes", body, &status, c.timeout); err != nil {
@@ -2861,6 +2870,9 @@ func CreateAssignment(ctx context.Context, opts AssignmentCreateOptions) (Assign
 	if verb == "" {
 		return Assignment{}, errors.New("agentsandbox: assignment verb required")
 	}
+	if opts.Priority < 0 {
+		return Assignment{}, errors.New("agentsandbox: assignment priority must be non-negative")
+	}
 	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "assignment-create")
 	if err != nil {
 		return Assignment{}, err
@@ -2904,6 +2916,9 @@ func CreateAssignment(ctx context.Context, opts AssignmentCreateOptions) (Assign
 	}
 	if nonzeroCapacity(opts.Resources) {
 		body["resources"] = opts.Resources
+	}
+	if opts.Priority > 0 {
+		body["priority"] = opts.Priority
 	}
 	if len(opts.Args) > 0 {
 		body["args"] = cloneStrings(opts.Args)

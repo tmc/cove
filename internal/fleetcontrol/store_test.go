@@ -648,6 +648,7 @@ func TestStoreCreatesSandboxWithRequiredCapabilities(t *testing.T) {
 		ID:                   "job-1",
 		ImageRef:             "base:v1",
 		RequiredCapabilities: []string{"ram-overlay"},
+		Priority:             7,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -661,8 +662,14 @@ func TestStoreCreatesSandboxWithRequiredCapabilities(t *testing.T) {
 	if len(sandbox.Assignment.RequiredCapabilities) != 1 || sandbox.Assignment.RequiredCapabilities[0] != "ram-overlay" {
 		t.Fatalf("sandbox assignment capabilities = %+v, want ram-overlay", sandbox.Assignment.RequiredCapabilities)
 	}
+	if sandbox.Assignment.Priority != 7 {
+		t.Fatalf("sandbox assignment priority = %d, want 7", sandbox.Assignment.Priority)
+	}
 	if _, err := store.CreateSandbox(SandboxRequest{ID: "job-2", ImageRef: "base:v1", RequiredCapabilities: []string{"gui"}}); err == nil {
 		t.Fatal("CreateSandbox missing capability error = nil")
+	}
+	if _, err := store.CreateSandbox(SandboxRequest{ID: "job-bad", ImageRef: "base:v1", Priority: -1}); err == nil || !strings.Contains(err.Error(), "priority must be non-negative") {
+		t.Fatalf("CreateSandbox negative priority err = %v, want validation", err)
 	}
 }
 
@@ -2090,6 +2097,42 @@ func TestStoreAssignmentsLeaseReportAndPersist(t *testing.T) {
 	}
 	if event := auditAction(reopened.ListAudit(0), "assignment.report"); event == nil || event.AssignmentID != "assignment-1" || event.Status != "complete" {
 		t.Fatalf("reopened audit missing terminal report: %+v", reopened.ListAudit(0))
+	}
+}
+
+func TestStoreAssignmentsLeaseByPriority(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAssignment(Assignment{ID: "low", WorkerID: "worker-1", Verb: "noop", Priority: 1}); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.CreateAssignment(Assignment{ID: "high", WorkerID: "worker-1", Verb: "noop", Priority: 10}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.AwaitAssignment("worker-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.ID != "high" || got.Priority != 10 {
+		t.Fatalf("first lease = %+v, want high priority", got)
+	}
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: "high", Status: "complete"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = store.AwaitAssignment("worker-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.ID != "low" || got.Priority != 1 {
+		t.Fatalf("second lease = %+v, want low priority", got)
+	}
+	if _, err := store.CreateAssignment(Assignment{ID: "bad", WorkerID: "worker-1", Verb: "noop", Priority: -1}); err == nil || !strings.Contains(err.Error(), "priority must be non-negative") {
+		t.Fatalf("negative priority err = %v, want validation", err)
 	}
 }
 
@@ -6100,8 +6143,8 @@ func TestHandlerSandboxes(t *testing.T) {
 	var record HostRecord
 	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 4}}, &record)
 	var created SandboxStatus
-	postJSON(t, server.URL+"/v1/sandboxes", SandboxRequest{ID: "job-1", ImageRef: "base:v1"}, &created)
-	if created.ID != "job-1" || created.WorkerID != "worker-1" || created.Assignment.SandboxRole != "run" {
+	postJSON(t, server.URL+"/v1/sandboxes", SandboxRequest{ID: "job-1", ImageRef: "base:v1", Priority: 4}, &created)
+	if created.ID != "job-1" || created.WorkerID != "worker-1" || created.Assignment.SandboxRole != "run" || created.Assignment.Priority != 4 {
 		t.Fatalf("created sandbox = %+v", created)
 	}
 	var list struct {

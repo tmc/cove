@@ -14,6 +14,11 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   Agents Python adapter, and `SandboxRunConfig` cloud options expose the same
   admission cap for per-namespace concurrency control; `SandboxRunConfig`
   cloud options also forward `required_labels` to hosted sandbox placement.
+- Controller assignments now carry an optional non-negative `priority`, and
+  workers lease higher-priority pending assignments before older lower-priority
+  work. Direct assignment creation, hosted sandbox creation, the Go
+  `agentsandbox` package, the OpenAI Agents Python adapter, and
+  `SandboxRunConfig` cloud options expose the same queue priority.
 - The public Go `agentsandbox` package and OpenAI Agents Python adapter now
   expose hosted sandbox metering list helpers for `/v1/metering/sandboxes`, so
   SDK operators can query namespace or sandbox usage without first constructing

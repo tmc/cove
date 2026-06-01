@@ -31,6 +31,7 @@ func TestCloudClientCreateExecControlDelete(t *testing.T) {
 		RequiredLabels:       map[string]string{"zone": "desk"},
 		RequiredCapabilities: []string{"ram-overlay", "gui", "ram-overlay", ""},
 		MaxActiveSandboxes:   3,
+		Priority:             5,
 		Timeout:              time.Second,
 	})
 	if err != nil {
@@ -168,6 +169,9 @@ func TestCloudClientCreateExecControlDelete(t *testing.T) {
 	if create["max_active_sandboxes"] != float64(3) {
 		t.Fatalf("create max active sandboxes = %+v, want 3", create["max_active_sandboxes"])
 	}
+	if create["priority"] != float64(5) {
+		t.Fatalf("create priority = %+v, want 5", create["priority"])
+	}
 	if server.requests[1].query.Get("namespace") != "team-a" {
 		t.Fatalf("list query = %q, want team-a", server.requests[1].query.Encode())
 	}
@@ -288,6 +292,15 @@ func TestCloudClientCreateAndPlanValidation(t *testing.T) {
 		MaxActiveSandboxes: -1,
 	}); err == nil || !strings.Contains(err.Error(), "max active sandboxes must be non-negative") {
 		t.Fatalf("negative max active sandboxes err = %v, want validation error", err)
+	}
+	if _, err := Create(ctx, ClientOptions{
+		Provider: ProviderCloud,
+		FleetURL: "https://fleet.example",
+		APIKey:   "secret",
+		ImageRef: "base:v1",
+		Priority: -1,
+	}); err == nil || !strings.Contains(err.Error(), "priority must be non-negative") {
+		t.Fatalf("negative priority err = %v, want validation error", err)
 	}
 	_, err := Plan(ctx, ClientOptions{
 		Provider:       ProviderCloud,
@@ -1167,6 +1180,7 @@ func TestCloudClientInventory(t *testing.T) {
 		RequiredCapabilities: []string{"ram-overlay", "asif", ""},
 		AntiAffinityKey:      "ci/buildkite",
 		Resources:            Capacity{VMs: 1, CPUs: 4},
+		Priority:             8,
 		Verb:                 "cove",
 		Args:                 []string{"run", "-fork-from", "base:v1", "-ephemeral"},
 		Timeout:              time.Second,
@@ -1174,7 +1188,7 @@ func TestCloudClientInventory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAssignment: %v", err)
 	}
-	if created.ID != "assignment-created" || created.WorkerID != "worker-1" || created.Policy != "bin-pack" || created.Resources.CPUs != 4 {
+	if created.ID != "assignment-created" || created.WorkerID != "worker-1" || created.Policy != "bin-pack" || created.Resources.CPUs != 4 || created.Priority != 8 {
 		t.Fatalf("CreateAssignment = %+v, want scheduled assignment", created)
 	}
 
@@ -1244,6 +1258,9 @@ func TestCloudClientInventory(t *testing.T) {
 	if !ok || resources["vms"] != float64(1) || resources["cpus"] != float64(4) {
 		t.Fatalf("create assignment resources = %+v, want vms/cpus", createBody["resources"])
 	}
+	if createBody["priority"] != float64(8) {
+		t.Fatalf("create assignment priority = %+v, want 8", createBody["priority"])
+	}
 	if !equalAnyStringSlice(createBody["args"], []string{"run", "-fork-from", "base:v1", "-ephemeral"}) {
 		t.Fatalf("create assignment args = %+v, want run args", createBody["args"])
 	}
@@ -1265,6 +1282,9 @@ func TestCloudClientInventoryValidation(t *testing.T) {
 	}
 	if _, err := CreateAssignment(ctx, AssignmentCreateOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "verb required") {
 		t.Fatalf("CreateAssignment missing verb err = %v, want validation error", err)
+	}
+	if _, err := CreateAssignment(ctx, AssignmentCreateOptions{FleetURL: "https://fleet.example", APIKey: "secret", Verb: "noop", Priority: -1}); err == nil || !strings.Contains(err.Error(), "priority must be non-negative") {
+		t.Fatalf("CreateAssignment negative priority err = %v, want validation error", err)
 	}
 	if _, err := GetAssignment(ctx, AssignmentGetOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "id required") {
 		t.Fatalf("GetAssignment missing id err = %v, want validation error", err)
@@ -2663,6 +2683,7 @@ func sdkCreatedAssignment() Assignment {
 	assignment.RequiredCapabilities = []string{"ram-overlay", "asif"}
 	assignment.AntiAffinityKey = "ci/buildkite"
 	assignment.Resources = Capacity{VMs: 1, CPUs: 4}
+	assignment.Priority = 8
 	return assignment
 }
 

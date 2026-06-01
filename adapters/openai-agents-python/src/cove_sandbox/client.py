@@ -300,6 +300,7 @@ class CoveFleetClient:
         required_capabilities: Sequence[str] | str | None = None,
         sandbox_id: str | None = None,
         max_active_sandboxes: int = 0,
+        priority: int = 0,
         api_key: str | None = None,
         namespace: str | None = None,
         vm_name: str | None = None,
@@ -310,6 +311,8 @@ class CoveFleetClient:
             raise ValueError("image_ref is required")
         if max_active_sandboxes < 0:
             raise ValueError("max_active_sandboxes must be non-negative")
+        if priority < 0:
+            raise ValueError("priority must be non-negative")
         body: dict[str, object] = {"image_ref": image_ref}
         if sandbox_id:
             body["id"] = sandbox_id
@@ -333,6 +336,8 @@ class CoveFleetClient:
             body["required_capabilities"] = capabilities
         if max_active_sandboxes:
             body["max_active_sandboxes"] = max_active_sandboxes
+        if priority:
+            body["priority"] = priority
         seed = cls(
             sandbox_id=sandbox_id or "pending",
             fleet_url=fleet_url,
@@ -1819,12 +1824,15 @@ class CoveFleetClient:
         required_capabilities: Sequence[str] | str | None = None,
         anti_affinity_key: str = "",
         resources: Mapping[str, object] | None = None,
+        priority: int = 0,
         args: Sequence[str] = (),
         timeout: float = 30.0,
     ) -> dict[str, Any]:
         verb = verb.strip()
         if not verb:
             raise ValueError("assignment verb is required")
+        if priority < 0:
+            raise ValueError("assignment priority must be non-negative")
         seed = cls(
             sandbox_id="assignment-create",
             fleet_url=fleet_url,
@@ -1869,6 +1877,8 @@ class CoveFleetClient:
             body["anti_affinity_key"] = anti_affinity_key
         if resources:
             body["resources"] = dict(resources)
+        if priority:
+            body["priority"] = priority
         if args:
             body["args"] = list(args)
         return dict(seed._request("POST", "/v1/assignments", body, timeout=timeout))

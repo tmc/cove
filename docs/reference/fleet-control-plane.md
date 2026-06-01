@@ -235,7 +235,7 @@ curl http://127.0.0.1:9758/v1/service-accounts
 curl -H 'authorization: Bearer local-secret' \
   -X POST http://127.0.0.1:9758/v1/assignments \
   -H 'content-type: application/json' \
-  -d '{"id":"probe-1","worker_id":"mini-1","verb":"noop"}'
+  -d '{"id":"probe-1","worker_id":"mini-1","priority":10,"verb":"noop"}'
 curl -H 'authorization: Bearer local-secret' \
   http://127.0.0.1:9758/v1/assignments
 curl http://127.0.0.1:9758/v1/assignments?namespace=team-a
@@ -624,7 +624,7 @@ Sandbox endpoint:
 ```bash
 curl -X POST http://127.0.0.1:9758/v1/sandboxes \
   -H 'content-type: application/json' \
-  -d '{"id":"job-1","image_ref":"macos-runner:14.5","manifest_bundle":"manifests","image_platform":"darwin/arm64","required_labels":{"zone":"desk"},"required_capabilities":["ram-overlay"],"max_active_sandboxes":20,"args":["--net","nat"]}'
+  -d '{"id":"job-1","image_ref":"macos-runner:14.5","manifest_bundle":"manifests","image_platform":"darwin/arm64","required_labels":{"zone":"desk"},"required_capabilities":["ram-overlay"],"max_active_sandboxes":20,"priority":10,"args":["--net","nat"]}'
 curl http://127.0.0.1:9758/v1/sandboxes
 curl 'http://127.0.0.1:9758/v1/sandboxes?status=ready&image_ref=macos-runner:14.5&offset=0&limit=20'
 curl http://127.0.0.1:9758/v1/sandboxes/job-1
@@ -665,15 +665,17 @@ to `cove-sandbox-<id>`. The controller records the backing assignment with
 without a separate scheduler. Extra `args` are appended to `cove run`, but
 fork/source/lifetime/headless flags are reserved by the controller.
 Create requests accept optional `manifest_bundle`, `image_manifest_digest`,
-`image_digest_ref`, `image_platform`, `required_capabilities`, and
-`max_active_sandboxes` fields. The returned sandbox status and backing
+`image_digest_ref`, `image_platform`, `required_capabilities`,
+`max_active_sandboxes`, and `priority` fields. The returned sandbox status and backing
 assignment keep the resolved digest and capability fields, exact-digest
 requests are admitted only onto workers that report the matching image
 provenance, and capability-constrained requests are admitted only onto workers
 that report every required capability. When `max_active_sandboxes` is greater
 than zero, the controller reconciles current state and rejects the create
 before placement if the request namespace already has that many non-terminal
-sandbox run handles.
+sandbox run handles. `priority` is copied to the backing run assignment, so
+urgent hosted sandboxes lease before older lower-priority pending work on the
+selected worker.
 
 `GET /v1/sandboxes` accepts `namespace`, `status`, `worker_id`, `image_ref`,
 `offset`, and `limit` query parameters. Namespace-scoped bearer tokens still
@@ -790,7 +792,7 @@ dashboard and timeline. Reconcile helpers include `PlanReconcile` and
 `Reconcile` for the same unscoped dry-run/apply repair path as
 `/v1/reconcile/plan` and `/v1/reconcile`. Assignment helpers include
 `CreateAssignment`, `ListAssignments`, and `GetAssignment`, with the same
-generic submission path, filters, and pagination as the REST API. Worker
+generic submission path, priority, filters, and pagination as the REST API. Worker
 inventory helpers include `ListWorkers` and `GetWorker`. Assignment control
 helpers include `CancelAssignment` and `RetryAssignment` for audited
 force-cancel and retry/replan operations. Worker
@@ -900,6 +902,7 @@ created, err := agentsandbox.CreateAssignment(ctx, agentsandbox.AssignmentCreate
 	ManifestBundle:       "manifests",
 	RequiredCapabilities: []string{"ram-overlay"},
 	Resources:            agentsandbox.Capacity{VMs: 1},
+	Priority:             10,
 	Verb:                 "cove",
 	Args:                 []string{"run", "-fork-from", "macos-base:latest", "-ephemeral"},
 })
@@ -1151,6 +1154,7 @@ sb, err := agentsandbox.Create(ctx, agentsandbox.ClientOptions{
 	RequiredLabels: map[string]string{"zone": "desk"},
 	RequiredCapabilities: []string{"ram-overlay"},
 	MaxActiveSandboxes:   20,
+	Priority:             10,
 })
 if err != nil {
 	log.Fatal(err)
@@ -1201,7 +1205,7 @@ Assignment endpoints:
 ```bash
 curl -X POST http://127.0.0.1:9758/v1/assignments \
   -H 'content-type: application/json' \
-  -d '{"id":"probe-1","worker_id":"mini-1","verb":"noop"}'
+  -d '{"id":"probe-1","worker_id":"mini-1","priority":10,"verb":"noop"}'
 curl -X POST http://127.0.0.1:9758/v1/assignments \
   -H 'content-type: application/json' \
   -d '{"id":"run-1","worker_id":"mini-1","verb":"cove","args":["run","-ephemeral","-headless"]}'
@@ -1234,7 +1238,9 @@ a warm-pool slot whose guest agent accepted a probe through `cove shell`;
 A claimed slot still consumes host capacity but is no longer counted as an
 available warm slot. `coved` renews active `cove` assignments with `running` or
 `ready` reports. Claimed warm-pool guest-exec assignments stop the claimed VM
-after the guest command returns.
+after the guest command returns. `priority` is optional and non-negative; worker
+polls lease higher-priority pending assignments before older lower-priority
+assignments, with creation time and assignment id as stable tie-breakers.
 `GET /v1/assignments` returns a paginated `assignments` response with `count`,
 `offset`, `limit`, and `next_offset`. It accepts `status`, `worker_id`,
 `leased_to`, `verb`, `image_ref`, `sandbox_id` or `sandbox`, `warm_pool`,

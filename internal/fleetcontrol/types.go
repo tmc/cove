@@ -828,6 +828,7 @@ type SandboxRequest struct {
 	Resources            Capacity          `json:"resources,omitempty"`
 	Args                 []string          `json:"args,omitempty"`
 	MaxActiveSandboxes   int               `json:"max_active_sandboxes,omitempty"`
+	Priority             int               `json:"priority,omitempty"`
 }
 
 type SandboxStatus struct {
@@ -1143,6 +1144,7 @@ type Assignment struct {
 	RequiredCapabilities []string          `json:"required_capabilities,omitempty"`
 	AntiAffinityKey      string            `json:"anti_affinity_key,omitempty"`
 	Resources            Capacity          `json:"resources,omitempty"`
+	Priority             int               `json:"priority,omitempty"`
 	Verb                 string            `json:"verb"`
 	Args                 []string          `json:"args,omitempty"`
 	Status               string            `json:"status,omitempty"`
