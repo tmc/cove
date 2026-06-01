@@ -250,6 +250,38 @@ type WorkerDecommissionBlock struct {
 	Reason       string `json:"reason"`
 }
 
+type WorkerEvacuationRequest struct {
+	Reason string `json:"reason,omitempty"`
+	Apply  bool   `json:"apply,omitempty"`
+	Force  bool   `json:"force,omitempty"`
+}
+
+type WorkerEvacuationResult struct {
+	Worker      HostRecord                   `json:"worker"`
+	Reason      string                       `json:"reason,omitempty"`
+	Apply       bool                         `json:"apply,omitempty"`
+	Applied     bool                         `json:"applied,omitempty"`
+	Force       bool                         `json:"force,omitempty"`
+	Assignments []WorkerEvacuationAssignment `json:"assignments,omitempty"`
+	Requeued    []Assignment                 `json:"requeued,omitempty"`
+	Sandboxes   []SandboxStopResult          `json:"sandboxes,omitempty"`
+	Canceled    []string                     `json:"canceled,omitempty"`
+	Blocked     []WorkerEvacuationAssignment `json:"blocked,omitempty"`
+}
+
+type WorkerEvacuationAssignment struct {
+	AssignmentID   string               `json:"assignment_id"`
+	Namespace      string               `json:"namespace,omitempty"`
+	SandboxID      string               `json:"sandbox_id,omitempty"`
+	Status         string               `json:"status,omitempty"`
+	WorkerID       string               `json:"worker_id,omitempty"`
+	LeasedTo       string               `json:"leased_to,omitempty"`
+	Action         string               `json:"action"`
+	Reason         string               `json:"reason,omitempty"`
+	TargetWorkerID string               `json:"target_worker_id,omitempty"`
+	Candidates     []PlacementCandidate `json:"candidates,omitempty"`
+}
+
 type WorkerDrainSkip struct {
 	SandboxID string `json:"sandbox_id"`
 	Status    string `json:"status,omitempty"`

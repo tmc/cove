@@ -1149,6 +1149,15 @@ func handleWorker(w http.ResponseWriter, r *http.Request, store *Store) {
 			return
 		}
 		handleWorkerDrain(w, r, store, id)
+	case "evacuate":
+		identity := identityFromRequest(r, store)
+		if !requireRole(w, identity, ServiceAccountRoleOperator) {
+			return
+		}
+		if !requireUnscoped(w, r, store) {
+			return
+		}
+		handleWorkerEvacuate(w, r, store, id)
 	case "quarantine":
 		identity := identityFromRequest(r, store)
 		if !requireRole(w, identity, ServiceAccountRoleOperator) {
@@ -1694,6 +1703,24 @@ func handleWorkerDecommission(w http.ResponseWriter, r *http.Request, store *Sto
 			writeJSON(w, http.StatusConflict, result)
 			return
 		}
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func handleWorkerEvacuate(w http.ResponseWriter, r *http.Request, store *Store, id string) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var req WorkerEvacuationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode worker evacuation: %v", err))
+		return
+	}
+	result, err := store.EvacuateWorkerActor(actorFromRequest(r, store), id, req)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

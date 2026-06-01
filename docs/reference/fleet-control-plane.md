@@ -8,12 +8,13 @@ inventory, assignment leases, and the worker-facing protocol surface. `coved`
 can now dial out as a worker and execute leased `cove` assignments;
 controller-side placement can choose a ready worker by least-loaded or
 image-affinity or bin-pack policy, and the controller reconciles stale workers
-and expired assignment leases. Operators can cordon, quarantine, or drain
-workers for maintenance and incident response without dropping their heartbeat
-history, and can ask the controller for an operations summary across workers,
-assignments, sandboxes, warm pools, and metering. They can also prepare a base
-image across the fleet before job placement, push VM lifecycle policy updates,
-fan out storage budget/prune policy, or keep a fork warm-pool quota active.
+and expired assignment leases. Operators can cordon, quarantine, evacuate, or
+drain workers for maintenance and incident response without dropping their
+heartbeat history, and can ask the controller for an operations summary across
+workers, assignments, sandboxes, warm pools, and metering. They can also
+prepare a base image across the fleet before job placement, push VM lifecycle
+policy updates, fan out storage budget/prune policy, or keep a fork warm-pool
+quota active.
 
 Start a private controller:
 
@@ -73,6 +74,12 @@ curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/cordon \
 curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/quarantine \
   -H 'content-type: application/json' \
   -d '{"reason":"bad disk"}'
+curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/evacuate \
+  -H 'content-type: application/json' \
+  -d '{"reason":"maintenance"}'
+curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/evacuate \
+  -H 'content-type: application/json' \
+  -d '{"reason":"maintenance","apply":true}'
 curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/drain \
   -H 'content-type: application/json' \
   -d '{"reason":"maintenance"}'
@@ -109,6 +116,18 @@ the worker is still cordoned it remains unavailable for placement, but direct
 assignments can be leased again. Quarantine and unquarantine record
 `worker.quarantine` and `worker.unquarantine` audit events and require an
 unscoped operator/admin identity.
+
+`POST /v1/workers/{id}/evacuate` is the maintenance planner for a worker. By
+default it is a dry run: the response lists each active or pending assignment,
+the planned action, replacement candidates for movable pending work, hosted
+sandbox drains, and blockers such as live non-sandbox assignments or pinned
+work without a replacement. With `{"apply":true}`, the controller cordons the
+worker, reassigns movable pending work to the best non-target placement
+candidate, drains hosted sandboxes through the same cleanup path as sandbox
+stop, and records `assignment.evacuate`, `sandbox.evacuate`, and
+`worker.evacuate` audit events. Pending work is canceled only with
+`{"force":true}` when there is no replacement candidate; active non-sandbox
+work remains blocked.
 
 `POST /v1/workers/{id}/decommission` removes an idle or already-drained worker
 from controller inventory and records `worker.decommission`. By default it
@@ -182,10 +201,11 @@ curl -X DELETE http://127.0.0.1:9758/v1/service-accounts/ci
 
 The controller persists audit events in the fleet store for high-value state
 changes: worker registration, cordon/quarantine lifecycle, assignment
-creation, assignment leases, assignment cancellation from forced decommission,
-terminal assignment reports, fleet reconcile changes, image/policy/storage
-fan-out, and warm-pool ensure/claim/delete operations. Each new event carries
-`prev_hash` and `hash` fields that chain the global audit log;
+creation, assignment leases, assignment evacuation/reassignment, assignment
+cancellation from forced decommission or evacuation, terminal assignment
+reports, fleet reconcile changes, image/policy/storage fan-out, and warm-pool
+ensure/claim/delete operations. Each new event carries `prev_hash` and `hash`
+fields that chain the global audit log;
 `GET /v1/audit/verify` recomputes the chain and returns `ok`, `events`,
 `head_hash`, and any chain issues. `GET /v1/audit` returns `events`, `count`,
 `offset`, `limit`, and `next_offset`; query filters include `namespace`,
@@ -656,9 +676,9 @@ curl -X POST http://127.0.0.1:9758/v1/workers/register \
 ```
 
 This surface is intentionally private and local-first. It now has basic
-controller reconciliation, worker cordon/drain/decommission lifecycle, fleet
-image preparation, fleet image-GC push, lifecycle-policy push, storage
-budget/prune push, retained
-placement plans, and a first fork warm-pool quota reconciler with agent-ready
-slot claim and guest `Exec` handoff through the `cove shell` path plus
-claimed-slot stop and downsize cleanup, plus a persistent fleet audit feed.
+controller reconciliation, worker cordon/quarantine/evacuate/drain/decommission
+lifecycle, fleet image preparation, fleet image-GC push, lifecycle-policy push,
+storage budget/prune push, retained placement plans, and a first fork warm-pool
+quota reconciler with agent-ready slot claim and guest `Exec` handoff through
+the `cove shell` path plus claimed-slot stop and downsize cleanup, plus a
+persistent fleet audit feed.

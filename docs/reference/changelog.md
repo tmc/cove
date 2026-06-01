@@ -8,6 +8,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 ## Unreleased
 
 ### Added
+- `cove-fleetd` now exposes `POST /v1/workers/{id}/evacuate` for dry-run and
+  applied worker maintenance. It cordons applied targets, reassigns movable
+  pending work, drains hosted sandboxes, reports blockers, and only cancels
+  pending work when `force` is set.
 - Fleet operators can now quarantine and unquarantine workers. Quarantined
   workers keep heartbeat/report history for diagnostics, are excluded from
   placement, receive no new assignment leases, appear in operations-summary

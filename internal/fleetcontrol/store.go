@@ -434,6 +434,176 @@ func (s *Store) DrainWorkerActor(actor, id, reason string) (WorkerDrainResult, e
 	return result, nil
 }
 
+func (s *Store) EvacuateWorker(id string, req WorkerEvacuationRequest) (WorkerEvacuationResult, error) {
+	return s.EvacuateWorkerActor("controller", id, req)
+}
+
+func (s *Store) EvacuateWorkerActor(actor, id string, req WorkerEvacuationRequest) (WorkerEvacuationResult, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return WorkerEvacuationResult{}, fmt.Errorf("worker id required")
+	}
+	now := s.now().UTC()
+	actor = normalizeActor(actor)
+	reason := strings.TrimSpace(req.Reason)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, ok := s.hosts[id]
+	if !ok {
+		return WorkerEvacuationResult{}, fmt.Errorf("worker %q not registered", id)
+	}
+	if !req.Apply {
+		assignments := cloneAssignmentMap(s.assignments)
+		defer func() {
+			s.assignments = assignments
+		}()
+	}
+	result := WorkerEvacuationResult{
+		Worker: s.statusLocked(record),
+		Reason: reason,
+		Apply:  req.Apply,
+		Force:  req.Force,
+	}
+	if req.Apply {
+		record.Cordoned = true
+		record.CordonReason = reason
+		record.CordonedAt = now
+		record.Status = workerStatus(now, record)
+		s.hosts[id] = record
+		result.Worker = s.statusLocked(record)
+	}
+
+	for _, assignment := range s.sortedAssignmentsLocked() {
+		if assignment.WorkerID != id && assignment.LeasedTo != id {
+			continue
+		}
+		item := evacuationAssignment(assignment)
+		status := normalizeOperationStatus(assignment.Status)
+		if !openAssignmentStatus(status) && !sandboxPendingStopStatus(status) && status != "restarting" {
+			item.Action = "ignore"
+			item.Reason = "terminal"
+			continue
+		}
+		if status == "pending" && assignment.LeasedTo == "" {
+			candidates := s.evacuationCandidatesLocked(id, assignment)
+			if len(candidates) > 0 {
+				item.Action = "requeue"
+				item.TargetWorkerID = candidates[0].WorkerID
+				item.Candidates = candidates
+				if req.Apply {
+					assignment.WorkerID = candidates[0].WorkerID
+					assignment.Updated = now
+					s.assignments[assignment.ID] = assignment
+					result.Requeued = append(result.Requeued, cloneAssignment(assignment))
+					s.appendAuditLocked(now, AuditEvent{
+						Actor:        actor,
+						Namespace:    assignment.Namespace,
+						Action:       "assignment.evacuate",
+						TargetType:   "assignment",
+						TargetID:     assignment.ID,
+						WorkerID:     id,
+						AssignmentID: assignment.ID,
+						Status:       assignment.Status,
+						Fields: map[string]string{
+							"reason":     reason,
+							"new_worker": assignment.WorkerID,
+						},
+					})
+				} else {
+					assignment.WorkerID = candidates[0].WorkerID
+					s.assignments[assignment.ID] = assignment
+				}
+				result.Assignments = append(result.Assignments, item)
+				continue
+			}
+			if req.Force {
+				item.Action = "cancel"
+				item.Reason = evacuationPendingBlockReason(assignment)
+				if req.Apply {
+					assignment.Status = "canceled"
+					assignment.Updated = now
+					s.assignments[assignment.ID] = assignment
+					result.Canceled = append(result.Canceled, assignment.ID)
+					s.appendAuditLocked(now, AuditEvent{
+						Actor:        actor,
+						Namespace:    assignment.Namespace,
+						Action:       "assignment.cancel",
+						TargetType:   "assignment",
+						TargetID:     assignment.ID,
+						WorkerID:     id,
+						AssignmentID: assignment.ID,
+						Status:       assignment.Status,
+						Fields: map[string]string{
+							"reason":    reason,
+							"operation": "worker.evacuate",
+						},
+					})
+				}
+				result.Assignments = append(result.Assignments, item)
+				continue
+			}
+			item.Action = "blocked"
+			item.Reason = evacuationPendingBlockReason(assignment)
+			result.Assignments = append(result.Assignments, item)
+			result.Blocked = append(result.Blocked, item)
+			continue
+		}
+		if assignment.SandboxID != "" && assignment.SandboxRole == sandboxRoleRun {
+			if err := requireSandboxLeaseHolder(now, assignment.SandboxID, &assignment, ""); err != nil {
+				item.Action = "blocked"
+				item.Reason = err.Error()
+				result.Assignments = append(result.Assignments, item)
+				result.Blocked = append(result.Blocked, item)
+				continue
+			}
+			item.Action = "drain"
+			item.Reason = "hosted sandbox"
+			if req.Apply {
+				stopped, err := s.stopSandboxLocked(now, actor, assignment.SandboxID, "sandbox.evacuate", "")
+				if err != nil {
+					item.Action = "blocked"
+					item.Reason = err.Error()
+					result.Blocked = append(result.Blocked, item)
+				} else {
+					result.Sandboxes = append(result.Sandboxes, stopped)
+					if stopped.Canceled {
+						result.Canceled = append(result.Canceled, assignment.ID)
+					}
+				}
+			}
+			result.Assignments = append(result.Assignments, item)
+			continue
+		}
+		item.Action = "blocked"
+		item.Reason = evacuationActiveBlockReason(assignment, id)
+		result.Assignments = append(result.Assignments, item)
+		result.Blocked = append(result.Blocked, item)
+	}
+	if req.Apply {
+		result.Applied = true
+		s.appendAuditLocked(now, AuditEvent{
+			Actor:      actor,
+			Action:     "worker.evacuate",
+			TargetType: "worker",
+			TargetID:   id,
+			WorkerID:   id,
+			Fields: map[string]string{
+				"reason":    reason,
+				"requeued":  strconv.Itoa(len(result.Requeued)),
+				"sandboxes": strconv.Itoa(len(result.Sandboxes)),
+				"canceled":  strconv.Itoa(len(result.Canceled)),
+				"blocked":   strconv.Itoa(len(result.Blocked)),
+				"force":     strconv.FormatBool(req.Force),
+			},
+		})
+		if err := s.persistLocked(); err != nil {
+			return WorkerEvacuationResult{}, err
+		}
+	}
+	return result, nil
+}
+
 func (s *Store) QuarantineWorker(id, reason string) (HostRecord, error) {
 	return s.QuarantineWorkerActor("controller", id, reason)
 }
@@ -2924,6 +3094,31 @@ func decommissionBlockIDs(blocks []WorkerDecommissionBlock) []string {
 	return ids
 }
 
+func evacuationAssignment(assignment Assignment) WorkerEvacuationAssignment {
+	return WorkerEvacuationAssignment{
+		AssignmentID: assignment.ID,
+		Namespace:    assignment.Namespace,
+		SandboxID:    assignment.SandboxID,
+		Status:       normalizeOperationStatus(assignment.Status),
+		WorkerID:     assignment.WorkerID,
+		LeasedTo:     assignment.LeasedTo,
+	}
+}
+
+func evacuationPendingBlockReason(assignment Assignment) string {
+	if !assignmentCanPlace(assignment) {
+		return "pinned assignment"
+	}
+	return "no replacement worker"
+}
+
+func evacuationActiveBlockReason(assignment Assignment, workerID string) string {
+	if assignment.LeasedTo == workerID {
+		return "assignment leased to worker"
+	}
+	return "active assignment"
+}
+
 func assignmentCanPlace(assignment Assignment) bool {
 	if assignment.WarmPoolSlot != "" {
 		return false
@@ -3145,6 +3340,14 @@ func cloneAssignments(in []Assignment) []Assignment {
 	out := make([]Assignment, len(in))
 	for i := range in {
 		out[i] = cloneAssignment(in[i])
+	}
+	return out
+}
+
+func cloneAssignmentMap(in map[string]Assignment) map[string]Assignment {
+	out := make(map[string]Assignment, len(in))
+	for id, assignment := range in {
+		out[id] = cloneAssignment(assignment)
 	}
 	return out
 }
@@ -3388,6 +3591,21 @@ func (s *Store) placementCandidatesLocked(policy, imageRef, imageManifestDigest 
 		candidates[i].Rank = i + 1
 	}
 	return candidates
+}
+
+func (s *Store) evacuationCandidatesLocked(workerID string, assignment Assignment) []PlacementCandidate {
+	if !assignmentCanPlace(assignment) {
+		return nil
+	}
+	candidates := s.placementCandidatesLocked(assignmentPolicy(assignment), assignment.ImageRef, assignment.ImageManifestDigest, assignment.RequiredLabels, assignment.AntiAffinityKey, assignment.Resources)
+	out := candidates[:0]
+	for _, candidate := range candidates {
+		if candidate.WorkerID == workerID {
+			continue
+		}
+		out = append(out, candidate)
+	}
+	return clonePlacementCandidates(out)
 }
 
 func workerHasImage(host HostRecord, imageRef, imageManifestDigest string) bool {

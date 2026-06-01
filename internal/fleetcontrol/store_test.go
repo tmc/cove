@@ -2265,6 +2265,131 @@ func TestStoreQuarantinePersistsBlocksPlacementAndLeasing(t *testing.T) {
 	}
 }
 
+func TestStoreEvacuateWorkerPlansAndApplies(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "old", ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 4}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "spare", Capacity: Capacity{VMs: 5, MaxVMs: 8}}); err != nil {
+		t.Fatal(err)
+	}
+	sandbox, err := store.CreateSandbox(SandboxRequest{ID: "job-1", ImageRef: "base:v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sandbox.WorkerID != "old" {
+		t.Fatalf("sandbox worker = %q, want old", sandbox.WorkerID)
+	}
+	if _, err := store.AwaitAssignment("old"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Report(WorkerReport{ID: "old", AssignmentID: sandbox.Assignment.ID, Status: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAssignment(Assignment{ID: "busy", WorkerID: "old", Verb: "noop"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AwaitAssignment("old"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAssignment(Assignment{ID: "movable", WorkerID: "old", Policy: PolicyLeastLoaded, Verb: "noop"}); err != nil {
+		t.Fatal(err)
+	}
+	pendingSandbox, err := store.CreateSandbox(SandboxRequest{ID: "job-2", ImageRef: "base:v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pendingSandbox.WorkerID != "old" {
+		t.Fatalf("pending sandbox worker = %q, want old", pendingSandbox.WorkerID)
+	}
+
+	plan, err := store.EvacuateWorker("old", WorkerEvacuationRequest{Reason: "maintenance"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Apply || plan.Applied || len(plan.Requeued) != 0 || len(plan.Sandboxes) != 0 || len(plan.Canceled) != 0 {
+		t.Fatalf("dry-run plan = %+v, want no mutations", plan)
+	}
+	if item := evacuationItem(plan.Assignments, "job-1"); item.Action != "drain" {
+		t.Fatalf("job-1 plan item = %+v, want drain", item)
+	}
+	if item := evacuationItem(plan.Assignments, "busy"); item.Action != "blocked" || item.Reason == "" {
+		t.Fatalf("busy plan item = %+v, want blocked", item)
+	}
+	if item := evacuationItem(plan.Assignments, "movable"); item.Action != "requeue" || item.TargetWorkerID != "spare" {
+		t.Fatalf("movable plan item = %+v, want requeue to spare", item)
+	}
+	if item := evacuationItem(plan.Assignments, "job-2"); item.Action != "requeue" || item.TargetWorkerID != "spare" {
+		t.Fatalf("job-2 plan item = %+v, want requeue to spare", item)
+	}
+	record, ok := store.Get("old")
+	if !ok || record.Cordoned {
+		t.Fatalf("old after dry run = %+v, %v; want not cordoned", record, ok)
+	}
+
+	applied, err := store.EvacuateWorkerActor("operator", "old", WorkerEvacuationRequest{Reason: "maintenance", Apply: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !applied.Applied || !applied.Worker.Cordoned || applied.Worker.CordonReason != "maintenance" {
+		t.Fatalf("applied evacuation = %+v, want cordoned applied", applied)
+	}
+	if len(applied.Requeued) != 2 || workerIDByAssignmentID(applied.Requeued, "movable") != "spare" || workerIDByAssignmentID(applied.Requeued, "job-2") != "spare" {
+		t.Fatalf("requeued = %+v, want movable and job-2 on spare", applied.Requeued)
+	}
+	if len(applied.Sandboxes) != 1 || applied.Sandboxes[0].ID != "job-1" || applied.Sandboxes[0].Cleanup == nil {
+		t.Fatalf("sandboxes = %+v, want job-1 cleanup", applied.Sandboxes)
+	}
+	if len(applied.Blocked) != 1 || applied.Blocked[0].AssignmentID != "busy" {
+		t.Fatalf("blocked = %+v, want busy", applied.Blocked)
+	}
+	assignment, ok := store.GetAssignment("movable")
+	if !ok || assignment.WorkerID != "spare" || assignment.Status != "pending" {
+		t.Fatalf("movable assignment = %+v, %v; want pending on spare", assignment, ok)
+	}
+	pendingSandboxStatus, ok := store.GetSandbox("job-2")
+	if !ok || pendingSandboxStatus.WorkerID != "spare" || pendingSandboxStatus.Status != "pending" {
+		t.Fatalf("pending sandbox = %+v, %v; want pending on spare", pendingSandboxStatus, ok)
+	}
+	sandboxStatus, ok := store.GetSandbox("job-1")
+	if !ok || sandboxStatus.Status != "draining" {
+		t.Fatalf("sandbox = %+v, %v; want draining", sandboxStatus, ok)
+	}
+	if event := auditAction(store.ListAudit(0), "worker.evacuate"); event == nil || event.WorkerID != "old" || event.Fields["requeued"] != "2" || event.Fields["sandboxes"] != "1" || event.Fields["blocked"] != "1" {
+		t.Fatalf("worker evacuate audit = %+v", event)
+	}
+}
+
+func TestStoreEvacuateWorkerForceCancelsPinnedPending(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "old"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAssignment(Assignment{ID: "pinned", WorkerID: "old", Verb: "noop"}); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := store.EvacuateWorker("old", WorkerEvacuationRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item := evacuationItem(plan.Assignments, "pinned"); item.Action != "blocked" || item.Reason != "pinned assignment" {
+		t.Fatalf("pinned plan item = %+v, want pinned block", item)
+	}
+	applied, err := store.EvacuateWorker("old", WorkerEvacuationRequest{Apply: true, Force: true, Reason: "retire"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !applied.Applied || len(applied.Canceled) != 1 || applied.Canceled[0] != "pinned" || len(applied.Blocked) != 0 {
+		t.Fatalf("forced evacuation = %+v, want pinned canceled", applied)
+	}
+	assignment, ok := store.GetAssignment("pinned")
+	if !ok || assignment.Status != "canceled" {
+		t.Fatalf("pinned assignment = %+v, %v; want canceled", assignment, ok)
+	}
+}
+
 func TestStoreDrainWorkerCordonsAndStopsSandboxes(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
 	store := NewMemoryStore(time.Minute)
@@ -3634,6 +3759,41 @@ func TestHandlerWorkerQuarantineLifecycle(t *testing.T) {
 	getJSON(t, server.URL+"/v1/workers/bad/assignments", &leased)
 	if leased.ID != "direct" || leased.Status != "leased" {
 		t.Fatalf("leased assignment = %+v, want direct", leased)
+	}
+}
+
+func TestHandlerWorkerEvacuatePlansAndApplies(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "old"}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "spare", Capacity: Capacity{VMs: 5}}, &record)
+	var created Assignment
+	postJSON(t, server.URL+"/v1/assignments", Assignment{ID: "movable", WorkerID: "old", Policy: PolicyLeastLoaded, Verb: "noop"}, &created)
+
+	var plan WorkerEvacuationResult
+	postJSON(t, server.URL+"/v1/workers/old/evacuate", WorkerEvacuationRequest{Reason: "maintenance"}, &plan)
+	if plan.Applied || len(plan.Requeued) != 0 {
+		t.Fatalf("dry-run evacuation = %+v, want no mutations", plan)
+	}
+	if item := evacuationItem(plan.Assignments, "movable"); item.Action != "requeue" || item.TargetWorkerID != "spare" {
+		t.Fatalf("movable plan item = %+v, want requeue to spare", item)
+	}
+	getJSON(t, server.URL+"/v1/workers/old", &record)
+	if record.Cordoned {
+		t.Fatalf("old after dry run = %+v, want not cordoned", record)
+	}
+
+	plan = WorkerEvacuationResult{}
+	postJSON(t, server.URL+"/v1/workers/old/evacuate", WorkerEvacuationRequest{Reason: "maintenance", Apply: true}, &plan)
+	if !plan.Applied || !plan.Worker.Cordoned || len(plan.Requeued) != 1 || plan.Requeued[0].WorkerID != "spare" {
+		t.Fatalf("applied evacuation = %+v, want movable on spare", plan)
+	}
+	getJSON(t, server.URL+"/v1/assignments/movable", &created)
+	if created.WorkerID != "spare" || created.Status != "pending" {
+		t.Fatalf("movable assignment = %+v, want pending on spare", created)
 	}
 }
 
@@ -5209,6 +5369,24 @@ func statusByAssignmentID(assignments []Assignment, id string) string {
 		}
 	}
 	return ""
+}
+
+func workerIDByAssignmentID(assignments []Assignment, id string) string {
+	for _, assignment := range assignments {
+		if assignment.ID == id {
+			return assignment.WorkerID
+		}
+	}
+	return ""
+}
+
+func evacuationItem(items []WorkerEvacuationAssignment, id string) WorkerEvacuationAssignment {
+	for _, item := range items {
+		if item.AssignmentID == id {
+			return item
+		}
+	}
+	return WorkerEvacuationAssignment{}
 }
 
 func skipReason(skipped []ImagePrepareSkip, workerID string) string {
