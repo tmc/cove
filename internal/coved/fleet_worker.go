@@ -19,7 +19,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tmc/cove/internal/diskimages2"
 	"github.com/tmc/cove/internal/fleetcontrol"
+	"github.com/tmc/cove/internal/vmquota"
 )
 
 const (
@@ -29,9 +31,16 @@ const (
 	DefaultFleetAssignmentOutputLimit = 64 << 10
 
 	FleetCapabilityRAMOverlay = "ram-overlay"
+	FleetCapabilityASIF       = "asif"
+	FleetCapabilityAPFSQuota  = "apfs-quota"
 )
 
-var discoverFleetCapabilities = defaultFleetCapabilities
+var (
+	discoverFleetCapabilities = defaultFleetCapabilities
+	diskImages2Available      = diskimages2.Available
+	apfsQuotaSupported        = vmquota.APFSQuotaSupported
+	effectiveUID              = os.Geteuid
+)
 
 type FleetWorkerConfig struct {
 	ControllerURL      string
@@ -738,10 +747,21 @@ func mergedFleetCapabilities(manual []string) []string {
 }
 
 func defaultFleetCapabilities() []string {
-	if runtime.GOOS == "darwin" {
-		return []string{FleetCapabilityRAMOverlay}
+	return defaultFleetCapabilitiesFor(runtime.GOOS, diskImages2Available, apfsQuotaSupported, effectiveUID)
+}
+
+func defaultFleetCapabilitiesFor(goos string, asifAvailable func() bool, quotaSupported func() bool, euid func() int) []string {
+	if goos != "darwin" {
+		return nil
 	}
-	return nil
+	capabilities := []string{FleetCapabilityRAMOverlay}
+	if asifAvailable != nil && asifAvailable() {
+		capabilities = append(capabilities, FleetCapabilityASIF)
+	}
+	if quotaSupported != nil && quotaSupported() && euid != nil && euid() == 0 {
+		capabilities = append(capabilities, FleetCapabilityAPFSQuota)
+	}
+	return capabilities
 }
 
 func cloneStrings(in []string) []string {

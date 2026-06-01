@@ -54,10 +54,12 @@ Worker flags:
 
 `coved` discovers standard worker capabilities at startup and merges them with
 any repeated `-fleet-capability` values. Darwin workers automatically report
-`ram-overlay`, which lets hosted sandbox and warm-pool requests target cove's
-RAM-backed ephemeral fork support without per-host flag drift. Use manual
-capabilities for operator-defined traits such as GUI seats, lab hardware, or
-reserved host classes.
+`ram-overlay`; report `asif` when DiskImages2 is available; and report
+`apfs-quota` when `diskutil apfs setQuota` is available and the daemon is
+running as root. Hosted sandbox and warm-pool requests can target cove's
+RAM-backed ephemeral forks, sparse ASIF disks, or live APFS directory quotas
+without per-host flag drift. Use manual capabilities for operator-defined
+traits such as GUI seats, lab hardware, or reserved host classes.
 
 Worker protocol:
 
@@ -209,11 +211,11 @@ with active assignments, hosted sandbox status counts with active and draining
 handles, warm-pool desired/slot counts, and aggregate sandbox metering. The
 capability coverage section shows each reported worker capability, status
 counts, and the workers carrying it, so operators can see whether traits such
-as `ram-overlay` are actually available before admitting capability-constrained
-work. The optional `namespace` query filters assignment, sandbox, warm-pool,
-and metering counts; worker inventory stays fleet-global. Because the response
-includes fleet-global worker state, scoped service-account tokens cannot read
-it.
+as `ram-overlay`, `asif`, or `apfs-quota` are actually available before
+admitting capability-constrained work. The optional `namespace` query filters
+assignment, sandbox, warm-pool, and metering counts; worker inventory stays
+fleet-global. Because the response includes fleet-global worker state, scoped
+service-account tokens cannot read it.
 `GET /v1/operations/runs` is the retained controller-run feed. It merges
 placement plans, image preparations, image-GC runs, lifecycle-policy pushes,
 and storage budget/prune runs into one paginated timeline with `kind`,
@@ -723,7 +725,7 @@ screenshot/key/text/mouse events. Both SDKs remember the holder returned by
 exact-image fields as the REST API: pass `manifest_bundle`/`ManifestBundle` or
 the resolved digest fields to request a registry-verified mutable image ref,
 and pass `required_capabilities`/`RequiredCapabilities` to target workers that
-advertise runtime traits such as `ram-overlay`.
+advertise runtime traits such as `ram-overlay`, `asif`, or `apfs-quota`.
 
 Go SDK example:
 

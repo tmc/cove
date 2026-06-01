@@ -11,6 +11,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `GET /v1/operations/summary` now includes per-worker-capability coverage:
   total, ready, cordoned, quarantined, stale, status breakdown, and worker ids
   for traits such as `ram-overlay`.
+- `coved -fleet-url` now auto-detects ASIF and live APFS quota support in
+  addition to RAM overlays: Darwin workers report `asif` when DiskImages2 is
+  available and `apfs-quota` when `diskutil apfs setQuota` is available under
+  a root daemon.
 - `cove-fleetd` now exposes `GET /v1/workers/{id}/events` for worker-scoped
   audit history, and global audit queries now accept `worker_id`.
 - `cove-fleetd` now exposes `GET /v1/workers/{id}/reports` for worker-scoped

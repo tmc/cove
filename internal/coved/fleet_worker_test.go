@@ -19,6 +19,12 @@ import (
 const fleetWorkerTestTimeout = 5 * time.Second
 
 func TestFleetWorkerRegisterHeartbeatAndAwait(t *testing.T) {
+	previous := discoverFleetCapabilities
+	discoverFleetCapabilities = func() []string { return nil }
+	t.Cleanup(func() {
+		discoverFleetCapabilities = previous
+	})
+
 	vmRoot := t.TempDir()
 	mustMkdirAll(t, filepath.Join(vmRoot, "vm-a"))
 	imageRoot := t.TempDir()
@@ -87,7 +93,7 @@ func TestFleetWorkerRegisterHeartbeatAndAwait(t *testing.T) {
 func TestFleetWorkerMergesDiscoveredCapabilities(t *testing.T) {
 	previous := discoverFleetCapabilities
 	discoverFleetCapabilities = func() []string {
-		return []string{FleetCapabilityRAMOverlay, FleetCapabilityRAMOverlay}
+		return []string{FleetCapabilityRAMOverlay, FleetCapabilityRAMOverlay, FleetCapabilityASIF}
 	}
 	t.Cleanup(func() {
 		discoverFleetCapabilities = previous
@@ -96,13 +102,30 @@ func TestFleetWorkerMergesDiscoveredCapabilities(t *testing.T) {
 	worker, err := NewFleetWorker(FleetWorkerConfig{
 		ControllerURL: "http://127.0.0.1:9758",
 		ID:            "worker-1",
-		Capabilities:  []string{"asif", ""},
+		Capabilities:  []string{FleetCapabilityAPFSQuota, ""},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(worker.heartbeat().Capabilities, ","); got != "asif,ram-overlay" {
-		t.Fatalf("heartbeat capabilities = %q, want asif,ram-overlay", got)
+	if got := strings.Join(worker.heartbeat().Capabilities, ","); got != "apfs-quota,asif,ram-overlay" {
+		t.Fatalf("heartbeat capabilities = %q, want apfs-quota,asif,ram-overlay", got)
+	}
+}
+
+func TestDefaultFleetCapabilitiesForDarwin(t *testing.T) {
+	got := defaultFleetCapabilitiesFor("darwin", func() bool { return true }, func() bool { return true }, func() int { return 0 })
+	if strings.Join(got, ",") != "ram-overlay,asif,apfs-quota" {
+		t.Fatalf("capabilities = %+v, want ram-overlay/asif/apfs-quota", got)
+	}
+}
+
+func TestDefaultFleetCapabilitiesRequiresAvailableProbes(t *testing.T) {
+	got := defaultFleetCapabilitiesFor("darwin", func() bool { return false }, func() bool { return true }, func() int { return 501 })
+	if strings.Join(got, ",") != "ram-overlay" {
+		t.Fatalf("capabilities = %+v, want ram-overlay only without ASIF/root quota", got)
+	}
+	if got := defaultFleetCapabilitiesFor("linux", func() bool { return true }, func() bool { return true }, func() int { return 0 }); len(got) != 0 {
+		t.Fatalf("linux capabilities = %+v, want none", got)
 	}
 }
 
