@@ -14,6 +14,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1581,6 +1582,68 @@ func TestStoreSAMLBindingAuthenticatesSignedAssertion(t *testing.T) {
 	tampered := "saml:" + base64.StdEncoding.EncodeToString(tamperedXML)
 	if _, ok := store.AuthenticateBearer(tampered); ok {
 		t.Fatal("AuthenticateBearer(tampered assertion) = true")
+	}
+}
+
+func TestStoreSAMLSessionExchangesSignedResponse(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	key, cert, certPEM := testSAMLKeyCertificate(t)
+	path := filepath.Join(t.TempDir(), "fleet.json")
+	store, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.now = func() time.Time { return now }
+	_, err = store.UpsertSAMLBinding(SAMLBindingRequest{
+		Name:           "okta",
+		EntityID:       "https://idp.example/saml",
+		Subject:        "alice@example.com",
+		SSOURL:         "https://idp.example/sso",
+		Audience:       "https://fleet.example/saml/acs",
+		Namespace:      "team-a",
+		Role:           ServiceAccountRoleOperator,
+		CertificatePEM: certPEM,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := signedSAMLResponse(t, key, cert, "https://idp.example/saml", "alice@example.com", "https://fleet.example/saml/acs", now.Add(-time.Minute), now.Add(5*time.Minute))
+	session, err := store.CreateSAMLSession(SAMLSessionRequest{
+		SAMLResponse: base64.StdEncoding.EncodeToString(response),
+		RelayState:   "state-1",
+		TTL:          "30m",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(session.Token, "saml-session:") || session.Subject != "alice@example.com" || session.RelayState != "state-1" {
+		t.Fatalf("session = %+v", session)
+	}
+	if !session.Expires.Equal(now.Add(30*time.Minute)) || session.Binding.Name != "okta" || session.Binding.Namespace != "team-a" {
+		t.Fatalf("session expiry/binding = %+v", session)
+	}
+	principal, ok := store.AuthenticateBearer(session.Token)
+	if !ok {
+		t.Fatal("AuthenticateBearer(saml session) = false")
+	}
+	if principal.Actor != "saml-session:okta" || principal.Namespace != "team-a" || principal.Role != ServiceAccountRoleOperator {
+		t.Fatalf("session principal = %+v", principal)
+	}
+	if _, ok := store.AuthenticateBearer("saml:" + base64.StdEncoding.EncodeToString(response)); ok {
+		t.Fatal("AuthenticateBearer(replayed saml response) = true")
+	}
+
+	reopened, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened.now = func() time.Time { return now }
+	if principal, ok := reopened.AuthenticateBearer(session.Token); !ok || principal.Actor != "saml-session:okta" {
+		t.Fatalf("reopened AuthenticateBearer(saml session) = %+v, %v", principal, ok)
+	}
+	reopened.now = func() time.Time { return now.Add(31 * time.Minute) }
+	if _, ok := reopened.AuthenticateBearer(session.Token); ok {
+		t.Fatal("AuthenticateBearer(expired saml session) = true")
 	}
 }
 
@@ -4922,6 +4985,38 @@ func TestHandlerSAMLBindingRBACScopes(t *testing.T) {
 	}
 	var record HostRecord
 	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 2}}, &record)
+	form := url.Values{}
+	form.Set("SAMLResponse", base64.StdEncoding.EncodeToString(signedSAMLResponse(t, key, cert, "https://idp.example/saml", "alice@example.com", "https://fleet.example/saml/acs", now.Add(-time.Minute), now.Add(5*time.Minute))))
+	form.Set("RelayState", "relay-1")
+	form.Set("ttl", "20m")
+	acsReq, err := http.NewRequest(http.MethodPost, server.URL+"/v1/saml/acs", strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	acsReq.Header.Set("content-type", "application/x-www-form-urlencoded")
+	acsResp, err := http.DefaultClient.Do(acsReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer acsResp.Body.Close()
+	if acsResp.StatusCode != http.StatusOK {
+		t.Fatalf("saml acs status = %d, want 200", acsResp.StatusCode)
+	}
+	var session SAMLSessionResult
+	if err := json.NewDecoder(acsResp.Body).Decode(&session); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(session.Token, "saml-session:") || session.Subject != "alice@example.com" || session.RelayState != "relay-1" {
+		t.Fatalf("saml session = %+v", session)
+	}
+	var sessionSandbox SandboxStatus
+	postJSONAuth(t, server.URL+"/v1/sandboxes", session.Token, SandboxRequest{ID: "job-acs", ImageRef: "base:v1"}, &sessionSandbox)
+	if sessionSandbox.Namespace != "team-a" || sessionSandbox.ID != "job-acs" {
+		t.Fatalf("saml session sandbox = %+v, want team-a job-acs", sessionSandbox)
+	}
+	if code := postJSONStatus(t, server.URL+"/v1/saml/acs", "", SAMLSessionRequest{SAMLResponse: "not xml"}); code != http.StatusBadRequest {
+		t.Fatalf("bad saml acs status = %d, want 400", code)
+	}
 	token := "saml:" + base64.StdEncoding.EncodeToString(signedSAMLAssertion(t, key, cert, "https://idp.example/saml", "alice@example.com", "https://fleet.example/saml/acs", now.Add(-time.Minute), now.Add(5*time.Minute)))
 	var created SandboxStatus
 	postJSONAuth(t, server.URL+"/v1/sandboxes", token, SandboxRequest{ID: "job-1", ImageRef: "base:v1"}, &created)

@@ -192,6 +192,9 @@ curl -X POST http://127.0.0.1:9758/v1/saml-bindings \
   }'
 curl http://127.0.0.1:9758/v1/saml-bindings
 curl http://127.0.0.1:9758/v1/saml-bindings/okta/metadata
+curl -X POST http://127.0.0.1:9758/v1/saml/acs \
+  -H 'content-type: application/json' \
+  -d '{"saml_response":"<base64-saml-response>","relay_state":"cli","ttl":"1h"}'
 curl http://127.0.0.1:9758/v1/audit
 curl http://127.0.0.1:9758/v1/audit?limit=50
 curl 'http://127.0.0.1:9758/v1/audit?action=assignment.create&actor=service-account:ci&target_type=assignment&limit=50'
@@ -237,11 +240,18 @@ subject matches, and assertion conditions are currently valid. Matching
 assertions record audit actor `saml:<binding-name>` and inherit the binding's
 namespace and role. `GET /v1/saml-bindings/{name}/metadata` returns SAML 2.0 SP
 metadata XML using the binding audience as the SP entity ID and HTTP-POST ACS
-location, so IdP setup can be driven from the controller record. The controller
-records accepted assertion IDs until their time window expires and rejects
-replayed assertions across process restarts. Keep assertions short lived;
-SP-initiated browser login flows and IdP metadata import/refresh are still out
-of scope for this private controller surface.
+location, so IdP setup can be driven from the controller record.
+`POST /v1/saml/acs` accepts either JSON fields `saml_response` /
+`saml_assertion` or browser-style form fields `SAMLResponse` /
+`SAMLAssertion`, plus optional `RelayState` and `ttl`. It consumes the same
+signed, replay-checked assertion path and returns a short-lived
+`saml-session:` bearer token stored only as a SHA-256 hash. Requests made with
+that session token record audit actor `saml-session:<binding-name>` and inherit
+the binding's namespace and role. The controller records accepted assertion IDs
+until their time window expires and rejects replayed assertions across process
+restarts. Keep assertions short lived; SP-initiated AuthnRequest/redirect
+generation and IdP metadata import/refresh are still out of scope for this
+private controller surface.
 If a service account has `namespace` set, assignment, warm-pool, sandbox,
 service-account, and audit list/read/mutation requests through that bearer token
 are scoped to that namespace; attempts to write another namespace are rejected.

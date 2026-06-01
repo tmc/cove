@@ -224,6 +224,21 @@ type SAMLBindingResult struct {
 	Binding SAMLBinding `json:"binding"`
 }
 
+type SAMLSessionRequest struct {
+	SAMLResponse  string `json:"saml_response,omitempty"`
+	SAMLAssertion string `json:"saml_assertion,omitempty"`
+	RelayState    string `json:"relay_state,omitempty"`
+	TTL           string `json:"ttl,omitempty"`
+}
+
+type SAMLSessionResult struct {
+	Token      string      `json:"token,omitempty"`
+	Expires    time.Time   `json:"expires"`
+	Binding    SAMLBinding `json:"binding"`
+	Subject    string      `json:"subject,omitempty"`
+	RelayState string      `json:"relay_state,omitempty"`
+}
+
 type WorkerLifecycle struct {
 	Reason string `json:"reason,omitempty"`
 	Force  bool   `json:"force,omitempty"`

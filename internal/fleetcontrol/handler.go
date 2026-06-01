@@ -78,6 +78,9 @@ func Handler(store *Store) http.Handler {
 	mux.HandleFunc("/v1/oidc-bindings", func(w http.ResponseWriter, r *http.Request) {
 		handleOIDCBindings(w, r, store)
 	})
+	mux.HandleFunc("/v1/saml/acs", func(w http.ResponseWriter, r *http.Request) {
+		handleSAMLACS(w, r, store)
+	})
 	mux.HandleFunc("/v1/saml-bindings/", func(w http.ResponseWriter, r *http.Request) {
 		handleSAMLBinding(w, r, store)
 	})
@@ -398,6 +401,63 @@ func handleSAMLBindings(w http.ResponseWriter, r *http.Request, store *Store) {
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+func handleSAMLACS(w http.ResponseWriter, r *http.Request, store *Store) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	req, err := samlSessionRequestFromHTTP(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	result, err := store.CreateSAMLSession(req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func samlSessionRequestFromHTTP(r *http.Request) (SAMLSessionRequest, error) {
+	contentType := strings.ToLower(r.Header.Get("content-type"))
+	if strings.Contains(contentType, "application/x-www-form-urlencoded") {
+		if err := r.ParseForm(); err != nil {
+			return SAMLSessionRequest{}, fmt.Errorf("decode saml acs form: %w", err)
+		}
+		return samlSessionRequestFromValues(r.PostForm), nil
+	}
+	if strings.Contains(contentType, "multipart/form-data") {
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			return SAMLSessionRequest{}, fmt.Errorf("decode saml acs form: %w", err)
+		}
+		return samlSessionRequestFromValues(r.PostForm), nil
+	}
+	var req SAMLSessionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		return SAMLSessionRequest{}, fmt.Errorf("decode saml acs: %w", err)
+	}
+	return req, nil
+}
+
+func samlSessionRequestFromValues(values url.Values) SAMLSessionRequest {
+	return SAMLSessionRequest{
+		SAMLResponse:  values.Get("SAMLResponse"),
+		SAMLAssertion: values.Get("SAMLAssertion"),
+		RelayState:    values.Get("RelayState"),
+		TTL:           firstValue(values, "ttl", "TTL"),
+	}
+}
+
+func firstValue(values url.Values, keys ...string) string {
+	for _, key := range keys {
+		if value := values.Get(key); strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func handleSAMLBinding(w http.ResponseWriter, r *http.Request, store *Store) {

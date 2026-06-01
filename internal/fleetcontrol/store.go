@@ -41,6 +41,7 @@ type Store struct {
 	oidcBindings  map[string]oidcBindingRecord
 	samlBindings  map[string]samlBindingRecord
 	samlReplays   map[string]samlReplayRecord
+	samlSessions  map[string]samlSessionRecord
 }
 
 type storeFile struct {
@@ -53,6 +54,7 @@ type storeFile struct {
 	OIDCBindings    []oidcBindingRecord     `json:"oidc_bindings,omitempty"`
 	SAMLBindings    []samlBindingRecord     `json:"saml_bindings,omitempty"`
 	SAMLReplays     []samlReplayRecord      `json:"saml_replays,omitempty"`
+	SAMLSessions    []samlSessionRecord     `json:"saml_sessions,omitempty"`
 }
 
 type serviceAccountRecord struct {
@@ -103,6 +105,17 @@ type samlReplayRecord struct {
 	Expires     time.Time `json:"expires"`
 }
 
+type samlSessionRecord struct {
+	TokenHash string    `json:"token_sha256"`
+	Binding   string    `json:"binding"`
+	Subject   string    `json:"subject,omitempty"`
+	Namespace string    `json:"namespace,omitempty"`
+	Role      string    `json:"role,omitempty"`
+	Expires   time.Time `json:"expires"`
+	Created   time.Time `json:"created,omitempty"`
+	Updated   time.Time `json:"updated,omitempty"`
+}
+
 const (
 	sandboxRoleRun     = "run"
 	sandboxRoleStop    = "stop"
@@ -128,6 +141,7 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		oidcBindings:  make(map[string]oidcBindingRecord),
 		samlBindings:  make(map[string]samlBindingRecord),
 		samlReplays:   make(map[string]samlReplayRecord),
+		samlSessions:  make(map[string]samlSessionRecord),
 	}
 	if s.path == "" {
 		return s, nil
@@ -228,6 +242,13 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 			continue
 		}
 		s.samlReplays[samlReplayKey(replay.Binding, replay.AssertionID)] = replay
+	}
+	for _, session := range file.SAMLSessions {
+		session = normalizeSAMLSessionRecord(session)
+		if session.TokenHash == "" || session.Binding == "" || session.Role == "" || session.Expires.IsZero() {
+			continue
+		}
+		s.samlSessions[session.TokenHash] = session
 	}
 	return s, nil
 }
@@ -2673,6 +2694,9 @@ func (s *Store) AuthenticateBearer(token string) (authenticatedPrincipal, bool) 
 			Role:      account.Role,
 		}, true
 	}
+	if principal, ok := s.authenticateSAMLSession(token); ok {
+		return principal, true
+	}
 	if principal, ok := s.authenticateOIDCBearer(token); ok {
 		return principal, true
 	}
@@ -3177,7 +3201,8 @@ func (s *Store) persistLocked() error {
 	oidcBindings := s.sortedOIDCBindingsLocked()
 	samlBindings := s.sortedSAMLBindingsLocked()
 	samlReplays := s.sortedSAMLReplaysLocked()
-	data, err := json.MarshalIndent(storeFile{Hosts: hosts, Assignments: assignments, WarmPools: warmPools, AuditEvents: audit, MeteringRecords: metering, ServiceAccounts: accounts, OIDCBindings: oidcBindings, SAMLBindings: samlBindings, SAMLReplays: samlReplays}, "", "  ")
+	samlSessions := s.sortedSAMLSessionRecordsLocked()
+	data, err := json.MarshalIndent(storeFile{Hosts: hosts, Assignments: assignments, WarmPools: warmPools, AuditEvents: audit, MeteringRecords: metering, ServiceAccounts: accounts, OIDCBindings: oidcBindings, SAMLBindings: samlBindings, SAMLReplays: samlReplays, SAMLSessions: samlSessions}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode fleet store: %w", err)
 	}
@@ -3293,6 +3318,23 @@ func (s *Store) sortedSAMLReplaysLocked() []samlReplayRecord {
 			return records[i].Binding < records[j].Binding
 		}
 		return records[i].AssertionID < records[j].AssertionID
+	})
+	return records
+}
+
+func (s *Store) sortedSAMLSessionRecordsLocked() []samlSessionRecord {
+	records := make([]samlSessionRecord, 0, len(s.samlSessions))
+	for _, record := range s.samlSessions {
+		records = append(records, normalizeSAMLSessionRecord(record))
+	}
+	sort.Slice(records, func(i, j int) bool {
+		if !records[i].Expires.Equal(records[j].Expires) {
+			return records[i].Expires.Before(records[j].Expires)
+		}
+		if records[i].Binding != records[j].Binding {
+			return records[i].Binding < records[j].Binding
+		}
+		return records[i].TokenHash < records[j].TokenHash
 	})
 	return records
 }
@@ -5139,6 +5181,24 @@ func normalizeSAMLReplayRecord(record samlReplayRecord) samlReplayRecord {
 	record.AssertionID = strings.TrimSpace(record.AssertionID)
 	if !record.Expires.IsZero() {
 		record.Expires = record.Expires.UTC()
+	}
+	return record
+}
+
+func normalizeSAMLSessionRecord(record samlSessionRecord) samlSessionRecord {
+	record.TokenHash = strings.TrimSpace(record.TokenHash)
+	record.Binding = strings.TrimSpace(record.Binding)
+	record.Subject = strings.TrimSpace(record.Subject)
+	record.Namespace = normalizeNamespace(record.Namespace)
+	record.Role = strings.TrimSpace(record.Role)
+	if !record.Expires.IsZero() {
+		record.Expires = record.Expires.UTC()
+	}
+	if !record.Created.IsZero() {
+		record.Created = record.Created.UTC()
+	}
+	if !record.Updated.IsZero() {
+		record.Updated = record.Updated.UTC()
 	}
 	return record
 }
