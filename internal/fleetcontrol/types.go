@@ -74,6 +74,25 @@ type HostRecord struct {
 	Report           *WorkerReport     `json:"last_report,omitempty"`
 }
 
+type WorkerListFilter struct {
+	Status               string            `json:"status,omitempty"`
+	Host                 string            `json:"host,omitempty"`
+	Version              string            `json:"version,omitempty"`
+	ImageRef             string            `json:"image_ref,omitempty"`
+	SourceManifestDigest string            `json:"source_manifest_digest,omitempty"`
+	Labels               map[string]string `json:"labels,omitempty"`
+	Offset               int               `json:"offset,omitempty"`
+	Limit                int               `json:"limit,omitempty"`
+}
+
+type WorkerListResult struct {
+	Workers    []HostRecord `json:"workers"`
+	Count      int          `json:"count"`
+	Offset     int          `json:"offset,omitempty"`
+	Limit      int          `json:"limit,omitempty"`
+	NextOffset int          `json:"next_offset,omitempty"`
+}
+
 type WorkerReport struct {
 	ID           string    `json:"id"`
 	AssignmentID string    `json:"assignment_id,omitempty"`

@@ -8,6 +8,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 ## Unreleased
 
 ### Added
+- `cove-fleetd` worker listing now supports controller-scale filters and
+  pagination by status, host, version, image ref, source manifest digest,
+  repeated exact labels, offset, and limit.
 - `cove-fleetd` assignment listing now supports controller-scale filters and
   pagination by status, worker, lease holder, verb, image ref, sandbox, warm
   pool, offset, and limit while preserving namespace scoping.

@@ -39,7 +39,12 @@ func Handler(store *Store) http.Handler {
 		if !reconcile(w, store) {
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"workers": store.List()})
+		filter, err := workerListFilterFromRequest(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, store.ListWorkersPage(filter))
 	})
 	mux.HandleFunc("/v1/reconcile/plan", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -156,6 +161,65 @@ func Handler(store *Store) http.Handler {
 		handleWorker(w, r, store)
 	})
 	return rejectInvalidAuth(mux, store)
+}
+
+func workerListFilterFromRequest(r *http.Request) (WorkerListFilter, error) {
+	query := r.URL.Query()
+	manifestDigest := strings.TrimSpace(query.Get("source_manifest_digest"))
+	if manifestDigest == "" {
+		manifestDigest = strings.TrimSpace(query.Get("image_manifest_digest"))
+	}
+	labels, err := labelFiltersFromQuery(query["label"])
+	if err != nil {
+		return WorkerListFilter{}, err
+	}
+	filter := WorkerListFilter{
+		Status:               strings.TrimSpace(query.Get("status")),
+		Host:                 strings.TrimSpace(query.Get("host")),
+		Version:              strings.TrimSpace(query.Get("version")),
+		ImageRef:             strings.TrimSpace(query.Get("image_ref")),
+		SourceManifestDigest: manifestDigest,
+		Labels:               labels,
+	}
+	if raw := strings.TrimSpace(query.Get("limit")); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 0 {
+			return WorkerListFilter{}, fmt.Errorf("worker limit must be non-negative")
+		}
+		filter.Limit = limit
+	}
+	if raw := strings.TrimSpace(query.Get("offset")); raw != "" {
+		offset, err := strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			return WorkerListFilter{}, fmt.Errorf("worker offset must be non-negative")
+		}
+		filter.Offset = offset
+	}
+	return filter, nil
+}
+
+func labelFiltersFromQuery(values []string) (map[string]string, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	labels := make(map[string]string)
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		key, val, ok := strings.Cut(value, "=")
+		key = strings.TrimSpace(key)
+		val = strings.TrimSpace(val)
+		if !ok || key == "" {
+			return nil, fmt.Errorf("worker label filter must be key=value")
+		}
+		labels[key] = val
+	}
+	if len(labels) == 0 {
+		return nil, nil
+	}
+	return labels, nil
 }
 
 func handleWorkerHeartbeat(w http.ResponseWriter, r *http.Request, store *Store, verb string) {

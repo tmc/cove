@@ -3271,13 +3271,59 @@ func (s *Store) Get(id string) (HostRecord, bool) {
 }
 
 func (s *Store) List() []HostRecord {
+	return s.ListWorkersPage(WorkerListFilter{}).Workers
+}
+
+func (s *Store) ListWorkersFiltered(filter WorkerListFilter) []HostRecord {
+	return s.ListWorkersPage(filter).Workers
+}
+
+func (s *Store) ListWorkersPage(filter WorkerListFilter) WorkerListResult {
+	filter.Status = strings.TrimSpace(filter.Status)
+	filter.Host = strings.TrimSpace(filter.Host)
+	filter.Version = strings.TrimSpace(filter.Version)
+	filter.ImageRef = strings.TrimSpace(filter.ImageRef)
+	filter.SourceManifestDigest = strings.TrimSpace(filter.SourceManifestDigest)
+	filter.Labels = cloneLabels(filter.Labels)
+	if filter.Offset < 0 {
+		filter.Offset = 0
+	}
+	if filter.Limit < 0 {
+		filter.Limit = 0
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := s.sortedHostsLocked()
-	for i := range out {
-		out[i] = s.statusLocked(out[i])
+	result := WorkerListResult{Offset: filter.Offset, Limit: filter.Limit}
+	offset := 0
+	for _, host := range s.sortedHostsLocked() {
+		host = s.statusLocked(host)
+		if filter.Status != "" && host.Status != filter.Status {
+			continue
+		}
+		if filter.Host != "" && host.Host != filter.Host {
+			continue
+		}
+		if filter.Version != "" && host.Version != filter.Version {
+			continue
+		}
+		if !labelsMatch(host.Labels, filter.Labels) {
+			continue
+		}
+		if filter.ImageRef != "" && !workerHasImage(host, filter.ImageRef, filter.SourceManifestDigest) {
+			continue
+		}
+		if offset < filter.Offset {
+			offset++
+			continue
+		}
+		if filter.Limit > 0 && len(result.Workers) >= filter.Limit {
+			result.NextOffset = filter.Offset + len(result.Workers)
+			break
+		}
+		result.Workers = append(result.Workers, host)
 	}
-	return out
+	result.Count = len(result.Workers)
+	return result
 }
 
 func (s *Store) reconcileLocked(now time.Time) ReconcileResult {

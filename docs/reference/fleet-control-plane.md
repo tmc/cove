@@ -67,6 +67,7 @@ curl http://127.0.0.1:9758/healthz
 curl http://127.0.0.1:9758/v1/operations/summary
 curl http://127.0.0.1:9758/v1/operations/summary?namespace=team-a
 curl http://127.0.0.1:9758/v1/workers
+curl 'http://127.0.0.1:9758/v1/workers?status=ready&label=zone=desk&image_ref=macos-runner:latest&limit=50'
 curl http://127.0.0.1:9758/v1/workers/mini-1
 curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/cordon \
   -H 'content-type: application/json' \
@@ -103,6 +104,12 @@ so it does not persist changes or write audit events. Planned generated
 assignment IDs reflect the snapshot time and can change if state changes before
 the later apply. Like apply, the plan endpoint is fleet-global and requires an
 unscoped operator/admin identity.
+
+`GET /v1/workers` returns a paginated `workers` response with `count`,
+`offset`, `limit`, and `next_offset`. It accepts `status`, `host`, `version`,
+`image_ref`, `source_manifest_digest` or `image_manifest_digest`, repeated
+`label=key=value`, `offset`, and `limit`. Worker inventory is fleet-global, so
+scoped service-account tokens cannot read it.
 
 `POST /v1/workers/{id}/drain` is the controller maintenance path for hosted
 sandbox workloads. It cordons the worker to prevent new placement, then walks

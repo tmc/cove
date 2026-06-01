@@ -63,6 +63,73 @@ func TestStoreHeartbeatPersistsAndSorts(t *testing.T) {
 	}
 }
 
+func TestStoreListWorkersPageFilters(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{
+		ID:      "old",
+		Host:    "mini-old",
+		Version: "v1",
+		Labels:  map[string]string{"zone": "desk", "role": "runner"},
+		ImageDetails: []WorkerImage{{
+			Ref:                  "base:v1",
+			SourceManifestDigest: "sha256:old",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(30 * time.Second)
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{
+		ID:      "cordoned",
+		Host:    "mini-cordoned",
+		Version: "v2",
+		Labels:  map[string]string{"zone": "desk", "role": "runner"},
+		ImageDetails: []WorkerImage{{
+			Ref:                  "base:v1",
+			SourceManifestDigest: "sha256:base",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{
+		ID:      "quarantined",
+		Host:    "mini-quarantined",
+		Version: "v2",
+		Labels:  map[string]string{"zone": "lab", "role": "runner"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CordonWorker("cordoned", "maintenance"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.QuarantineWorker("quarantined", "bad disk"); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(40 * time.Second)
+
+	page := store.ListWorkersPage(WorkerListFilter{Labels: map[string]string{"role": "runner"}, Limit: 2})
+	if page.Count != 2 || page.Limit != 2 || page.NextOffset != 2 || len(page.Workers) != 2 || page.Workers[0].ID != "cordoned" || page.Workers[1].ID != "old" {
+		t.Fatalf("first worker page = %+v, want cordoned/old with next", page)
+	}
+	page = store.ListWorkersPage(WorkerListFilter{Labels: map[string]string{"role": "runner"}, Offset: 2, Limit: 2})
+	if page.Count != 1 || page.Offset != 2 || page.NextOffset != 0 || len(page.Workers) != 1 || page.Workers[0].ID != "quarantined" {
+		t.Fatalf("second worker page = %+v, want quarantined", page)
+	}
+	if got := store.ListWorkersFiltered(WorkerListFilter{Status: "stale"}); len(got) != 1 || got[0].ID != "old" {
+		t.Fatalf("stale workers = %+v, want old", got)
+	}
+	if got := store.ListWorkersFiltered(WorkerListFilter{Status: "cordoned", Host: "mini-cordoned", Version: "v2"}); len(got) != 1 || got[0].ID != "cordoned" {
+		t.Fatalf("cordoned host workers = %+v, want cordoned", got)
+	}
+	if got := store.ListWorkersFiltered(WorkerListFilter{Status: "quarantined", Labels: map[string]string{"zone": "lab"}}); len(got) != 1 || got[0].ID != "quarantined" {
+		t.Fatalf("quarantined label workers = %+v, want quarantined", got)
+	}
+	if got := store.ListWorkersFiltered(WorkerListFilter{ImageRef: "base:v1", SourceManifestDigest: "sha256:base"}); len(got) != 1 || got[0].ID != "cordoned" {
+		t.Fatalf("image digest workers = %+v, want cordoned", got)
+	}
+}
+
 func TestStoreAuditsFleetMutations(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "fleet.json")
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
@@ -4010,6 +4077,51 @@ func TestHandlerWorkerProtocol(t *testing.T) {
 	getJSON(t, server.URL+"/v1/workers", &list)
 	if len(list.Workers) != 1 || list.Workers[0].ID != "mini-1" {
 		t.Fatalf("list response = %+v", list)
+	}
+}
+
+func TestHandlerWorkerListFilters(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{
+		ID:      "warm",
+		Host:    "warm.local",
+		Version: "v1",
+		Labels:  map[string]string{"zone": "desk", "role": "runner"},
+		ImageDetails: []WorkerImage{{
+			Ref:                  "base:v1",
+			SourceManifestDigest: "sha256:base",
+		}},
+	}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{
+		ID:      "cold",
+		Host:    "cold.local",
+		Version: "v1",
+		Labels:  map[string]string{"zone": "desk", "role": "builder"},
+	}, &record)
+	postJSON(t, server.URL+"/v1/workers/cold/cordon", WorkerLifecycle{Reason: "maintenance"}, &record)
+
+	var list WorkerListResult
+	getJSON(t, server.URL+"/v1/workers?status=ready&label=zone=desk&label=role=runner&image_ref=base:v1&source_manifest_digest="+url.QueryEscape("sha256:base")+"&limit=1", &list)
+	if list.Count != 1 || list.Limit != 1 || len(list.Workers) != 1 || list.Workers[0].ID != "warm" {
+		t.Fatalf("filtered workers = %+v, want warm", list)
+	}
+	list = WorkerListResult{}
+	getJSON(t, server.URL+"/v1/workers?status=cordoned&host=cold.local&version=v1", &list)
+	if list.Count != 1 || len(list.Workers) != 1 || list.Workers[0].ID != "cold" {
+		t.Fatalf("cordoned workers = %+v, want cold", list)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/workers?limit=-1", ""); code != http.StatusBadRequest {
+		t.Fatalf("bad worker limit status = %d, want %d", code, http.StatusBadRequest)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/workers?offset=bad", ""); code != http.StatusBadRequest {
+		t.Fatalf("bad worker offset status = %d, want %d", code, http.StatusBadRequest)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/workers?label=zone", ""); code != http.StatusBadRequest {
+		t.Fatalf("bad worker label status = %d, want %d", code, http.StatusBadRequest)
 	}
 }
 
