@@ -311,6 +311,19 @@ type WorkerEvacuationAssignment struct {
 	Candidates     []PlacementCandidate `json:"candidates,omitempty"`
 }
 
+type AssignmentCancelRequest struct {
+	Reason string `json:"reason,omitempty"`
+	Force  bool   `json:"force,omitempty"`
+}
+
+type AssignmentCancelResult struct {
+	Assignment     Assignment `json:"assignment"`
+	Reason         string     `json:"reason,omitempty"`
+	Force          bool       `json:"force,omitempty"`
+	Canceled       bool       `json:"canceled"`
+	PreviousStatus string     `json:"previous_status,omitempty"`
+}
+
 type WorkerDrainSkip struct {
 	SandboxID string `json:"sandbox_id"`
 	Status    string `json:"status,omitempty"`

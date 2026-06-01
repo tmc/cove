@@ -668,6 +668,9 @@ curl -X POST http://127.0.0.1:9758/v1/assignments \
   -d '{"id":"packed-1","policy":"bin-pack","anti_affinity_key":"ci/buildkite","resources":{"vms":1},"verb":"cove","args":["run","-ephemeral","-headless"]}'
 curl http://127.0.0.1:9758/v1/assignments
 curl http://127.0.0.1:9758/v1/assignments/probe-1
+curl -X POST http://127.0.0.1:9758/v1/assignments/probe-1/cancel \
+  -H 'content-type: application/json' \
+  -d '{"reason":"bad input"}'
 ```
 
 Assignments are stored with `pending`, `leased`, `running`, `ready`, `claimed`,
@@ -682,6 +685,14 @@ after the guest command returns.
 Reconciliation marks expired workers stale, requeues expired assignment leases,
 rejects late reports for reclaimed leases, and can move a policy-placed
 assignment from a stale worker to another ready worker.
+`POST /v1/assignments/{id}/cancel` gives operators a precise stuck-work control:
+pending unleased assignments can be marked `canceled` directly, while leased,
+running, ready, claimed, draining, or restarting assignments require
+`{"force":true}` because the controller is only changing its assignment state.
+Hosted sandbox run assignments are rejected by this endpoint; use sandbox
+stop/delete so the controller can create the required cleanup assignment.
+Cancellation is audited as `assignment.cancel` and scoped service-account
+tokens can only cancel assignments in their namespace.
 
 Cordoned workers keep heartbeating and reporting, but controller placement
 skips them for unbound and policy-placed assignments. Explicit `worker_id`

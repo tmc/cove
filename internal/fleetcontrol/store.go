@@ -1020,6 +1020,77 @@ func (s *Store) CreateAssignmentActor(actor string, a Assignment) (Assignment, e
 	return cloneAssignment(a), nil
 }
 
+func (s *Store) CancelAssignment(id string, req AssignmentCancelRequest) (AssignmentCancelResult, error) {
+	return s.CancelAssignmentActor("controller", id, req)
+}
+
+func (s *Store) CancelAssignmentActor(actor, id string, req AssignmentCancelRequest) (AssignmentCancelResult, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return AssignmentCancelResult{}, fmt.Errorf("assignment id required")
+	}
+	now := s.now().UTC()
+	actor = normalizeActor(actor)
+	reason := strings.TrimSpace(req.Reason)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	assignment, ok := s.assignments[id]
+	if !ok {
+		return AssignmentCancelResult{}, fmt.Errorf("assignment %q not found", id)
+	}
+	status := normalizeOperationStatus(assignment.Status)
+	if !openAssignmentStatus(status) {
+		return AssignmentCancelResult{}, fmt.Errorf("assignment %q is %s", id, status)
+	}
+	if assignment.SandboxID != "" && assignment.SandboxRole == sandboxRoleRun {
+		return AssignmentCancelResult{}, fmt.Errorf("assignment %q belongs to hosted sandbox %q; use sandbox stop or delete", id, assignment.SandboxID)
+	}
+	if !req.Force && (status != "pending" || assignment.LeasedTo != "") {
+		return AssignmentCancelResult{}, fmt.Errorf("assignment %q is %s; force required", id, status)
+	}
+
+	workerID := assignment.WorkerID
+	if workerID == "" {
+		workerID = assignment.LeasedTo
+	}
+	assignment.Status = "canceled"
+	assignment.LeasedTo = ""
+	assignment.LeaseExpires = time.Time{}
+	assignment.Updated = now
+	s.assignments[id] = assignment
+	fields := map[string]string{
+		"reason":          reason,
+		"force":           strconv.FormatBool(req.Force),
+		"previous_status": status,
+		"operation":       "assignment.cancel",
+	}
+	if workerID != "" {
+		fields["worker_id"] = workerID
+	}
+	s.appendAuditLocked(now, AuditEvent{
+		Actor:        actor,
+		Namespace:    assignment.Namespace,
+		Action:       "assignment.cancel",
+		TargetType:   "assignment",
+		TargetID:     id,
+		WorkerID:     workerID,
+		AssignmentID: id,
+		Status:       assignment.Status,
+		Fields:       fields,
+	})
+	if err := s.persistLocked(); err != nil {
+		return AssignmentCancelResult{}, err
+	}
+	return AssignmentCancelResult{
+		Assignment:     cloneAssignment(assignment),
+		Reason:         reason,
+		Force:          req.Force,
+		Canceled:       true,
+		PreviousStatus: status,
+	}, nil
+}
+
 func (s *Store) PlanAssignment(a Assignment, limit int) (PlacementPlan, error) {
 	policy, imageRef, imageManifestDigest, antiAffinityKey, requiredLabels, resources, err := normalizePlacementFields(a)
 	if err != nil {

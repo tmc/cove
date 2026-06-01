@@ -1868,6 +1868,80 @@ func TestStoreAssignmentsLeaseReportAndPersist(t *testing.T) {
 	}
 }
 
+func TestStoreCancelAssignmentPending(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	if _, err := store.CreateAssignment(Assignment{ID: "assignment-1", Verb: "noop"}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.CancelAssignment("", AssignmentCancelRequest{Reason: "bad input"})
+	if err == nil {
+		t.Fatal("CancelAssignment without id error = nil")
+	}
+	result, err = store.CancelAssignment("assignment-1", AssignmentCancelRequest{Reason: "bad input"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Canceled || result.Assignment.Status != "canceled" || result.Reason != "bad input" || result.PreviousStatus != "pending" {
+		t.Fatalf("cancel result = %+v", result)
+	}
+	assignment, ok := store.GetAssignment("assignment-1")
+	if !ok || assignment.Status != "canceled" {
+		t.Fatalf("assignment = %+v, %v; want canceled", assignment, ok)
+	}
+	if event := auditAction(store.ListAudit(0), "assignment.cancel"); event == nil || event.AssignmentID != "assignment-1" || event.Fields["reason"] != "bad input" || event.Fields["force"] != "false" {
+		t.Fatalf("assignment cancel audit = %+v", event)
+	}
+}
+
+func TestStoreCancelAssignmentRequiresForceForLeased(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAssignment(Assignment{ID: "assignment-1", WorkerID: "worker-1", Verb: "noop"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AwaitAssignment("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CancelAssignment("assignment-1", AssignmentCancelRequest{Reason: "stuck"}); err == nil {
+		t.Fatal("CancelAssignment leased error = nil, want force required")
+	}
+	result, err := store.CancelAssignment("assignment-1", AssignmentCancelRequest{Reason: "stuck", Force: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Canceled || !result.Force || result.PreviousStatus != "leased" {
+		t.Fatalf("forced cancel result = %+v", result)
+	}
+	assignment, ok := store.GetAssignment("assignment-1")
+	if !ok {
+		t.Fatal("assignment missing")
+	}
+	if assignment.Status != "canceled" || assignment.LeasedTo != "" || !assignment.LeaseExpires.IsZero() {
+		t.Fatalf("forced canceled assignment = %+v", assignment)
+	}
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: "assignment-1", Status: "complete"}); err == nil {
+		t.Fatal("Report after forced cancel error = nil, want lease error")
+	}
+}
+
+func TestStoreCancelAssignmentRejectsHostedSandboxRun(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	if _, err := store.CreateAssignment(Assignment{ID: "assignment-1", Verb: "cove", SandboxID: "job-1", SandboxRole: sandboxRoleRun}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CancelAssignment("assignment-1", AssignmentCancelRequest{Force: true}); err == nil {
+		t.Fatal("CancelAssignment sandbox error = nil, want sandbox stop guidance")
+	}
+	assignment, ok := store.GetAssignment("assignment-1")
+	if !ok || assignment.Status != "pending" {
+		t.Fatalf("sandbox assignment = %+v, %v; want pending", assignment, ok)
+	}
+}
+
 func TestStoreReportRenewsRunningAssignment(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
 	store := NewMemoryStore(time.Minute)
@@ -3821,6 +3895,35 @@ func TestHandlerAssignmentProtocol(t *testing.T) {
 	getJSON(t, server.URL+"/v1/assignments", &list)
 	if len(list.Assignments) != 1 || list.Assignments[0].ID != "assignment-1" {
 		t.Fatalf("list = %+v", list)
+	}
+}
+
+func TestHandlerAssignmentCancel(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var account ServiceAccountResult
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-a", Namespace: "team-a", Role: ServiceAccountRoleOperator, Token: "token-a"}, &account)
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-b", Namespace: "team-b", Role: ServiceAccountRoleOperator, Token: "token-b"}, &account)
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1"}, &record)
+	var created Assignment
+	postJSONAuth(t, server.URL+"/v1/assignments", "token-a", Assignment{ID: "assignment-1", WorkerID: "worker-1", Verb: "noop"}, &created)
+	if created.Namespace != "team-a" {
+		t.Fatalf("created assignment = %+v, want team-a namespace", created)
+	}
+	if code := postJSONStatus(t, server.URL+"/v1/assignments/assignment-1/cancel", "token-b", AssignmentCancelRequest{Reason: "wrong team"}); code != http.StatusNotFound {
+		t.Fatalf("cross-namespace cancel status = %d, want %d", code, http.StatusNotFound)
+	}
+
+	var canceled AssignmentCancelResult
+	postJSONAuth(t, server.URL+"/v1/assignments/assignment-1/cancel", "token-a", AssignmentCancelRequest{Reason: "bad input"}, &canceled)
+	if !canceled.Canceled || canceled.Assignment.Status != "canceled" || canceled.Assignment.Namespace != "team-a" || canceled.Reason != "bad input" {
+		t.Fatalf("cancel response = %+v", canceled)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/assignments/assignment-1/cancel", "token-a"); code != http.StatusMethodNotAllowed {
+		t.Fatalf("GET cancel status = %d, want %d", code, http.StatusMethodNotAllowed)
 	}
 }
 

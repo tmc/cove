@@ -2014,27 +2014,61 @@ func handleAssignments(w http.ResponseWriter, r *http.Request, store *Store) {
 }
 
 func handleAssignment(w http.ResponseWriter, r *http.Request, store *Store) {
-	id := strings.Trim(strings.TrimPrefix(r.URL.Path, "/v1/assignments/"), "/")
-	if id == "" || strings.Contains(id, "/") {
+	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/v1/assignments/"), "/")
+	parts := strings.Split(path, "/")
+	if len(parts) == 2 && parts[1] == "cancel" {
+		handleAssignmentCancel(w, r, store, parts[0])
+		return
+	}
+	if path == "" || len(parts) != 1 {
 		writeError(w, http.StatusNotFound, "assignment not found")
 		return
 	}
+	id := parts[0]
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	if !requireRole(w, identityFromRequest(r, store), ServiceAccountRoleViewer) {
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
 		return
 	}
 	if !reconcile(w, store) {
 		return
 	}
 	assignment, ok := store.GetAssignment(id)
-	if !ok || !canAccessNamespace(identityFromRequest(r, store), assignment.Namespace) {
+	if !ok || !canAccessNamespace(identity, assignment.Namespace) {
 		writeError(w, http.StatusNotFound, "assignment not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, assignment)
+}
+
+func handleAssignmentCancel(w http.ResponseWriter, r *http.Request, store *Store, id string) {
+	if id == "" || r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleOperator) {
+		return
+	}
+	var req AssignmentCancelRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode assignment cancel: %v", err))
+		return
+	}
+	assignment, ok := store.GetAssignment(id)
+	if !ok || !canAccessNamespace(identity, assignment.Namespace) {
+		writeError(w, http.StatusNotFound, "assignment not found")
+		return
+	}
+	result, err := store.CancelAssignmentActor(identity.Actor, id, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func reconcile(w http.ResponseWriter, store *Store) bool {
