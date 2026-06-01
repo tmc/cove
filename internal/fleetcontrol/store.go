@@ -38,6 +38,7 @@ type Store struct {
 	plans         []PlacementPlan
 	preparations  []ImagePrepareResult
 	imageGCRuns   []ImageGCResult
+	lifecycleRuns []LifecyclePolicyResult
 	audit         []AuditEvent
 	metering      []SandboxMeteringRecord
 	reports       []AssignmentReport
@@ -55,6 +56,7 @@ type storeFile struct {
 	PlacementPlans    []PlacementPlan         `json:"placement_plans,omitempty"`
 	ImagePreparations []ImagePrepareResult    `json:"image_preparations,omitempty"`
 	ImageGCRuns       []ImageGCResult         `json:"image_gc_runs,omitempty"`
+	LifecycleRuns     []LifecyclePolicyResult `json:"lifecycle_runs,omitempty"`
 	AuditEvents       []AuditEvent            `json:"audit_events,omitempty"`
 	MeteringRecords   []SandboxMeteringRecord `json:"metering_records,omitempty"`
 	AssignmentReports []AssignmentReport      `json:"assignment_reports,omitempty"`
@@ -148,6 +150,7 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		plans:         nil,
 		preparations:  nil,
 		imageGCRuns:   nil,
+		lifecycleRuns: nil,
 		audit:         nil,
 		metering:      nil,
 		reports:       nil,
@@ -234,6 +237,13 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 			continue
 		}
 		s.imageGCRuns = append(s.imageGCRuns, run)
+	}
+	for _, run := range file.LifecycleRuns {
+		run = normalizeLifecyclePolicyResult(run)
+		if run.ID == "" || run.Created.IsZero() || run.VMName == "" {
+			continue
+		}
+		s.lifecycleRuns = append(s.lifecycleRuns, run)
 	}
 	for _, event := range file.AuditEvents {
 		event = normalizeAuditEvent(event)
@@ -333,6 +343,7 @@ func (s *Store) ReconcilePlan() ReconcileResult {
 		plans:         clonePlacementPlans(s.plans),
 		preparations:  cloneImagePrepareResults(s.preparations),
 		imageGCRuns:   cloneImageGCResults(s.imageGCRuns),
+		lifecycleRuns: cloneLifecyclePolicyResults(s.lifecycleRuns),
 		metering:      cloneSandboxMeteringRecords(s.metering),
 		reports:       cloneAssignmentReports(s.reports),
 	}
@@ -2693,13 +2704,25 @@ func (s *Store) PushLifecyclePolicyActor(actor string, req LifecyclePolicyReques
 	}
 	namespace := normalizeNamespace(req.Namespace)
 	labels := cloneLabels(req.RequiredLabels)
+	idleTimeout := strings.TrimSpace(req.IdleTimeout)
+	maxAge := strings.TrimSpace(req.MaxAge)
 	now := s.now().UTC()
 	actor = normalizeActor(actor)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	reconciled := s.reconcileLocked(now)
-	result := LifecyclePolicyResult{Namespace: namespace, VMName: vmName}
+	s.reconcileLocked(now)
+	result := LifecyclePolicyResult{
+		ID:             s.nextLifecyclePolicyIDLocked(now),
+		Created:        now,
+		Namespace:      namespace,
+		VMName:         vmName,
+		RequiredLabels: labels,
+		Clear:          req.Clear,
+		IdleTimeout:    idleTimeout,
+		MaxAge:         maxAge,
+		RunBudget:      req.RunBudget,
+	}
 	for _, host := range s.sortedHostsLocked() {
 		host = s.statusLocked(host)
 		if !labelsMatch(host.Labels, labels) {
@@ -2730,25 +2753,80 @@ func (s *Store) PushLifecyclePolicyActor(actor string, req LifecyclePolicyReques
 	if len(result.Assignments) == 0 && len(result.Skipped) == 0 {
 		return result, fmt.Errorf("no workers match lifecycle policy")
 	}
-	if len(result.Assignments) > 0 || reconciled.changed() {
-		if len(result.Assignments) > 0 {
-			s.appendAuditLocked(now, AuditEvent{
-				Actor:      actor,
-				Namespace:  namespace,
-				Action:     "policy.lifecycle",
-				TargetType: "vm",
-				TargetID:   vmName,
-				Fields: map[string]string{
-					"assignments": strconv.Itoa(len(result.Assignments)),
-					"clear":       strconv.FormatBool(req.Clear),
-				},
-			})
-		}
-		if err := s.persistLocked(); err != nil {
-			return result, err
-		}
+	result = normalizeLifecyclePolicyResult(result)
+	s.lifecycleRuns = append(s.lifecycleRuns, cloneLifecyclePolicyResult(result))
+	if len(result.Assignments) > 0 {
+		s.appendAuditLocked(now, AuditEvent{
+			Actor:      actor,
+			Namespace:  namespace,
+			Action:     "policy.lifecycle",
+			TargetType: "vm",
+			TargetID:   vmName,
+			Fields: map[string]string{
+				"assignments": strconv.Itoa(len(result.Assignments)),
+				"clear":       strconv.FormatBool(req.Clear),
+			},
+		})
+	}
+	if err := s.persistLocked(); err != nil {
+		return result, err
 	}
 	return result, nil
+}
+
+func (s *Store) GetLifecyclePolicyRun(id string) (LifecyclePolicyResult, bool) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return LifecyclePolicyResult{}, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, run := range s.lifecycleRuns {
+		if run.ID == id {
+			return cloneLifecyclePolicyResult(run), true
+		}
+	}
+	return LifecyclePolicyResult{}, false
+}
+
+func (s *Store) ListLifecyclePolicyRunsPage(filter LifecyclePolicyListFilter) LifecyclePolicyListResult {
+	filter.Namespace = normalizeNamespace(filter.Namespace)
+	filter.VMName = strings.TrimSpace(filter.VMName)
+	if filter.Offset < 0 {
+		filter.Offset = 0
+	}
+	if filter.Limit < 0 {
+		filter.Limit = 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	runs := s.sortedLifecyclePolicyRunsLocked()
+	filtered := runs[:0]
+	for _, run := range runs {
+		if !namespaceMatches(run.Namespace, filter.Namespace) {
+			continue
+		}
+		if filter.VMName != "" && run.VMName != filter.VMName {
+			continue
+		}
+		if filter.Clear != nil && run.Clear != *filter.Clear {
+			continue
+		}
+		filtered = append(filtered, run)
+	}
+	result := LifecyclePolicyListResult{Offset: filter.Offset, Limit: filter.Limit}
+	if filter.Offset >= len(filtered) {
+		return result
+	}
+	end := len(filtered) - filter.Offset
+	start := 0
+	if filter.Limit > 0 && end > filter.Limit {
+		start = end - filter.Limit
+		result.NextOffset = filter.Offset + filter.Limit
+	}
+	result.Runs = cloneLifecyclePolicyResults(filtered[start:end])
+	result.Count = len(result.Runs)
+	return result
 }
 
 func (s *Store) PushStorageBudget(req StorageBudgetRequest) (StorageBudgetResult, error) {
@@ -3919,6 +3997,7 @@ func (s *Store) persistLocked() error {
 	plans := s.sortedPlacementPlansLocked()
 	preparations := s.sortedImagePreparationsLocked()
 	imageGCRuns := s.sortedImageGCRunsLocked()
+	lifecycleRuns := s.sortedLifecyclePolicyRunsLocked()
 	audit := cloneAuditEvents(s.audit)
 	metering := s.sortedMeteringLocked()
 	reports := s.sortedAssignmentReportsLocked()
@@ -3927,7 +4006,7 @@ func (s *Store) persistLocked() error {
 	samlBindings := s.sortedSAMLBindingsLocked()
 	samlReplays := s.sortedSAMLReplaysLocked()
 	samlSessions := s.sortedSAMLSessionRecordsLocked()
-	data, err := json.MarshalIndent(storeFile{Hosts: hosts, Assignments: assignments, WarmPools: warmPools, PlacementPlans: plans, ImagePreparations: preparations, ImageGCRuns: imageGCRuns, AuditEvents: audit, MeteringRecords: metering, AssignmentReports: reports, ServiceAccounts: accounts, OIDCBindings: oidcBindings, SAMLBindings: samlBindings, SAMLReplays: samlReplays, SAMLSessions: samlSessions}, "", "  ")
+	data, err := json.MarshalIndent(storeFile{Hosts: hosts, Assignments: assignments, WarmPools: warmPools, PlacementPlans: plans, ImagePreparations: preparations, ImageGCRuns: imageGCRuns, LifecycleRuns: lifecycleRuns, AuditEvents: audit, MeteringRecords: metering, AssignmentReports: reports, ServiceAccounts: accounts, OIDCBindings: oidcBindings, SAMLBindings: samlBindings, SAMLReplays: samlReplays, SAMLSessions: samlSessions}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode fleet store: %w", err)
 	}
@@ -4013,6 +4092,17 @@ func (s *Store) sortedImagePreparationsLocked() []ImagePrepareResult {
 
 func (s *Store) sortedImageGCRunsLocked() []ImageGCResult {
 	runs := cloneImageGCResults(s.imageGCRuns)
+	sort.Slice(runs, func(i, j int) bool {
+		if !runs[i].Created.Equal(runs[j].Created) {
+			return runs[i].Created.Before(runs[j].Created)
+		}
+		return runs[i].ID < runs[j].ID
+	})
+	return runs
+}
+
+func (s *Store) sortedLifecyclePolicyRunsLocked() []LifecyclePolicyResult {
+	runs := cloneLifecyclePolicyResults(s.lifecycleRuns)
 	sort.Slice(runs, func(i, j int) bool {
 		if !runs[i].Created.Equal(runs[j].Created) {
 			return runs[i].Created.Before(runs[j].Created)
@@ -4194,6 +4284,24 @@ func (s *Store) nextImageGCIDLocked(now time.Time) string {
 	}
 }
 
+func (s *Store) nextLifecyclePolicyIDLocked(now time.Time) string {
+	base := fmt.Sprintf("lifecycle-policy-%d", now.UnixNano())
+	id := base
+	for i := 2; ; i++ {
+		found := false
+		for _, run := range s.lifecycleRuns {
+			if run.ID == id {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return id
+		}
+		id = fmt.Sprintf("%s-%d", base, i)
+	}
+}
+
 func (s *Store) nextMeteringIDLocked(now time.Time) string {
 	base := fmt.Sprintf("metering-%d", now.UnixNano())
 	id := base
@@ -4312,6 +4420,37 @@ func cloneImageGCSkips(in []ImageGCSkip) []ImageGCSkip {
 		return nil
 	}
 	out := make([]ImageGCSkip, len(in))
+	copy(out, in)
+	return out
+}
+
+func cloneLifecyclePolicyResult(in LifecyclePolicyResult) LifecyclePolicyResult {
+	out := in
+	if !out.Created.IsZero() {
+		out.Created = out.Created.UTC()
+	}
+	out.RequiredLabels = cloneLabels(in.RequiredLabels)
+	out.Assignments = cloneAssignments(in.Assignments)
+	out.Skipped = cloneLifecyclePolicySkips(in.Skipped)
+	return out
+}
+
+func cloneLifecyclePolicyResults(in []LifecyclePolicyResult) []LifecyclePolicyResult {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]LifecyclePolicyResult, len(in))
+	for i := range in {
+		out[i] = cloneLifecyclePolicyResult(in[i])
+	}
+	return out
+}
+
+func cloneLifecyclePolicySkips(in []LifecyclePolicySkip) []LifecyclePolicySkip {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]LifecyclePolicySkip, len(in))
 	copy(out, in)
 	return out
 }
@@ -5833,6 +5972,28 @@ func normalizeImageGCResult(result ImageGCResult) ImageGCResult {
 	}
 	result.Assignments = cloneAssignments(result.Assignments)
 	result.Skipped = cloneImageGCSkips(result.Skipped)
+	for i := range result.Skipped {
+		result.Skipped[i].WorkerID = strings.TrimSpace(result.Skipped[i].WorkerID)
+		result.Skipped[i].Reason = strings.TrimSpace(result.Skipped[i].Reason)
+	}
+	return result
+}
+
+func normalizeLifecyclePolicyResult(result LifecyclePolicyResult) LifecyclePolicyResult {
+	result.ID = strings.TrimSpace(result.ID)
+	result.Namespace = normalizeNamespace(result.Namespace)
+	result.VMName = strings.TrimSpace(result.VMName)
+	result.RequiredLabels = cloneLabels(result.RequiredLabels)
+	result.IdleTimeout = strings.TrimSpace(result.IdleTimeout)
+	result.MaxAge = strings.TrimSpace(result.MaxAge)
+	if result.RunBudget < 0 {
+		result.RunBudget = 0
+	}
+	if !result.Created.IsZero() {
+		result.Created = result.Created.UTC()
+	}
+	result.Assignments = cloneAssignments(result.Assignments)
+	result.Skipped = cloneLifecyclePolicySkips(result.Skipped)
 	for i := range result.Skipped {
 		result.Skipped[i].WorkerID = strings.TrimSpace(result.Skipped[i].WorkerID)
 		result.Skipped[i].Reason = strings.TrimSpace(result.Skipped[i].Reason)

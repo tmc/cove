@@ -407,6 +407,8 @@ curl -X POST http://127.0.0.1:9758/v1/policies/lifecycle \
 curl -X POST http://127.0.0.1:9758/v1/policies/lifecycle \
   -H 'content-type: application/json' \
   -d '{"vm_name":"ci-runner","required_labels":{"zone":"desk"},"clear":true}'
+curl 'http://127.0.0.1:9758/v1/policies/lifecycle/runs?vm_name=ci-runner&clear=false&limit=20'
+curl http://127.0.0.1:9758/v1/policies/lifecycle/runs/lifecycle-policy-...
 ```
 
 Lifecycle policy push creates one `cove policy <vm> set ...` assignment for
@@ -416,6 +418,13 @@ the guest exec count. `clear:true` queues `cove policy <vm> clear` and cannot be
 combined with thresholds. Workers that are cordoned or stale, or already have
 an active lifecycle-policy assignment for the same VM, are returned in
 `skipped`.
+Each successful lifecycle-policy response is persisted with `id`, `created`,
+the VM name, label selector, clear/set mode, thresholds, and queued assignment
+or skip details, including skipped-only no-op runs. `GET
+/v1/policies/lifecycle/runs` returns paginated policy history with `vm_name`,
+`clear`, `offset`, and `limit` filters; scoped service-account tokens only see
+runs in their namespace. The `GET /v1/policies/lifecycle/runs/{id}` endpoint
+returns one retained policy result or `404` across namespace boundaries.
 
 Storage policy endpoints:
 
@@ -839,8 +848,8 @@ curl -X POST http://127.0.0.1:9758/v1/workers/register \
 
 This surface is intentionally private and local-first. It now has basic
 controller reconciliation, worker cordon/quarantine/evacuate/drain/decommission
-lifecycle, fleet image preparation, fleet image-GC push, lifecycle-policy push,
-storage budget/prune push, retained placement plans, and a first fork warm-pool
+lifecycle, fleet image preparation, fleet image-GC push, lifecycle-policy push
+with retained history, storage budget/prune push, retained placement plans, and a first fork warm-pool
 quota reconciler with agent-ready slot claim and guest `Exec` handoff through
 the `cove shell` path plus claimed-slot stop and downsize cleanup, plus a
 persistent fleet audit feed.

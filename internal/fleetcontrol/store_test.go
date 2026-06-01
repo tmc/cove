@@ -3441,7 +3441,11 @@ func TestStorePushesImageGCAssignments(t *testing.T) {
 
 func TestStorePushesLifecyclePolicyAssignments(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
-	store := NewMemoryStore(time.Minute)
+	path := filepath.Join(t.TempDir(), "fleet.json")
+	store, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
 	store.now = func() time.Time { return now }
 	for _, hb := range []WorkerHeartbeat{
 		{ID: "desk", Labels: map[string]string{"zone": "desk"}},
@@ -3479,6 +3483,13 @@ func TestStorePushesLifecyclePolicyAssignments(t *testing.T) {
 	if result.VMName != "ci-runner" || len(result.Assignments) != 1 {
 		t.Fatalf("result = %+v, want one ci-runner assignment", result)
 	}
+	if result.ID == "" || result.Created.IsZero() || result.Clear || result.IdleTimeout != "30m" || result.MaxAge != "24h" || result.RunBudget != 100 {
+		t.Fatalf("lifecycle policy identity = %+v, want retained set metadata", result)
+	}
+	if result.RequiredLabels["zone"] != "desk" {
+		t.Fatalf("required labels = %+v, want zone=desk", result.RequiredLabels)
+	}
+	firstID := result.ID
 	assignment := result.Assignments[0]
 	wantArgs := []string{"policy", "ci-runner", "set", "idle=30m", "max-age=24h", "run-budget=100"}
 	if assignment.WorkerID != "desk" || assignment.Verb != "cove" || !equalStrings(assignment.Args, wantArgs) {
@@ -3498,6 +3509,31 @@ func TestStorePushesLifecyclePolicyAssignments(t *testing.T) {
 	}
 	if len(result.Assignments) != 0 || skipLifecyclePolicyReason(result.Skipped, "desk") != "active" {
 		t.Fatalf("second lifecycle policy = %+v, want active skip for desk", result)
+	}
+	if result.ID == "" || result.Created.IsZero() || !result.Clear || result.VMName != "ci-runner" {
+		t.Fatalf("second lifecycle policy identity = %+v, want retained clear run", result)
+	}
+	page := store.ListLifecyclePolicyRunsPage(LifecyclePolicyListFilter{VMName: "ci-runner", Limit: 1})
+	if page.Count != 1 || page.NextOffset != 1 || len(page.Runs) != 1 || page.Runs[0].ID != result.ID {
+		t.Fatalf("lifecycle policy history page = %+v, want latest run %s", page, result.ID)
+	}
+	clear := true
+	page = store.ListLifecyclePolicyRunsPage(LifecyclePolicyListFilter{Clear: &clear})
+	if page.Count != 1 || len(page.Runs) != 1 || page.Runs[0].ID != result.ID {
+		t.Fatalf("clear lifecycle policy history = %+v, want %s", page, result.ID)
+	}
+	clear = false
+	page = store.ListLifecyclePolicyRunsPage(LifecyclePolicyListFilter{Clear: &clear})
+	if page.Count != 1 || len(page.Runs) != 1 || page.Runs[0].ID != firstID {
+		t.Fatalf("set lifecycle policy history = %+v, want %s", page, firstID)
+	}
+	reopened, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	persisted, ok := reopened.GetLifecyclePolicyRun(result.ID)
+	if !ok || persisted.ID != result.ID || skipLifecyclePolicyReason(persisted.Skipped, "desk") != "active" || !persisted.Clear {
+		t.Fatalf("reopened lifecycle policy = %+v ok=%v, want active skip history", persisted, ok)
 	}
 }
 
@@ -5050,10 +5086,13 @@ func TestHandlerLifecyclePolicy(t *testing.T) {
 	server := httptest.NewServer(Handler(store))
 	defer server.Close()
 
+	var account ServiceAccountResult
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-a", Namespace: "team-a", Token: "token-a"}, &account)
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-b", Namespace: "team-b", Token: "token-b"}, &account)
 	var record HostRecord
 	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", Labels: map[string]string{"zone": "desk"}}, &record)
 	var result LifecyclePolicyResult
-	postJSON(t, server.URL+"/v1/policies/lifecycle", LifecyclePolicyRequest{
+	postJSONAuth(t, server.URL+"/v1/policies/lifecycle", "token-a", LifecyclePolicyRequest{
 		VMName:         "ci-runner",
 		RequiredLabels: map[string]string{"zone": "desk"},
 		IdleTimeout:    "15m",
@@ -5062,9 +5101,36 @@ func TestHandlerLifecyclePolicy(t *testing.T) {
 	if result.VMName != "ci-runner" || len(result.Assignments) != 1 || result.Assignments[0].WorkerID != "worker-1" {
 		t.Fatalf("lifecycle policy result = %+v", result)
 	}
+	if result.ID == "" || result.Namespace != "team-a" || result.IdleTimeout != "15m" || result.RunBudget != 5 || result.Clear {
+		t.Fatalf("lifecycle policy identity = %+v, want team-a retained run", result)
+	}
 	wantArgs := []string{"policy", "ci-runner", "set", "idle=15m", "run-budget=5"}
 	if !equalStrings(result.Assignments[0].Args, wantArgs) {
 		t.Fatalf("args = %+v, want %+v", result.Assignments[0].Args, wantArgs)
+	}
+	var list LifecyclePolicyListResult
+	getJSONAuth(t, server.URL+"/v1/policies/lifecycle/runs?vm_name=ci-runner&clear=false&limit=1", "token-a", &list)
+	if list.Count != 1 || len(list.Runs) != 1 || list.Runs[0].ID != result.ID {
+		t.Fatalf("lifecycle policy history = %+v, want %s", list, result.ID)
+	}
+	var got LifecyclePolicyResult
+	getJSONAuth(t, server.URL+"/v1/policies/lifecycle/runs/"+result.ID, "token-a", &got)
+	if got.ID != result.ID || got.Namespace != "team-a" || len(got.Assignments) != 1 {
+		t.Fatalf("lifecycle policy get = %+v, want %s", got, result.ID)
+	}
+	list = LifecyclePolicyListResult{}
+	getJSONAuth(t, server.URL+"/v1/policies/lifecycle/runs", "token-b", &list)
+	if list.Count != 0 || len(list.Runs) != 0 {
+		t.Fatalf("team-b lifecycle policy history = %+v, want none", list)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/policies/lifecycle/runs/"+result.ID, "token-b"); code != http.StatusNotFound {
+		t.Fatalf("cross-namespace lifecycle policy status = %d, want %d", code, http.StatusNotFound)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/policies/lifecycle/runs?limit=-1", "token-a"); code != http.StatusBadRequest {
+		t.Fatalf("bad lifecycle policy history limit status = %d, want %d", code, http.StatusBadRequest)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/policies/lifecycle/runs?clear=sometimes", "token-a"); code != http.StatusBadRequest {
+		t.Fatalf("bad lifecycle policy history clear status = %d, want %d", code, http.StatusBadRequest)
 	}
 }
 

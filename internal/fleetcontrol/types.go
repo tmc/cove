@@ -483,15 +483,38 @@ type LifecyclePolicyRequest struct {
 }
 
 type LifecyclePolicyResult struct {
-	Namespace   string                `json:"namespace,omitempty"`
-	VMName      string                `json:"vm_name"`
-	Assignments []Assignment          `json:"assignments,omitempty"`
-	Skipped     []LifecyclePolicySkip `json:"skipped,omitempty"`
+	ID             string                `json:"id,omitempty"`
+	Created        time.Time             `json:"created,omitempty"`
+	Namespace      string                `json:"namespace,omitempty"`
+	VMName         string                `json:"vm_name"`
+	RequiredLabels map[string]string     `json:"required_labels,omitempty"`
+	Clear          bool                  `json:"clear"`
+	IdleTimeout    string                `json:"idle_timeout,omitempty"`
+	MaxAge         string                `json:"max_age,omitempty"`
+	RunBudget      int                   `json:"run_budget,omitempty"`
+	Assignments    []Assignment          `json:"assignments,omitempty"`
+	Skipped        []LifecyclePolicySkip `json:"skipped,omitempty"`
 }
 
 type LifecyclePolicySkip struct {
 	WorkerID string `json:"worker_id"`
 	Reason   string `json:"reason"`
+}
+
+type LifecyclePolicyListFilter struct {
+	Namespace string `json:"namespace,omitempty"`
+	VMName    string `json:"vm_name,omitempty"`
+	Clear     *bool  `json:"clear,omitempty"`
+	Offset    int    `json:"offset,omitempty"`
+	Limit     int    `json:"limit,omitempty"`
+}
+
+type LifecyclePolicyListResult struct {
+	Runs       []LifecyclePolicyResult `json:"runs"`
+	Count      int                     `json:"count"`
+	Offset     int                     `json:"offset,omitempty"`
+	Limit      int                     `json:"limit,omitempty"`
+	NextOffset int                     `json:"next_offset,omitempty"`
 }
 
 type StorageBudgetRequest struct {

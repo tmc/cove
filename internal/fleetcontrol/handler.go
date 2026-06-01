@@ -142,6 +142,12 @@ func Handler(store *Store) http.Handler {
 	mux.HandleFunc("/v1/images/prepare", func(w http.ResponseWriter, r *http.Request) {
 		handleImagePrepare(w, r, store)
 	})
+	mux.HandleFunc("/v1/policies/lifecycle/runs/", func(w http.ResponseWriter, r *http.Request) {
+		handleLifecyclePolicyRun(w, r, store)
+	})
+	mux.HandleFunc("/v1/policies/lifecycle/runs", func(w http.ResponseWriter, r *http.Request) {
+		handleLifecyclePolicyRuns(w, r, store)
+	})
 	mux.HandleFunc("/v1/policies/lifecycle", func(w http.ResponseWriter, r *http.Request) {
 		handleLifecyclePolicy(w, r, store)
 	})
@@ -1927,6 +1933,74 @@ func handleLifecyclePolicy(w http.ResponseWriter, r *http.Request, store *Store)
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+func handleLifecyclePolicyRuns(w http.ResponseWriter, r *http.Request, store *Store) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	filter, err := lifecyclePolicyListFilterFromRequest(r, namespaceFilterFromRequest(r, identity))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, store.ListLifecyclePolicyRunsPage(filter))
+}
+
+func handleLifecyclePolicyRun(w http.ResponseWriter, r *http.Request, store *Store) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	id, err := nameFromPath(r.URL.Path, "/v1/policies/lifecycle/runs/", "lifecycle policy run")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	run, ok := store.GetLifecyclePolicyRun(id)
+	if !ok || !canAccessNamespace(identity, run.Namespace) {
+		writeError(w, http.StatusNotFound, "lifecycle policy run not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, run)
+}
+
+func lifecyclePolicyListFilterFromRequest(r *http.Request, namespace string) (LifecyclePolicyListFilter, error) {
+	filter := LifecyclePolicyListFilter{
+		Namespace: namespace,
+		VMName:    strings.TrimSpace(r.URL.Query().Get("vm_name")),
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("clear")); raw != "" {
+		clear, err := strconv.ParseBool(raw)
+		if err != nil {
+			return LifecyclePolicyListFilter{}, fmt.Errorf("lifecycle policy clear must be true or false")
+		}
+		filter.Clear = &clear
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 0 {
+			return LifecyclePolicyListFilter{}, fmt.Errorf("lifecycle policy limit must be non-negative")
+		}
+		filter.Limit = limit
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		offset, err := strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			return LifecyclePolicyListFilter{}, fmt.Errorf("lifecycle policy offset must be non-negative")
+		}
+		filter.Offset = offset
+	}
+	return filter, nil
 }
 
 func handleStorageBudget(w http.ResponseWriter, r *http.Request, store *Store) {

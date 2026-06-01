@@ -34,6 +34,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `cove-fleetd` now persists image-GC runs and exposes
   `GET /v1/images/gc/runs` plus `GET /v1/images/gc/runs/{id}` for
   namespace-scoped GC history with older-than, apply, offset, and limit filters.
+- `cove-fleetd` now persists lifecycle-policy runs and exposes
+  `GET /v1/policies/lifecycle/runs` plus
+  `GET /v1/policies/lifecycle/runs/{id}` for namespace-scoped policy history
+  with VM name, clear, offset, and limit filters.
 - `cove-fleetd` now exposes `GET /v1/assignments/{id}/events` for
   assignment-scoped audit history, and global audit queries now accept
   `assignment_id`.
