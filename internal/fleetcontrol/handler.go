@@ -124,6 +124,12 @@ func Handler(store *Store) http.Handler {
 	mux.HandleFunc("/v1/storage/prune", func(w http.ResponseWriter, r *http.Request) {
 		handleStoragePrune(w, r, store)
 	})
+	mux.HandleFunc("/v1/images/gc/runs/", func(w http.ResponseWriter, r *http.Request) {
+		handleImageGCRun(w, r, store)
+	})
+	mux.HandleFunc("/v1/images/gc/runs", func(w http.ResponseWriter, r *http.Request) {
+		handleImageGCRuns(w, r, store)
+	})
 	mux.HandleFunc("/v1/images/gc", func(w http.ResponseWriter, r *http.Request) {
 		handleImageGC(w, r, store)
 	})
@@ -1824,6 +1830,78 @@ func handleImageGC(w http.ResponseWriter, r *http.Request, store *Store) {
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+func handleImageGCRuns(w http.ResponseWriter, r *http.Request, store *Store) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	filter, err := imageGCListFilterFromRequest(r, namespaceFilterFromRequest(r, identity))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, store.ListImageGCRunsPage(filter))
+}
+
+func handleImageGCRun(w http.ResponseWriter, r *http.Request, store *Store) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	id, err := nameFromPath(r.URL.Path, "/v1/images/gc/runs/", "image gc run")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	run, ok := store.GetImageGCRun(id)
+	if !ok || !canAccessNamespace(identity, run.Namespace) {
+		writeError(w, http.StatusNotFound, "image gc run not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, run)
+}
+
+func imageGCListFilterFromRequest(r *http.Request, namespace string) (ImageGCListFilter, error) {
+	filter := ImageGCListFilter{
+		Namespace: namespace,
+	}
+	olderThan, err := normalizeDurationString(r.URL.Query().Get("older_than"), "image gc older_than")
+	if err != nil {
+		return ImageGCListFilter{}, err
+	}
+	filter.OlderThan = olderThan
+	if raw := strings.TrimSpace(r.URL.Query().Get("apply")); raw != "" {
+		apply, err := strconv.ParseBool(raw)
+		if err != nil {
+			return ImageGCListFilter{}, fmt.Errorf("image gc apply must be true or false")
+		}
+		filter.Apply = &apply
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 0 {
+			return ImageGCListFilter{}, fmt.Errorf("image gc limit must be non-negative")
+		}
+		filter.Limit = limit
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		offset, err := strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			return ImageGCListFilter{}, fmt.Errorf("image gc offset must be non-negative")
+		}
+		filter.Offset = offset
+	}
+	return filter, nil
 }
 
 func handleLifecyclePolicy(w http.ResponseWriter, r *http.Request, store *Store) {

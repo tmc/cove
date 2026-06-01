@@ -3352,7 +3352,11 @@ func TestStorePrepareImageUsesManifestDigest(t *testing.T) {
 
 func TestStorePushesImageGCAssignments(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
-	store := NewMemoryStore(time.Minute)
+	path := filepath.Join(t.TempDir(), "fleet.json")
+	store, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
 	store.now = func() time.Time { return now }
 	for _, hb := range []WorkerHeartbeat{
 		{ID: "desk", Labels: map[string]string{"zone": "desk"}},
@@ -3384,6 +3388,12 @@ func TestStorePushesImageGCAssignments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if result.ID == "" || result.Created.IsZero() || result.OlderThan != "24h" || result.Apply {
+		t.Fatalf("image gc identity = %+v, want retained dry-run metadata", result)
+	}
+	if result.RequiredLabels["zone"] != "desk" {
+		t.Fatalf("required labels = %+v, want zone=desk", result.RequiredLabels)
+	}
 	if len(result.Assignments) != 1 {
 		t.Fatalf("assignments = %+v, want 1", result.Assignments)
 	}
@@ -3406,6 +3416,26 @@ func TestStorePushesImageGCAssignments(t *testing.T) {
 	}
 	if len(result.Assignments) != 0 || skipImageGCReason(result.Skipped, "desk") != "active" {
 		t.Fatalf("second image gc = %+v, want active skip for desk", result)
+	}
+	if result.ID == "" || result.Created.IsZero() || !result.Apply {
+		t.Fatalf("second image gc identity = %+v, want retained apply run", result)
+	}
+	page := store.ListImageGCRunsPage(ImageGCListFilter{OlderThan: "24h", Limit: 1})
+	if page.Count != 1 || page.NextOffset != 1 || len(page.Runs) != 1 || page.Runs[0].ID != result.ID {
+		t.Fatalf("image gc history page = %+v, want latest run %s", page, result.ID)
+	}
+	apply := true
+	page = store.ListImageGCRunsPage(ImageGCListFilter{Apply: &apply})
+	if page.Count != 1 || len(page.Runs) != 1 || page.Runs[0].ID != result.ID {
+		t.Fatalf("apply image gc history = %+v, want %s", page, result.ID)
+	}
+	reopened, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	persisted, ok := reopened.GetImageGCRun(result.ID)
+	if !ok || persisted.ID != result.ID || skipImageGCReason(persisted.Skipped, "desk") != "active" || !persisted.Apply {
+		t.Fatalf("reopened image gc = %+v ok=%v, want active skip history", persisted, ok)
 	}
 }
 
@@ -4968,10 +4998,13 @@ func TestHandlerImageGC(t *testing.T) {
 	server := httptest.NewServer(Handler(store))
 	defer server.Close()
 
+	var account ServiceAccountResult
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-a", Namespace: "team-a", Token: "token-a"}, &account)
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-b", Namespace: "team-b", Token: "token-b"}, &account)
 	var record HostRecord
 	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", Labels: map[string]string{"zone": "desk"}}, &record)
 	var result ImageGCResult
-	postJSON(t, server.URL+"/v1/images/gc", ImageGCRequest{
+	postJSONAuth(t, server.URL+"/v1/images/gc", "token-a", ImageGCRequest{
 		RequiredLabels: map[string]string{"zone": "desk"},
 		OlderThan:      "1h",
 		Apply:          true,
@@ -4979,9 +5012,36 @@ func TestHandlerImageGC(t *testing.T) {
 	if len(result.Assignments) != 1 || result.Assignments[0].WorkerID != "worker-1" {
 		t.Fatalf("image gc result = %+v", result)
 	}
+	if result.ID == "" || result.Namespace != "team-a" || result.OlderThan != "1h" || !result.Apply {
+		t.Fatalf("image gc identity = %+v, want team-a retained run", result)
+	}
 	wantArgs := []string{"image", "gc", "-yes", "-older-than", "1h"}
 	if !equalStrings(result.Assignments[0].Args, wantArgs) {
 		t.Fatalf("args = %+v, want %+v", result.Assignments[0].Args, wantArgs)
+	}
+	var list ImageGCListResult
+	getJSONAuth(t, server.URL+"/v1/images/gc/runs?older_than=1h&apply=true&limit=1", "token-a", &list)
+	if list.Count != 1 || len(list.Runs) != 1 || list.Runs[0].ID != result.ID {
+		t.Fatalf("image gc history = %+v, want %s", list, result.ID)
+	}
+	var got ImageGCResult
+	getJSONAuth(t, server.URL+"/v1/images/gc/runs/"+result.ID, "token-a", &got)
+	if got.ID != result.ID || got.Namespace != "team-a" || len(got.Assignments) != 1 {
+		t.Fatalf("image gc get = %+v, want %s", got, result.ID)
+	}
+	list = ImageGCListResult{}
+	getJSONAuth(t, server.URL+"/v1/images/gc/runs", "token-b", &list)
+	if list.Count != 0 || len(list.Runs) != 0 {
+		t.Fatalf("team-b image gc history = %+v, want none", list)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/images/gc/runs/"+result.ID, "token-b"); code != http.StatusNotFound {
+		t.Fatalf("cross-namespace image gc status = %d, want %d", code, http.StatusNotFound)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/images/gc/runs?limit=-1", "token-a"); code != http.StatusBadRequest {
+		t.Fatalf("bad image gc history limit status = %d, want %d", code, http.StatusBadRequest)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/images/gc/runs?apply=sometimes", "token-a"); code != http.StatusBadRequest {
+		t.Fatalf("bad image gc history apply status = %d, want %d", code, http.StatusBadRequest)
 	}
 }
 

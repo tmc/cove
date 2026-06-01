@@ -37,6 +37,7 @@ type Store struct {
 	warmPools     map[string]WarmPool
 	plans         []PlacementPlan
 	preparations  []ImagePrepareResult
+	imageGCRuns   []ImageGCResult
 	audit         []AuditEvent
 	metering      []SandboxMeteringRecord
 	reports       []AssignmentReport
@@ -53,6 +54,7 @@ type storeFile struct {
 	WarmPools         []WarmPool              `json:"warm_pools,omitempty"`
 	PlacementPlans    []PlacementPlan         `json:"placement_plans,omitempty"`
 	ImagePreparations []ImagePrepareResult    `json:"image_preparations,omitempty"`
+	ImageGCRuns       []ImageGCResult         `json:"image_gc_runs,omitempty"`
 	AuditEvents       []AuditEvent            `json:"audit_events,omitempty"`
 	MeteringRecords   []SandboxMeteringRecord `json:"metering_records,omitempty"`
 	AssignmentReports []AssignmentReport      `json:"assignment_reports,omitempty"`
@@ -145,6 +147,7 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		warmPools:     make(map[string]WarmPool),
 		plans:         nil,
 		preparations:  nil,
+		imageGCRuns:   nil,
 		audit:         nil,
 		metering:      nil,
 		reports:       nil,
@@ -224,6 +227,13 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 			continue
 		}
 		s.preparations = append(s.preparations, prep)
+	}
+	for _, run := range file.ImageGCRuns {
+		run = normalizeImageGCResult(run)
+		if run.ID == "" || run.Created.IsZero() {
+			continue
+		}
+		s.imageGCRuns = append(s.imageGCRuns, run)
 	}
 	for _, event := range file.AuditEvents {
 		event = normalizeAuditEvent(event)
@@ -322,6 +332,7 @@ func (s *Store) ReconcilePlan() ReconcileResult {
 		warmPools:     cloneWarmPoolMap(s.warmPools),
 		plans:         clonePlacementPlans(s.plans),
 		preparations:  cloneImagePrepareResults(s.preparations),
+		imageGCRuns:   cloneImageGCResults(s.imageGCRuns),
 		metering:      cloneSandboxMeteringRecords(s.metering),
 		reports:       cloneAssignmentReports(s.reports),
 	}
@@ -2556,8 +2567,15 @@ func (s *Store) PushImageGCActor(actor string, req ImageGCRequest) (ImageGCResul
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	reconciled := s.reconcileLocked(now)
-	result := ImageGCResult{Namespace: namespace}
+	s.reconcileLocked(now)
+	result := ImageGCResult{
+		ID:             s.nextImageGCIDLocked(now),
+		Created:        now,
+		Namespace:      namespace,
+		RequiredLabels: labels,
+		OlderThan:      olderThan,
+		Apply:          req.Apply,
+	}
 	for _, host := range s.sortedHostsLocked() {
 		host = s.statusLocked(host)
 		if !labelsMatch(host.Labels, labels) {
@@ -2588,25 +2606,80 @@ func (s *Store) PushImageGCActor(actor string, req ImageGCRequest) (ImageGCResul
 	if len(result.Assignments) == 0 && len(result.Skipped) == 0 {
 		return result, fmt.Errorf("no workers match image gc")
 	}
-	if len(result.Assignments) > 0 || reconciled.changed() {
-		if len(result.Assignments) > 0 {
-			s.appendAuditLocked(now, AuditEvent{
-				Actor:      actor,
-				Namespace:  namespace,
-				Action:     "image.gc",
-				TargetType: "image",
-				Fields: map[string]string{
-					"assignments": strconv.Itoa(len(result.Assignments)),
-					"apply":       strconv.FormatBool(req.Apply),
-					"older_than":  olderThan,
-				},
-			})
-		}
-		if err := s.persistLocked(); err != nil {
-			return result, err
-		}
+	result = normalizeImageGCResult(result)
+	s.imageGCRuns = append(s.imageGCRuns, cloneImageGCResult(result))
+	if len(result.Assignments) > 0 {
+		s.appendAuditLocked(now, AuditEvent{
+			Actor:      actor,
+			Namespace:  namespace,
+			Action:     "image.gc",
+			TargetType: "image",
+			Fields: map[string]string{
+				"assignments": strconv.Itoa(len(result.Assignments)),
+				"apply":       strconv.FormatBool(req.Apply),
+				"older_than":  olderThan,
+			},
+		})
+	}
+	if err := s.persistLocked(); err != nil {
+		return result, err
 	}
 	return result, nil
+}
+
+func (s *Store) GetImageGCRun(id string) (ImageGCResult, bool) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return ImageGCResult{}, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, run := range s.imageGCRuns {
+		if run.ID == id {
+			return cloneImageGCResult(run), true
+		}
+	}
+	return ImageGCResult{}, false
+}
+
+func (s *Store) ListImageGCRunsPage(filter ImageGCListFilter) ImageGCListResult {
+	filter.Namespace = normalizeNamespace(filter.Namespace)
+	filter.OlderThan = strings.TrimSpace(filter.OlderThan)
+	if filter.Offset < 0 {
+		filter.Offset = 0
+	}
+	if filter.Limit < 0 {
+		filter.Limit = 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	runs := s.sortedImageGCRunsLocked()
+	filtered := runs[:0]
+	for _, run := range runs {
+		if !namespaceMatches(run.Namespace, filter.Namespace) {
+			continue
+		}
+		if filter.OlderThan != "" && run.OlderThan != filter.OlderThan {
+			continue
+		}
+		if filter.Apply != nil && run.Apply != *filter.Apply {
+			continue
+		}
+		filtered = append(filtered, run)
+	}
+	result := ImageGCListResult{Offset: filter.Offset, Limit: filter.Limit}
+	if filter.Offset >= len(filtered) {
+		return result
+	}
+	end := len(filtered) - filter.Offset
+	start := 0
+	if filter.Limit > 0 && end > filter.Limit {
+		start = end - filter.Limit
+		result.NextOffset = filter.Offset + filter.Limit
+	}
+	result.Runs = cloneImageGCResults(filtered[start:end])
+	result.Count = len(result.Runs)
+	return result
 }
 
 func (s *Store) PushLifecyclePolicy(req LifecyclePolicyRequest) (LifecyclePolicyResult, error) {
@@ -3845,6 +3918,7 @@ func (s *Store) persistLocked() error {
 	warmPools := s.sortedWarmPoolsLocked()
 	plans := s.sortedPlacementPlansLocked()
 	preparations := s.sortedImagePreparationsLocked()
+	imageGCRuns := s.sortedImageGCRunsLocked()
 	audit := cloneAuditEvents(s.audit)
 	metering := s.sortedMeteringLocked()
 	reports := s.sortedAssignmentReportsLocked()
@@ -3853,7 +3927,7 @@ func (s *Store) persistLocked() error {
 	samlBindings := s.sortedSAMLBindingsLocked()
 	samlReplays := s.sortedSAMLReplaysLocked()
 	samlSessions := s.sortedSAMLSessionRecordsLocked()
-	data, err := json.MarshalIndent(storeFile{Hosts: hosts, Assignments: assignments, WarmPools: warmPools, PlacementPlans: plans, ImagePreparations: preparations, AuditEvents: audit, MeteringRecords: metering, AssignmentReports: reports, ServiceAccounts: accounts, OIDCBindings: oidcBindings, SAMLBindings: samlBindings, SAMLReplays: samlReplays, SAMLSessions: samlSessions}, "", "  ")
+	data, err := json.MarshalIndent(storeFile{Hosts: hosts, Assignments: assignments, WarmPools: warmPools, PlacementPlans: plans, ImagePreparations: preparations, ImageGCRuns: imageGCRuns, AuditEvents: audit, MeteringRecords: metering, AssignmentReports: reports, ServiceAccounts: accounts, OIDCBindings: oidcBindings, SAMLBindings: samlBindings, SAMLReplays: samlReplays, SAMLSessions: samlSessions}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode fleet store: %w", err)
 	}
@@ -3935,6 +4009,17 @@ func (s *Store) sortedImagePreparationsLocked() []ImagePrepareResult {
 		return preps[i].ID < preps[j].ID
 	})
 	return preps
+}
+
+func (s *Store) sortedImageGCRunsLocked() []ImageGCResult {
+	runs := cloneImageGCResults(s.imageGCRuns)
+	sort.Slice(runs, func(i, j int) bool {
+		if !runs[i].Created.Equal(runs[j].Created) {
+			return runs[i].Created.Before(runs[j].Created)
+		}
+		return runs[i].ID < runs[j].ID
+	})
+	return runs
 }
 
 func (s *Store) sortedMeteringLocked() []SandboxMeteringRecord {
@@ -4091,6 +4176,24 @@ func (s *Store) nextImagePrepareIDLocked(now time.Time) string {
 	}
 }
 
+func (s *Store) nextImageGCIDLocked(now time.Time) string {
+	base := fmt.Sprintf("image-gc-%d", now.UnixNano())
+	id := base
+	for i := 2; ; i++ {
+		found := false
+		for _, run := range s.imageGCRuns {
+			if run.ID == id {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return id
+		}
+		id = fmt.Sprintf("%s-%d", base, i)
+	}
+}
+
 func (s *Store) nextMeteringIDLocked(now time.Time) string {
 	base := fmt.Sprintf("metering-%d", now.UnixNano())
 	id := base
@@ -4178,6 +4281,37 @@ func cloneImagePrepareSkips(in []ImagePrepareSkip) []ImagePrepareSkip {
 		return nil
 	}
 	out := make([]ImagePrepareSkip, len(in))
+	copy(out, in)
+	return out
+}
+
+func cloneImageGCResult(in ImageGCResult) ImageGCResult {
+	out := in
+	if !out.Created.IsZero() {
+		out.Created = out.Created.UTC()
+	}
+	out.RequiredLabels = cloneLabels(in.RequiredLabels)
+	out.Assignments = cloneAssignments(in.Assignments)
+	out.Skipped = cloneImageGCSkips(in.Skipped)
+	return out
+}
+
+func cloneImageGCResults(in []ImageGCResult) []ImageGCResult {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]ImageGCResult, len(in))
+	for i := range in {
+		out[i] = cloneImageGCResult(in[i])
+	}
+	return out
+}
+
+func cloneImageGCSkips(in []ImageGCSkip) []ImageGCSkip {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]ImageGCSkip, len(in))
 	copy(out, in)
 	return out
 }
@@ -5682,6 +5816,23 @@ func normalizeImagePrepareResult(result ImagePrepareResult) ImagePrepareResult {
 	}
 	result.Assignments = cloneAssignments(result.Assignments)
 	result.Skipped = cloneImagePrepareSkips(result.Skipped)
+	for i := range result.Skipped {
+		result.Skipped[i].WorkerID = strings.TrimSpace(result.Skipped[i].WorkerID)
+		result.Skipped[i].Reason = strings.TrimSpace(result.Skipped[i].Reason)
+	}
+	return result
+}
+
+func normalizeImageGCResult(result ImageGCResult) ImageGCResult {
+	result.ID = strings.TrimSpace(result.ID)
+	result.Namespace = normalizeNamespace(result.Namespace)
+	result.RequiredLabels = cloneLabels(result.RequiredLabels)
+	result.OlderThan = strings.TrimSpace(result.OlderThan)
+	if !result.Created.IsZero() {
+		result.Created = result.Created.UTC()
+	}
+	result.Assignments = cloneAssignments(result.Assignments)
+	result.Skipped = cloneImageGCSkips(result.Skipped)
 	for i := range result.Skipped {
 		result.Skipped[i].WorkerID = strings.TrimSpace(result.Skipped[i].WorkerID)
 		result.Skipped[i].Reason = strings.TrimSpace(result.Skipped[i].Reason)

@@ -379,6 +379,8 @@ Image GC endpoint:
 curl -X POST http://127.0.0.1:9758/v1/images/gc \
   -H 'content-type: application/json' \
   -d '{"required_labels":{"zone":"desk"},"older_than":"168h","apply":true}'
+curl 'http://127.0.0.1:9758/v1/images/gc/runs?older_than=168h&apply=true&limit=20'
+curl http://127.0.0.1:9758/v1/images/gc/runs/image-gc-...
 ```
 
 Image GC creates one `cove image gc` assignment for each non-cordoned ready
@@ -389,6 +391,12 @@ Workers that are cordoned or stale, or already have an active image-GC
 assignment, are returned in `skipped`. After a successful image-GC assignment,
 `coved` sends an extra heartbeat so the controller's image refs reflect the
 post-GC store.
+Each successful image-GC response is persisted with `id`, `created`, label
+selector, `older_than`, and `apply`, including skipped-only no-op runs. `GET
+/v1/images/gc/runs` returns paginated GC history with `older_than`, `apply`,
+`offset`, and `limit` filters; scoped service-account tokens only see runs in
+their namespace. The `GET /v1/images/gc/runs/{id}` endpoint returns one
+retained GC result or `404` across namespace boundaries.
 
 Lifecycle policy endpoint:
 

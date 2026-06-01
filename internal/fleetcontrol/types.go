@@ -441,14 +441,35 @@ type ImageGCRequest struct {
 }
 
 type ImageGCResult struct {
-	Namespace   string        `json:"namespace,omitempty"`
-	Assignments []Assignment  `json:"assignments,omitempty"`
-	Skipped     []ImageGCSkip `json:"skipped,omitempty"`
+	ID             string            `json:"id,omitempty"`
+	Created        time.Time         `json:"created,omitempty"`
+	Namespace      string            `json:"namespace,omitempty"`
+	RequiredLabels map[string]string `json:"required_labels,omitempty"`
+	OlderThan      string            `json:"older_than,omitempty"`
+	Apply          bool              `json:"apply"`
+	Assignments    []Assignment      `json:"assignments,omitempty"`
+	Skipped        []ImageGCSkip     `json:"skipped,omitempty"`
 }
 
 type ImageGCSkip struct {
 	WorkerID string `json:"worker_id"`
 	Reason   string `json:"reason"`
+}
+
+type ImageGCListFilter struct {
+	Namespace string `json:"namespace,omitempty"`
+	OlderThan string `json:"older_than,omitempty"`
+	Apply     *bool  `json:"apply,omitempty"`
+	Offset    int    `json:"offset,omitempty"`
+	Limit     int    `json:"limit,omitempty"`
+}
+
+type ImageGCListResult struct {
+	Runs       []ImageGCResult `json:"runs"`
+	Count      int             `json:"count"`
+	Offset     int             `json:"offset,omitempty"`
+	Limit      int             `json:"limit,omitempty"`
+	NextOffset int             `json:"next_offset,omitempty"`
 }
 
 type LifecyclePolicyRequest struct {
