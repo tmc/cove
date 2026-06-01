@@ -41,9 +41,10 @@ on remote inspect to select a specific child for mixed macOS/Linux catalogs.
 Use `cove image inspect -remote` to fetch the registry manifest metadata without
 pulling disks. Multiple refs are inspected as a batch, with JSON emitted as an
 array for private catalog audits. Remote inspect reports index/list resolution
-details, the selected platform, the disk format for cove-native and image-store
-artifacts, the pull plan for cove/Tart/Lume/image-store artifacts, cove
-base-chain availability/compatibility when a base manifest is declared, and the
+details, selectable child manifests, the selected platform, the disk format for
+cove-native and image-store artifacts, the pull plan for
+cove/Tart/Lume/image-store artifacts, cove base-chain
+availability/compatibility when a base manifest is declared, and the
 verification work cove will perform during pull/import.
 Add `-verify-blobs` to send HEAD requests for every config and layer descriptor
 so a private catalog audit can catch missing registry blobs without downloading
@@ -53,8 +54,9 @@ downloading disk blobs. When a cove-native manifest is available during
 `--dry-run`, cove also checks whether a compatible local or registry-cache base
 disk can be reused and prints the reusable chunks, bytes, disk format, and
 source path. Manifest-backed dry-runs that resolve an index also print the
-index digest, selected manifest digest, and selected platform. The same dry-run
-also reports cove-native transfer coverage: disk
+index digest, selected manifest digest, selected platform, and selectable child
+manifest candidates. The same dry-run also reports cove-native transfer
+coverage: disk
 chunks already in the local content store, disk chunks that still need registry
 fetches, sparse zero chunks, and metadata blobs already present or still needed.
 Add `--json` to emit that dry-run as structured data for CI jobs or fleet

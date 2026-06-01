@@ -37,6 +37,7 @@ type ManifestResolution struct {
 	IndexMediaType   string
 	SelectedDigest   string
 	SelectedPlatform *Platform
+	IndexManifests   []IndexDescriptor
 }
 
 const (
@@ -101,7 +102,8 @@ func (c RegistryClient) fetchManifestTarget(ctx context.Context, ref Reference, 
 	if index, ok, err := parseRegistryIndex(data); err != nil {
 		return manifest, ManifestResolution{}, err
 	} else if ok {
-		child, err := selectRegistryIndexManifest(index, c.Platform)
+		candidates := registryIndexManifestCandidates(index)
+		child, err := selectRegistryIndexManifest(candidates, c.Platform)
 		if err != nil {
 			return manifest, ManifestResolution{}, err
 		}
@@ -114,6 +116,7 @@ func (c RegistryClient) fetchManifestTarget(ctx context.Context, ref Reference, 
 			resolution.IndexMediaType = index.MediaType
 			resolution.SelectedDigest = child.Digest
 			resolution.SelectedPlatform = child.Platform
+			resolution.IndexManifests = candidates
 		}
 		return childManifest, resolution, nil
 	}
@@ -168,15 +171,23 @@ func parseRegistryIndex(data []byte) (Index, bool, error) {
 	return index, true, nil
 }
 
-func selectRegistryIndexManifest(index Index, platform *Platform) (IndexDescriptor, error) {
+func registryIndexManifestCandidates(index Index) []IndexDescriptor {
+	out := make([]IndexDescriptor, 0, len(index.Manifests))
+	for _, desc := range index.Manifests {
+		if desc.Digest == "" {
+			continue
+		}
+		if desc.MediaType != "" && desc.MediaType != MediaTypeImageManifest && desc.MediaType != MediaTypeDockerManifest {
+			continue
+		}
+		out = append(out, desc)
+	}
+	return out
+}
+
+func selectRegistryIndexManifest(candidates []IndexDescriptor, platform *Platform) (IndexDescriptor, error) {
 	if platform != nil {
-		for _, desc := range index.Manifests {
-			if desc.Digest == "" {
-				continue
-			}
-			if desc.MediaType != "" && desc.MediaType != MediaTypeImageManifest && desc.MediaType != MediaTypeDockerManifest {
-				continue
-			}
+		for _, desc := range candidates {
 			if registryIndexPlatformMatches(desc.Platform, platform) {
 				return desc, nil
 			}
@@ -185,13 +196,7 @@ func selectRegistryIndexManifest(index Index, platform *Platform) (IndexDescript
 	}
 	var best IndexDescriptor
 	bestScore := -1
-	for _, desc := range index.Manifests {
-		if desc.Digest == "" {
-			continue
-		}
-		if desc.MediaType != "" && desc.MediaType != MediaTypeImageManifest && desc.MediaType != MediaTypeDockerManifest {
-			continue
-		}
+	for _, desc := range candidates {
 		score := registryIndexPlatformScore(desc.Platform)
 		if score > bestScore {
 			best = desc

@@ -76,30 +76,31 @@ type pullBlobDescriptor struct {
 }
 
 type pullDryRunOutput struct {
-	Ref               string                    `json:"ref"`
-	VM                string                    `json:"vm"`
-	Target            string                    `json:"target"`
-	ManifestProvided  bool                      `json:"manifest_provided"`
-	ManifestDigest    string                    `json:"manifest_digest,omitempty"`
-	ResolvedFromIndex bool                      `json:"resolved_from_index,omitempty"`
-	IndexDigest       string                    `json:"index_digest,omitempty"`
-	IndexMediaType    string                    `json:"index_media_type,omitempty"`
-	SelectedDigest    string                    `json:"selected_digest,omitempty"`
-	SelectedPlatform  string                    `json:"selected_platform,omitempty"`
-	Format            string                    `json:"format,omitempty"`
-	DiskSize          int64                     `json:"disk_size,omitempty"`
-	DiskFormat        string                    `json:"disk_format,omitempty"`
-	Chunks            int                       `json:"chunks,omitempty"`
-	MetadataBlobs     int                       `json:"metadata_blobs,omitempty"`
-	DiskParts         int                       `json:"disk_parts,omitempty"`
-	DiskLayers        int                       `json:"disk_layers,omitempty"`
-	CompressedBytes   int64                     `json:"compressed_bytes,omitempty"`
-	NVRAMBytes        int64                     `json:"nvram_bytes,omitempty"`
-	ConfigBytes       int64                     `json:"config_bytes,omitempty"`
-	UploadTime        string                    `json:"upload_time,omitempty"`
-	Transfer          *pullDryRunTransferOutput `json:"transfer,omitempty"`
-	BaseReuse         *pullBaseReuseOutput      `json:"base_reuse,omitempty"`
-	BlobAudit         *pullBlobAuditOutput      `json:"blob_audit,omitempty"`
+	Ref               string                     `json:"ref"`
+	VM                string                     `json:"vm"`
+	Target            string                     `json:"target"`
+	ManifestProvided  bool                       `json:"manifest_provided"`
+	ManifestDigest    string                     `json:"manifest_digest,omitempty"`
+	ResolvedFromIndex bool                       `json:"resolved_from_index,omitempty"`
+	IndexDigest       string                     `json:"index_digest,omitempty"`
+	IndexMediaType    string                     `json:"index_media_type,omitempty"`
+	SelectedDigest    string                     `json:"selected_digest,omitempty"`
+	SelectedPlatform  string                     `json:"selected_platform,omitempty"`
+	IndexManifests    []ImageRemoteIndexManifest `json:"index_manifests,omitempty"`
+	Format            string                     `json:"format,omitempty"`
+	DiskSize          int64                      `json:"disk_size,omitempty"`
+	DiskFormat        string                     `json:"disk_format,omitempty"`
+	Chunks            int                        `json:"chunks,omitempty"`
+	MetadataBlobs     int                        `json:"metadata_blobs,omitempty"`
+	DiskParts         int                        `json:"disk_parts,omitempty"`
+	DiskLayers        int                        `json:"disk_layers,omitempty"`
+	CompressedBytes   int64                      `json:"compressed_bytes,omitempty"`
+	NVRAMBytes        int64                      `json:"nvram_bytes,omitempty"`
+	ConfigBytes       int64                      `json:"config_bytes,omitempty"`
+	UploadTime        string                     `json:"upload_time,omitempty"`
+	Transfer          *pullDryRunTransferOutput  `json:"transfer,omitempty"`
+	BaseReuse         *pullBaseReuseOutput       `json:"base_reuse,omitempty"`
+	BlobAudit         *pullBlobAuditOutput       `json:"blob_audit,omitempty"`
 }
 
 type pullDryRunTransferOutput struct {
@@ -795,6 +796,28 @@ func printPullManifestResolution(w io.Writer, plan *pullPlan) {
 	if platform := remotePlatformString(plan.ManifestResolution.SelectedPlatform); platform != "" {
 		fmt.Fprintf(w, "  platform: %s\n", platform)
 	}
+	candidates := remoteIndexManifestOutputs(plan.ManifestResolution)
+	if len(candidates) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "  index manifests: %d\n", len(candidates))
+	for _, manifest := range candidates {
+		marker := " "
+		if manifest.Selected {
+			marker = "*"
+		}
+		fmt.Fprintf(w, "    %s %s", marker, manifest.Digest)
+		if manifest.Platform != "" {
+			fmt.Fprintf(w, " platform=%s", manifest.Platform)
+		}
+		if manifest.Size > 0 {
+			fmt.Fprintf(w, " size=%s", bytefmt.Size(manifest.Size))
+		}
+		if manifest.MediaType != "" {
+			fmt.Fprintf(w, " media=%s", manifest.MediaType)
+		}
+		fmt.Fprintln(w)
+	}
 }
 
 func printPullDryRunJSON(w io.Writer, plan *pullPlan) error {
@@ -822,6 +845,7 @@ func pullDryRunOutputFromPlan(plan *pullPlan) pullDryRunOutput {
 		out.IndexMediaType = plan.ManifestResolution.IndexMediaType
 		out.SelectedDigest = plan.ManifestResolution.SelectedDigest
 		out.SelectedPlatform = remotePlatformString(plan.ManifestResolution.SelectedPlatform)
+		out.IndexManifests = remoteIndexManifestOutputs(plan.ManifestResolution)
 	}
 	if !out.ManifestProvided {
 		return out

@@ -138,6 +138,9 @@ func TestRegistryClientFetchManifestResolvesIndex(t *testing.T) {
 	if resolution.SelectedPlatform == nil || resolution.SelectedPlatform.OS != "darwin" || resolution.SelectedPlatform.Architecture != "arm64" {
 		t.Fatalf("selected platform = %+v, want darwin/arm64", resolution.SelectedPlatform)
 	}
+	if len(resolution.IndexManifests) != 2 || resolution.IndexManifests[0].Digest == "" || resolution.IndexManifests[1].Digest != manifestDigest {
+		t.Fatalf("index manifests = %+v, want linux and selected darwin candidates", resolution.IndexManifests)
+	}
 	if got.SchemaVersion != want.SchemaVersion || got.Annotations[CoveUncompressedDiskSize] != "0" {
 		t.Fatalf("manifest = %#v, want %#v", got, want)
 	}
@@ -215,6 +218,9 @@ func TestRegistryClientFetchManifestSelectsPlatform(t *testing.T) {
 	}
 	if resolution.SelectedPlatform == nil || resolution.SelectedPlatform.OS != "linux" || resolution.SelectedPlatform.Architecture != "arm64" {
 		t.Fatalf("selected platform = %+v, want linux/arm64", resolution.SelectedPlatform)
+	}
+	if len(resolution.IndexManifests) != 2 || resolution.IndexManifests[0].Digest != darwinDigest || resolution.IndexManifests[1].Digest != linuxDigest {
+		t.Fatalf("index manifests = %+v, want darwin and linux candidates", resolution.IndexManifests)
 	}
 	if got.Annotations[CoveUncompressedDiskSize] != "20" {
 		t.Fatalf("disk size annotation = %q, want linux child", got.Annotations[CoveUncompressedDiskSize])

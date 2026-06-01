@@ -331,7 +331,7 @@ func TestBuildPullPlanDryRunFetchManifestPlatform(t *testing.T) {
 
 	var out strings.Builder
 	printPullDryRun(&out, plan)
-	for _, want := range []string{"index digest: sha256:index", "selected digest: " + linuxDigest, "platform: linux/arm64"} {
+	for _, want := range []string{"index digest: sha256:index", "selected digest: " + linuxDigest, "platform: linux/arm64", "index manifests: 2", "platform=darwin/arm64", "* " + linuxDigest} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("dry-run output %q missing %q", out.String(), want)
 		}
@@ -347,6 +347,9 @@ func TestBuildPullPlanDryRunFetchManifestPlatform(t *testing.T) {
 	}
 	if !got.ResolvedFromIndex || got.SelectedPlatform != "linux/arm64" || got.SelectedDigest != linuxDigest {
 		t.Fatalf("JSON resolution = %+v, want linux index selection", got)
+	}
+	if len(got.IndexManifests) != 2 || got.IndexManifests[0].Platform != "darwin/arm64" || got.IndexManifests[1].Platform != "linux/arm64" || !got.IndexManifests[1].Selected {
+		t.Fatalf("JSON index manifests = %+v, want selected linux candidate", got.IndexManifests)
 	}
 }
 

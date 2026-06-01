@@ -56,9 +56,9 @@ delegates the disk/runtime work to `tart` or `vetu`.
    before extraction. `cove image inspect -remote` fetches only registry
    metadata and identifies cove-native, Tart, Lume, and cove image-store
    artifacts before a disk pull, including index/list resolution details,
-   selected platform, explicit platform child selection, disk format for
-   cove-native/image-store artifacts, pull plan, cove base-chain
-   disk-format/size/chunk compatibility, and
+   selectable child manifests, selected platform, explicit platform child
+   selection, disk format for cove-native/image-store artifacts, pull plan,
+   cove base-chain disk-format/size/chunk compatibility, and
    verification posture; `-verify-blobs` HEAD-audits every remote config/layer
    descriptor without downloading disks, and multiple refs can be inspected as
    one batch for private catalog audits.
@@ -82,11 +82,11 @@ delegates the disk/runtime work to `tart` or `vetu`.
    disks and summarize local content-store coverage versus registry fetch work,
    including zero chunks and metadata blobs; the same pull plan is available as
    JSON for CI or fleet placement automation. Manifest-backed dry-runs report
-   OCI index/list child selection and can force `--platform os/arch[/variant]`,
-   then HEAD-audit the registry blobs this host would need for cove-native,
-   Tart, or Lume pulls without downloading them. Pull completion reports the
-   actual reused chunk count, bytes, disk format, and base disk path when the
-   base clone succeeds. Local
+   OCI index/list child candidates and selection, can force
+   `--platform os/arch[/variant]`, then HEAD-audit the registry blobs this host
+   would need for cove-native, Tart, or Lume pulls without downloading them.
+   Pull completion reports the actual reused chunk count, bytes, disk format,
+   and base disk path when the base clone succeeds. Local
    images built from pulled VMs preserve the
    source registry manifest digest, image forks restore it to child
    `disk.provenance`, and store GC treats those image manifests as roots.

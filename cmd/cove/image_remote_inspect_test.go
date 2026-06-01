@@ -197,6 +197,9 @@ func TestInspectRemoteImageResolvesIndex(t *testing.T) {
 	if !out.ResolvedFromIndex || out.IndexDigest != "sha256:index" || out.SelectedDigest != manifestDigest || out.SelectedPlatform != "darwin/arm64" {
 		t.Fatalf("resolution = index:%v index_digest:%q selected:%q platform:%q", out.ResolvedFromIndex, out.IndexDigest, out.SelectedDigest, out.SelectedPlatform)
 	}
+	if len(out.IndexManifests) != 2 || out.IndexManifests[1].Digest != manifestDigest || !out.IndexManifests[1].Selected {
+		t.Fatalf("index manifests = %+v, want selected darwin candidate", out.IndexManifests)
+	}
 	if out.Format != "cove" || out.DiskSize != 16 {
 		t.Fatalf("format/disk = %s/%d, want cove/16", out.Format, out.DiskSize)
 	}
@@ -239,6 +242,9 @@ func TestInspectRemoteImageResolvesIndexPlatform(t *testing.T) {
 	}
 	if !out.ResolvedFromIndex || out.SelectedPlatform != "linux/arm64" {
 		t.Fatalf("resolution = index:%v platform:%q, want linux/arm64", out.ResolvedFromIndex, out.SelectedPlatform)
+	}
+	if len(out.IndexManifests) != 2 || out.IndexManifests[0].Platform != "darwin/arm64" || out.IndexManifests[1].Platform != "linux/arm64" || !out.IndexManifests[1].Selected {
+		t.Fatalf("index manifests = %+v, want darwin and selected linux candidates", out.IndexManifests)
 	}
 	if out.DiskSize != int64(len("linux-child")) {
 		t.Fatalf("disk size = %d, want linux child", out.DiskSize)
@@ -425,8 +431,17 @@ func TestInspectRemoteImageBlobAuditOK(t *testing.T) {
 func TestWriteRemoteInspectText(t *testing.T) {
 	var b strings.Builder
 	err := writeRemoteInspectText(&b, ImageRemoteInspectOutput{
-		Ref:                 "ghcr.io/me/dev-vm:v1",
-		ManifestDigest:      "sha256:test",
+		Ref:               "ghcr.io/me/dev-vm:v1",
+		ManifestDigest:    "sha256:test",
+		ResolvedFromIndex: true,
+		IndexDigest:       "sha256:index",
+		IndexMediaType:    ociimage.MediaTypeImageIndex,
+		SelectedDigest:    "sha256:" + strings.Repeat("2", 64),
+		SelectedPlatform:  "darwin/arm64",
+		IndexManifests: []ImageRemoteIndexManifest{
+			{Digest: "sha256:" + strings.Repeat("1", 64), MediaType: ociimage.MediaTypeImageManifest, Size: 1024, Platform: "linux/arm64"},
+			{Digest: "sha256:" + strings.Repeat("2", 64), MediaType: ociimage.MediaTypeImageManifest, Size: 2048, Platform: "darwin/arm64", Selected: true},
+		},
 		Kind:                "vm-oci",
 		Format:              "cove",
 		PullPlan:            "cove chunked pull",
@@ -456,7 +471,7 @@ func TestWriteRemoteInspectText(t *testing.T) {
 	if err != nil {
 		t.Fatalf("writeRemoteInspectText: %v", err)
 	}
-	for _, want := range []string{"Remote image ghcr.io/me/dev-vm:v1", "format:          cove", "pull plan:       cove chunked pull", "verification:    manifest parsed", "blob audit:      missing", "missing:       layer[0]:sha256:missing", "disk format:     raw", "chunks:          2", "base audit:      ok", "disk_format=raw", "matching_chunks=2", "matching_bytes=8.0 KB"} {
+	for _, want := range []string{"Remote image ghcr.io/me/dev-vm:v1", "format:          cove", "pull plan:       cove chunked pull", "verification:    manifest parsed", "index manifests: 2", "platform=darwin/arm64", "size=2.0 KB", "blob audit:      missing", "missing:       layer[0]:sha256:missing", "disk format:     raw", "chunks:          2", "base audit:      ok", "disk_format=raw", "matching_chunks=2", "matching_bytes=8.0 KB"} {
 		if !strings.Contains(b.String(), want) {
 			t.Fatalf("text missing %q:\n%s", want, b.String())
 		}

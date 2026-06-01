@@ -121,7 +121,8 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `cove pull --platform <os/arch[/variant]>` and
   `cove image inspect -remote -platform <os/arch[/variant]>` now select an OCI
   image-index or Docker manifest-list child explicitly, and pull dry-runs report
-  the index digest, selected manifest digest, and selected platform.
+  the index digest, selected manifest digest, selected platform, and selectable
+  child manifest candidates.
 - `cove pull --dry-run --verify-blobs` now HEAD-audits registry blobs this host
   would need to fetch for cove-native, Tart, or Lume pulls without downloading
   blob bodies.

@@ -24,48 +24,57 @@ type remoteInspectOptions struct {
 }
 
 type ImageRemoteInspectOutput struct {
-	Ref                 string                    `json:"ref"`
-	Error               string                    `json:"error,omitempty"`
-	ManifestDigest      string                    `json:"manifest_digest,omitempty"`
-	ResolvedFromIndex   bool                      `json:"resolved_from_index,omitempty"`
-	IndexDigest         string                    `json:"index_digest,omitempty"`
-	IndexMediaType      string                    `json:"index_media_type,omitempty"`
-	SelectedDigest      string                    `json:"selected_digest,omitempty"`
-	SelectedPlatform    string                    `json:"selected_platform,omitempty"`
-	Kind                string                    `json:"kind"`
-	Format              string                    `json:"format"`
-	PullPlan            string                    `json:"pull_plan,omitempty"`
-	Verification        string                    `json:"verification,omitempty"`
-	BlobAudit           string                    `json:"blob_audit,omitempty"`
-	BlobDescriptors     int                       `json:"blob_descriptors,omitempty"`
-	BlobBytes           int64                     `json:"blob_bytes,omitempty"`
-	MissingBlobs        []string                  `json:"missing_blobs,omitempty"`
-	MediaType           string                    `json:"media_type,omitempty"`
-	ConfigMediaType     string                    `json:"config_media_type,omitempty"`
-	LayerCount          int                       `json:"layer_count"`
-	TotalLayerBytes     int64                     `json:"total_layer_bytes"`
-	DiskSize            int64                     `json:"disk_size,omitempty"`
-	DiskFormat          string                    `json:"disk_format,omitempty"`
-	DiskSHA256          string                    `json:"disk_sha256,omitempty"`
-	CompressedDiskBytes int64                     `json:"compressed_disk_bytes,omitempty"`
-	ChunkCount          int                       `json:"chunk_count,omitempty"`
-	ZeroChunks          int                       `json:"zero_chunks,omitempty"`
-	DiskLayerCount      int                       `json:"disk_layer_count,omitempty"`
-	DiskPartCount       int                       `json:"disk_part_count,omitempty"`
-	MetadataBlobs       int                       `json:"metadata_blobs,omitempty"`
-	MetadataBytes       int64                     `json:"metadata_bytes,omitempty"`
-	ConfigBytes         int64                     `json:"config_bytes,omitempty"`
-	NVRAMBytes          int64                     `json:"nvram_bytes,omitempty"`
-	BaseManifest        string                    `json:"base_manifest,omitempty"`
-	BaseChainAudit      string                    `json:"base_chain_audit,omitempty"`
-	BaseChainDepth      int                       `json:"base_chain_depth,omitempty"`
-	BaseChain           []ImageRemoteBaseManifest `json:"base_chain,omitempty"`
-	UploadTime          string                    `json:"upload_time,omitempty"`
-	ImageRef            string                    `json:"image_ref,omitempty"`
-	ImageName           string                    `json:"image_name,omitempty"`
-	ImageTag            string                    `json:"image_tag,omitempty"`
-	Created             string                    `json:"created,omitempty"`
-	BuiltAt             string                    `json:"built_at,omitempty"`
+	Ref                 string                     `json:"ref"`
+	Error               string                     `json:"error,omitempty"`
+	ManifestDigest      string                     `json:"manifest_digest,omitempty"`
+	ResolvedFromIndex   bool                       `json:"resolved_from_index,omitempty"`
+	IndexDigest         string                     `json:"index_digest,omitempty"`
+	IndexMediaType      string                     `json:"index_media_type,omitempty"`
+	SelectedDigest      string                     `json:"selected_digest,omitempty"`
+	SelectedPlatform    string                     `json:"selected_platform,omitempty"`
+	IndexManifests      []ImageRemoteIndexManifest `json:"index_manifests,omitempty"`
+	Kind                string                     `json:"kind"`
+	Format              string                     `json:"format"`
+	PullPlan            string                     `json:"pull_plan,omitempty"`
+	Verification        string                     `json:"verification,omitempty"`
+	BlobAudit           string                     `json:"blob_audit,omitempty"`
+	BlobDescriptors     int                        `json:"blob_descriptors,omitempty"`
+	BlobBytes           int64                      `json:"blob_bytes,omitempty"`
+	MissingBlobs        []string                   `json:"missing_blobs,omitempty"`
+	MediaType           string                     `json:"media_type,omitempty"`
+	ConfigMediaType     string                     `json:"config_media_type,omitempty"`
+	LayerCount          int                        `json:"layer_count"`
+	TotalLayerBytes     int64                      `json:"total_layer_bytes"`
+	DiskSize            int64                      `json:"disk_size,omitempty"`
+	DiskFormat          string                     `json:"disk_format,omitempty"`
+	DiskSHA256          string                     `json:"disk_sha256,omitempty"`
+	CompressedDiskBytes int64                      `json:"compressed_disk_bytes,omitempty"`
+	ChunkCount          int                        `json:"chunk_count,omitempty"`
+	ZeroChunks          int                        `json:"zero_chunks,omitempty"`
+	DiskLayerCount      int                        `json:"disk_layer_count,omitempty"`
+	DiskPartCount       int                        `json:"disk_part_count,omitempty"`
+	MetadataBlobs       int                        `json:"metadata_blobs,omitempty"`
+	MetadataBytes       int64                      `json:"metadata_bytes,omitempty"`
+	ConfigBytes         int64                      `json:"config_bytes,omitempty"`
+	NVRAMBytes          int64                      `json:"nvram_bytes,omitempty"`
+	BaseManifest        string                     `json:"base_manifest,omitempty"`
+	BaseChainAudit      string                     `json:"base_chain_audit,omitempty"`
+	BaseChainDepth      int                        `json:"base_chain_depth,omitempty"`
+	BaseChain           []ImageRemoteBaseManifest  `json:"base_chain,omitempty"`
+	UploadTime          string                     `json:"upload_time,omitempty"`
+	ImageRef            string                     `json:"image_ref,omitempty"`
+	ImageName           string                     `json:"image_name,omitempty"`
+	ImageTag            string                     `json:"image_tag,omitempty"`
+	Created             string                     `json:"created,omitempty"`
+	BuiltAt             string                     `json:"built_at,omitempty"`
+}
+
+type ImageRemoteIndexManifest struct {
+	Digest    string `json:"digest"`
+	MediaType string `json:"media_type,omitempty"`
+	Size      int64  `json:"size,omitempty"`
+	Platform  string `json:"platform,omitempty"`
+	Selected  bool   `json:"selected,omitempty"`
 }
 
 type ImageRemoteBaseManifest struct {
@@ -163,12 +172,30 @@ func remoteInspectBase(ref ociimage.Reference, resolution ociimage.ManifestResol
 		IndexMediaType:    resolution.IndexMediaType,
 		SelectedDigest:    resolution.SelectedDigest,
 		SelectedPlatform:  remotePlatformString(resolution.SelectedPlatform),
+		IndexManifests:    remoteIndexManifestOutputs(resolution),
 		Kind:              "vm-oci",
 		MediaType:         manifest.MediaType,
 		ConfigMediaType:   manifest.Config.MediaType,
 		LayerCount:        len(manifest.Layers),
 		TotalLayerBytes:   total,
 	}
+}
+
+func remoteIndexManifestOutputs(resolution ociimage.ManifestResolution) []ImageRemoteIndexManifest {
+	if len(resolution.IndexManifests) == 0 {
+		return nil
+	}
+	out := make([]ImageRemoteIndexManifest, 0, len(resolution.IndexManifests))
+	for _, desc := range resolution.IndexManifests {
+		out = append(out, ImageRemoteIndexManifest{
+			Digest:    desc.Digest,
+			MediaType: desc.MediaType,
+			Size:      desc.Size,
+			Platform:  remotePlatformString(desc.Platform),
+			Selected:  desc.Digest != "" && desc.Digest == resolution.SelectedDigest,
+		})
+	}
+	return out
 }
 
 func isCoveImageArtifactManifest(manifest ociimage.Manifest) bool {
@@ -623,6 +650,26 @@ func writeRemoteInspectText(w io.Writer, out ImageRemoteInspectOutput) error {
 		}
 		if out.SelectedPlatform != "" {
 			fmt.Fprintf(w, "  platform:        %s\n", out.SelectedPlatform)
+		}
+		if len(out.IndexManifests) > 0 {
+			fmt.Fprintf(w, "  index manifests: %d\n", len(out.IndexManifests))
+			for _, manifest := range out.IndexManifests {
+				marker := " "
+				if manifest.Selected {
+					marker = "*"
+				}
+				fmt.Fprintf(w, "    %s %s", marker, manifest.Digest)
+				if manifest.Platform != "" {
+					fmt.Fprintf(w, " platform=%s", manifest.Platform)
+				}
+				if manifest.Size > 0 {
+					fmt.Fprintf(w, " size=%s", bytefmt.Size(manifest.Size))
+				}
+				if manifest.MediaType != "" {
+					fmt.Fprintf(w, " media=%s", manifest.MediaType)
+				}
+				fmt.Fprintln(w)
+			}
 		}
 	}
 	fmt.Fprintf(w, "  kind:            %s\n", out.Kind)
