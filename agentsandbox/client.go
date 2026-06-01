@@ -40,7 +40,9 @@ type ClientOptions struct {
 	ImageManifestDigest  string
 	ImageDigestRef       string
 	ImagePlatform        string
+	RequiredLabels       map[string]string
 	RequiredCapabilities []string
+	PlacementLimit       int
 	VMName               string
 	Timeout              time.Duration
 	HTTP                 *http.Client
@@ -92,6 +94,45 @@ type SandboxListResult struct {
 	Offset     int             `json:"offset,omitempty"`
 	Limit      int             `json:"limit,omitempty"`
 	NextOffset int             `json:"next_offset,omitempty"`
+}
+
+type PlacementPlan struct {
+	ID                   string               `json:"id,omitempty"`
+	Created              time.Time            `json:"created,omitempty"`
+	Namespace            string               `json:"namespace,omitempty"`
+	Policy               string               `json:"policy"`
+	ImageRef             string               `json:"image_ref,omitempty"`
+	ImageManifestDigest  string               `json:"image_manifest_digest,omitempty"`
+	ImageDigestRef       string               `json:"image_digest_ref,omitempty"`
+	ImagePlatform        string               `json:"image_platform,omitempty"`
+	RequiredLabels       map[string]string    `json:"required_labels,omitempty"`
+	RequiredCapabilities []string             `json:"required_capabilities,omitempty"`
+	Limit                int                  `json:"limit,omitempty"`
+	Candidates           []PlacementCandidate `json:"candidates,omitempty"`
+	Skipped              []PlacementSkip      `json:"skipped,omitempty"`
+}
+
+type PlacementCandidate struct {
+	Rank             int    `json:"rank"`
+	WorkerID         string `json:"worker_id"`
+	Load             int    `json:"load"`
+	MaxVMs           int    `json:"max_vms,omitempty"`
+	RequestedVMs     int    `json:"requested_vms"`
+	AntiAffinityLoad int    `json:"anti_affinity_load,omitempty"`
+	HasImage         bool   `json:"has_image,omitempty"`
+}
+
+type PlacementSkip struct {
+	WorkerID            string            `json:"worker_id"`
+	Reason              string            `json:"reason"`
+	Status              string            `json:"status,omitempty"`
+	MissingLabels       map[string]string `json:"missing_labels,omitempty"`
+	MissingCapabilities []string          `json:"missing_capabilities,omitempty"`
+	Load                int               `json:"load,omitempty"`
+	MaxVMs              int               `json:"max_vms,omitempty"`
+	RequestedVMs        int               `json:"requested_vms,omitempty"`
+	ImageRef            string            `json:"image_ref,omitempty"`
+	ImageManifestDigest string            `json:"image_manifest_digest,omitempty"`
 }
 
 type Lease struct {
@@ -352,6 +393,9 @@ func Create(ctx context.Context, opts ClientOptions) (*Client, error) {
 	if platform := strings.TrimSpace(opts.ImagePlatform); platform != "" {
 		body["image_platform"] = platform
 	}
+	if labels := cleanStringMap(opts.RequiredLabels); len(labels) > 0 {
+		body["required_labels"] = labels
+	}
 	if capabilities := cleanStrings(opts.RequiredCapabilities); len(capabilities) > 0 {
 		body["required_capabilities"] = capabilities
 	}
@@ -366,6 +410,56 @@ func Create(ctx context.Context, opts ClientOptions) (*Client, error) {
 	c.namespace = status.Namespace
 	c.vmName = status.VMName
 	return c, nil
+}
+
+func Plan(ctx context.Context, opts ClientOptions) (PlacementPlan, error) {
+	provider := normalizeProvider(opts)
+	if provider != ProviderCloud {
+		return PlacementPlan{}, errors.New("agentsandbox: plan is only supported for cloud sandboxes")
+	}
+	imageRef := strings.TrimSpace(opts.ImageRef)
+	if imageRef == "" {
+		return PlacementPlan{}, errors.New("agentsandbox: image ref required")
+	}
+	if opts.PlacementLimit < 0 {
+		return PlacementPlan{}, errors.New("agentsandbox: placement limit must be non-negative")
+	}
+	seed := opts
+	seed.SandboxID = "pending"
+	c, err := NewClient(seed)
+	if err != nil {
+		return PlacementPlan{}, err
+	}
+	body := map[string]any{"image_ref": imageRef}
+	if ns := strings.TrimSpace(opts.Namespace); ns != "" {
+		body["namespace"] = ns
+	}
+	if bundle := strings.TrimSpace(opts.ManifestBundle); bundle != "" {
+		body["manifest_bundle"] = bundle
+	}
+	if digest := strings.TrimSpace(opts.ImageManifestDigest); digest != "" {
+		body["image_manifest_digest"] = digest
+	}
+	if digestRef := strings.TrimSpace(opts.ImageDigestRef); digestRef != "" {
+		body["image_digest_ref"] = digestRef
+	}
+	if platform := strings.TrimSpace(opts.ImagePlatform); platform != "" {
+		body["image_platform"] = platform
+	}
+	if labels := cleanStringMap(opts.RequiredLabels); len(labels) > 0 {
+		body["required_labels"] = labels
+	}
+	if capabilities := cleanStrings(opts.RequiredCapabilities); len(capabilities) > 0 {
+		body["required_capabilities"] = capabilities
+	}
+	if opts.PlacementLimit > 0 {
+		body["limit"] = opts.PlacementLimit
+	}
+	var plan PlacementPlan
+	if err := c.request(ctx, http.MethodPost, "/v1/placements/plan", body, &plan, c.timeout); err != nil {
+		return PlacementPlan{}, err
+	}
+	return plan, nil
 }
 
 func (c *Client) Provider() string {
@@ -1306,6 +1400,24 @@ func cleanStrings(in []string) []string {
 		}
 		seen[value] = true
 		out = append(out, value)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func cleanStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for key, value := range in {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		out[key] = strings.TrimSpace(value)
 	}
 	if len(out) == 0 {
 		return nil

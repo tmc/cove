@@ -296,6 +296,7 @@ class CoveFleetClient:
         image_manifest_digest: str | None = None,
         image_digest_ref: str | None = None,
         image_platform: str | None = None,
+        required_labels: Mapping[str, str] | None = None,
         required_capabilities: Sequence[str] | str | None = None,
         sandbox_id: str | None = None,
         api_key: str | None = None,
@@ -321,6 +322,9 @@ class CoveFleetClient:
             body["image_digest_ref"] = image_digest_ref.strip()
         if image_platform and image_platform.strip():
             body["image_platform"] = image_platform.strip()
+        labels = _clean_string_map(required_labels)
+        if labels:
+            body["required_labels"] = labels
         capabilities = _clean_string_list(required_capabilities)
         if capabilities:
             body["required_capabilities"] = capabilities
@@ -343,6 +347,63 @@ class CoveFleetClient:
             vm=str(data.get("vm_name") or vm_name or ""),
             timeout=timeout,
         )
+
+    @classmethod
+    def plan_sandbox(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        image_ref: str,
+        manifest_bundle: str | None = None,
+        image_manifest_digest: str | None = None,
+        image_digest_ref: str | None = None,
+        image_platform: str | None = None,
+        required_labels: Mapping[str, str] | None = None,
+        required_capabilities: Sequence[str] | str | None = None,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        limit: int | None = None,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        image_ref = image_ref.strip()
+        if not image_ref:
+            raise ValueError("image_ref is required")
+        if limit is not None and limit < 0:
+            raise ValueError("limit must be non-negative")
+        body: dict[str, object] = {"image_ref": image_ref}
+        if namespace:
+            body["namespace"] = namespace
+        if manifest_bundle and manifest_bundle.strip():
+            body["manifest_bundle"] = manifest_bundle.strip()
+        if image_manifest_digest and image_manifest_digest.strip():
+            body["image_manifest_digest"] = image_manifest_digest.strip()
+        if image_digest_ref and image_digest_ref.strip():
+            body["image_digest_ref"] = image_digest_ref.strip()
+        if image_platform and image_platform.strip():
+            body["image_platform"] = image_platform.strip()
+        labels = _clean_string_map(required_labels)
+        if labels:
+            body["required_labels"] = labels
+        capabilities = _clean_string_list(required_capabilities)
+        if capabilities:
+            body["required_capabilities"] = capabilities
+        if limit:
+            body["limit"] = limit
+        seed = cls(
+            sandbox_id="placement-plan",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        data = seed._request("POST", "/v1/placements/plan", body, timeout=timeout)
+        plan = dict(data)
+        for key in ("candidates", "skipped"):
+            items = plan.get(key) or []
+            if not isinstance(items, list):
+                raise CoveError(f"POST /v1/placements/plan: expected {key} list")
+            plan[key] = [dict(item) for item in items if isinstance(item, dict)]
+        return plan
 
     @classmethod
     def list_sandboxes(
@@ -785,6 +846,18 @@ def _clean_string_list(values: Sequence[str] | str | None) -> list[str]:
             continue
         seen.add(value)
         out.append(value)
+    return out
+
+
+def _clean_string_map(values: Mapping[str, str] | None) -> dict[str, str]:
+    if not values:
+        return {}
+    out: dict[str, str] = {}
+    for key, value in values.items():
+        key = str(key).strip()
+        if not key:
+            continue
+        out[key] = str(value).strip()
     return out
 
 

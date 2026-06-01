@@ -28,6 +28,7 @@ func TestCloudClientCreateExecControlDelete(t *testing.T) {
 		ImageManifestDigest:  "sha256:1111111111111111111111111111111111111111111111111111111111111111",
 		ImageDigestRef:       "ghcr.io/me/dev-vm@sha256:1111111111111111111111111111111111111111111111111111111111111111",
 		ImagePlatform:        "darwin/arm64",
+		RequiredLabels:       map[string]string{"zone": "desk"},
 		RequiredCapabilities: []string{"ram-overlay", "gui", "ram-overlay", ""},
 		Timeout:              time.Second,
 	})
@@ -156,6 +157,10 @@ func TestCloudClientCreateExecControlDelete(t *testing.T) {
 	if create["manifest_bundle"] != "manifests" || create["image_manifest_digest"] == "" || create["image_digest_ref"] == "" || create["image_platform"] != "darwin/arm64" {
 		t.Fatalf("create image identity = %+v, want manifest bundle fields", create)
 	}
+	labels, ok := create["required_labels"].(map[string]any)
+	if !ok || labels["zone"] != "desk" {
+		t.Fatalf("create required labels = %+v, want zone=desk", create["required_labels"])
+	}
 	if !equalAnyStringSlice(create["required_capabilities"], []string{"ram-overlay", "gui"}) {
 		t.Fatalf("create required capabilities = %+v, want ram-overlay/gui", create["required_capabilities"])
 	}
@@ -190,6 +195,61 @@ func TestCloudClientCreateExecControlDelete(t *testing.T) {
 	}
 	if control[4].body["mouse"].(map[string]any)["absolute"] != true {
 		t.Fatalf("mouse control = %+v", control[4].body)
+	}
+}
+
+func TestCloudClientPlansSandboxPlacement(t *testing.T) {
+	server := newSDKFleetServer(t)
+	ctx := context.Background()
+	plan, err := Plan(ctx, ClientOptions{
+		Provider:             ProviderCloud,
+		FleetURL:             server.URL,
+		APIKey:               "secret",
+		Namespace:            "team-a",
+		ImageRef:             "base:v1",
+		ManifestBundle:       "manifests",
+		ImagePlatform:        "darwin/arm64",
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay", "asif", ""},
+		PlacementLimit:       3,
+		Timeout:              time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ID != "placement-plan-1" || len(plan.Candidates) != 1 || plan.Candidates[0].WorkerID != "worker-1" {
+		t.Fatalf("plan = %+v, want one worker-1 candidate", plan)
+	}
+	if len(plan.Skipped) != 1 || plan.Skipped[0].WorkerID != "worker-2" || plan.Skipped[0].Reason != "capability" {
+		t.Fatalf("plan skipped = %+v, want worker-2 capability skip", plan.Skipped)
+	}
+	req := server.requests[0]
+	if req.path != "/v1/placements/plan" || req.authorization != "Bearer secret" {
+		t.Fatalf("request = %+v, want authorized placement plan", req)
+	}
+	if req.body["namespace"] != "team-a" || req.body["image_ref"] != "base:v1" || req.body["manifest_bundle"] != "manifests" || req.body["image_platform"] != "darwin/arm64" || req.body["limit"] != float64(3) {
+		t.Fatalf("plan body = %+v, want image identity and limit", req.body)
+	}
+	labels, ok := req.body["required_labels"].(map[string]any)
+	if !ok || labels["zone"] != "desk" {
+		t.Fatalf("required labels = %+v, want zone=desk", req.body["required_labels"])
+	}
+	if !equalAnyStringSlice(req.body["required_capabilities"], []string{"ram-overlay", "asif"}) {
+		t.Fatalf("required capabilities = %+v, want ram-overlay/asif", req.body["required_capabilities"])
+	}
+}
+
+func TestCloudClientRejectsNegativePlacementLimit(t *testing.T) {
+	ctx := context.Background()
+	_, err := Plan(ctx, ClientOptions{
+		Provider:       ProviderCloud,
+		FleetURL:       "https://fleet.example",
+		APIKey:         "secret",
+		ImageRef:       "base:v1",
+		PlacementLimit: -1,
+	})
+	if err == nil || !strings.Contains(err.Error(), "placement limit must be non-negative") {
+		t.Fatalf("negative placement limit err = %v, want validation error", err)
 	}
 }
 
@@ -417,6 +477,19 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 		}
 		server.requests = append(server.requests, req)
 		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/placements/plan":
+			writeSDKJSON(t, w, PlacementPlan{
+				ID:                   "placement-plan-1",
+				Namespace:            "team-a",
+				Policy:               "image-affinity",
+				ImageRef:             "base:v1",
+				ImagePlatform:        "darwin/arm64",
+				RequiredLabels:       map[string]string{"zone": "desk"},
+				RequiredCapabilities: []string{"ram-overlay", "asif"},
+				Limit:                3,
+				Candidates:           []PlacementCandidate{{Rank: 1, WorkerID: "worker-1", Load: 1, MaxVMs: 4, RequestedVMs: 1, HasImage: true}},
+				Skipped:              []PlacementSkip{{WorkerID: "worker-2", Reason: "capability", MissingCapabilities: []string{"asif"}}},
+			})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes":
 			writeSDKJSON(t, w, SandboxStatus{Namespace: "team-a", ID: "job-1", VMName: "cove-sandbox-job-1", RequiredCapabilities: []string{"ram-overlay"}, Status: "pending"})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/sandboxes":

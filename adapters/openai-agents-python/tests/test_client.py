@@ -140,6 +140,7 @@ def test_fleet_client_create_wait_exec_and_delete() -> None:
             image_manifest_digest="sha256:1111111111111111111111111111111111111111111111111111111111111111",
             image_digest_ref="ghcr.io/me/dev-vm@sha256:1111111111111111111111111111111111111111111111111111111111111111",
             image_platform="darwin/arm64",
+            required_labels={"zone": "desk"},
             required_capabilities=("ram-overlay", "gui", "ram-overlay", ""),
             sandbox_id="job-1",
             namespace="team-a",
@@ -193,6 +194,7 @@ def test_fleet_client_create_wait_exec_and_delete() -> None:
         assert create["body"]["image_manifest_digest"].startswith("sha256:")
         assert create["body"]["image_digest_ref"].startswith("ghcr.io/me/dev-vm@sha256:")
         assert create["body"]["image_platform"] == "darwin/arm64"
+        assert create["body"]["required_labels"] == {"zone": "desk"}
         assert create["body"]["required_capabilities"] == ["ram-overlay", "gui"]
         assert create["body"]["namespace"] == "team-a"
         assert server.requests[1]["query"]["namespace"] == ["team-a"]
@@ -206,6 +208,40 @@ def test_fleet_client_create_wait_exec_and_delete() -> None:
         assert exec_req["body"]["timeout"] == "2.5s"
         assert server.requests[11]["query"]["namespace"] == ["team-a"]
         assert server.requests[11]["query"]["sandbox_id"] == ["job-1"]
+    finally:
+        server.stop()
+
+
+def test_fleet_client_plan_sandbox() -> None:
+    server = _FleetHTTPServer()
+    server.start()
+    try:
+        plan = CoveFleetClient.plan_sandbox(
+            fleet_url=server.url,
+            api_key="secret",
+            image_ref="base:v1",
+            manifest_bundle="manifests",
+            image_platform="darwin/arm64",
+            required_labels={"zone": "desk"},
+            required_capabilities=("ram-overlay", "asif", ""),
+            namespace="team-a",
+            limit=3,
+        )
+        assert plan["id"] == "placement-plan-1"
+        assert plan["candidates"][0]["worker_id"] == "worker-1"
+        assert plan["skipped"][0]["worker_id"] == "worker-2"
+        assert plan["skipped"][0]["reason"] == "capability"
+
+        req = server.requests[-1]
+        assert req["path"] == "/v1/placements/plan"
+        assert req["authorization"] == "Bearer secret"
+        assert req["body"]["namespace"] == "team-a"
+        assert req["body"]["image_ref"] == "base:v1"
+        assert req["body"]["manifest_bundle"] == "manifests"
+        assert req["body"]["image_platform"] == "darwin/arm64"
+        assert req["body"]["required_labels"] == {"zone": "desk"}
+        assert req["body"]["required_capabilities"] == ["ram-overlay", "asif"]
+        assert req["body"]["limit"] == 3
     finally:
         server.stop()
 
@@ -551,6 +587,37 @@ class _FleetHTTPServer:
                 )
                 if path == "/v1/sandboxes":
                     self._write({"id": "job-1", "vm_name": "cove-sandbox-job-1", "status": "pending"})
+                    return
+                if path == "/v1/placements/plan":
+                    self._write(
+                        {
+                            "id": "placement-plan-1",
+                            "namespace": "team-a",
+                            "policy": "image-affinity",
+                            "image_ref": "base:v1",
+                            "image_platform": "darwin/arm64",
+                            "required_labels": {"zone": "desk"},
+                            "required_capabilities": ["ram-overlay", "asif"],
+                            "limit": 3,
+                            "candidates": [
+                                {
+                                    "rank": 1,
+                                    "worker_id": "worker-1",
+                                    "load": 1,
+                                    "max_vms": 4,
+                                    "requested_vms": 1,
+                                    "has_image": True,
+                                }
+                            ],
+                            "skipped": [
+                                {
+                                    "worker_id": "worker-2",
+                                    "reason": "capability",
+                                    "missing_capabilities": ["asif"],
+                                }
+                            ],
+                        }
+                    )
                     return
                 if path == "/v1/sandboxes/job-1/wait":
                     self._write(

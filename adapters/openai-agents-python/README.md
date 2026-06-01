@@ -170,13 +170,27 @@ handle on close when `delete_on_close=True`. Set
 `fleet_url` and `api_key` directly. For registry-audited hosted sandboxes, pass
 `manifest_bundle` plus optional `image_platform`; the controller verifies the
 offline bundle and admits the sandbox only on workers with matching image
-provenance. Pass `required_capabilities` to restrict hosted placement to
-workers that advertise runtime traits such as `ram-overlay`.
+provenance. Pass `required_labels` for operator-defined selectors and
+`required_capabilities` to restrict hosted placement to workers that advertise
+runtime traits such as `ram-overlay`.
 
 For direct fleet-client code, `CoveFleetClient` covers the hosted lifecycle:
 
 ```python
 from cove_sandbox import CoveFleetClient
+
+plan = CoveFleetClient.plan_sandbox(
+    fleet_url="https://fleet.internal.example",
+    api_key="cove_...",
+    namespace="team-a",
+    image_ref="macos-base:latest",
+    manifest_bundle="manifests",
+    image_platform="darwin/arm64",
+    required_labels={"zone": "desk"},
+    required_capabilities=("ram-overlay",),
+    limit=5,
+)
+print(len(plan["candidates"]), len(plan["skipped"]))
 
 client = CoveFleetClient.create_sandbox(
     fleet_url="https://fleet.internal.example",
@@ -185,6 +199,7 @@ client = CoveFleetClient.create_sandbox(
     image_ref="macos-base:latest",
     manifest_bundle="manifests",
     image_platform="darwin/arm64",
+    required_labels={"zone": "desk"},
     required_capabilities=("ram-overlay",),
     sandbox_id="eval-001",
 )

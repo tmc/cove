@@ -728,13 +728,33 @@ screenshot/key/text/mouse events. Both SDKs remember the holder returned by
 `release_lease`/`ReleaseLease` succeeds. Hosted create helpers expose the same
 exact-image fields as the REST API: pass `manifest_bundle`/`ManifestBundle` or
 the resolved digest fields to request a registry-verified mutable image ref,
-and pass `required_capabilities`/`RequiredCapabilities` to target workers that
-advertise runtime traits such as `ram-overlay`, `asif`, or `apfs-quota`.
+pass `required_labels`/`RequiredLabels` for operator-defined selectors, and
+pass `required_capabilities`/`RequiredCapabilities` to target workers that
+advertise runtime traits such as `ram-overlay`, `asif`, or `apfs-quota`. The
+same SDKs can dry-run hosted placement before creating a sandbox:
+`agentsandbox.Plan` in Go and `CoveFleetClient.plan_sandbox` in Python return
+the controller's feasible candidates and skipped-worker reasons.
 
 Go SDK example:
 
 ```go
 ctx := context.Background()
+plan, err := agentsandbox.Plan(ctx, agentsandbox.ClientOptions{
+	Provider:             agentsandbox.ProviderCloud,
+	FleetURL:             "https://fleet.internal.example",
+	APIKey:               os.Getenv("COVE_API_KEY"),
+	ImageRef:             "macos-base:latest",
+	ManifestBundle:       "manifests",
+	ImagePlatform:        "darwin/arm64",
+	RequiredLabels:       map[string]string{"zone": "desk"},
+	RequiredCapabilities: []string{"ram-overlay"},
+	PlacementLimit:       5,
+})
+if err != nil {
+	log.Fatal(err)
+}
+log.Printf("placement candidates=%d skipped=%d", len(plan.Candidates), len(plan.Skipped))
+
 sb, err := agentsandbox.Create(ctx, agentsandbox.ClientOptions{
 	Provider: agentsandbox.ProviderCloud,
 	FleetURL: "https://fleet.internal.example",
@@ -742,6 +762,7 @@ sb, err := agentsandbox.Create(ctx, agentsandbox.ClientOptions{
 	ImageRef: "macos-base:latest",
 	ManifestBundle: "manifests",
 	ImagePlatform:  "darwin/arm64",
+	RequiredLabels: map[string]string{"zone": "desk"},
 	RequiredCapabilities: []string{"ram-overlay"},
 })
 if err != nil {
