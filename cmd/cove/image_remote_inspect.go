@@ -28,8 +28,10 @@ type ImageRemoteInspectOutput struct {
 	Ref                 string                     `json:"ref"`
 	Error               string                     `json:"error,omitempty"`
 	ManifestDigest      string                     `json:"manifest_digest,omitempty"`
+	DigestRef           string                     `json:"digest_ref,omitempty"`
 	ResolvedFromIndex   bool                       `json:"resolved_from_index,omitempty"`
 	IndexDigest         string                     `json:"index_digest,omitempty"`
+	IndexDigestRef      string                     `json:"index_digest_ref,omitempty"`
 	IndexMediaType      string                     `json:"index_media_type,omitempty"`
 	SelectedDigest      string                     `json:"selected_digest,omitempty"`
 	SelectedPlatform    string                     `json:"selected_platform,omitempty"`
@@ -193,8 +195,10 @@ func remoteInspectBase(ref ociimage.Reference, resolution ociimage.ManifestResol
 	return ImageRemoteInspectOutput{
 		Ref:               ref.String(),
 		ManifestDigest:    resolution.Digest,
+		DigestRef:         registryDigestRef(ref, resolution.Digest),
 		ResolvedFromIndex: resolution.IndexDigest != "",
 		IndexDigest:       resolution.IndexDigest,
+		IndexDigestRef:    registryDigestRef(ref, resolution.IndexDigest),
 		IndexMediaType:    resolution.IndexMediaType,
 		SelectedDigest:    resolution.SelectedDigest,
 		SelectedPlatform:  remotePlatformString(resolution.SelectedPlatform),
@@ -205,6 +209,16 @@ func remoteInspectBase(ref ociimage.Reference, resolution ociimage.ManifestResol
 		LayerCount:        len(manifest.Layers),
 		TotalLayerBytes:   total,
 	}
+}
+
+func registryDigestRef(ref ociimage.Reference, digest string) string {
+	digest = strings.TrimSpace(digest)
+	if digest == "" {
+		return ""
+	}
+	ref.Tag = ""
+	ref.Digest = digest
+	return ref.String()
 }
 
 func remoteIndexManifestOutputs(resolution ociimage.ManifestResolution) []ImageRemoteIndexManifest {
@@ -809,8 +823,14 @@ func writeRemoteInspectText(w io.Writer, out ImageRemoteInspectOutput) error {
 	if out.ManifestDigest != "" {
 		fmt.Fprintf(w, "  manifest digest: %s\n", out.ManifestDigest)
 	}
+	if out.DigestRef != "" {
+		fmt.Fprintf(w, "  digest ref:      %s\n", out.DigestRef)
+	}
 	if out.ResolvedFromIndex {
 		fmt.Fprintf(w, "  index digest:    %s\n", out.IndexDigest)
+		if out.IndexDigestRef != "" {
+			fmt.Fprintf(w, "  index ref:       %s\n", out.IndexDigestRef)
+		}
 		if out.IndexMediaType != "" {
 			fmt.Fprintf(w, "  index media:     %s\n", out.IndexMediaType)
 		}

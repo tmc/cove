@@ -122,6 +122,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   exact selected registry manifest bytes after index resolution, so a registry
   preflight can produce a digest-stable artifact for later network-free
   `--manifest <path>` validation.
+- `cove image inspect -remote` and manifest-backed `cove pull --dry-run` now
+  report digest-pinned selected refs, plus top-level index digest refs when a
+  tag resolves through an OCI image index or Docker manifest list.
 - `cove pull --platform <os/arch[/variant]>` and
   `cove image inspect -remote -platform <os/arch[/variant]>` now select an OCI
   image-index or Docker manifest-list child explicitly, and pull dry-runs report

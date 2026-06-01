@@ -49,7 +49,9 @@ details, selectable child manifests, the selected platform, the disk format for
 cove-native and image-store artifacts, the pull plan for
 cove/Tart/Lume/image-store artifacts, cove base-chain
 availability/compatibility when a base manifest is declared, and the
-verification work cove will perform during pull/import. Add `-all-platforms` to
+verification work cove will perform during pull/import. It also prints
+copy-pasteable digest refs for the selected manifest and, when a tag resolved
+through an index/list, the top-level index digest ref. Add `-all-platforms` to
 fetch each child manifest, classify every platform, and audit cove base chains
 for each cove-native child without downloading disk blobs. Combine
 `-all-platforms` with `-verify-blobs` to HEAD-audit every child manifest's
@@ -66,7 +68,8 @@ cove-native manifest is available during `--dry-run`, cove also checks whether a
 compatible local or registry-cache base disk can be reused and prints the
 reusable chunks, bytes, disk format, and source path. Manifest-backed dry-runs
 that resolve an index also print the index digest, selected manifest digest,
-selected platform, and selectable child manifest candidates. Add
+selected platform, copy-pasteable digest refs, and selectable child manifest
+candidates. Add
 `--all-platforms` with `--fetch-manifest` to fetch each child manifest and
 include per-child format, disk size/format, transport bytes, cove base-chain
 audit, and optional `--verify-blobs` descriptor audit in the same pull preflight.

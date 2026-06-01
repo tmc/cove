@@ -50,8 +50,10 @@ type pullPlan struct {
 	Manifest             ociimage.ParsedManifest
 	ManifestRaw          []byte
 	ManifestDigest       string
+	DigestRef            string
 	ManifestOut          string
 	ManifestResolution   ociimage.ManifestResolution
+	IndexDigestRef       string
 	BaseReusePath        string
 	BaseReuseDiskFormat  string
 	BaseReuseChunks      int
@@ -85,9 +87,11 @@ type pullDryRunOutput struct {
 	Target            string                     `json:"target"`
 	ManifestProvided  bool                       `json:"manifest_provided"`
 	ManifestDigest    string                     `json:"manifest_digest,omitempty"`
+	DigestRef         string                     `json:"digest_ref,omitempty"`
 	ManifestOut       string                     `json:"manifest_out,omitempty"`
 	ResolvedFromIndex bool                       `json:"resolved_from_index,omitempty"`
 	IndexDigest       string                     `json:"index_digest,omitempty"`
+	IndexDigestRef    string                     `json:"index_digest_ref,omitempty"`
 	IndexMediaType    string                     `json:"index_media_type,omitempty"`
 	SelectedDigest    string                     `json:"selected_digest,omitempty"`
 	SelectedPlatform  string                     `json:"selected_platform,omitempty"`
@@ -299,8 +303,10 @@ func buildPullPlan(refText string, opts pullOptions) (*pullPlan, error) {
 		Manifest:           parsed,
 		ManifestRaw:        manifestRaw,
 		ManifestDigest:     manifestDigest,
+		DigestRef:          registryDigestRef(ref, manifestDigest),
 		ManifestOut:        opts.ManifestOut,
 		ManifestResolution: manifestResolution,
+		IndexDigestRef:     registryDigestRef(ref, manifestResolution.IndexDigest),
 	}
 	if opts.DryRun {
 		if err := planPullDryRunReuse(plan, opts); err != nil {
@@ -794,6 +800,9 @@ func printPullDryRun(w io.Writer, plan *pullPlan) {
 	if plan.ManifestDigest != "" {
 		fmt.Fprintf(w, "  manifest digest: %s\n", plan.ManifestDigest)
 	}
+	if plan.DigestRef != "" {
+		fmt.Fprintf(w, "  digest ref: %s\n", plan.DigestRef)
+	}
 	if plan.ManifestOut != "" {
 		fmt.Fprintf(w, "  manifest out: %s\n", plan.ManifestOut)
 	}
@@ -853,6 +862,9 @@ func printPullManifestResolution(w io.Writer, plan *pullPlan) {
 		return
 	}
 	fmt.Fprintf(w, "  index digest: %s\n", plan.ManifestResolution.IndexDigest)
+	if plan.IndexDigestRef != "" {
+		fmt.Fprintf(w, "  index ref: %s\n", plan.IndexDigestRef)
+	}
 	if plan.ManifestResolution.IndexMediaType != "" {
 		fmt.Fprintf(w, "  index media: %s\n", plan.ManifestResolution.IndexMediaType)
 	}
@@ -975,11 +987,13 @@ func pullDryRunOutputFromPlan(plan *pullPlan) pullDryRunOutput {
 		Target:           plan.VMDir,
 		ManifestProvided: pullPlanHasManifest(plan),
 		ManifestDigest:   plan.ManifestDigest,
+		DigestRef:        plan.DigestRef,
 		ManifestOut:      plan.ManifestOut,
 	}
 	if plan.ManifestResolution.IndexDigest != "" {
 		out.ResolvedFromIndex = true
 		out.IndexDigest = plan.ManifestResolution.IndexDigest
+		out.IndexDigestRef = plan.IndexDigestRef
 		out.IndexMediaType = plan.ManifestResolution.IndexMediaType
 		out.SelectedDigest = plan.ManifestResolution.SelectedDigest
 		out.SelectedPlatform = remotePlatformString(plan.ManifestResolution.SelectedPlatform)

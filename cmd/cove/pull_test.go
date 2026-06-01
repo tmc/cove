@@ -250,6 +250,9 @@ func TestBuildPullPlanDryRunFetchManifest(t *testing.T) {
 	if plan.ManifestDigest != manifestDigest {
 		t.Fatalf("ManifestDigest = %q, want %q", plan.ManifestDigest, manifestDigest)
 	}
+	if plan.DigestRef != "ghcr.io/me/dev-vm@"+manifestDigest {
+		t.Fatalf("DigestRef = %q, want selected digest ref", plan.DigestRef)
+	}
 	if string(plan.ManifestRaw) != string(manifestData) {
 		t.Fatalf("ManifestRaw = %q, want exact registry bytes %q", string(plan.ManifestRaw), string(manifestData))
 	}
@@ -287,6 +290,9 @@ func TestBuildPullPlanDryRunFetchManifest(t *testing.T) {
 	if !strings.Contains(out.String(), "manifest out: "+manifestOut) {
 		t.Fatalf("dry-run output %q missing manifest out", out.String())
 	}
+	if !strings.Contains(out.String(), "digest ref: ghcr.io/me/dev-vm@"+manifestDigest) {
+		t.Fatalf("dry-run output %q missing digest ref", out.String())
+	}
 
 	var jsonOut strings.Builder
 	if err := printPullDryRunJSON(&jsonOut, plan); err != nil {
@@ -301,6 +307,9 @@ func TestBuildPullPlanDryRunFetchManifest(t *testing.T) {
 	}
 	if got.ManifestOut != manifestOut {
 		t.Fatalf("JSON manifest_out = %q, want %q", got.ManifestOut, manifestOut)
+	}
+	if got.DigestRef != "ghcr.io/me/dev-vm@"+manifestDigest {
+		t.Fatalf("JSON digest_ref = %q, want selected digest ref", got.DigestRef)
 	}
 }
 
@@ -344,6 +353,9 @@ func TestBuildPullPlanDryRunFetchManifestPlatform(t *testing.T) {
 	}
 	if plan.ManifestDigest != linuxDigest || plan.ManifestResolution.SelectedDigest != linuxDigest {
 		t.Fatalf("digest = manifest:%q selected:%q, want linux %q", plan.ManifestDigest, plan.ManifestResolution.SelectedDigest, linuxDigest)
+	}
+	if plan.DigestRef != "ghcr.io/me/dev-vm@"+linuxDigest || plan.IndexDigestRef != "ghcr.io/me/dev-vm@sha256:index" {
+		t.Fatalf("digest refs = selected:%q index:%q, want linux child and index refs", plan.DigestRef, plan.IndexDigestRef)
 	}
 	if string(plan.ManifestRaw) != string(linuxData) {
 		t.Fatalf("ManifestRaw = %q, want exact selected child bytes %q", string(plan.ManifestRaw), string(linuxData))

@@ -85,7 +85,9 @@ delegates the disk/runtime work to `tart` or `vetu`.
    disks and summarize local content-store coverage versus registry fetch work,
    including zero chunks and metadata blobs; the same pull plan is available as
    JSON for CI or fleet placement automation, and fetched selected manifests can
-   be written as exact registry bytes for later network-free validation.
+   be written as exact registry bytes for later network-free validation; remote
+   inspect and manifest-backed pull dry-runs also emit selected digest refs and
+   top-level index digest refs for immutable CI/fleet pins.
    Manifest-backed dry-runs report OCI index/list child candidates and selection, can force
    `--platform os/arch[/variant]`, can fetch and classify every index child with
    `--all-platforms`, then HEAD-audit the registry blobs this host would need

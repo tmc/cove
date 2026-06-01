@@ -31,6 +31,9 @@ func TestInspectRemoteImageCoveManifest(t *testing.T) {
 	if out.ManifestDigest != "sha256:dispatch-test" {
 		t.Fatalf("digest = %q, want dispatch-test", out.ManifestDigest)
 	}
+	if out.DigestRef != "ghcr.io/me/dev-vm@sha256:dispatch-test" {
+		t.Fatalf("digest ref = %q, want selected digest ref", out.DigestRef)
+	}
 	if out.DiskSize != 16 || out.ChunkCount != 4 || out.DiskLayerCount != 4 {
 		t.Fatalf("disk/chunks/layers = %d/%d/%d, want 16/4/4", out.DiskSize, out.ChunkCount, out.DiskLayerCount)
 	}
@@ -195,6 +198,9 @@ func TestInspectRemoteImageResolvesIndex(t *testing.T) {
 	if out.ManifestDigest != manifestDigest {
 		t.Fatalf("manifest digest = %q, want %q", out.ManifestDigest, manifestDigest)
 	}
+	if out.DigestRef != "ghcr.io/me/dev-vm@"+manifestDigest || out.IndexDigestRef != "ghcr.io/me/dev-vm@sha256:index" {
+		t.Fatalf("digest refs = selected:%q index:%q, want child and index refs", out.DigestRef, out.IndexDigestRef)
+	}
 	if !out.ResolvedFromIndex || out.IndexDigest != "sha256:index" || out.SelectedDigest != manifestDigest || out.SelectedPlatform != "darwin/arm64" {
 		t.Fatalf("resolution = index:%v index_digest:%q selected:%q platform:%q", out.ResolvedFromIndex, out.IndexDigest, out.SelectedDigest, out.SelectedPlatform)
 	}
@@ -241,6 +247,9 @@ func TestInspectRemoteImageResolvesIndexPlatform(t *testing.T) {
 	}
 	if out.ManifestDigest != linuxDigest || out.SelectedDigest != linuxDigest {
 		t.Fatalf("digest = manifest:%q selected:%q, want linux %q", out.ManifestDigest, out.SelectedDigest, linuxDigest)
+	}
+	if out.DigestRef != "ghcr.io/me/dev-vm@"+linuxDigest || out.IndexDigestRef != "ghcr.io/me/dev-vm@sha256:index" {
+		t.Fatalf("digest refs = selected:%q index:%q, want linux child and index refs", out.DigestRef, out.IndexDigestRef)
 	}
 	if !out.ResolvedFromIndex || out.SelectedPlatform != "linux/arm64" {
 		t.Fatalf("resolution = index:%v platform:%q, want linux/arm64", out.ResolvedFromIndex, out.SelectedPlatform)
@@ -568,8 +577,10 @@ func TestWriteRemoteInspectText(t *testing.T) {
 	err := writeRemoteInspectText(&b, ImageRemoteInspectOutput{
 		Ref:               "ghcr.io/me/dev-vm:v1",
 		ManifestDigest:    "sha256:test",
+		DigestRef:         "ghcr.io/me/dev-vm@sha256:test",
 		ResolvedFromIndex: true,
 		IndexDigest:       "sha256:index",
+		IndexDigestRef:    "ghcr.io/me/dev-vm@sha256:index",
 		IndexMediaType:    ociimage.MediaTypeImageIndex,
 		SelectedDigest:    "sha256:" + strings.Repeat("2", 64),
 		SelectedPlatform:  "darwin/arm64",
@@ -630,7 +641,7 @@ func TestWriteRemoteInspectText(t *testing.T) {
 	if err != nil {
 		t.Fatalf("writeRemoteInspectText: %v", err)
 	}
-	for _, want := range []string{"Remote image ghcr.io/me/dev-vm:v1", "format:          cove", "pull plan:       cove chunked pull", "verification:    manifest parsed", "index manifests: 2", "platform=darwin/arm64", "size=2.0 KB", "format=tart", "disk_size=8.0 KB", "transport=256 B", "base_manifest=sha256:3333", "base_audit=ok", "base_depth=1", "base: sha256:4444", "matching_chunks=1", "matching_bytes=4.0 KB", "blob_audit=ok", "blobs=2", "blob_bytes=512 B", "blob_audit=missing", "missing=1", "missing: layer[1]:sha256:missing", "blob audit:      missing", "missing:       layer[0]:sha256:missing", "disk format:     raw", "chunks:          2", "base audit:      ok", "disk_format=raw", "matching_chunks=2", "matching_bytes=8.0 KB"} {
+	for _, want := range []string{"Remote image ghcr.io/me/dev-vm:v1", "digest ref:      ghcr.io/me/dev-vm@sha256:test", "index ref:       ghcr.io/me/dev-vm@sha256:index", "format:          cove", "pull plan:       cove chunked pull", "verification:    manifest parsed", "index manifests: 2", "platform=darwin/arm64", "size=2.0 KB", "format=tart", "disk_size=8.0 KB", "transport=256 B", "base_manifest=sha256:3333", "base_audit=ok", "base_depth=1", "base: sha256:4444", "matching_chunks=1", "matching_bytes=4.0 KB", "blob_audit=ok", "blobs=2", "blob_bytes=512 B", "blob_audit=missing", "missing=1", "missing: layer[1]:sha256:missing", "blob audit:      missing", "missing:       layer[0]:sha256:missing", "disk format:     raw", "chunks:          2", "base audit:      ok", "disk_format=raw", "matching_chunks=2", "matching_bytes=8.0 KB"} {
 		if !strings.Contains(b.String(), want) {
 			t.Fatalf("text missing %q:\n%s", want, b.String())
 		}
