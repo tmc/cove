@@ -37,6 +37,7 @@ type FleetWorkerConfig struct {
 	VMRoot             string
 	ImageRoot          string
 	Labels             map[string]string
+	Capabilities       []string
 	HTTPClient         *http.Client
 	Log                *slog.Logger
 	CoveBin            string
@@ -54,6 +55,7 @@ type FleetWorker struct {
 	vmRoot             string
 	imageRoot          string
 	labels             map[string]string
+	capabilities       []string
 	httpClient         *http.Client
 	log                *slog.Logger
 	coveBin            string
@@ -121,6 +123,7 @@ func NewFleetWorker(cfg FleetWorkerConfig) (*FleetWorker, error) {
 		vmRoot:             strings.TrimSpace(cfg.VMRoot),
 		imageRoot:          strings.TrimSpace(cfg.ImageRoot),
 		labels:             cloneStringMap(cfg.Labels),
+		capabilities:       sortedUniqueStrings(cfg.Capabilities),
 		httpClient:         client,
 		log:                cfg.Log,
 		coveBin:            coveBin,
@@ -553,6 +556,7 @@ func (w *FleetWorker) heartbeat() fleetcontrol.WorkerHeartbeat {
 		Host:         w.host,
 		Version:      w.version,
 		Labels:       cloneStringMap(w.labels),
+		Capabilities: cloneStrings(w.capabilities),
 		ImageRefs:    imageRefs,
 		ImageDetails: imageDetails,
 		Capacity:     w.capacity(len(imageRefs)),
@@ -700,6 +704,33 @@ func cloneStringMap(in map[string]string) map[string]string {
 	for k, v := range in {
 		out[k] = v
 	}
+	return out
+}
+
+func sortedUniqueStrings(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool, len(in))
+	out := make([]string, 0, len(in))
+	for _, value := range in {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func cloneStrings(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, len(in))
+	copy(out, in)
 	return out
 }
 

@@ -37,6 +37,7 @@ func TestFleetWorkerRegisterHeartbeatAndAwait(t *testing.T) {
 		VMRoot:        vmRoot,
 		ImageRoot:     imageRoot,
 		Labels:        map[string]string{"zone": "desk"},
+		Capabilities:  []string{"ram-overlay", "asif", "ram-overlay"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -64,6 +65,9 @@ func TestFleetWorkerRegisterHeartbeatAndAwait(t *testing.T) {
 	}
 	if record.Labels["zone"] != "desk" {
 		t.Fatalf("worker labels = %#v", record.Labels)
+	}
+	if strings.Join(record.Capabilities, ",") != "asif,ram-overlay" {
+		t.Fatalf("worker capabilities = %+v, want asif/ram-overlay", record.Capabilities)
 	}
 	if record.Capacity.CPUs <= 0 || record.Capacity.VMs != 1 || record.Capacity.Images != 2 {
 		t.Fatalf("worker capacity = %+v", record.Capacity)

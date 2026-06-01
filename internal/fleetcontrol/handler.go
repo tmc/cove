@@ -219,6 +219,7 @@ func workerListFilterFromRequest(r *http.Request) (WorkerListFilter, error) {
 		ImageRef:             strings.TrimSpace(query.Get("image_ref")),
 		SourceManifestDigest: manifestDigest,
 		Labels:               labels,
+		Capabilities:         sortedUniqueStrings(query["capability"]),
 	}
 	if raw := strings.TrimSpace(query.Get("limit")); raw != "" {
 		limit, err := strconv.Atoi(raw)

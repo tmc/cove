@@ -6,15 +6,15 @@ title: Fleet Control Plane
 `cove-fleetd` is the first stateful fleet-control-plane boundary. It owns host
 inventory, assignment leases, and the worker-facing protocol surface. `coved`
 can now dial out as a worker and execute leased `cove` assignments;
-controller-side placement can choose a ready worker by least-loaded or
-image-affinity or bin-pack policy, and the controller reconciles stale workers
-and expired assignment leases. Operators can cordon, quarantine, evacuate, or
-drain workers for maintenance and incident response without dropping their
-heartbeat history, and can ask the controller for an operations summary across
-workers, assignments, sandboxes, warm pools, and metering. They can also
-prepare a base image across the fleet before job placement, push VM lifecycle
-policy updates, fan out storage budget/prune policy, or keep a fork warm-pool
-quota active.
+controller-side placement can choose a ready worker by least-loaded,
+image-affinity, or bin-pack policy, including required worker capabilities, and
+the controller reconciles stale workers and expired assignment leases. Operators
+can cordon, quarantine, evacuate, or drain workers for maintenance and incident
+response without dropping their heartbeat history, and can ask the controller
+for an operations summary across workers, assignments, sandboxes, warm pools,
+and metering. They can also prepare a base image across the fleet before job
+placement, push VM lifecycle policy updates, fan out storage budget/prune
+policy, or keep a fork warm-pool quota active.
 
 Start a private controller:
 
@@ -36,7 +36,7 @@ Options:
 Start a worker:
 
 ```bash
-coved -fleet-url http://127.0.0.1:9758 -fleet-id mini-1 -fleet-label zone=desk
+coved -fleet-url http://127.0.0.1:9758 -fleet-id mini-1 -fleet-label zone=desk -fleet-capability ram-overlay
 ```
 
 Worker flags:
@@ -50,12 +50,13 @@ Worker flags:
 | `-fleet-assignment-interval <duration>` | `5s` | Assignment poll cadence |
 | `-fleet-assignment-timeout <duration>` | `30m` | Timeout for one `cove` assignment |
 | `-fleet-label key=value` | none | Worker label; repeat for multiple labels |
+| `-fleet-capability <name>` | none | Worker capability; repeat for multiple capabilities |
 
 Worker protocol:
 
 | Verb | Endpoint | Shape |
 |------|----------|-------|
-| register | `POST /v1/workers/register` | `coved` sends host id, version, labels, CPU count, VM count, local image count, and local image refs; controller stores the host record. |
+| register | `POST /v1/workers/register` | `coved` sends host id, version, labels, capabilities, CPU count, VM count, local image count, and local image refs; controller stores the host record. |
 | heartbeat | `POST /v1/workers/heartbeat` | `coved` refreshes `last_seen` and capacity. |
 | await-assignment | `GET /v1/workers/<id>/assignments` | `coved` polls for work; the controller leases one pending assignment and otherwise returns `204 No Content`. The daemon starts leased assignments asynchronously so long `cove` runs do not block later polls or heartbeats. |
 | report-status | `POST /v1/workers/<id>/reports` | `coved` records `noop` as complete, executes `cove` assignments with bounded stdout/stderr capture, sends `running` renewals while `cove` is active, and reports other verbs as unsupported. |
@@ -69,7 +70,7 @@ curl http://127.0.0.1:9758/v1/operations/summary?namespace=team-a
 curl 'http://127.0.0.1:9758/v1/operations/runs?kind=storage.prune&limit=20'
 curl 'http://127.0.0.1:9758/v1/operations/runs?target_type=image&target_id=macos-runner:latest'
 curl http://127.0.0.1:9758/v1/workers
-curl 'http://127.0.0.1:9758/v1/workers?status=ready&label=zone=desk&image_ref=macos-runner:latest&limit=50'
+curl 'http://127.0.0.1:9758/v1/workers?status=ready&label=zone=desk&capability=ram-overlay&image_ref=macos-runner:latest&limit=50'
 curl http://127.0.0.1:9758/v1/workers/mini-1
 curl 'http://127.0.0.1:9758/v1/workers/mini-1/events?limit=50'
 curl 'http://127.0.0.1:9758/v1/workers/mini-1/reports?limit=50'
@@ -114,8 +115,10 @@ unscoped operator/admin identity.
 `GET /v1/workers` returns a paginated `workers` response with `count`,
 `offset`, `limit`, and `next_offset`. It accepts `status`, `host`, `version`,
 `image_ref`, `source_manifest_digest` or `image_manifest_digest`, repeated
-`label=key=value`, `offset`, and `limit`. Worker inventory is fleet-global, so
-scoped service-account tokens cannot read it.
+`label=key=value`, repeated `capability=<name>`, `offset`, and `limit`.
+Capability filters require the worker to report every requested capability.
+Worker inventory is fleet-global, so scoped service-account tokens cannot read
+it.
 
 `GET /v1/workers/{id}/events` returns the worker-scoped slice of the
 hash-chained controller audit feed. It includes worker lifecycle events plus
@@ -483,15 +486,15 @@ Placement planning endpoint:
 ```bash
 curl -X POST http://127.0.0.1:9758/v1/placements/plan \
   -H 'content-type: application/json' \
-  -d '{"policy":"image-affinity","image_ref":"macos-runner:latest","manifest_bundle":"manifests","image_platform":"darwin/arm64","anti_affinity_key":"ci/buildkite","resources":{"vms":1},"limit":5}'
+  -d '{"policy":"image-affinity","image_ref":"macos-runner:latest","manifest_bundle":"manifests","image_platform":"darwin/arm64","required_capabilities":["ram-overlay"],"anti_affinity_key":"ci/buildkite","resources":{"vms":1},"limit":5}'
 curl 'http://127.0.0.1:9758/v1/placements/plans?policy=image-affinity&limit=20'
 curl http://127.0.0.1:9758/v1/placements/plans/placement-plan-...
 ```
 
 Placement planning returns the retained ranked feasible workers without storing
-an assignment. It uses the same policy, required-label, image-affinity,
-anti-affinity, and slot-cap logic as assignment creation. `limit` defaults to
-five candidates.
+an assignment. It uses the same policy, required-label, required-capability,
+image-affinity, anti-affinity, and slot-cap logic as assignment creation.
+`limit` defaults to five candidates.
 If `image_manifest_digest` is set, the plan only includes workers whose
 heartbeat reports that exact source manifest digest for the requested
 `image_ref`; stale or unknown mutable refs are not warm candidates.
@@ -851,12 +854,16 @@ assignment before storing it:
 | `image-affinity` | Prefer a non-cordoned, non-quarantined ready worker that already reports `image_ref`; fall back to least-loaded. If `image_manifest_digest` is set, only workers that report the matching source manifest digest for that ref are feasible. |
 | `bin-pack` | Choose the densest non-cordoned, non-quarantined ready worker that still fits the assignment's `resources.vms` under the worker's `max_vms` slot cap. |
 
-`required_labels` can restrict placement to workers with exact matching labels.
-Workers report current VM count as `vms`; `coved` defaults `max_vms` to host CPU
-count. Assignment `resources.vms` defaults to one scheduling slot when omitted.
-Set `anti_affinity_key` to spread active assignments for the same job, base, or
-replica group across workers. `image-affinity` still prefers a warm worker
-before applying the anti-affinity tie-break.
+`required_labels` can restrict placement to workers with exact matching labels;
+`required_capabilities` restricts placement to workers that report every named
+capability. Explicit `worker_id` assignments that include
+`required_capabilities` are rejected when the target worker lacks a required
+capability. Workers report current VM count as `vms`; `coved` defaults
+`max_vms` to host CPU count. Assignment `resources.vms` defaults to one
+scheduling slot when omitted. Set `anti_affinity_key` to spread active
+assignments for the same job, base, or replica group across workers.
+`image-affinity` still prefers a warm worker before applying the anti-affinity
+tie-break.
 Worker heartbeats include both legacy `image_refs` and `image_details` entries
 with optional `source_manifest_digest`, so mutable tags can be scheduled with a
 digest-exact provenance check.
@@ -870,7 +877,7 @@ Register a worker record manually:
 ```bash
 curl -X POST http://127.0.0.1:9758/v1/workers/register \
   -H 'content-type: application/json' \
-  -d '{"id":"mini-1","host":"mini.local","version":"dev","image_refs":["macos-runner:latest"],"image_details":[{"ref":"macos-runner:latest","source_manifest_digest":"sha256:..."}],"cpus":12,"max_vms":8,"memory_bytes":68719476736}'
+  -d '{"id":"mini-1","host":"mini.local","version":"dev","capabilities":["ram-overlay","asif"],"image_refs":["macos-runner:latest"],"image_details":[{"ref":"macos-runner:latest","source_manifest_digest":"sha256:..."}],"cpus":12,"max_vms":8,"memory_bytes":68719476736}'
 ```
 
 This surface is intentionally private and local-first. It now has basic

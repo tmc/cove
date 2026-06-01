@@ -186,6 +186,7 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 			continue
 		}
 		host.ID = id
+		host.Capabilities = sortedUniqueStrings(host.Capabilities)
 		host.ImageRefs, host.ImageDetails = normalizeWorkerImageInventory(host.ImageRefs, host.ImageDetails)
 		s.hosts[id] = host
 	}
@@ -211,6 +212,7 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		assignment.ImagePlatform = strings.TrimSpace(assignment.ImagePlatform)
 		assignment.AntiAffinityKey = strings.TrimSpace(assignment.AntiAffinityKey)
 		assignment.RequiredLabels = cloneLabels(assignment.RequiredLabels)
+		assignment.RequiredCapabilities = sortedUniqueStrings(assignment.RequiredCapabilities)
 		if assignment.Status == "" {
 			assignment.Status = "pending"
 		}
@@ -416,6 +418,7 @@ func (s *Store) UpsertHeartbeat(h WorkerHeartbeat) (HostRecord, error) {
 		Address:      strings.TrimSpace(h.Address),
 		Version:      strings.TrimSpace(h.Version),
 		Labels:       cloneLabels(h.Labels),
+		Capabilities: sortedUniqueStrings(h.Capabilities),
 		ImageRefs:    imageRefs,
 		ImageDetails: imageDetails,
 		Capacity:     h.Capacity,
@@ -1031,7 +1034,7 @@ func (s *Store) CreateAssignmentActor(actor string, a Assignment) (Assignment, e
 		return Assignment{}, fmt.Errorf("assignment verb required")
 	}
 	workerID := strings.TrimSpace(a.WorkerID)
-	policy, imageRef, imageManifestDigest, antiAffinityKey, requiredLabels, resources, err := normalizePlacementFields(a)
+	policy, imageRef, imageManifestDigest, antiAffinityKey, requiredLabels, requiredCapabilities, resources, err := normalizePlacementFields(a)
 	if err != nil {
 		return Assignment{}, err
 	}
@@ -1049,11 +1052,15 @@ func (s *Store) CreateAssignmentActor(actor string, a Assignment) (Assignment, e
 		return Assignment{}, fmt.Errorf("assignment %q already exists", id)
 	}
 	if workerID != "" {
-		if _, ok := s.hosts[workerID]; !ok {
+		host, ok := s.hosts[workerID]
+		if !ok {
 			return Assignment{}, fmt.Errorf("worker %q not registered", workerID)
 		}
-	} else if policy != "" || len(requiredLabels) > 0 {
-		selected, err := s.selectWorkerLocked(policy, imageRef, imageManifestDigest, requiredLabels, antiAffinityKey, resources)
+		if !capabilitiesMatch(host.Capabilities, requiredCapabilities) {
+			return Assignment{}, fmt.Errorf("worker %q missing required capabilities", workerID)
+		}
+	} else if policy != "" || len(requiredLabels) > 0 || len(requiredCapabilities) > 0 {
+		selected, err := s.selectWorkerLocked(policy, imageRef, imageManifestDigest, requiredLabels, requiredCapabilities, antiAffinityKey, resources)
 		if err != nil {
 			return Assignment{}, err
 		}
@@ -1075,6 +1082,7 @@ func (s *Store) CreateAssignmentActor(actor string, a Assignment) (Assignment, e
 	a.ImagePlatform = strings.TrimSpace(a.ImagePlatform)
 	a.AntiAffinityKey = antiAffinityKey
 	a.RequiredLabels = requiredLabels
+	a.RequiredCapabilities = requiredCapabilities
 	a.Resources = resources
 	a.Verb = verb
 	a.Args = cloneStrings(a.Args)
@@ -1211,8 +1219,12 @@ func (s *Store) RetryAssignmentActor(actor, id string, req AssignmentRetryReques
 	replanned := false
 	switch {
 	case requestedWorkerID != "":
-		if _, ok := s.hosts[requestedWorkerID]; !ok {
+		host, ok := s.hosts[requestedWorkerID]
+		if !ok {
 			return AssignmentRetryResult{}, fmt.Errorf("worker %q not registered", requestedWorkerID)
+		}
+		if !capabilitiesMatch(host.Capabilities, assignment.RequiredCapabilities) {
+			return AssignmentRetryResult{}, fmt.Errorf("worker %q missing required capabilities", requestedWorkerID)
 		}
 		assignment.WorkerID = requestedWorkerID
 		replanned = requestedWorkerID != previousWorkerID
@@ -1220,15 +1232,19 @@ func (s *Store) RetryAssignmentActor(actor, id string, req AssignmentRetryReques
 		if !assignmentCanPlace(assignment) {
 			return AssignmentRetryResult{}, fmt.Errorf("assignment %q cannot be replanned", id)
 		}
-		selected, err := s.selectWorkerLocked(assignmentPolicy(assignment), assignment.ImageRef, assignment.ImageManifestDigest, assignment.RequiredLabels, assignment.AntiAffinityKey, assignment.Resources)
+		selected, err := s.selectWorkerLocked(assignmentPolicy(assignment), assignment.ImageRef, assignment.ImageManifestDigest, assignment.RequiredLabels, assignment.RequiredCapabilities, assignment.AntiAffinityKey, assignment.Resources)
 		if err != nil {
 			return AssignmentRetryResult{}, err
 		}
 		assignment.WorkerID = selected
 		replanned = selected != previousWorkerID
 	case assignment.WorkerID != "":
-		if _, ok := s.hosts[assignment.WorkerID]; !ok {
+		host, ok := s.hosts[assignment.WorkerID]
+		if !ok {
 			return AssignmentRetryResult{}, fmt.Errorf("worker %q not registered; set replan or worker_id", assignment.WorkerID)
+		}
+		if !capabilitiesMatch(host.Capabilities, assignment.RequiredCapabilities) {
+			return AssignmentRetryResult{}, fmt.Errorf("worker %q missing required capabilities", assignment.WorkerID)
 		}
 	}
 
@@ -1273,7 +1289,7 @@ func (s *Store) RetryAssignmentActor(actor, id string, req AssignmentRetryReques
 }
 
 func (s *Store) PlanAssignment(a Assignment, limit int) (PlacementPlan, error) {
-	policy, imageRef, imageManifestDigest, antiAffinityKey, requiredLabels, resources, err := normalizePlacementFields(a)
+	policy, imageRef, imageManifestDigest, antiAffinityKey, requiredLabels, requiredCapabilities, resources, err := normalizePlacementFields(a)
 	if err != nil {
 		return PlacementPlan{}, err
 	}
@@ -1288,24 +1304,25 @@ func (s *Store) PlanAssignment(a Assignment, limit int) (PlacementPlan, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.reconcileLocked(now)
-	candidates := s.placementCandidatesLocked(policy, imageRef, imageManifestDigest, requiredLabels, antiAffinityKey, resources)
+	candidates := s.placementCandidatesLocked(policy, imageRef, imageManifestDigest, requiredLabels, requiredCapabilities, antiAffinityKey, resources)
 	if len(candidates) > limit {
 		candidates = candidates[:limit]
 	}
 	plan := PlacementPlan{
-		ID:                  s.nextPlacementPlanIDLocked(now),
-		Created:             now,
-		Namespace:           normalizeNamespace(a.Namespace),
-		Policy:              policy,
-		ImageRef:            imageRef,
-		ImageManifestDigest: imageManifestDigest,
-		ImageDigestRef:      strings.TrimSpace(a.ImageDigestRef),
-		ImagePlatform:       strings.TrimSpace(a.ImagePlatform),
-		RequiredLabels:      cloneLabels(requiredLabels),
-		AntiAffinityKey:     antiAffinityKey,
-		Resources:           normalizeResources(resources),
-		Limit:               limit,
-		Candidates:          clonePlacementCandidates(candidates),
+		ID:                   s.nextPlacementPlanIDLocked(now),
+		Created:              now,
+		Namespace:            normalizeNamespace(a.Namespace),
+		Policy:               policy,
+		ImageRef:             imageRef,
+		ImageManifestDigest:  imageManifestDigest,
+		ImageDigestRef:       strings.TrimSpace(a.ImageDigestRef),
+		ImagePlatform:        strings.TrimSpace(a.ImagePlatform),
+		RequiredLabels:       cloneLabels(requiredLabels),
+		RequiredCapabilities: cloneStrings(requiredCapabilities),
+		AntiAffinityKey:      antiAffinityKey,
+		Resources:            normalizeResources(resources),
+		Limit:                limit,
+		Candidates:           clonePlacementCandidates(candidates),
 	}
 	s.plans = append(s.plans, clonePlacementPlan(plan))
 	if err := s.persistLocked(); err != nil {
@@ -1581,7 +1598,7 @@ func (s *Store) CreateSandboxActor(actor string, req SandboxRequest) (SandboxSta
 		AntiAffinityKey:     strings.TrimSpace(req.AntiAffinityKey),
 		Resources:           req.Resources,
 	}
-	policy, imageRef, imageManifestDigest, antiAffinityKey, requiredLabels, resources, err := normalizePlacementFields(assignment)
+	policy, imageRef, imageManifestDigest, antiAffinityKey, requiredLabels, requiredCapabilities, resources, err := normalizePlacementFields(assignment)
 	if err != nil {
 		return SandboxStatus{}, err
 	}
@@ -1607,7 +1624,7 @@ func (s *Store) CreateSandboxActor(actor string, req SandboxRequest) (SandboxSta
 	if _, ok := s.assignments[id]; ok {
 		return SandboxStatus{}, fmt.Errorf("assignment %q already exists", id)
 	}
-	workerID, err := s.selectWorkerLocked(policy, imageRef, imageManifestDigest, requiredLabels, antiAffinityKey, resources)
+	workerID, err := s.selectWorkerLocked(policy, imageRef, imageManifestDigest, requiredLabels, requiredCapabilities, antiAffinityKey, resources)
 	if err != nil {
 		return SandboxStatus{}, err
 	}
@@ -1616,24 +1633,25 @@ func (s *Store) CreateSandboxActor(actor string, req SandboxRequest) (SandboxSta
 		vmName = sandboxVMName(id)
 	}
 	assignment = Assignment{
-		ID:                  id,
-		Namespace:           normalizeNamespace(req.Namespace),
-		WorkerID:            workerID,
-		SandboxID:           id,
-		SandboxRole:         sandboxRoleRun,
-		Policy:              policy,
-		ImageRef:            imageRef,
-		ImageManifestDigest: imageManifestDigest,
-		ImageDigestRef:      strings.TrimSpace(req.ImageDigestRef),
-		ImagePlatform:       strings.TrimSpace(req.ImagePlatform),
-		RequiredLabels:      requiredLabels,
-		AntiAffinityKey:     antiAffinityKey,
-		Resources:           normalizeResources(resources),
-		Verb:                "cove",
-		Args:                sandboxRunArgs(imageRef, vmName, args),
-		Status:              "pending",
-		Created:             now,
-		Updated:             now,
+		ID:                   id,
+		Namespace:            normalizeNamespace(req.Namespace),
+		WorkerID:             workerID,
+		SandboxID:            id,
+		SandboxRole:          sandboxRoleRun,
+		Policy:               policy,
+		ImageRef:             imageRef,
+		ImageManifestDigest:  imageManifestDigest,
+		ImageDigestRef:       strings.TrimSpace(req.ImageDigestRef),
+		ImagePlatform:        strings.TrimSpace(req.ImagePlatform),
+		RequiredLabels:       requiredLabels,
+		RequiredCapabilities: requiredCapabilities,
+		AntiAffinityKey:      antiAffinityKey,
+		Resources:            normalizeResources(resources),
+		Verb:                 "cove",
+		Args:                 sandboxRunArgs(imageRef, vmName, args),
+		Status:               "pending",
+		Created:              now,
+		Updated:              now,
 	}
 	s.assignments[id] = assignment
 	s.appendAuditLocked(now, AuditEvent{
@@ -3916,6 +3934,7 @@ func (s *Store) ListWorkersPage(filter WorkerListFilter) WorkerListResult {
 	filter.ImageRef = strings.TrimSpace(filter.ImageRef)
 	filter.SourceManifestDigest = strings.TrimSpace(filter.SourceManifestDigest)
 	filter.Labels = cloneLabels(filter.Labels)
+	filter.Capabilities = sortedUniqueStrings(filter.Capabilities)
 	if filter.Offset < 0 {
 		filter.Offset = 0
 	}
@@ -3938,6 +3957,9 @@ func (s *Store) ListWorkersPage(filter WorkerListFilter) WorkerListResult {
 			continue
 		}
 		if !labelsMatch(host.Labels, filter.Labels) {
+			continue
+		}
+		if !capabilitiesMatch(host.Capabilities, filter.Capabilities) {
 			continue
 		}
 		if filter.ImageRef != "" && !workerHasImage(host, filter.ImageRef, filter.SourceManifestDigest) {
@@ -4000,7 +4022,7 @@ func (s *Store) reconcileLocked(now time.Time) ReconcileResult {
 			changed = true
 		}
 		if workerStale && assignmentCanPlace(assignment) {
-			selected, err := s.selectWorkerLocked(assignmentPolicy(assignment), assignment.ImageRef, assignment.ImageManifestDigest, assignment.RequiredLabels, assignment.AntiAffinityKey, assignment.Resources)
+			selected, err := s.selectWorkerLocked(assignmentPolicy(assignment), assignment.ImageRef, assignment.ImageManifestDigest, assignment.RequiredLabels, assignment.RequiredCapabilities, assignment.AntiAffinityKey, assignment.Resources)
 			if err == nil && selected != assignment.WorkerID {
 				assignment.WorkerID = selected
 				result.ReplacedAssignments = append(result.ReplacedAssignments, assignment.ID)
@@ -4037,6 +4059,7 @@ func (s *Store) reconcileLocked(now time.Time) ReconcileResult {
 func (s *Store) statusLocked(record HostRecord) HostRecord {
 	record.Status = workerStatus(s.now().UTC(), record)
 	record.Labels = cloneLabels(record.Labels)
+	record.Capabilities = cloneStrings(record.Capabilities)
 	record.ImageRefs = cloneStrings(record.ImageRefs)
 	record.ImageDetails = cloneWorkerImages(record.ImageDetails)
 	if record.Report != nil {
@@ -4171,7 +4194,7 @@ func assignmentCanPlace(assignment Assignment) bool {
 	if assignment.WarmPoolSlot != "" {
 		return false
 	}
-	return assignment.Policy != "" || assignment.ImageRef != "" || len(assignment.RequiredLabels) > 0
+	return assignment.Policy != "" || assignment.ImageRef != "" || len(assignment.RequiredLabels) > 0 || len(assignment.RequiredCapabilities) > 0
 }
 
 func assignmentPolicy(assignment Assignment) string {
@@ -4619,6 +4642,7 @@ func cloneAssignment(in Assignment) Assignment {
 	out := in
 	out.Args = cloneStrings(in.Args)
 	out.RequiredLabels = cloneLabels(in.RequiredLabels)
+	out.RequiredCapabilities = cloneStrings(in.RequiredCapabilities)
 	if in.LastReport != nil {
 		report := *in.LastReport
 		out.LastReport = &report
@@ -4640,6 +4664,7 @@ func cloneAssignments(in []Assignment) []Assignment {
 func clonePlacementPlan(in PlacementPlan) PlacementPlan {
 	out := in
 	out.RequiredLabels = cloneLabels(in.RequiredLabels)
+	out.RequiredCapabilities = cloneStrings(in.RequiredCapabilities)
 	out.Candidates = clonePlacementCandidates(in.Candidates)
 	if !out.Created.IsZero() {
 		out.Created = out.Created.UTC()
@@ -4844,6 +4869,7 @@ func cloneAssignmentMap(in map[string]Assignment) map[string]Assignment {
 func cloneHostRecord(in HostRecord) HostRecord {
 	out := in
 	out.Labels = cloneLabels(in.Labels)
+	out.Capabilities = cloneStrings(in.Capabilities)
 	out.ImageRefs = cloneStrings(in.ImageRefs)
 	out.ImageDetails = cloneWorkerImages(in.ImageDetails)
 	if in.Report != nil {
@@ -5126,7 +5152,7 @@ func normalizeWorkerImageInventory(refs []string, details []WorkerImage) ([]stri
 	return outRefs, outDetails
 }
 
-func (s *Store) selectWorkerLocked(policy, imageRef, imageManifestDigest string, labels map[string]string, antiAffinityKey string, resources Capacity) (string, error) {
+func (s *Store) selectWorkerLocked(policy, imageRef, imageManifestDigest string, labels map[string]string, capabilities []string, antiAffinityKey string, resources Capacity) (string, error) {
 	if policy == "" {
 		policy = PolicyLeastLoaded
 	}
@@ -5135,18 +5161,19 @@ func (s *Store) selectWorkerLocked(policy, imageRef, imageManifestDigest string,
 	default:
 		return "", fmt.Errorf("unknown assignment policy %q", policy)
 	}
-	candidates := s.placementCandidatesLocked(policy, imageRef, imageManifestDigest, labels, antiAffinityKey, resources)
+	candidates := s.placementCandidatesLocked(policy, imageRef, imageManifestDigest, labels, capabilities, antiAffinityKey, resources)
 	if len(candidates) == 0 {
 		return "", fmt.Errorf("no ready worker matches assignment")
 	}
 	return candidates[0].WorkerID, nil
 }
 
-func (s *Store) placementCandidatesLocked(policy, imageRef, imageManifestDigest string, labels map[string]string, antiAffinityKey string, resources Capacity) []PlacementCandidate {
+func (s *Store) placementCandidatesLocked(policy, imageRef, imageManifestDigest string, labels map[string]string, capabilities []string, antiAffinityKey string, resources Capacity) []PlacementCandidate {
 	if policy == "" {
 		policy = PolicyLeastLoaded
 	}
 	imageManifestDigest = strings.TrimSpace(imageManifestDigest)
+	capabilities = sortedUniqueStrings(capabilities)
 	resources = normalizeResources(resources)
 	var candidates []PlacementCandidate
 	for _, host := range s.sortedHostsLocked() {
@@ -5155,6 +5182,9 @@ func (s *Store) placementCandidatesLocked(policy, imageRef, imageManifestDigest 
 			continue
 		}
 		if !labelsMatch(host.Labels, labels) {
+			continue
+		}
+		if !capabilitiesMatch(host.Capabilities, capabilities) {
 			continue
 		}
 		load := host.Capacity.VMs + s.pendingAssignmentsLocked(host.ID)
@@ -5188,7 +5218,7 @@ func (s *Store) evacuationCandidatesLocked(workerID string, assignment Assignmen
 	if !assignmentCanPlace(assignment) {
 		return nil
 	}
-	candidates := s.placementCandidatesLocked(assignmentPolicy(assignment), assignment.ImageRef, assignment.ImageManifestDigest, assignment.RequiredLabels, assignment.AntiAffinityKey, assignment.Resources)
+	candidates := s.placementCandidatesLocked(assignmentPolicy(assignment), assignment.ImageRef, assignment.ImageManifestDigest, assignment.RequiredLabels, assignment.RequiredCapabilities, assignment.AntiAffinityKey, assignment.Resources)
 	out := candidates[:0]
 	for _, candidate := range candidates {
 		if candidate.WorkerID == workerID {
@@ -5246,7 +5276,7 @@ func (s *Store) ensureWarmPoolLocked(now time.Time, pool WarmPool) []Assignment 
 	}
 	var created []Assignment
 	for i := 0; i < need; i++ {
-		workerID, err := s.selectWorkerLocked(pool.Policy, pool.ImageRef, pool.ImageManifestDigest, pool.RequiredLabels, warmPoolAntiAffinityKey(pool.Name), pool.Resources)
+		workerID, err := s.selectWorkerLocked(pool.Policy, pool.ImageRef, pool.ImageManifestDigest, pool.RequiredLabels, nil, warmPoolAntiAffinityKey(pool.Name), pool.Resources)
 		if err != nil {
 			return created
 		}
@@ -5513,7 +5543,7 @@ func (s *Store) startSandboxLocked(now time.Time, actor, id, action, holder stri
 		}
 		assignment.Args = sandboxStartArgs(assignment)
 	} else if assignmentCanPlace(assignment) {
-		workerID, err := s.selectWorkerLocked(assignmentPolicy(assignment), assignment.ImageRef, assignment.ImageManifestDigest, assignment.RequiredLabels, assignment.AntiAffinityKey, assignment.Resources)
+		workerID, err := s.selectWorkerLocked(assignmentPolicy(assignment), assignment.ImageRef, assignment.ImageManifestDigest, assignment.RequiredLabels, assignment.RequiredCapabilities, assignment.AntiAffinityKey, assignment.Resources)
 		if err != nil {
 			return SandboxStartResult{}, err
 		}
@@ -6070,21 +6100,22 @@ func sanitizeResources(in Capacity) (Capacity, error) {
 	return in, nil
 }
 
-func normalizePlacementFields(a Assignment) (policy, imageRef, imageManifestDigest, antiAffinityKey string, labels map[string]string, resources Capacity, err error) {
+func normalizePlacementFields(a Assignment) (policy, imageRef, imageManifestDigest, antiAffinityKey string, labels map[string]string, capabilities []string, resources Capacity, err error) {
 	policy = strings.TrimSpace(a.Policy)
 	imageRef = strings.TrimSpace(a.ImageRef)
 	imageManifestDigest = strings.TrimSpace(a.ImageManifestDigest)
 	antiAffinityKey = strings.TrimSpace(a.AntiAffinityKey)
 	labels = cloneLabels(a.RequiredLabels)
+	capabilities = sortedUniqueStrings(a.RequiredCapabilities)
 	resources, err = sanitizeResources(a.Resources)
 	if err != nil {
-		return "", "", "", "", nil, Capacity{}, err
+		return "", "", "", "", nil, nil, Capacity{}, err
 	}
 	if strings.TrimSpace(a.ManifestBundle) != "" {
-		return "", "", "", "", nil, Capacity{}, fmt.Errorf("assignment manifest_bundle must be resolved before store admission")
+		return "", "", "", "", nil, nil, Capacity{}, fmt.Errorf("assignment manifest_bundle must be resolved before store admission")
 	}
 	if imageManifestDigest != "" && imageRef == "" {
-		return "", "", "", "", nil, Capacity{}, fmt.Errorf("assignment image_manifest_digest requires image_ref")
+		return "", "", "", "", nil, nil, Capacity{}, fmt.Errorf("assignment image_manifest_digest requires image_ref")
 	}
 	if policy == "" && imageRef != "" {
 		policy = PolicyImageAffinity
@@ -6092,9 +6123,9 @@ func normalizePlacementFields(a Assignment) (policy, imageRef, imageManifestDige
 	switch policy {
 	case "", PolicyLeastLoaded, PolicyImageAffinity, PolicyBinPack:
 	default:
-		return "", "", "", "", nil, Capacity{}, fmt.Errorf("unknown assignment policy %q", policy)
+		return "", "", "", "", nil, nil, Capacity{}, fmt.Errorf("unknown assignment policy %q", policy)
 	}
-	return policy, imageRef, imageManifestDigest, antiAffinityKey, labels, resources, nil
+	return policy, imageRef, imageManifestDigest, antiAffinityKey, labels, capabilities, resources, nil
 }
 
 func assignmentVMs(assignment Assignment) int {
@@ -6308,6 +6339,7 @@ func normalizePlacementPlan(plan PlacementPlan) PlacementPlan {
 	plan.ImageDigestRef = strings.TrimSpace(plan.ImageDigestRef)
 	plan.ImagePlatform = strings.TrimSpace(plan.ImagePlatform)
 	plan.RequiredLabels = cloneLabels(plan.RequiredLabels)
+	plan.RequiredCapabilities = sortedUniqueStrings(plan.RequiredCapabilities)
 	plan.AntiAffinityKey = strings.TrimSpace(plan.AntiAffinityKey)
 	plan.Resources = normalizeResources(plan.Resources)
 	if !plan.Created.IsZero() {
@@ -6446,6 +6478,9 @@ func controllerRunFromPlacementPlan(plan PlacementPlan) ControllerRunSummary {
 	}
 	if plan.AntiAffinityKey != "" {
 		fields["anti_affinity_key"] = plan.AntiAffinityKey
+	}
+	if len(plan.RequiredCapabilities) > 0 {
+		fields["required_capabilities"] = strings.Join(plan.RequiredCapabilities, ",")
 	}
 	return ControllerRunSummary{
 		ID:             plan.ID,
@@ -7701,6 +7736,15 @@ func normalizeDurationString(value, name string) (string, error) {
 func labelsMatch(have, want map[string]string) bool {
 	for key, value := range want {
 		if have[key] != value {
+			return false
+		}
+	}
+	return true
+}
+
+func capabilitiesMatch(have, want []string) bool {
+	for _, capability := range want {
+		if !containsString(have, capability) {
 			return false
 		}
 	}

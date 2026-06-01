@@ -68,10 +68,11 @@ func TestStoreListWorkersPageFilters(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	store.now = func() time.Time { return now }
 	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{
-		ID:      "old",
-		Host:    "mini-old",
-		Version: "v1",
-		Labels:  map[string]string{"zone": "desk", "role": "runner"},
+		ID:           "old",
+		Host:         "mini-old",
+		Version:      "v1",
+		Labels:       map[string]string{"zone": "desk", "role": "runner"},
+		Capabilities: []string{"ram-overlay", "asif", "ram-overlay"},
 		ImageDetails: []WorkerImage{{
 			Ref:                  "base:v1",
 			SourceManifestDigest: "sha256:old",
@@ -81,10 +82,11 @@ func TestStoreListWorkersPageFilters(t *testing.T) {
 	}
 	now = now.Add(30 * time.Second)
 	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{
-		ID:      "cordoned",
-		Host:    "mini-cordoned",
-		Version: "v2",
-		Labels:  map[string]string{"zone": "desk", "role": "runner"},
+		ID:           "cordoned",
+		Host:         "mini-cordoned",
+		Version:      "v2",
+		Labels:       map[string]string{"zone": "desk", "role": "runner"},
+		Capabilities: []string{"ram-overlay"},
 		ImageDetails: []WorkerImage{{
 			Ref:                  "base:v1",
 			SourceManifestDigest: "sha256:base",
@@ -93,10 +95,11 @@ func TestStoreListWorkersPageFilters(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{
-		ID:      "quarantined",
-		Host:    "mini-quarantined",
-		Version: "v2",
-		Labels:  map[string]string{"zone": "lab", "role": "runner"},
+		ID:           "quarantined",
+		Host:         "mini-quarantined",
+		Version:      "v2",
+		Labels:       map[string]string{"zone": "lab", "role": "runner"},
+		Capabilities: []string{"gui"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -127,6 +130,12 @@ func TestStoreListWorkersPageFilters(t *testing.T) {
 	}
 	if got := store.ListWorkersFiltered(WorkerListFilter{ImageRef: "base:v1", SourceManifestDigest: "sha256:base"}); len(got) != 1 || got[0].ID != "cordoned" {
 		t.Fatalf("image digest workers = %+v, want cordoned", got)
+	}
+	if got := store.ListWorkersFiltered(WorkerListFilter{Capabilities: []string{"ram-overlay"}}); len(got) != 2 || got[0].ID != "cordoned" || got[1].ID != "old" {
+		t.Fatalf("ram-overlay workers = %+v, want cordoned/old", got)
+	}
+	if got := store.ListWorkersFiltered(WorkerListFilter{Capabilities: []string{"ram-overlay", "asif"}}); len(got) != 1 || got[0].ID != "old" {
+		t.Fatalf("ram-overlay+asif workers = %+v, want old", got)
 	}
 }
 
@@ -2577,10 +2586,10 @@ func TestStorePlansPlacementCandidates(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, hb := range []WorkerHeartbeat{
-		{ID: "dense", Labels: map[string]string{"zone": "desk"}, ImageRefs: []string{"macos-runner:latest"}, Capacity: Capacity{VMs: 3, MaxVMs: 5}},
-		{ID: "open", Labels: map[string]string{"zone": "desk"}, Capacity: Capacity{VMs: 2, MaxVMs: 5}},
-		{ID: "full", Labels: map[string]string{"zone": "desk"}, Capacity: Capacity{VMs: 5, MaxVMs: 5}},
-		{ID: "rack", Labels: map[string]string{"zone": "rack"}, Capacity: Capacity{VMs: 0, MaxVMs: 5}},
+		{ID: "dense", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay", "asif"}, ImageRefs: []string{"macos-runner:latest"}, Capacity: Capacity{VMs: 3, MaxVMs: 5}},
+		{ID: "open", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}, Capacity: Capacity{VMs: 2, MaxVMs: 5}},
+		{ID: "full", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}, Capacity: Capacity{VMs: 5, MaxVMs: 5}},
+		{ID: "rack", Labels: map[string]string{"zone": "rack"}, Capabilities: []string{"ram-overlay"}, Capacity: Capacity{VMs: 0, MaxVMs: 5}},
 	} {
 		if _, err := store.UpsertHeartbeat(hb); err != nil {
 			t.Fatal(err)
@@ -2596,12 +2605,13 @@ func TestStorePlansPlacementCandidates(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := Assignment{
-		Policy:          PolicyBinPack,
-		ImageRef:        "macos-runner:latest",
-		RequiredLabels:  map[string]string{"zone": "desk"},
-		AntiAffinityKey: "job-a",
-		Resources:       Capacity{VMs: 1},
-		Verb:            "cove",
+		Policy:               PolicyBinPack,
+		ImageRef:             "macos-runner:latest",
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay"},
+		AntiAffinityKey:      "job-a",
+		Resources:            Capacity{VMs: 1},
+		Verb:                 "cove",
 	}
 	plan, err := store.PlanAssignment(request, 2)
 	if err != nil {
@@ -2612,6 +2622,9 @@ func TestStorePlansPlacementCandidates(t *testing.T) {
 	}
 	if plan.Policy != PolicyBinPack || plan.ImageRef != "macos-runner:latest" || plan.Resources.VMs != 1 {
 		t.Fatalf("plan = %+v", plan)
+	}
+	if len(plan.RequiredCapabilities) != 1 || plan.RequiredCapabilities[0] != "ram-overlay" {
+		t.Fatalf("plan required capabilities = %+v, want ram-overlay", plan.RequiredCapabilities)
 	}
 	if len(plan.Candidates) != 2 {
 		t.Fatalf("candidates = %+v, want 2", plan.Candidates)
@@ -2640,6 +2653,16 @@ func TestStorePlansPlacementCandidates(t *testing.T) {
 	}
 	if created.WorkerID != plan.Candidates[0].WorkerID {
 		t.Fatalf("CreateAssignment WorkerID = %q, want plan first candidate %q", created.WorkerID, plan.Candidates[0].WorkerID)
+	}
+	capPlan, err := store.PlanAssignment(Assignment{Policy: PolicyLeastLoaded, RequiredCapabilities: []string{"asif"}, Verb: "cove"}, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(capPlan.Candidates) != 1 || capPlan.Candidates[0].WorkerID != "dense" {
+		t.Fatalf("capability plan candidates = %+v, want dense", capPlan.Candidates)
+	}
+	if _, err := store.CreateAssignment(Assignment{WorkerID: "open", RequiredCapabilities: []string{"asif"}, Verb: "cove"}); err == nil {
+		t.Fatal("CreateAssignment to worker missing capability error = nil")
 	}
 }
 
@@ -4430,27 +4453,34 @@ func TestHandlerWorkerListFilters(t *testing.T) {
 
 	var record HostRecord
 	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{
-		ID:      "warm",
-		Host:    "warm.local",
-		Version: "v1",
-		Labels:  map[string]string{"zone": "desk", "role": "runner"},
+		ID:           "warm",
+		Host:         "warm.local",
+		Version:      "v1",
+		Labels:       map[string]string{"zone": "desk", "role": "runner"},
+		Capabilities: []string{"ram-overlay"},
 		ImageDetails: []WorkerImage{{
 			Ref:                  "base:v1",
 			SourceManifestDigest: "sha256:base",
 		}},
 	}, &record)
 	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{
-		ID:      "cold",
-		Host:    "cold.local",
-		Version: "v1",
-		Labels:  map[string]string{"zone": "desk", "role": "builder"},
+		ID:           "cold",
+		Host:         "cold.local",
+		Version:      "v1",
+		Labels:       map[string]string{"zone": "desk", "role": "builder"},
+		Capabilities: []string{"gui"},
 	}, &record)
 	postJSON(t, server.URL+"/v1/workers/cold/cordon", WorkerLifecycle{Reason: "maintenance"}, &record)
 
 	var list WorkerListResult
-	getJSON(t, server.URL+"/v1/workers?status=ready&label=zone=desk&label=role=runner&image_ref=base:v1&source_manifest_digest="+url.QueryEscape("sha256:base")+"&limit=1", &list)
+	getJSON(t, server.URL+"/v1/workers?status=ready&label=zone=desk&label=role=runner&capability=ram-overlay&image_ref=base:v1&source_manifest_digest="+url.QueryEscape("sha256:base")+"&limit=1", &list)
 	if list.Count != 1 || list.Limit != 1 || len(list.Workers) != 1 || list.Workers[0].ID != "warm" {
 		t.Fatalf("filtered workers = %+v, want warm", list)
+	}
+	list = WorkerListResult{}
+	getJSON(t, server.URL+"/v1/workers?capability=ram-overlay&capability=gui", &list)
+	if list.Count != 0 || len(list.Workers) != 0 {
+		t.Fatalf("multi-capability workers = %+v, want none", list)
 	}
 	list = WorkerListResult{}
 	getJSON(t, server.URL+"/v1/workers?status=cordoned&host=cold.local&version=v1", &list)
@@ -4845,8 +4875,9 @@ func TestHandlerPlansPlacementFromManifestBundle(t *testing.T) {
 		Capacity: Capacity{MaxVMs: 4},
 	}, &record)
 	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{
-		ID:        "exact",
-		ImageRefs: []string{"base:v1"},
+		ID:           "exact",
+		Capabilities: []string{"ram-overlay"},
+		ImageRefs:    []string{"base:v1"},
 		ImageDetails: []WorkerImage{{
 			Ref:                  "base:v1",
 			SourceManifestDigest: linuxDigest,
@@ -4858,16 +4889,20 @@ func TestHandlerPlansPlacementFromManifestBundle(t *testing.T) {
 	var plan PlacementPlan
 	postJSON(t, server.URL+"/v1/placements/plan", PlacementPlanRequest{
 		Assignment: Assignment{
-			Policy:         PolicyImageAffinity,
-			ImageRef:       "base:v1",
-			ManifestBundle: bundleDir,
-			ImagePlatform:  "linux/arm64",
-			Verb:           "cove",
+			Policy:               PolicyImageAffinity,
+			ImageRef:             "base:v1",
+			ManifestBundle:       bundleDir,
+			ImagePlatform:        "linux/arm64",
+			RequiredCapabilities: []string{"ram-overlay"},
+			Verb:                 "cove",
 		},
 		Limit: 10,
 	}, &plan)
 	if plan.ImageManifestDigest != linuxDigest || plan.ImageDigestRef != digestRef || plan.ImagePlatform != "linux/arm64" {
 		t.Fatalf("plan image identity = %+v, want bundle digest metadata", plan)
+	}
+	if len(plan.RequiredCapabilities) != 1 || plan.RequiredCapabilities[0] != "ram-overlay" {
+		t.Fatalf("plan required capabilities = %+v, want ram-overlay", plan.RequiredCapabilities)
 	}
 	if len(plan.Candidates) != 1 || plan.Candidates[0].WorkerID != "exact" || !plan.Candidates[0].HasImage {
 		t.Fatalf("plan candidates = %+v, want exact worker only", plan.Candidates)

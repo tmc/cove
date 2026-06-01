@@ -45,6 +45,11 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `cove-fleetd` now exposes `GET /v1/operations/runs`, a namespace-scoped
   retained controller-run feed across placement plans, image preparation, image
   GC, lifecycle-policy, and storage maintenance runs.
+- `cove-fleetd` worker inventory now carries reported capabilities; worker
+  listing accepts repeated `capability=<name>` filters, and assignments plus
+  placement plans can require `required_capabilities` during controller
+  placement. `coved -fleet-capability` reports operator-declared capabilities
+  from standard workers.
 - `cove-fleetd` now exposes `GET /v1/assignments/{id}/events` for
   assignment-scoped audit history, and global audit queries now accept
   `assignment_id`.
@@ -53,7 +58,7 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   filters.
 - `cove-fleetd` worker listing now supports controller-scale filters and
   pagination by status, host, version, image ref, source manifest digest,
-  repeated exact labels, offset, and limit.
+  repeated exact labels, repeated capabilities, offset, and limit.
 - `cove-fleetd` assignment listing now supports controller-scale filters and
   pagination by status, worker, lease holder, verb, image ref, sandbox, warm
   pool, offset, and limit while preserving namespace scoping.

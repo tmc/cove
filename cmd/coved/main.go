@@ -42,7 +42,9 @@ func main() {
 	fleetAssignmentInterval := flag.Duration("fleet-assignment-interval", coved.DefaultFleetAssignmentInterval, "fleet assignment poll interval")
 	fleetAssignmentTimeout := flag.Duration("fleet-assignment-timeout", coved.DefaultFleetAssignmentTimeout, "fleet cove assignment timeout")
 	var fleetLabels stringList
+	var fleetCapabilities stringList
 	flag.Var(&fleetLabels, "fleet-label", "fleet worker label key=value (repeatable)")
+	flag.Var(&fleetCapabilities, "fleet-capability", "fleet worker capability name (repeatable)")
 	flag.Parse()
 
 	info := buildversion.Resolve(version, commit, date)
@@ -106,6 +108,7 @@ func main() {
 			VMRoot:             d.vmRoot,
 			ImageRoot:          imagestore.BaseDir(),
 			Labels:             labels,
+			Capabilities:       []string(fleetCapabilities),
 			Log:                logger,
 			CoveBin:            *fleetCoveBin,
 			HeartbeatInterval:  *fleetHeartbeatInterval,

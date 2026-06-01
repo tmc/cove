@@ -43,6 +43,7 @@ type WorkerHeartbeat struct {
 	Address      string            `json:"address,omitempty"`
 	Version      string            `json:"version,omitempty"`
 	Labels       map[string]string `json:"labels,omitempty"`
+	Capabilities []string          `json:"capabilities,omitempty"`
 	ImageRefs    []string          `json:"image_refs,omitempty"`
 	ImageDetails []WorkerImage     `json:"image_details,omitempty"`
 	Capacity
@@ -59,6 +60,7 @@ type HostRecord struct {
 	Address          string            `json:"address,omitempty"`
 	Version          string            `json:"version,omitempty"`
 	Labels           map[string]string `json:"labels,omitempty"`
+	Capabilities     []string          `json:"capabilities,omitempty"`
 	ImageRefs        []string          `json:"image_refs,omitempty"`
 	ImageDetails     []WorkerImage     `json:"image_details,omitempty"`
 	Capacity         Capacity          `json:"capacity,omitempty"`
@@ -81,6 +83,7 @@ type WorkerListFilter struct {
 	ImageRef             string            `json:"image_ref,omitempty"`
 	SourceManifestDigest string            `json:"source_manifest_digest,omitempty"`
 	Labels               map[string]string `json:"labels,omitempty"`
+	Capabilities         []string          `json:"capabilities,omitempty"`
 	Offset               int               `json:"offset,omitempty"`
 	Limit                int               `json:"limit,omitempty"`
 }
@@ -642,19 +645,20 @@ type PlacementPlanRequest struct {
 }
 
 type PlacementPlan struct {
-	ID                  string               `json:"id,omitempty"`
-	Created             time.Time            `json:"created,omitempty"`
-	Namespace           string               `json:"namespace,omitempty"`
-	Policy              string               `json:"policy"`
-	ImageRef            string               `json:"image_ref,omitempty"`
-	ImageManifestDigest string               `json:"image_manifest_digest,omitempty"`
-	ImageDigestRef      string               `json:"image_digest_ref,omitempty"`
-	ImagePlatform       string               `json:"image_platform,omitempty"`
-	RequiredLabels      map[string]string    `json:"required_labels,omitempty"`
-	AntiAffinityKey     string               `json:"anti_affinity_key,omitempty"`
-	Resources           Capacity             `json:"resources,omitempty"`
-	Limit               int                  `json:"limit,omitempty"`
-	Candidates          []PlacementCandidate `json:"candidates,omitempty"`
+	ID                   string               `json:"id,omitempty"`
+	Created              time.Time            `json:"created,omitempty"`
+	Namespace            string               `json:"namespace,omitempty"`
+	Policy               string               `json:"policy"`
+	ImageRef             string               `json:"image_ref,omitempty"`
+	ImageManifestDigest  string               `json:"image_manifest_digest,omitempty"`
+	ImageDigestRef       string               `json:"image_digest_ref,omitempty"`
+	ImagePlatform        string               `json:"image_platform,omitempty"`
+	RequiredLabels       map[string]string    `json:"required_labels,omitempty"`
+	RequiredCapabilities []string             `json:"required_capabilities,omitempty"`
+	AntiAffinityKey      string               `json:"anti_affinity_key,omitempty"`
+	Resources            Capacity             `json:"resources,omitempty"`
+	Limit                int                  `json:"limit,omitempty"`
+	Candidates           []PlacementCandidate `json:"candidates,omitempty"`
 }
 
 type PlacementPlanListFilter struct {
@@ -1056,30 +1060,31 @@ type SandboxWaitResult struct {
 }
 
 type Assignment struct {
-	ID                  string            `json:"id"`
-	Namespace           string            `json:"namespace,omitempty"`
-	WorkerID            string            `json:"worker_id,omitempty"`
-	WarmPool            string            `json:"warm_pool,omitempty"`
-	WarmPoolSlot        string            `json:"warm_pool_slot,omitempty"`
-	SandboxID           string            `json:"sandbox_id,omitempty"`
-	SandboxRole         string            `json:"sandbox_role,omitempty"`
-	SandboxLeaseHolder  string            `json:"sandbox_lease_holder,omitempty"`
-	SandboxLeaseExpires time.Time         `json:"sandbox_lease_expires,omitempty"`
-	Policy              string            `json:"policy,omitempty"`
-	ImageRef            string            `json:"image_ref,omitempty"`
-	ManifestBundle      string            `json:"manifest_bundle,omitempty"`
-	ImageManifestDigest string            `json:"image_manifest_digest,omitempty"`
-	ImageDigestRef      string            `json:"image_digest_ref,omitempty"`
-	ImagePlatform       string            `json:"image_platform,omitempty"`
-	RequiredLabels      map[string]string `json:"required_labels,omitempty"`
-	AntiAffinityKey     string            `json:"anti_affinity_key,omitempty"`
-	Resources           Capacity          `json:"resources,omitempty"`
-	Verb                string            `json:"verb"`
-	Args                []string          `json:"args,omitempty"`
-	Status              string            `json:"status,omitempty"`
-	Created             time.Time         `json:"created,omitempty"`
-	Updated             time.Time         `json:"updated,omitempty"`
-	LeasedTo            string            `json:"leased_to,omitempty"`
-	LeaseExpires        time.Time         `json:"lease_expires,omitempty"`
-	LastReport          *WorkerReport     `json:"last_report,omitempty"`
+	ID                   string            `json:"id"`
+	Namespace            string            `json:"namespace,omitempty"`
+	WorkerID             string            `json:"worker_id,omitempty"`
+	WarmPool             string            `json:"warm_pool,omitempty"`
+	WarmPoolSlot         string            `json:"warm_pool_slot,omitempty"`
+	SandboxID            string            `json:"sandbox_id,omitempty"`
+	SandboxRole          string            `json:"sandbox_role,omitempty"`
+	SandboxLeaseHolder   string            `json:"sandbox_lease_holder,omitempty"`
+	SandboxLeaseExpires  time.Time         `json:"sandbox_lease_expires,omitempty"`
+	Policy               string            `json:"policy,omitempty"`
+	ImageRef             string            `json:"image_ref,omitempty"`
+	ManifestBundle       string            `json:"manifest_bundle,omitempty"`
+	ImageManifestDigest  string            `json:"image_manifest_digest,omitempty"`
+	ImageDigestRef       string            `json:"image_digest_ref,omitempty"`
+	ImagePlatform        string            `json:"image_platform,omitempty"`
+	RequiredLabels       map[string]string `json:"required_labels,omitempty"`
+	RequiredCapabilities []string          `json:"required_capabilities,omitempty"`
+	AntiAffinityKey      string            `json:"anti_affinity_key,omitempty"`
+	Resources            Capacity          `json:"resources,omitempty"`
+	Verb                 string            `json:"verb"`
+	Args                 []string          `json:"args,omitempty"`
+	Status               string            `json:"status,omitempty"`
+	Created              time.Time         `json:"created,omitempty"`
+	Updated              time.Time         `json:"updated,omitempty"`
+	LeasedTo             string            `json:"leased_to,omitempty"`
+	LeaseExpires         time.Time         `json:"lease_expires,omitempty"`
+	LastReport           *WorkerReport     `json:"last_report,omitempty"`
 }
