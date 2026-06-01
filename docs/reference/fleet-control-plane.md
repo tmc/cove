@@ -36,7 +36,7 @@ Options:
 Start a worker:
 
 ```bash
-coved -fleet-url http://127.0.0.1:9758 -fleet-id mini-1 -fleet-label zone=desk -fleet-capability ram-overlay
+coved -fleet-url http://127.0.0.1:9758 -fleet-id mini-1 -fleet-label zone=desk
 ```
 
 Worker flags:
@@ -50,7 +50,14 @@ Worker flags:
 | `-fleet-assignment-interval <duration>` | `5s` | Assignment poll cadence |
 | `-fleet-assignment-timeout <duration>` | `30m` | Timeout for one `cove` assignment |
 | `-fleet-label key=value` | none | Worker label; repeat for multiple labels |
-| `-fleet-capability <name>` | none | Worker capability; repeat for multiple capabilities |
+| `-fleet-capability <name>` | auto-detected plus none | Extra worker capability; repeat for custom traits |
+
+`coved` discovers standard worker capabilities at startup and merges them with
+any repeated `-fleet-capability` values. Darwin workers automatically report
+`ram-overlay`, which lets hosted sandbox and warm-pool requests target cove's
+RAM-backed ephemeral fork support without per-host flag drift. Use manual
+capabilities for operator-defined traits such as GUI seats, lab hardware, or
+reserved host classes.
 
 Worker protocol:
 

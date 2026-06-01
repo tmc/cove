@@ -44,7 +44,7 @@ func main() {
 	var fleetLabels stringList
 	var fleetCapabilities stringList
 	flag.Var(&fleetLabels, "fleet-label", "fleet worker label key=value (repeatable)")
-	flag.Var(&fleetCapabilities, "fleet-capability", "fleet worker capability name (repeatable)")
+	flag.Var(&fleetCapabilities, "fleet-capability", "extra fleet worker capability name (repeatable; merged with auto-detected capabilities)")
 	flag.Parse()
 
 	info := buildversion.Resolve(version, commit, date)

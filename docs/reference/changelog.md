@@ -356,6 +356,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   expose hosted sandbox `required_capabilities` on create, so SDK callers can
   request RAM-overlay or GUI-capable workers through the same controller
   placement contract as the raw REST API.
+- `coved -fleet-url` now auto-detects standard worker capabilities and merges
+  them with repeated `-fleet-capability` flags; Darwin workers report
+  `ram-overlay` by default for hosted sandbox and warm-pool placement.
 - SAML bindings now accept signed SAML bearer assertions: the controller
   verifies XML signatures against the stored X.509 certificate, enforces
   issuer, audience, optional subject, and assertion time bounds, and maps the

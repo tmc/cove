@@ -84,6 +84,28 @@ func TestFleetWorkerRegisterHeartbeatAndAwait(t *testing.T) {
 	}
 }
 
+func TestFleetWorkerMergesDiscoveredCapabilities(t *testing.T) {
+	previous := discoverFleetCapabilities
+	discoverFleetCapabilities = func() []string {
+		return []string{FleetCapabilityRAMOverlay, FleetCapabilityRAMOverlay}
+	}
+	t.Cleanup(func() {
+		discoverFleetCapabilities = previous
+	})
+
+	worker, err := NewFleetWorker(FleetWorkerConfig{
+		ControllerURL: "http://127.0.0.1:9758",
+		ID:            "worker-1",
+		Capabilities:  []string{"asif", ""},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(worker.heartbeat().Capabilities, ","); got != "asif,ram-overlay" {
+		t.Fatalf("heartbeat capabilities = %q, want asif,ram-overlay", got)
+	}
+}
+
 func TestFleetWorkerReportsUnsupportedAssignment(t *testing.T) {
 	store := fleetcontrol.NewMemoryStore(time.Minute)
 	server := httptest.NewServer(fleetcontrol.Handler(store))

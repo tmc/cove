@@ -27,7 +27,11 @@ const (
 	DefaultFleetAssignmentInterval    = 5 * time.Second
 	DefaultFleetAssignmentTimeout     = 30 * time.Minute
 	DefaultFleetAssignmentOutputLimit = 64 << 10
+
+	FleetCapabilityRAMOverlay = "ram-overlay"
 )
+
+var discoverFleetCapabilities = defaultFleetCapabilities
 
 type FleetWorkerConfig struct {
 	ControllerURL      string
@@ -123,7 +127,7 @@ func NewFleetWorker(cfg FleetWorkerConfig) (*FleetWorker, error) {
 		vmRoot:             strings.TrimSpace(cfg.VMRoot),
 		imageRoot:          strings.TrimSpace(cfg.ImageRoot),
 		labels:             cloneStringMap(cfg.Labels),
-		capabilities:       sortedUniqueStrings(cfg.Capabilities),
+		capabilities:       mergedFleetCapabilities(cfg.Capabilities),
 		httpClient:         client,
 		log:                cfg.Log,
 		coveBin:            coveBin,
@@ -723,6 +727,21 @@ func sortedUniqueStrings(in []string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func mergedFleetCapabilities(manual []string) []string {
+	discovered := discoverFleetCapabilities()
+	capabilities := make([]string, 0, len(discovered)+len(manual))
+	capabilities = append(capabilities, discovered...)
+	capabilities = append(capabilities, manual...)
+	return sortedUniqueStrings(capabilities)
+}
+
+func defaultFleetCapabilities() []string {
+	if runtime.GOOS == "darwin" {
+		return []string{FleetCapabilityRAMOverlay}
+	}
+	return nil
 }
 
 func cloneStrings(in []string) []string {
