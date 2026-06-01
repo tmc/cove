@@ -3125,6 +3125,51 @@ func (s *Store) ListStoragePruneRunsPage(filter StoragePruneListFilter) StorageP
 	return result
 }
 
+func (s *Store) ListControllerRunsPage(filter ControllerRunListFilter) ControllerRunListResult {
+	filter.Namespace = normalizeNamespace(filter.Namespace)
+	filter.Kind = strings.TrimSpace(filter.Kind)
+	filter.TargetType = strings.TrimSpace(filter.TargetType)
+	filter.TargetID = strings.TrimSpace(filter.TargetID)
+	if filter.Offset < 0 {
+		filter.Offset = 0
+	}
+	if filter.Limit < 0 {
+		filter.Limit = 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	runs := s.sortedControllerRunsLocked()
+	filtered := runs[:0]
+	for _, run := range runs {
+		if !namespaceMatches(run.Namespace, filter.Namespace) {
+			continue
+		}
+		if filter.Kind != "" && run.Kind != filter.Kind {
+			continue
+		}
+		if filter.TargetType != "" && run.TargetType != filter.TargetType {
+			continue
+		}
+		if filter.TargetID != "" && run.TargetID != filter.TargetID {
+			continue
+		}
+		filtered = append(filtered, run)
+	}
+	result := ControllerRunListResult{Offset: filter.Offset, Limit: filter.Limit}
+	if filter.Offset >= len(filtered) {
+		return result
+	}
+	end := len(filtered) - filter.Offset
+	start := 0
+	if filter.Limit > 0 && end > filter.Limit {
+		start = end - filter.Limit
+		result.NextOffset = filter.Offset + filter.Limit
+	}
+	result.Runs = cloneControllerRunSummaries(filtered[start:end])
+	result.Count = len(result.Runs)
+	return result
+}
+
 func (s *Store) AwaitAssignment(id string) (*Assignment, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -4294,6 +4339,38 @@ func (s *Store) sortedStoragePruneRunsLocked() []StoragePruneResult {
 	return runs
 }
 
+func (s *Store) sortedControllerRunsLocked() []ControllerRunSummary {
+	var runs []ControllerRunSummary
+	for _, plan := range s.sortedPlacementPlansLocked() {
+		runs = append(runs, controllerRunFromPlacementPlan(plan))
+	}
+	for _, prep := range s.sortedImagePreparationsLocked() {
+		runs = append(runs, controllerRunFromImagePrepare(prep))
+	}
+	for _, run := range s.sortedImageGCRunsLocked() {
+		runs = append(runs, controllerRunFromImageGC(run))
+	}
+	for _, run := range s.sortedLifecyclePolicyRunsLocked() {
+		runs = append(runs, controllerRunFromLifecyclePolicy(run))
+	}
+	for _, run := range s.sortedStorageBudgetRunsLocked() {
+		runs = append(runs, controllerRunFromStorageBudget(run))
+	}
+	for _, run := range s.sortedStoragePruneRunsLocked() {
+		runs = append(runs, controllerRunFromStoragePrune(run))
+	}
+	sort.Slice(runs, func(i, j int) bool {
+		if !runs[i].Created.Equal(runs[j].Created) {
+			return runs[i].Created.Before(runs[j].Created)
+		}
+		if runs[i].Kind != runs[j].Kind {
+			return runs[i].Kind < runs[j].Kind
+		}
+		return runs[i].ID < runs[j].ID
+	})
+	return runs
+}
+
 func (s *Store) sortedMeteringLocked() []SandboxMeteringRecord {
 	records := cloneSandboxMeteringRecords(s.metering)
 	sort.Slice(records, func(i, j int) bool {
@@ -4734,6 +4811,26 @@ func cloneIntPtr(in *int) *int {
 	}
 	out := *in
 	return &out
+}
+
+func cloneControllerRunSummary(in ControllerRunSummary) ControllerRunSummary {
+	out := in
+	if !out.Created.IsZero() {
+		out.Created = out.Created.UTC()
+	}
+	out.Fields = cloneLabels(in.Fields)
+	return out
+}
+
+func cloneControllerRunSummaries(in []ControllerRunSummary) []ControllerRunSummary {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]ControllerRunSummary, len(in))
+	for i := range in {
+		out[i] = cloneControllerRunSummary(in[i])
+	}
+	return out
 }
 
 func cloneAssignmentMap(in map[string]Assignment) map[string]Assignment {
@@ -6323,6 +6420,159 @@ func normalizeStoragePruneResult(result StoragePruneResult) StoragePruneResult {
 		result.Skipped[i].Reason = strings.TrimSpace(result.Skipped[i].Reason)
 	}
 	return result
+}
+
+func controllerRunFromPlacementPlan(plan PlacementPlan) ControllerRunSummary {
+	fields := map[string]string{
+		"policy":     plan.Policy,
+		"candidates": strconv.Itoa(len(plan.Candidates)),
+		"limit":      strconv.Itoa(plan.Limit),
+	}
+	targetType := "placement"
+	targetID := plan.Policy
+	if plan.ImageRef != "" {
+		targetType = "image"
+		targetID = plan.ImageRef
+		fields["image_ref"] = plan.ImageRef
+	}
+	if plan.ImageManifestDigest != "" {
+		fields["image_manifest_digest"] = plan.ImageManifestDigest
+	}
+	if plan.ImageDigestRef != "" {
+		fields["image_digest_ref"] = plan.ImageDigestRef
+	}
+	if plan.ImagePlatform != "" {
+		fields["image_platform"] = plan.ImagePlatform
+	}
+	if plan.AntiAffinityKey != "" {
+		fields["anti_affinity_key"] = plan.AntiAffinityKey
+	}
+	return ControllerRunSummary{
+		ID:             plan.ID,
+		Created:        plan.Created.UTC(),
+		Namespace:      plan.Namespace,
+		Kind:           ControllerRunKindPlacementPlan,
+		TargetType:     targetType,
+		TargetID:       targetID,
+		CandidateCount: len(plan.Candidates),
+		Fields:         fields,
+	}
+}
+
+func controllerRunFromImagePrepare(prep ImagePrepareResult) ControllerRunSummary {
+	fields := map[string]string{
+		"source_ref": prep.SourceRef,
+		"image_ref":  prep.ImageRef,
+	}
+	if prep.ImageManifestDigest != "" {
+		fields["image_manifest_digest"] = prep.ImageManifestDigest
+	}
+	if prep.ImageDigestRef != "" {
+		fields["image_digest_ref"] = prep.ImageDigestRef
+	}
+	if prep.ImagePlatform != "" {
+		fields["image_platform"] = prep.ImagePlatform
+	}
+	return ControllerRunSummary{
+		ID:              prep.ID,
+		Created:         prep.Created.UTC(),
+		Namespace:       prep.Namespace,
+		Kind:            ControllerRunKindImagePrepare,
+		TargetType:      "image",
+		TargetID:        prep.ImageRef,
+		AssignmentCount: len(prep.Assignments),
+		SkipCount:       len(prep.Skipped),
+		Fields:          fields,
+	}
+}
+
+func controllerRunFromImageGC(run ImageGCResult) ControllerRunSummary {
+	return ControllerRunSummary{
+		ID:              run.ID,
+		Created:         run.Created.UTC(),
+		Namespace:       run.Namespace,
+		Kind:            ControllerRunKindImageGC,
+		TargetType:      "image",
+		AssignmentCount: len(run.Assignments),
+		SkipCount:       len(run.Skipped),
+		Fields: map[string]string{
+			"apply":      strconv.FormatBool(run.Apply),
+			"older_than": run.OlderThan,
+		},
+	}
+}
+
+func controllerRunFromLifecyclePolicy(run LifecyclePolicyResult) ControllerRunSummary {
+	fields := map[string]string{
+		"clear": strconv.FormatBool(run.Clear),
+	}
+	if run.IdleTimeout != "" {
+		fields["idle_timeout"] = run.IdleTimeout
+	}
+	if run.MaxAge != "" {
+		fields["max_age"] = run.MaxAge
+	}
+	if run.RunBudget > 0 {
+		fields["run_budget"] = strconv.Itoa(run.RunBudget)
+	}
+	return ControllerRunSummary{
+		ID:              run.ID,
+		Created:         run.Created.UTC(),
+		Namespace:       run.Namespace,
+		Kind:            ControllerRunKindLifecyclePolicy,
+		TargetType:      "vm",
+		TargetID:        run.VMName,
+		AssignmentCount: len(run.Assignments),
+		SkipCount:       len(run.Skipped),
+		Fields:          fields,
+	}
+}
+
+func controllerRunFromStorageBudget(run StorageBudgetResult) ControllerRunSummary {
+	fields := map[string]string{
+		"clear": strconv.FormatBool(run.Clear),
+	}
+	if run.Target != "" {
+		fields["target"] = run.Target
+	}
+	if run.WarnPct != nil {
+		fields["warn_pct"] = strconv.Itoa(*run.WarnPct)
+	}
+	if run.HardPct != nil {
+		fields["hard_pct"] = strconv.Itoa(*run.HardPct)
+	}
+	return ControllerRunSummary{
+		ID:              run.ID,
+		Created:         run.Created.UTC(),
+		Namespace:       run.Namespace,
+		Kind:            ControllerRunKindStorageBudget,
+		TargetType:      "storage",
+		AssignmentCount: len(run.Assignments),
+		SkipCount:       len(run.Skipped),
+		Fields:          fields,
+	}
+}
+
+func controllerRunFromStoragePrune(run StoragePruneResult) ControllerRunSummary {
+	fields := map[string]string{
+		"apply": strconv.FormatBool(run.Apply),
+	}
+	if run.Category != "" {
+		fields["category"] = run.Category
+	}
+	if run.OlderThan != "" {
+		fields["older_than"] = run.OlderThan
+	}
+	return ControllerRunSummary{
+		ID:              run.ID,
+		Created:         run.Created.UTC(),
+		Namespace:       run.Namespace,
+		Kind:            ControllerRunKindStoragePrune,
+		TargetType:      "storage",
+		AssignmentCount: len(run.Assignments),
+		SkipCount:       len(run.Skipped),
+		Fields:          fields,
+	}
 }
 
 func normalizeAssignmentReport(report AssignmentReport) AssignmentReport {

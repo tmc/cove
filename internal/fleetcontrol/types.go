@@ -597,6 +597,45 @@ type StoragePolicySkip struct {
 	Reason   string `json:"reason"`
 }
 
+const (
+	ControllerRunKindPlacementPlan   = "placement.plan"
+	ControllerRunKindImagePrepare    = "image.prepare"
+	ControllerRunKindImageGC         = "image.gc"
+	ControllerRunKindLifecyclePolicy = "policy.lifecycle"
+	ControllerRunKindStorageBudget   = "storage.budget"
+	ControllerRunKindStoragePrune    = "storage.prune"
+)
+
+type ControllerRunListFilter struct {
+	Namespace  string `json:"namespace,omitempty"`
+	Kind       string `json:"kind,omitempty"`
+	TargetType string `json:"target_type,omitempty"`
+	TargetID   string `json:"target_id,omitempty"`
+	Offset     int    `json:"offset,omitempty"`
+	Limit      int    `json:"limit,omitempty"`
+}
+
+type ControllerRunListResult struct {
+	Runs       []ControllerRunSummary `json:"runs"`
+	Count      int                    `json:"count"`
+	Offset     int                    `json:"offset,omitempty"`
+	Limit      int                    `json:"limit,omitempty"`
+	NextOffset int                    `json:"next_offset,omitempty"`
+}
+
+type ControllerRunSummary struct {
+	ID              string            `json:"id"`
+	Created         time.Time         `json:"created"`
+	Namespace       string            `json:"namespace,omitempty"`
+	Kind            string            `json:"kind"`
+	TargetType      string            `json:"target_type,omitempty"`
+	TargetID        string            `json:"target_id,omitempty"`
+	AssignmentCount int               `json:"assignment_count,omitempty"`
+	SkipCount       int               `json:"skip_count,omitempty"`
+	CandidateCount  int               `json:"candidate_count,omitempty"`
+	Fields          map[string]string `json:"fields,omitempty"`
+}
+
 type PlacementPlanRequest struct {
 	Assignment
 	Limit int `json:"limit,omitempty"`

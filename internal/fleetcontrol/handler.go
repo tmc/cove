@@ -109,6 +109,9 @@ func Handler(store *Store) http.Handler {
 	mux.HandleFunc("/v1/operations/summary", func(w http.ResponseWriter, r *http.Request) {
 		handleOperationsSummary(w, r, store)
 	})
+	mux.HandleFunc("/v1/operations/runs", func(w http.ResponseWriter, r *http.Request) {
+		handleControllerRuns(w, r, store)
+	})
 	mux.HandleFunc("/v1/metering/sandboxes", func(w http.ResponseWriter, r *http.Request) {
 		handleSandboxMetering(w, r, store)
 	})
@@ -292,6 +295,47 @@ func handleOperationsSummary(w http.ResponseWriter, r *http.Request, store *Stor
 		return
 	}
 	writeJSON(w, http.StatusOK, store.OperationsSummary(namespaceFilterFromRequest(r, identity)))
+}
+
+func handleControllerRuns(w http.ResponseWriter, r *http.Request, store *Store) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	filter, err := controllerRunListFilterFromRequest(r, namespaceFilterFromRequest(r, identity))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, store.ListControllerRunsPage(filter))
+}
+
+func controllerRunListFilterFromRequest(r *http.Request, namespace string) (ControllerRunListFilter, error) {
+	filter := ControllerRunListFilter{
+		Namespace:  namespace,
+		Kind:       strings.TrimSpace(r.URL.Query().Get("kind")),
+		TargetType: strings.TrimSpace(r.URL.Query().Get("target_type")),
+		TargetID:   strings.TrimSpace(r.URL.Query().Get("target_id")),
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 0 {
+			return ControllerRunListFilter{}, fmt.Errorf("controller runs limit must be non-negative")
+		}
+		filter.Limit = limit
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		offset, err := strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			return ControllerRunListFilter{}, fmt.Errorf("controller runs offset must be non-negative")
+		}
+		filter.Offset = offset
+	}
+	return filter, nil
 }
 
 func handleAudit(w http.ResponseWriter, r *http.Request, store *Store) {

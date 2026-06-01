@@ -66,6 +66,8 @@ Inventory endpoints:
 curl http://127.0.0.1:9758/healthz
 curl http://127.0.0.1:9758/v1/operations/summary
 curl http://127.0.0.1:9758/v1/operations/summary?namespace=team-a
+curl 'http://127.0.0.1:9758/v1/operations/runs?kind=storage.prune&limit=20'
+curl 'http://127.0.0.1:9758/v1/operations/runs?target_type=image&target_id=macos-runner:latest'
 curl http://127.0.0.1:9758/v1/workers
 curl 'http://127.0.0.1:9758/v1/workers?status=ready&label=zone=desk&image_ref=macos-runner:latest&limit=50'
 curl http://127.0.0.1:9758/v1/workers/mini-1
@@ -198,6 +200,13 @@ desired/slot counts, and aggregate sandbox metering. The optional `namespace`
 query filters assignment, sandbox, warm-pool, and metering counts; worker
 inventory stays fleet-global. Because the response includes fleet-global
 worker state, scoped service-account tokens cannot read it.
+`GET /v1/operations/runs` is the retained controller-run feed. It merges
+placement plans, image preparations, image-GC runs, lifecycle-policy pushes,
+and storage budget/prune runs into one paginated timeline with `kind`,
+`target_type`, `target_id`, `offset`, and `limit` filters. Scoped
+service-account tokens see only runs in their namespace. Run summaries include
+the source run `id`, `kind`, creation time, assignment/skip/candidate counts,
+common target fields, and kind-specific metadata in `fields`.
 
 Service-account and audit endpoints:
 

@@ -42,6 +42,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   `GET /v1/storage/budget/runs`, `GET /v1/storage/budget/runs/{id}`,
   `GET /v1/storage/prune/runs`, and `GET /v1/storage/prune/runs/{id}` for
   namespace-scoped storage maintenance history.
+- `cove-fleetd` now exposes `GET /v1/operations/runs`, a namespace-scoped
+  retained controller-run feed across placement plans, image preparation, image
+  GC, lifecycle-policy, and storage maintenance runs.
 - `cove-fleetd` now exposes `GET /v1/assignments/{id}/events` for
   assignment-scoped audit history, and global audit queries now accept
   `assignment_id`.

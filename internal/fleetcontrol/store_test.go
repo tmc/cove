@@ -3760,6 +3760,91 @@ func TestStorePushesStoragePruneAssignments(t *testing.T) {
 	}
 }
 
+func TestStoreListControllerRunsPage(t *testing.T) {
+	now := time.Date(2026, 6, 1, 9, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{
+		ID:        "desk",
+		Labels:    map[string]string{"zone": "desk"},
+		ImageRefs: []string{"base:v1"},
+		Capacity:  Capacity{MaxVMs: 3},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	step := func() {
+		now = now.Add(time.Second)
+	}
+
+	step()
+	plan, err := store.PlanAssignment(Assignment{
+		Namespace:      "team-a",
+		Policy:         PolicyImageAffinity,
+		ImageRef:       "base:v1",
+		RequiredLabels: map[string]string{"zone": "desk"},
+		Verb:           "cove",
+	}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	step()
+	prep, err := store.PrepareImage(ImagePrepareRequest{
+		Namespace:      "team-a",
+		SourceRef:      "registry.example/tool:v1",
+		ImageRef:       "tool:v1",
+		RequiredLabels: map[string]string{"zone": "desk"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	step()
+	if _, err := store.PushImageGC(ImageGCRequest{Namespace: "team-a", RequiredLabels: map[string]string{"zone": "desk"}, OlderThan: "24h"}); err != nil {
+		t.Fatal(err)
+	}
+	step()
+	if _, err := store.PushLifecyclePolicy(LifecyclePolicyRequest{Namespace: "team-a", VMName: "ci-runner", RequiredLabels: map[string]string{"zone": "desk"}, IdleTimeout: "30m"}); err != nil {
+		t.Fatal(err)
+	}
+	step()
+	warn, hard := 75, 90
+	if _, err := store.PushStorageBudget(StorageBudgetRequest{Namespace: "team-a", RequiredLabels: map[string]string{"zone": "desk"}, Target: "500GB", WarnPct: &warn, HardPct: &hard}); err != nil {
+		t.Fatal(err)
+	}
+	step()
+	prune, err := store.PushStoragePrune(StoragePruneRequest{Namespace: "team-a", RequiredLabels: map[string]string{"zone": "desk"}, Category: "build-scratch", OlderThan: "48h", Apply: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	step()
+	if _, err := store.PushImageGC(ImageGCRequest{Namespace: "team-b", RequiredLabels: map[string]string{"zone": "desk"}, OlderThan: "24h"}); err != nil {
+		t.Fatal(err)
+	}
+
+	page := store.ListControllerRunsPage(ControllerRunListFilter{Namespace: "team-a"})
+	if page.Count != 6 || len(page.Runs) != 6 {
+		t.Fatalf("controller runs = %+v, want 6 team-a runs", page)
+	}
+	if page.Runs[0].ID != plan.ID || page.Runs[0].Kind != ControllerRunKindPlacementPlan || page.Runs[0].CandidateCount != 1 {
+		t.Fatalf("first controller run = %+v, want placement plan %s", page.Runs[0], plan.ID)
+	}
+	latest := store.ListControllerRunsPage(ControllerRunListFilter{Namespace: "team-a", Limit: 2})
+	if latest.Count != 2 || latest.NextOffset != 2 || latest.Runs[1].ID != prune.ID || latest.Runs[1].Kind != ControllerRunKindStoragePrune {
+		t.Fatalf("latest controller runs = %+v, want storage prune latest %s", latest, prune.ID)
+	}
+	filtered := store.ListControllerRunsPage(ControllerRunListFilter{Namespace: "team-a", Kind: ControllerRunKindImagePrepare, TargetType: "image", TargetID: "tool:v1"})
+	if filtered.Count != 1 || len(filtered.Runs) != 1 || filtered.Runs[0].ID != prep.ID || filtered.Runs[0].Fields["source_ref"] != "registry.example/tool:v1" {
+		t.Fatalf("filtered controller runs = %+v, want image prepare %s", filtered, prep.ID)
+	}
+	storage := store.ListControllerRunsPage(ControllerRunListFilter{Namespace: "team-a", TargetType: "storage"})
+	if storage.Count != 2 || len(storage.Runs) != 2 {
+		t.Fatalf("storage controller runs = %+v, want budget and prune", storage)
+	}
+	teamB := store.ListControllerRunsPage(ControllerRunListFilter{Namespace: "team-b"})
+	if teamB.Count != 1 || len(teamB.Runs) != 1 || teamB.Runs[0].Namespace != "team-b" {
+		t.Fatalf("team-b controller runs = %+v, want one team-b run", teamB)
+	}
+}
+
 func TestStoragePolicyArgs(t *testing.T) {
 	warn, hard := 0, 0
 	args, err := storageBudgetArgs(StorageBudgetRequest{Target: "1TB", WarnPct: &warn, HardPct: &hard})
@@ -5008,6 +5093,41 @@ func TestHandlerOperationsSummary(t *testing.T) {
 	}
 	if code := getJSONStatus(t, server.URL+"/v1/operations/summary", "token-a"); code != http.StatusForbidden {
 		t.Fatalf("scoped operations summary status = %d, want %d", code, http.StatusForbidden)
+	}
+}
+
+func TestHandlerControllerRuns(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var account ServiceAccountResult
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-a", Namespace: "team-a", Token: "token-a"}, &account)
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-b", Namespace: "team-b", Token: "token-b"}, &account)
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", Labels: map[string]string{"zone": "desk"}}, &record)
+	var prune StoragePruneResult
+	postJSONAuth(t, server.URL+"/v1/storage/prune", "token-a", StoragePruneRequest{
+		RequiredLabels: map[string]string{"zone": "desk"},
+		OlderThan:      "168h",
+		Apply:          true,
+	}, &prune)
+
+	var page ControllerRunListResult
+	getJSONAuth(t, server.URL+"/v1/operations/runs?kind=storage.prune&target_type=storage&limit=1", "token-a", &page)
+	if page.Count != 1 || len(page.Runs) != 1 || page.Runs[0].ID != prune.ID || page.Runs[0].Kind != ControllerRunKindStoragePrune {
+		t.Fatalf("controller runs = %+v, want storage prune %s", page, prune.ID)
+	}
+	if page.Runs[0].Fields["apply"] != "true" || page.Runs[0].Fields["older_than"] != "168h" {
+		t.Fatalf("controller run fields = %+v, want prune apply/older_than", page.Runs[0].Fields)
+	}
+	page = ControllerRunListResult{}
+	getJSONAuth(t, server.URL+"/v1/operations/runs", "token-b", &page)
+	if page.Count != 0 || len(page.Runs) != 0 {
+		t.Fatalf("team-b controller runs = %+v, want none", page)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/operations/runs?offset=-1", "token-a"); code != http.StatusBadRequest {
+		t.Fatalf("bad controller runs offset status = %d, want %d", code, http.StatusBadRequest)
 	}
 }
 
