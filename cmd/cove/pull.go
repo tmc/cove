@@ -37,6 +37,7 @@ type pullOptions struct {
 	ManifestPath     string
 	ManifestOut      string
 	IndexOut         string
+	ManifestDir      string
 	Platform         string
 	RegistryBaseURL  string
 	RegistryToken    string
@@ -54,6 +55,7 @@ type pullPlan struct {
 	DigestRef            string
 	ManifestOut          string
 	IndexOut             string
+	ManifestDir          string
 	ManifestResolution   ociimage.ManifestResolution
 	IndexDigestRef       string
 	BaseReusePath        string
@@ -92,6 +94,7 @@ type pullDryRunOutput struct {
 	DigestRef         string                     `json:"digest_ref,omitempty"`
 	ManifestOut       string                     `json:"manifest_out,omitempty"`
 	IndexOut          string                     `json:"index_out,omitempty"`
+	ManifestDir       string                     `json:"manifest_dir,omitempty"`
 	ResolvedFromIndex bool                       `json:"resolved_from_index,omitempty"`
 	IndexDigest       string                     `json:"index_digest,omitempty"`
 	IndexDigestRef    string                     `json:"index_digest_ref,omitempty"`
@@ -183,6 +186,15 @@ func handlePull(env commandEnv, args []string) error {
 	if opts.IndexOut != "" && !opts.FetchManifest {
 		return fmt.Errorf("cove pull: --index-out requires --fetch-manifest")
 	}
+	if opts.ManifestDir != "" && !opts.DryRun {
+		return fmt.Errorf("cove pull: --manifest-dir requires --dry-run")
+	}
+	if opts.ManifestDir != "" && !opts.FetchManifest {
+		return fmt.Errorf("cove pull: --manifest-dir requires --fetch-manifest")
+	}
+	if opts.ManifestDir != "" && !opts.AllPlatforms {
+		return fmt.Errorf("cove pull: --manifest-dir requires --all-platforms")
+	}
 	if err := preparePullOptions(&opts); err != nil {
 		return err
 	}
@@ -195,6 +207,9 @@ func handlePull(env commandEnv, args []string) error {
 			return err
 		}
 		if err := writePullIndexOut(plan); err != nil {
+			return err
+		}
+		if err := writePullManifestDir(plan); err != nil {
 			return err
 		}
 		if opts.JSON {
@@ -235,6 +250,7 @@ func parsePullArgs(args []string, w io.Writer) (pullOptions, []string, error) {
 	fs.StringVar(&opts.ManifestPath, "manifest", "", "local OCI manifest JSON instead of fetching the registry")
 	fs.StringVar(&opts.ManifestOut, "manifest-out", "", "write fetched selected manifest JSON during dry-run")
 	fs.StringVar(&opts.IndexOut, "index-out", "", "write fetched index/list JSON during dry-run")
+	fs.StringVar(&opts.ManifestDir, "manifest-dir", "", "write fetched index and child manifest JSON files to directory")
 	fs.StringVar(&opts.Platform, "platform", "", "select image-index platform (os/arch[/variant])")
 	fs.Usage = func() { printPullUsage(w) }
 	if err := fs.Parse(movePullFlagsFirst(args)); err != nil {
@@ -258,6 +274,7 @@ func movePullFlagsFirst(args []string) []string {
 		"manifest":       true,
 		"manifest-out":   true,
 		"index-out":      true,
+		"manifest-dir":   true,
 		"platform":       true,
 	})
 }
@@ -320,6 +337,7 @@ func buildPullPlan(refText string, opts pullOptions) (*pullPlan, error) {
 		DigestRef:          registryDigestRef(ref, manifestDigest),
 		ManifestOut:        opts.ManifestOut,
 		IndexOut:           opts.IndexOut,
+		ManifestDir:        opts.ManifestDir,
 		ManifestResolution: manifestResolution,
 		IndexDigestRef:     registryDigestRef(ref, manifestResolution.IndexDigest),
 	}
@@ -366,6 +384,23 @@ func writePullIndexOut(plan *pullPlan) error {
 			_ = os.Remove(tmp)
 		}
 		return fmt.Errorf("cove pull: write index-out: %w", err)
+	}
+	return nil
+}
+
+func writePullManifestDir(plan *pullPlan) error {
+	if plan == nil || strings.TrimSpace(plan.ManifestDir) == "" {
+		return nil
+	}
+	children := make([]manifestBundleChild, 0, len(plan.IndexManifests))
+	for _, child := range plan.IndexManifests {
+		children = append(children, manifestBundleChild{
+			Digest: child.Digest,
+			Data:   child.manifestRaw,
+		})
+	}
+	if err := writeManifestBundle(plan.ManifestDir, plan.ManifestResolution.IndexData, plan.ManifestRaw, children); err != nil {
+		return fmt.Errorf("cove pull: write manifest-dir: %w", err)
 	}
 	return nil
 }
@@ -841,6 +876,9 @@ func printPullDryRun(w io.Writer, plan *pullPlan) {
 	if plan.IndexOut != "" {
 		fmt.Fprintf(w, "  index out: %s\n", plan.IndexOut)
 	}
+	if plan.ManifestDir != "" {
+		fmt.Fprintf(w, "  manifest dir: %s\n", plan.ManifestDir)
+	}
 	printPullManifestResolution(w, plan)
 	switch plan.Manifest.Format {
 	case ociimage.FormatLume:
@@ -1025,6 +1063,7 @@ func pullDryRunOutputFromPlan(plan *pullPlan) pullDryRunOutput {
 		DigestRef:        plan.DigestRef,
 		ManifestOut:      plan.ManifestOut,
 		IndexOut:         plan.IndexOut,
+		ManifestDir:      plan.ManifestDir,
 	}
 	if plan.ManifestResolution.IndexDigest != "" {
 		out.ResolvedFromIndex = true
@@ -1189,6 +1228,7 @@ Flags:
   --manifest-out <path>
                        Write fetched selected manifest JSON during dry-run
   --index-out <path>   Write fetched index/list JSON during dry-run
+  --manifest-dir <dir> Write fetched index and child manifests to directory
   --platform <os/arch[/variant]>
                        Select an image-index platform`)
 }

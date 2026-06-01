@@ -90,7 +90,9 @@ delegates the disk/runtime work to `tart` or `vetu`.
    top-level index digest refs for immutable CI/fleet pins, and remote inspect
    can write the selected registry manifest bytes without creating a pull
    target; both pull dry-runs and remote inspect can also persist exact
-   top-level index/list bytes for tag-resolution audits.
+   top-level index/list bytes for tag-resolution audits or complete offline
+   manifest bundles containing the index, selected manifest, and every fetched
+   platform child.
    Manifest-backed dry-runs report OCI index/list child candidates and selection, can force
    `--platform os/arch[/variant]`, can fetch and classify every index child with
    `--all-platforms`, then HEAD-audit the registry blobs this host would need

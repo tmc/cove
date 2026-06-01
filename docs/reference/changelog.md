@@ -132,6 +132,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   `cove pull --dry-run --fetch-manifest --index-out <path>` now write the exact
   top-level OCI index or Docker manifest-list bytes when a tag resolves through
   a multi-platform object.
+- `cove image inspect -remote -all-platforms -manifest-dir <dir>` and
+  `cove pull --dry-run --fetch-manifest --all-platforms --manifest-dir <dir>`
+  now write complete offline manifest bundles with `index.json`,
+  `selected.json`, and per-child `manifests/<digest>.json` files.
 - `cove pull --platform <os/arch[/variant]>` and
   `cove image inspect -remote -platform <os/arch[/variant]>` now select an OCI
   image-index or Docker manifest-list child explicitly, and pull dry-runs report

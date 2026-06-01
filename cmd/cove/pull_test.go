@@ -457,12 +457,15 @@ func TestBuildPullPlanDryRunFetchManifestAllPlatforms(t *testing.T) {
 		linuxDigest:      linuxData,
 	}, blobs)
 	t.Cleanup(srv.Close)
+	manifestDir := filepath.Join(t.TempDir(), "bundle")
+	indexData := remoteInspectIndexData(t, index)
 
 	plan, err := buildPullPlan("ghcr.io/me/dev-vm:v1", pullOptions{
 		DryRun:          true,
 		FetchManifest:   true,
 		VerifyBlobs:     true,
 		AllPlatforms:    true,
+		ManifestDir:     manifestDir,
 		Platform:        "linux/arm64",
 		RegistryBaseURL: srv.URL,
 	})
@@ -488,10 +491,17 @@ func TestBuildPullPlanDryRunFetchManifestAllPlatforms(t *testing.T) {
 	if got := srv.blobGets.Load(); got != 0 {
 		t.Fatalf("blob GETs = %d, want 0", got)
 	}
+	if err := writePullManifestDir(plan); err != nil {
+		t.Fatalf("writePullManifestDir: %v", err)
+	}
+	assertManifestBundleFile(t, filepath.Join(manifestDir, "index.json"), indexData)
+	assertManifestBundleFile(t, filepath.Join(manifestDir, "selected.json"), linuxData)
+	assertManifestBundleFile(t, filepath.Join(manifestDir, "manifests", manifestBundleDigestName(darwinDigest)+".json"), darwinData)
+	assertManifestBundleFile(t, filepath.Join(manifestDir, "manifests", manifestBundleDigestName(linuxDigest)+".json"), linuxData)
 
 	var out strings.Builder
 	printPullDryRun(&out, plan)
-	for _, want := range []string{"index manifests: 2", "format=cove", "base_audit=ok", "base_audit=missing", "blob_audit=ok", "disk_size=11 B"} {
+	for _, want := range []string{"manifest dir: " + manifestDir, "index manifests: 2", "format=cove", "base_audit=ok", "base_audit=missing", "blob_audit=ok", "disk_size=11 B"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("dry-run output %q missing %q", out.String(), want)
 		}
@@ -507,6 +517,9 @@ func TestBuildPullPlanDryRunFetchManifestAllPlatforms(t *testing.T) {
 	}
 	if len(got.IndexManifests) != 2 || got.IndexManifests[0].Format != "cove" || got.IndexManifests[0].BaseChainAudit != "ok" || got.IndexManifests[1].BlobAudit != "ok" {
 		t.Fatalf("JSON index manifests = %+v, want detailed child audits", got.IndexManifests)
+	}
+	if got.ManifestDir != manifestDir {
+		t.Fatalf("JSON manifest_dir = %q, want %q", got.ManifestDir, manifestDir)
 	}
 }
 
@@ -1190,6 +1203,13 @@ func TestHandlePullIndexOutRequiresFetchManifest(t *testing.T) {
 	}
 }
 
+func TestHandlePullManifestDirRequiresAllPlatforms(t *testing.T) {
+	err := handlePull(commandTestEnv(), []string{"--dry-run", "--fetch-manifest", "--manifest-dir", "bundle", "ghcr.io/me/dev-vm:v1"})
+	if err == nil || !strings.Contains(err.Error(), "--manifest-dir requires --all-platforms") {
+		t.Fatalf("handlePull() error = %v, want --manifest-dir requires all-platforms", err)
+	}
+}
+
 func TestHandlePullRejectsFetchManifestWithManifest(t *testing.T) {
 	err := handlePull(commandTestEnv(), []string{
 		"--dry-run",
@@ -1237,7 +1257,7 @@ func TestParsePullArgsHelpReturnsNoError(t *testing.T) {
 	if pos != nil {
 		t.Fatalf("parsePullArgs(-h) pos = %#v, want nil", pos)
 	}
-	if opts.DryRun || opts.JSON || opts.FetchManifest || opts.VerifyBlobs || opts.AllPlatforms || opts.Resume || opts.As != "" || opts.ManifestPath != "" || opts.ManifestOut != "" || opts.IndexOut != "" || opts.Platform != "" {
+	if opts.DryRun || opts.JSON || opts.FetchManifest || opts.VerifyBlobs || opts.AllPlatforms || opts.Resume || opts.As != "" || opts.ManifestPath != "" || opts.ManifestOut != "" || opts.IndexOut != "" || opts.ManifestDir != "" || opts.Platform != "" {
 		t.Fatalf("parsePullArgs(-h) opts = %#v, want zero", opts)
 	}
 }
@@ -1269,13 +1289,14 @@ func TestParsePullArgsFetchManifest(t *testing.T) {
 		"--all-platforms",
 		"--manifest-out", "selected.json",
 		"--index-out", "index.json",
+		"--manifest-dir", "bundle",
 		"--json",
 		"--platform", "linux/arm64",
 	}, ioDiscard{})
 	if err != nil {
 		t.Fatalf("parsePullArgs fetch manifest: %v", err)
 	}
-	if !opts.DryRun || !opts.FetchManifest || !opts.VerifyBlobs || !opts.AllPlatforms || !opts.JSON || opts.ManifestOut != "selected.json" || opts.IndexOut != "index.json" || opts.Platform != "linux/arm64" {
+	if !opts.DryRun || !opts.FetchManifest || !opts.VerifyBlobs || !opts.AllPlatforms || !opts.JSON || opts.ManifestOut != "selected.json" || opts.IndexOut != "index.json" || opts.ManifestDir != "bundle" || opts.Platform != "linux/arm64" {
 		t.Fatalf("opts = %#v, want dry-run/fetch-manifest/verify-blobs/all-platforms/json/platform", opts)
 	}
 	if strings.Join(pos, ",") != "registry.example/cove/vm:latest" {

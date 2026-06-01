@@ -692,7 +692,7 @@ Local pre-baked VM image store at `~/.vz/images/<name>/<tag>/`. Snapshots a stop
 cove image build -from <vm> -tag <name[:tag]>
 cove image list [-json]
 cove image inspect <name[:tag]> [-json]
-cove image inspect -remote <registry/ref:tag|digest>... [-json] [-platform os/arch[/variant]] [-all-platforms] [-verify-blobs] [-manifest-out <path>] [-index-out <path>]
+cove image inspect -remote <registry/ref:tag|digest>... [-json] [-platform os/arch[/variant]] [-all-platforms] [-verify-blobs] [-manifest-out <path>] [-index-out <path>] [-manifest-dir <dir>]
 cove image verify <name[:tag]> [-strict] [-json] [-quiet] [-newer-than <duration>]
 cove image push <name[:tag]> <file> [-gzip]
 cove image load <file> [-tag <name[:tag]>] [-force]
@@ -708,7 +708,7 @@ cove image rm <name[:tag]>
 |------------|-------------|
 | `build -from <vm> -tag <ref>` | Snapshot a stopped VM into the image store. The disk is APFS-clonefiled (no copy), and the manifest records whether the source disk is raw or ASIF. vmstate is excluded; cold-boot only. |
 | `list [-json]` | Show stored images with size + creation time + source VM. `-json` emits a JSON array; empty output is `[]`. |
-| `inspect <ref> [-json]` | Print manifest (size, format, sha256, base image, source manifest digest, created-at, hw.model fingerprint) plus the live downstream fork list. `-json` emits a stable schema for tooling. With `-remote <registry/ref:tag\|digest>...`, fetch only registry metadata and summarize cove-native, Tart, Lume, or cove image-store artifacts before pulling, including digest-pinned selected refs, index/list resolution, top-level index digest refs, selectable child manifests, selected platform, cove disk format, pull plan, verification posture, and cove base-chain audit results with disk-format/size/chunk compatibility plus reusable bytes. Add `-manifest-out <path>` on a single remote ref to write the exact selected registry manifest bytes after index/list resolution. Add `-index-out <path>` when that ref resolves through an OCI index or Docker manifest list to write the exact top-level index/list bytes. Add `-platform os/arch[/variant]` to select a specific OCI image-index or Docker manifest-list child. Add `-all-platforms` to fetch each child manifest, classify every platform, and audit cove base chains for each cove-native child without downloading disk blobs. Add `-verify-blobs` to HEAD every remote config/layer descriptor and report missing blobs without downloading disk content; with `-all-platforms`, each child manifest gets its own blob audit in `index_manifests`. Multiple remote refs are inspected as a batch; `-json` emits an array only in batch mode. |
+| `inspect <ref> [-json]` | Print manifest (size, format, sha256, base image, source manifest digest, created-at, hw.model fingerprint) plus the live downstream fork list. `-json` emits a stable schema for tooling. With `-remote <registry/ref:tag\|digest>...`, fetch only registry metadata and summarize cove-native, Tart, Lume, or cove image-store artifacts before pulling, including digest-pinned selected refs, index/list resolution, top-level index digest refs, selectable child manifests, selected platform, cove disk format, pull plan, verification posture, and cove base-chain audit results with disk-format/size/chunk compatibility plus reusable bytes. Add `-manifest-out <path>` on a single remote ref to write the exact selected registry manifest bytes after index/list resolution. Add `-index-out <path>` when that ref resolves through an OCI index or Docker manifest list to write the exact top-level index/list bytes. Add `-manifest-dir <dir>` with `-all-platforms` on a single remote ref to write `index.json`, `selected.json`, and every fetched child under `manifests/<digest>.json`. Add `-platform os/arch[/variant]` to select a specific OCI image-index or Docker manifest-list child. Add `-all-platforms` to fetch each child manifest, classify every platform, and audit cove base chains for each cove-native child without downloading disk blobs. Add `-verify-blobs` to HEAD every remote config/layer descriptor and report missing blobs without downloading disk content; with `-all-platforms`, each child manifest gets its own blob audit in `index_manifests`. Multiple remote refs are inspected as a batch; `-json` emits an array only in batch mode. |
 | `verify <ref> [-strict] [-json] [-quiet] [-newer-than D]` | Check freshness, provenance, and layout. Warns on stale or legacy manifests; `-strict` turns missing `execattach.v3` into a failure; `-quiet` prints only on failure for CI; `-newer-than` fails stale images such as `24h` or `7d`. |
 | `push <ref> <file> [-gzip]` | Tar an image directory to a single file (atomic temp + rename). `-gzip` compresses; the load side sniffs `.gz` / `.tgz` automatically. Pass `-` as the file to stream the tarball to stdout (refuses a TTY). |
 | `load <file> [-tag <ref>] [-force]` | Extract a tarball into the image store. Tar entries are restricted to `manifest.json`, `disk.img`, `aux.img`, `hw.model`, `machine.id` (TypeReg only); zip-slip / symlink / oversize entries are refused before any filesystem write. `-tag` rewrites the manifest's name+tag on import; `-force` overwrites an existing ref. `ParentImage` is **not** preserved across hosts -- a loaded image becomes a fresh root for forks on the destination. Pass `-` as the file to read the tarball from stdin (refuses a TTY); gzip framing is auto-detected via magic bytes. |
@@ -725,6 +725,7 @@ cove image inspect macos-runner:14.5 -json
 cove image inspect -remote registry.example/team/macos-runner:14.5 -json
 cove image inspect -remote registry.example/team/macos-runner:14.5 -manifest-out selected-manifest.json
 cove image inspect -remote registry.example/team/runner:latest -index-out index.json
+cove image inspect -remote registry.example/team/runner:latest -all-platforms -manifest-dir manifests
 cove image inspect -remote registry.example/team/runner:latest -platform linux/arm64 -json
 cove image inspect -remote registry.example/team/runner:latest -all-platforms -json
 cove image inspect -remote registry.example/team/runner:latest -all-platforms -verify-blobs -json
@@ -1419,7 +1420,9 @@ index resolution for later network-free `--manifest <path>` validation. Add
 index/list bytes when a tag resolves through an OCI index or Docker manifest
 list. When a manifest is available, text and JSON dry-runs include a
 digest-pinned selected ref; index/list resolutions also include the top-level
-index digest ref.
+index digest ref. Add `--manifest-dir <dir>` with `--all-platforms` to write
+`index.json`, `selected.json`, and every fetched child under
+`manifests/<digest>.json`.
 Cove-native dry-runs also print the manifest's disk format and, when a
 compatible local or cached base disk is available, the reusable chunks, bytes,
 disk format, and source base path. Manifest-backed dry-runs that resolve an OCI
@@ -1457,6 +1460,7 @@ cove pull <ref> [flags]
 | `--manifest <path>` | | Local OCI manifest JSON instead of fetching the registry |
 | `--manifest-out <path>` | | Write fetched selected manifest JSON during dry-run |
 | `--index-out <path>` | | Write fetched index/list JSON during dry-run |
+| `--manifest-dir <dir>` | | Write fetched index and child manifests to a directory |
 | `--platform os/arch[/variant]` | auto | Select an OCI image-index or Docker manifest-list child |
 
 ```bash
@@ -1466,6 +1470,7 @@ cove pull ghcr.io/example/runner:latest --dry-run --fetch-manifest --platform li
 cove pull ghcr.io/example/runner:latest --dry-run --fetch-manifest --all-platforms --verify-blobs --json
 cove pull ghcr.io/example/runner:latest --dry-run --fetch-manifest --manifest-out selected-manifest.json
 cove pull ghcr.io/example/runner:latest --dry-run --fetch-manifest --index-out index.json
+cove pull ghcr.io/example/runner:latest --dry-run --fetch-manifest --all-platforms --manifest-dir manifests
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run --fetch-manifest --json
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run --fetch-manifest --verify-blobs --json
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run --json --manifest manifest.json

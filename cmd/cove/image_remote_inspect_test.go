@@ -279,6 +279,7 @@ func TestInspectRemoteImageResolvesIndexPlatform(t *testing.T) {
 		linuxDigest:  linuxData,
 	})
 	t.Cleanup(srv.Close)
+	indexData := remoteInspectIndexData(t, index)
 
 	out, err := InspectRemoteImage(context.Background(), "ghcr.io/me/dev-vm:v1", remoteInspectOptions{
 		RegistryBaseURL:       srv.URL,
@@ -303,6 +304,14 @@ func TestInspectRemoteImageResolvesIndexPlatform(t *testing.T) {
 	if out.IndexManifests[0].Format != "cove" || out.IndexManifests[0].DiskSize != int64(len("darwin")) || out.IndexManifests[1].Format != "cove" || out.IndexManifests[1].DiskSize != int64(len("linux-child")) {
 		t.Fatalf("index manifest details = %+v, want cove summaries for both children", out.IndexManifests)
 	}
+	manifestDir := filepath.Join(t.TempDir(), "bundle")
+	if err := writeRemoteInspectManifestDir(out, manifestDir); err != nil {
+		t.Fatalf("writeRemoteInspectManifestDir: %v", err)
+	}
+	assertManifestBundleFile(t, filepath.Join(manifestDir, "index.json"), indexData)
+	assertManifestBundleFile(t, filepath.Join(manifestDir, "selected.json"), linuxData)
+	assertManifestBundleFile(t, filepath.Join(manifestDir, "manifests", manifestBundleDigestName(darwinDigest)+".json"), darwinData)
+	assertManifestBundleFile(t, filepath.Join(manifestDir, "manifests", manifestBundleDigestName(linuxDigest)+".json"), linuxData)
 	if out.DiskSize != int64(len("linux-child")) {
 		t.Fatalf("disk size = %d, want linux child", out.DiskSize)
 	}
@@ -735,9 +744,10 @@ func TestMoveImageInspectFlagsFirst(t *testing.T) {
 		"-all-platforms",
 		"-manifest-out", "manifest.json",
 		"-index-out", "index.json",
+		"-manifest-dir", "bundle",
 		"-platform", "linux/arm64",
 	}), " ")
-	want := "-remote -json -verify-blobs -all-platforms -manifest-out manifest.json -index-out index.json -platform linux/arm64 registry.example.com/team/vm:v1"
+	want := "-remote -json -verify-blobs -all-platforms -manifest-out manifest.json -index-out index.json -manifest-dir bundle -platform linux/arm64 registry.example.com/team/vm:v1"
 	if got != want {
 		t.Fatalf("args = %q, want %q", got, want)
 	}
@@ -775,6 +785,20 @@ func TestRunImageInspectIndexOutRejectsBatch(t *testing.T) {
 	err := runImageInspect(imageTestEnv(), []string{"-remote", "-index-out", "index.json", "registry.example.com/team/a:v1", "registry.example.com/team/b:v1"})
 	if err == nil || !strings.Contains(err.Error(), "-index-out requires exactly one remote ref") {
 		t.Fatalf("runImageInspect() error = %v, want single-ref index-out error", err)
+	}
+}
+
+func TestRunImageInspectManifestDirRequiresAllPlatforms(t *testing.T) {
+	err := runImageInspect(imageTestEnv(), []string{"-remote", "-manifest-dir", "bundle", "registry.example.com/team/a:v1"})
+	if err == nil || !strings.Contains(err.Error(), "-manifest-dir requires -all-platforms") {
+		t.Fatalf("runImageInspect() error = %v, want -manifest-dir requires -all-platforms", err)
+	}
+}
+
+func TestRunImageInspectManifestDirRejectsBatch(t *testing.T) {
+	err := runImageInspect(imageTestEnv(), []string{"-remote", "-all-platforms", "-manifest-dir", "bundle", "registry.example.com/team/a:v1", "registry.example.com/team/b:v1"})
+	if err == nil || !strings.Contains(err.Error(), "-manifest-dir requires exactly one remote ref") {
+		t.Fatalf("runImageInspect() error = %v, want single-ref manifest-dir error", err)
 	}
 }
 
@@ -896,6 +920,17 @@ func remoteInspectIndexData(t *testing.T, index ociimage.Index) []byte {
 		t.Fatalf("Marshal(index): %v", err)
 	}
 	return append(data, '\n')
+}
+
+func assertManifestBundleFile(t *testing.T, path string, want []byte) {
+	t.Helper()
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read bundle file %s: %v", path, err)
+	}
+	if string(got) != string(want) {
+		t.Fatalf("bundle file %s = %q, want %q", path, string(got), string(want))
+	}
 }
 
 func newRemoteInspectMultiIndexBlobRegistry(t *testing.T, index ociimage.Index, manifests map[string][]byte, blobs map[string]bool) *remoteInspectMultiIndexBlobRegistry {

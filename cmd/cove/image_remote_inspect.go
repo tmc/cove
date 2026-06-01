@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -104,6 +105,7 @@ type ImageRemoteIndexManifest struct {
 	BlobBytes           int64                     `json:"blob_bytes,omitempty"`
 	MissingBlobs        []string                  `json:"missing_blobs,omitempty"`
 	Error               string                    `json:"error,omitempty"`
+	manifestRaw         []byte
 }
 
 type ImageRemoteBaseManifest struct {
@@ -260,6 +262,99 @@ func writeRemoteInspectIndexOut(out ImageRemoteInspectOutput, path string) error
 	return nil
 }
 
+func writeRemoteInspectManifestDir(out ImageRemoteInspectOutput, path string) error {
+	if strings.TrimSpace(path) == "" {
+		return nil
+	}
+	children := make([]manifestBundleChild, 0, len(out.IndexManifests))
+	for _, child := range out.IndexManifests {
+		children = append(children, manifestBundleChild{
+			Digest: child.Digest,
+			Data:   child.manifestRaw,
+		})
+	}
+	if err := writeManifestBundle(path, out.indexRaw, out.manifestRaw, children); err != nil {
+		return fmt.Errorf("image inspect remote: write manifest-dir: %w", err)
+	}
+	return nil
+}
+
+type manifestBundleChild struct {
+	Digest string
+	Data   []byte
+}
+
+func writeManifestBundle(path string, indexRaw, selectedRaw []byte, children []manifestBundleChild) error {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil
+	}
+	if len(indexRaw) == 0 {
+		return fmt.Errorf("requires an index or manifest-list resolution")
+	}
+	files := []manifestBundleFile{{Path: filepath.Join(path, "index.json"), Data: indexRaw}}
+	if len(selectedRaw) > 0 {
+		files = append(files, manifestBundleFile{Path: filepath.Join(path, "selected.json"), Data: selectedRaw})
+	}
+	var missing []string
+	for i, child := range children {
+		if len(child.Data) == 0 {
+			name := strings.TrimSpace(child.Digest)
+			if name == "" {
+				name = fmt.Sprintf("child[%d]", i)
+			}
+			missing = append(missing, name)
+			continue
+		}
+		name := manifestBundleDigestName(child.Digest)
+		if name == "" {
+			return fmt.Errorf("child manifest %d missing digest", i)
+		}
+		files = append(files, manifestBundleFile{
+			Path: filepath.Join(path, "manifests", name+".json"),
+			Data: child.Data,
+		})
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("missing child manifest bytes: %s", strings.Join(missing, ", "))
+	}
+	if err := os.MkdirAll(filepath.Join(path, "manifests"), 0755); err != nil {
+		return fmt.Errorf("create manifest-dir: %w", err)
+	}
+	for _, file := range files {
+		if err := atomicWriteFileCleanup(file.Path, file.Data, 0644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type manifestBundleFile struct {
+	Path string
+	Data []byte
+}
+
+func atomicWriteFileCleanup(path string, data []byte, mode os.FileMode) error {
+	tmp, err := atomicWriteFile(path, data, mode)
+	if err != nil {
+		if tmp != "" {
+			_ = os.Remove(tmp)
+		}
+		return err
+	}
+	return nil
+}
+
+func manifestBundleDigestName(digest string) string {
+	digest = strings.TrimSpace(digest)
+	if digest == "" {
+		return ""
+	}
+	digest = strings.ReplaceAll(digest, ":", "-")
+	digest = strings.ReplaceAll(digest, "/", "-")
+	return digest
+}
+
 func remoteIndexManifestOutputs(resolution ociimage.ManifestResolution) []ImageRemoteIndexManifest {
 	if len(resolution.IndexManifests) == 0 {
 		return nil
@@ -315,13 +410,14 @@ func copyRemoteIndexManifestDetail(dst *ImageRemoteIndexManifest, detail ImageRe
 	dst.BlobDescriptors = detail.BlobDescriptors
 	dst.BlobBytes = detail.BlobBytes
 	dst.MissingBlobs = detail.MissingBlobs
+	dst.manifestRaw = append([]byte(nil), detail.manifestRaw...)
 }
 
 func inspectRemoteIndexManifest(ctx context.Context, client ociimage.RegistryClient, ref ociimage.Reference, digest string, verifyBlobs bool) (ImageRemoteIndexManifest, error) {
 	childRef := ref
 	childRef.Tag = ""
 	childRef.Digest = digest
-	manifest, _, err := client.FetchManifestInfo(ctx, childRef)
+	manifest, resolution, err := client.FetchManifestInfo(ctx, childRef)
 	if err != nil {
 		return ImageRemoteIndexManifest{}, err
 	}
@@ -346,6 +442,7 @@ func inspectRemoteIndexManifest(ctx context.Context, client ociimage.RegistryCli
 			return detail, err
 		}
 	}
+	detail.manifestRaw = append([]byte(nil), resolution.ManifestData...)
 	return detail, nil
 }
 
