@@ -118,6 +118,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   transfer preflight, and base-reuse summary as structured data for automation.
 - `cove pull --dry-run --fetch-manifest` now fetches only the registry manifest
   for text or JSON pull preflight, preserving the network-free default dry-run.
+- `cove pull --platform <os/arch[/variant]>` and
+  `cove image inspect -remote -platform <os/arch[/variant]>` now select an OCI
+  image-index or Docker manifest-list child explicitly, and pull dry-runs report
+  the index digest, selected manifest digest, and selected platform.
 - `cove pull --dry-run --verify-blobs` now HEAD-audits registry blobs this host
   would need to fetch for cove-native, Tart, or Lume pulls without downloading
   blob bodies.

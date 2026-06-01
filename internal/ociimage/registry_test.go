@@ -147,6 +147,141 @@ func TestRegistryClientFetchManifestResolvesIndex(t *testing.T) {
 	}
 }
 
+func TestRegistryClientFetchManifestSelectsPlatform(t *testing.T) {
+	ref := Reference{Registry: "registry.example.com", Repository: "team/vm", Tag: "latest"}
+	darwinManifest := Manifest{
+		SchemaVersion: 2,
+		MediaType:     MediaTypeImageManifest,
+		Annotations: map[string]string{
+			CoveUncompressedDiskSize: "10",
+		},
+	}
+	linuxManifest := Manifest{
+		SchemaVersion: 2,
+		MediaType:     MediaTypeImageManifest,
+		Annotations: map[string]string{
+			CoveUncompressedDiskSize: "20",
+		},
+	}
+	darwinData, err := json.Marshal(darwinManifest)
+	if err != nil {
+		t.Fatalf("Marshal(darwin): %v", err)
+	}
+	linuxData, err := json.Marshal(linuxManifest)
+	if err != nil {
+		t.Fatalf("Marshal(linux): %v", err)
+	}
+	darwinDigest := digestBytes(darwinData)
+	linuxDigest := digestBytes(linuxData)
+	index := Index{
+		SchemaVersion: 2,
+		MediaType:     MediaTypeImageIndex,
+		Manifests: []IndexDescriptor{
+			{
+				Descriptor: Descriptor{MediaType: MediaTypeImageManifest, Size: int64(len(darwinData)), Digest: darwinDigest},
+				Platform:   &Platform{OS: "darwin", Architecture: "arm64"},
+			},
+			{
+				Descriptor: Descriptor{MediaType: MediaTypeImageManifest, Size: int64(len(linuxData)), Digest: linuxDigest},
+				Platform:   &Platform{OS: "linux", Architecture: "arm64"},
+			},
+		},
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v2/team/vm/manifests/latest":
+			w.Header().Set("Content-Type", MediaTypeImageIndex)
+			w.Header().Set("Docker-Content-Digest", "sha256:index")
+			if err := json.NewEncoder(w).Encode(index); err != nil {
+				t.Fatalf("Encode(index): %v", err)
+			}
+		case "/v2/team/vm/manifests/" + linuxDigest:
+			w.Header().Set("Content-Type", MediaTypeImageManifest)
+			w.Header().Set("Docker-Content-Digest", linuxDigest)
+			_, _ = w.Write(linuxData)
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	platform := Platform{OS: "linux", Architecture: "arm64"}
+	got, resolution, err := (RegistryClient{BaseURL: srv.URL, Platform: &platform}).FetchManifestInfo(context.Background(), ref)
+	if err != nil {
+		t.Fatalf("FetchManifestInfo(): %v", err)
+	}
+	if resolution.SelectedDigest != linuxDigest || resolution.Digest != linuxDigest {
+		t.Fatalf("resolution = %+v, want linux digest %s", resolution, linuxDigest)
+	}
+	if resolution.SelectedPlatform == nil || resolution.SelectedPlatform.OS != "linux" || resolution.SelectedPlatform.Architecture != "arm64" {
+		t.Fatalf("selected platform = %+v, want linux/arm64", resolution.SelectedPlatform)
+	}
+	if got.Annotations[CoveUncompressedDiskSize] != "20" {
+		t.Fatalf("disk size annotation = %q, want linux child", got.Annotations[CoveUncompressedDiskSize])
+	}
+}
+
+func TestRegistryClientFetchManifestRejectsMissingPlatform(t *testing.T) {
+	ref := Reference{Registry: "registry.example.com", Repository: "team/vm", Tag: "latest"}
+	index := Index{
+		SchemaVersion: 2,
+		MediaType:     MediaTypeImageIndex,
+		Manifests: []IndexDescriptor{{
+			Descriptor: Descriptor{MediaType: MediaTypeImageManifest, Size: 1, Digest: "sha256:" + strings.Repeat("a", 64)},
+			Platform:   &Platform{OS: "darwin", Architecture: "arm64"},
+		}},
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v2/team/vm/manifests/latest" {
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", MediaTypeImageIndex)
+		if err := json.NewEncoder(w).Encode(index); err != nil {
+			t.Fatalf("Encode(index): %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	platform := Platform{OS: "linux", Architecture: "arm64"}
+	_, _, err := (RegistryClient{BaseURL: srv.URL, Platform: &platform}).FetchManifestInfo(context.Background(), ref)
+	if err == nil || !strings.Contains(err.Error(), "platform linux/arm64") {
+		t.Fatalf("FetchManifestInfo() error = %v, want platform miss", err)
+	}
+}
+
+func TestParsePlatform(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      string
+		want    Platform
+		wantErr string
+	}{
+		{name: "os arch", in: "linux/arm64", want: Platform{OS: "linux", Architecture: "arm64"}},
+		{name: "variant", in: "darwin/arm64/v8", want: Platform{OS: "darwin", Architecture: "arm64", Variant: "v8"}},
+		{name: "case", in: "Linux/AARCH64", want: Platform{OS: "linux", Architecture: "aarch64"}},
+		{name: "empty", in: "", wantErr: "empty"},
+		{name: "too short", in: "linux", wantErr: "os/arch"},
+		{name: "empty component", in: "linux/", wantErr: "empty component"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParsePlatform(tt.in)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("ParsePlatform() error = %v, want %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParsePlatform(): %v", err)
+			}
+			if got.OS != tt.want.OS || got.Architecture != tt.want.Architecture || got.Variant != tt.want.Variant {
+				t.Fatalf("ParsePlatform() = %#v, want %#v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRegistryClientFetchManifestRejectsErrors(t *testing.T) {
 	ref := Reference{Registry: "registry.example.com", Repository: "team/vm"}
 	if _, _, err := (RegistryClient{}).FetchManifest(context.Background(), ref); err == nil {

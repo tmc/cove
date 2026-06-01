@@ -202,6 +202,49 @@ func TestInspectRemoteImageResolvesIndex(t *testing.T) {
 	}
 }
 
+func TestInspectRemoteImageResolvesIndexPlatform(t *testing.T) {
+	darwinManifest, _, _ := pullCompressedChunkedTestManifest(t, []byte("darwin"), 3)
+	linuxManifest, _, _ := pullCompressedChunkedTestManifest(t, []byte("linux-child"), 5)
+	darwinData, darwinDigest := pullTestManifestData(t, darwinManifest)
+	linuxData, linuxDigest := pullTestManifestData(t, linuxManifest)
+	index := ociimage.Index{
+		SchemaVersion: 2,
+		MediaType:     ociimage.MediaTypeImageIndex,
+		Manifests: []ociimage.IndexDescriptor{
+			{
+				Descriptor: ociimage.Descriptor{MediaType: ociimage.MediaTypeImageManifest, Size: int64(len(darwinData)), Digest: darwinDigest},
+				Platform:   &ociimage.Platform{OS: "darwin", Architecture: "arm64"},
+			},
+			{
+				Descriptor: ociimage.Descriptor{MediaType: ociimage.MediaTypeImageManifest, Size: int64(len(linuxData)), Digest: linuxDigest},
+				Platform:   &ociimage.Platform{OS: "linux", Architecture: "arm64"},
+			},
+		},
+	}
+	srv := newRemoteInspectMultiIndexRegistry(t, index, map[string][]byte{
+		darwinDigest: darwinData,
+		linuxDigest:  linuxData,
+	})
+	t.Cleanup(srv.Close)
+
+	out, err := InspectRemoteImage(context.Background(), "ghcr.io/me/dev-vm:v1", remoteInspectOptions{
+		RegistryBaseURL: srv.URL,
+		Platform:        "linux/arm64",
+	})
+	if err != nil {
+		t.Fatalf("InspectRemoteImage: %v", err)
+	}
+	if out.ManifestDigest != linuxDigest || out.SelectedDigest != linuxDigest {
+		t.Fatalf("digest = manifest:%q selected:%q, want linux %q", out.ManifestDigest, out.SelectedDigest, linuxDigest)
+	}
+	if !out.ResolvedFromIndex || out.SelectedPlatform != "linux/arm64" {
+		t.Fatalf("resolution = index:%v platform:%q, want linux/arm64", out.ResolvedFromIndex, out.SelectedPlatform)
+	}
+	if out.DiskSize != int64(len("linux-child")) {
+		t.Fatalf("disk size = %d, want linux child", out.DiskSize)
+	}
+}
+
 func TestInspectRemoteImageLumeManifest(t *testing.T) {
 	srv := newOCIDispatchRegistry(t, newLumeMockManifest())
 	t.Cleanup(srv.Close)
@@ -461,8 +504,9 @@ func TestMoveImageInspectFlagsFirst(t *testing.T) {
 		"-remote",
 		"-json",
 		"-verify-blobs",
+		"-platform", "linux/arm64",
 	}), " ")
-	want := "-remote -json -verify-blobs registry.example.com/team/vm:v1"
+	want := "-remote -json -verify-blobs -platform linux/arm64 registry.example.com/team/vm:v1"
 	if got != want {
 		t.Fatalf("args = %q, want %q", got, want)
 	}
@@ -543,6 +587,32 @@ func newRemoteInspectIndexRegistry(t *testing.T, index ociimage.Index, manifestD
 			w.Header().Set("Content-Type", ociimage.MediaTypeImageManifest)
 			w.Header().Set("Docker-Content-Digest", manifestDigest)
 			_, _ = w.Write(manifestData)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+}
+
+func newRemoteInspectMultiIndexRegistry(t *testing.T, index ociimage.Index, manifests map[string][]byte) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v2/me/dev-vm/manifests/v1":
+			w.Header().Set("Content-Type", ociimage.MediaTypeImageIndex)
+			w.Header().Set("Docker-Content-Digest", "sha256:index")
+			if err := json.NewEncoder(w).Encode(index); err != nil {
+				t.Errorf("encode index: %v", err)
+			}
+		case strings.HasPrefix(r.URL.Path, "/v2/me/dev-vm/manifests/"):
+			digest := strings.TrimPrefix(r.URL.Path, "/v2/me/dev-vm/manifests/")
+			data, ok := manifests[digest]
+			if !ok {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", ociimage.MediaTypeImageManifest)
+			w.Header().Set("Docker-Content-Digest", digest)
+			_, _ = w.Write(data)
 		default:
 			http.NotFound(w, r)
 		}

@@ -692,7 +692,7 @@ Local pre-baked VM image store at `~/.vz/images/<name>/<tag>/`. Snapshots a stop
 cove image build -from <vm> -tag <name[:tag]>
 cove image list [-json]
 cove image inspect <name[:tag]> [-json]
-cove image inspect -remote <registry/ref:tag|digest>... [-json] [-verify-blobs]
+cove image inspect -remote <registry/ref:tag|digest>... [-json] [-platform os/arch[/variant]] [-verify-blobs]
 cove image verify <name[:tag]> [-strict] [-json] [-quiet] [-newer-than <duration>]
 cove image push <name[:tag]> <file> [-gzip]
 cove image load <file> [-tag <name[:tag]>] [-force]
@@ -708,7 +708,7 @@ cove image rm <name[:tag]>
 |------------|-------------|
 | `build -from <vm> -tag <ref>` | Snapshot a stopped VM into the image store. The disk is APFS-clonefiled (no copy), and the manifest records whether the source disk is raw or ASIF. vmstate is excluded; cold-boot only. |
 | `list [-json]` | Show stored images with size + creation time + source VM. `-json` emits a JSON array; empty output is `[]`. |
-| `inspect <ref> [-json]` | Print manifest (size, format, sha256, base image, source manifest digest, created-at, hw.model fingerprint) plus the live downstream fork list. `-json` emits a stable schema for tooling. With `-remote <registry/ref:tag\|digest>...`, fetch only registry metadata and summarize cove-native, Tart, Lume, or cove image-store artifacts before pulling, including index/list resolution, selected platform, cove disk format, pull plan, verification posture, and cove base-chain audit results with disk-format/size/chunk compatibility plus reusable bytes. Add `-verify-blobs` to HEAD every remote config/layer descriptor and report missing blobs without downloading disk content. Multiple remote refs are inspected as a batch; `-json` emits an array only in batch mode. |
+| `inspect <ref> [-json]` | Print manifest (size, format, sha256, base image, source manifest digest, created-at, hw.model fingerprint) plus the live downstream fork list. `-json` emits a stable schema for tooling. With `-remote <registry/ref:tag\|digest>...`, fetch only registry metadata and summarize cove-native, Tart, Lume, or cove image-store artifacts before pulling, including index/list resolution, selected platform, cove disk format, pull plan, verification posture, and cove base-chain audit results with disk-format/size/chunk compatibility plus reusable bytes. Add `-platform os/arch[/variant]` to select a specific OCI image-index or Docker manifest-list child. Add `-verify-blobs` to HEAD every remote config/layer descriptor and report missing blobs without downloading disk content. Multiple remote refs are inspected as a batch; `-json` emits an array only in batch mode. |
 | `verify <ref> [-strict] [-json] [-quiet] [-newer-than D]` | Check freshness, provenance, and layout. Warns on stale or legacy manifests; `-strict` turns missing `execattach.v3` into a failure; `-quiet` prints only on failure for CI; `-newer-than` fails stale images such as `24h` or `7d`. |
 | `push <ref> <file> [-gzip]` | Tar an image directory to a single file (atomic temp + rename). `-gzip` compresses; the load side sniffs `.gz` / `.tgz` automatically. Pass `-` as the file to stream the tarball to stdout (refuses a TTY). |
 | `load <file> [-tag <ref>] [-force]` | Extract a tarball into the image store. Tar entries are restricted to `manifest.json`, `disk.img`, `aux.img`, `hw.model`, `machine.id` (TypeReg only); zip-slip / symlink / oversize entries are refused before any filesystem write. `-tag` rewrites the manifest's name+tag on import; `-force` overwrites an existing ref. `ParentImage` is **not** preserved across hosts -- a loaded image becomes a fresh root for forks on the destination. Pass `-` as the file to read the tarball from stdin (refuses a TTY); gzip framing is auto-detected via magic bytes. |
@@ -723,6 +723,7 @@ cove image rm <name[:tag]>
 cove image build -from macos-base -tag macos-runner:14.5
 cove image inspect macos-runner:14.5 -json
 cove image inspect -remote registry.example/team/macos-runner:14.5 -json
+cove image inspect -remote registry.example/team/runner:latest -platform linux/arm64 -json
 cove image inspect -remote registry.example/team/macos-runner:14.5 registry.example/team/linux-runner:latest -json
 cove image push macos-runner:14.5 /tmp/macos-runner.tar.gz -gzip
 cove image load /tmp/macos-runner.tar.gz -tag macos-runner:imported
@@ -1410,7 +1411,12 @@ manifest JSON or `--fetch-manifest` to fetch only registry manifest metadata
 without downloading disk blobs. Cove-native dry-runs also print the manifest's
 disk format and, when a compatible local or cached base disk is available, the
 reusable chunks, bytes, disk format, and source base path. Manifest-backed
-cove-native dry-runs also report disk chunks already covered by the local
+dry-runs that resolve an OCI image index or Docker manifest list also print the
+index digest, selected manifest digest, and selected platform; use
+`--platform os/arch[/variant]` to force the child manifest for mixed macOS/Linux
+catalogs.
+
+Cove-native dry-runs also report disk chunks already covered by the local
 content store, disk chunks still requiring registry fetches, sparse zero
 chunks, and metadata blob store/fetch counts. Add `--json` to emit the dry-run
 plan as structured data for CI or fleet placement decisions. Add
@@ -1433,10 +1439,12 @@ cove pull <ref> [flags]
 | `--verify-blobs` | false | HEAD registry blobs during dry-run |
 | `--resume` | false | Continue an interrupted pull from `disk.img.partial` |
 | `--manifest <path>` | | Local OCI manifest JSON instead of fetching the registry |
+| `--platform os/arch[/variant]` | auto | Select an OCI image-index or Docker manifest-list child |
 
 ```bash
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run --fetch-manifest
+cove pull ghcr.io/example/runner:latest --dry-run --fetch-manifest --platform linux/arm64
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run --fetch-manifest --json
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run --fetch-manifest --verify-blobs --json
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run --json --manifest manifest.json

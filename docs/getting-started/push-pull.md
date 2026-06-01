@@ -22,10 +22,12 @@ cove pull <ref> --dry-run                         # validate the pull target
 cove pull <ref> --as my-macos --dry-run           # name the new VM
 cove pull <ref> --dry-run --manifest manifest.json # validate a local manifest
 cove pull <ref> --dry-run --fetch-manifest        # fetch registry metadata only
+cove pull <ref> --dry-run --fetch-manifest --platform linux/arm64 # pick an index child
 cove pull <ref> --dry-run --json --manifest manifest.json # machine-readable pull plan
 cove pull <ref> --dry-run --fetch-manifest --json # machine-readable registry pull plan
 cove pull <ref> --dry-run --fetch-manifest --verify-blobs # HEAD referenced blobs
 cove image inspect -remote <ref> -json            # inspect registry metadata only
+cove image inspect -remote <ref> -platform linux/arm64 -json # inspect one platform
 cove image inspect -remote -verify-blobs <ref>    # HEAD every referenced blob
 cove image inspect -remote <ref> <ref> -json      # audit several registry refs
 ```
@@ -33,8 +35,10 @@ cove image inspect -remote <ref> <ref> -json      # audit several registry refs
 Current implementation supports registry pulls for cove-native LZ4 manifests,
 Tart manifests, and Lume tar-split manifests. Tags may point directly at an
 image manifest or at an OCI image index / Docker manifest list; cove resolves
-the index to a same-repository image manifest before parsing. Use
-`cove image inspect -remote` to fetch the registry manifest metadata without
+the index to a same-repository image manifest before parsing. Add
+`--platform os/arch[/variant]` on `cove pull` or `-platform os/arch[/variant]`
+on remote inspect to select a specific child for mixed macOS/Linux catalogs.
+Use `cove image inspect -remote` to fetch the registry manifest metadata without
 pulling disks. Multiple refs are inspected as a batch, with JSON emitted as an
 array for private catalog audits. Remote inspect reports index/list resolution
 details, the selected platform, the disk format for cove-native and image-store
@@ -48,7 +52,9 @@ manifest JSON, or `--fetch-manifest` to fetch only the registry manifest without
 downloading disk blobs. When a cove-native manifest is available during
 `--dry-run`, cove also checks whether a compatible local or registry-cache base
 disk can be reused and prints the reusable chunks, bytes, disk format, and
-source path. The same dry-run also reports cove-native transfer coverage: disk
+source path. Manifest-backed dry-runs that resolve an index also print the
+index digest, selected manifest digest, and selected platform. The same dry-run
+also reports cove-native transfer coverage: disk
 chunks already in the local content store, disk chunks that still need registry
 fetches, sparse zero chunks, and metadata blobs already present or still needed.
 Add `--json` to emit that dry-run as structured data for CI jobs or fleet

@@ -27,16 +27,18 @@ const (
 )
 
 type pullOptions struct {
-	As              string
-	DryRun          bool
-	JSON            bool
-	FetchManifest   bool
-	VerifyBlobs     bool
-	Resume          bool
-	ManifestPath    string
-	RegistryBaseURL string
-	RegistryToken   string
-	StoreDir        string
+	As               string
+	DryRun           bool
+	JSON             bool
+	FetchManifest    bool
+	VerifyBlobs      bool
+	Resume           bool
+	ManifestPath     string
+	Platform         string
+	RegistryBaseURL  string
+	RegistryToken    string
+	StoreDir         string
+	registryPlatform *ociimage.Platform
 }
 
 type pullPlan struct {
@@ -46,6 +48,7 @@ type pullPlan struct {
 	Manifest             ociimage.ParsedManifest
 	ManifestRaw          []byte
 	ManifestDigest       string
+	ManifestResolution   ociimage.ManifestResolution
 	BaseReusePath        string
 	BaseReuseDiskFormat  string
 	BaseReuseChunks      int
@@ -73,25 +76,30 @@ type pullBlobDescriptor struct {
 }
 
 type pullDryRunOutput struct {
-	Ref              string                    `json:"ref"`
-	VM               string                    `json:"vm"`
-	Target           string                    `json:"target"`
-	ManifestProvided bool                      `json:"manifest_provided"`
-	ManifestDigest   string                    `json:"manifest_digest,omitempty"`
-	Format           string                    `json:"format,omitempty"`
-	DiskSize         int64                     `json:"disk_size,omitempty"`
-	DiskFormat       string                    `json:"disk_format,omitempty"`
-	Chunks           int                       `json:"chunks,omitempty"`
-	MetadataBlobs    int                       `json:"metadata_blobs,omitempty"`
-	DiskParts        int                       `json:"disk_parts,omitempty"`
-	DiskLayers       int                       `json:"disk_layers,omitempty"`
-	CompressedBytes  int64                     `json:"compressed_bytes,omitempty"`
-	NVRAMBytes       int64                     `json:"nvram_bytes,omitempty"`
-	ConfigBytes      int64                     `json:"config_bytes,omitempty"`
-	UploadTime       string                    `json:"upload_time,omitempty"`
-	Transfer         *pullDryRunTransferOutput `json:"transfer,omitempty"`
-	BaseReuse        *pullBaseReuseOutput      `json:"base_reuse,omitempty"`
-	BlobAudit        *pullBlobAuditOutput      `json:"blob_audit,omitempty"`
+	Ref               string                    `json:"ref"`
+	VM                string                    `json:"vm"`
+	Target            string                    `json:"target"`
+	ManifestProvided  bool                      `json:"manifest_provided"`
+	ManifestDigest    string                    `json:"manifest_digest,omitempty"`
+	ResolvedFromIndex bool                      `json:"resolved_from_index,omitempty"`
+	IndexDigest       string                    `json:"index_digest,omitempty"`
+	IndexMediaType    string                    `json:"index_media_type,omitempty"`
+	SelectedDigest    string                    `json:"selected_digest,omitempty"`
+	SelectedPlatform  string                    `json:"selected_platform,omitempty"`
+	Format            string                    `json:"format,omitempty"`
+	DiskSize          int64                     `json:"disk_size,omitempty"`
+	DiskFormat        string                    `json:"disk_format,omitempty"`
+	Chunks            int                       `json:"chunks,omitempty"`
+	MetadataBlobs     int                       `json:"metadata_blobs,omitempty"`
+	DiskParts         int                       `json:"disk_parts,omitempty"`
+	DiskLayers        int                       `json:"disk_layers,omitempty"`
+	CompressedBytes   int64                     `json:"compressed_bytes,omitempty"`
+	NVRAMBytes        int64                     `json:"nvram_bytes,omitempty"`
+	ConfigBytes       int64                     `json:"config_bytes,omitempty"`
+	UploadTime        string                    `json:"upload_time,omitempty"`
+	Transfer          *pullDryRunTransferOutput `json:"transfer,omitempty"`
+	BaseReuse         *pullBaseReuseOutput      `json:"base_reuse,omitempty"`
+	BlobAudit         *pullBlobAuditOutput      `json:"blob_audit,omitempty"`
 }
 
 type pullDryRunTransferOutput struct {
@@ -144,6 +152,9 @@ func handlePull(env commandEnv, args []string) error {
 	if opts.VerifyBlobs && !opts.FetchManifest && opts.ManifestPath == "" {
 		return fmt.Errorf("cove pull: --verify-blobs requires --fetch-manifest or --manifest")
 	}
+	if err := preparePullOptions(&opts); err != nil {
+		return err
+	}
 	plan, err := buildPullPlan(pos[0], opts)
 	if err != nil {
 		return err
@@ -184,6 +195,7 @@ func parsePullArgs(args []string, w io.Writer) (pullOptions, []string, error) {
 	fs.BoolVar(&opts.VerifyBlobs, "verify-blobs", false, "HEAD registry blobs during dry-run")
 	fs.BoolVar(&opts.Resume, "resume", false, "continue an interrupted pull from disk.img.partial")
 	fs.StringVar(&opts.ManifestPath, "manifest", "", "local OCI manifest JSON instead of fetching the registry")
+	fs.StringVar(&opts.Platform, "platform", "", "select image-index platform (os/arch[/variant])")
 	fs.Usage = func() { printPullUsage(w) }
 	if err := fs.Parse(movePullFlagsFirst(args)); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -203,10 +215,14 @@ func movePullFlagsFirst(args []string) []string {
 		"verify-blobs":   false,
 		"resume":         false,
 		"manifest":       true,
+		"platform":       true,
 	})
 }
 
 func buildPullPlan(refText string, opts pullOptions) (*pullPlan, error) {
+	if err := preparePullOptions(&opts); err != nil {
+		return nil, err
+	}
 	ref, err := ociimage.ParseReference(refText)
 	if err != nil {
 		return nil, fmt.Errorf("cove pull: invalid ref %q: %w", refText, err)
@@ -227,9 +243,10 @@ func buildPullPlan(refText string, opts pullOptions) (*pullPlan, error) {
 	}
 
 	var (
-		parsed         ociimage.ParsedManifest
-		manifestDigest string
-		manifestRaw    []byte
+		parsed             ociimage.ParsedManifest
+		manifestDigest     string
+		manifestRaw        []byte
+		manifestResolution ociimage.ManifestResolution
 	)
 	if opts.ManifestPath != "" {
 		parsed, manifestDigest, err = readPullManifest(opts.ManifestPath)
@@ -244,18 +261,20 @@ func buildPullPlan(refText string, opts pullOptions) (*pullPlan, error) {
 	} else {
 		ctx, cancel := context.WithTimeout(context.Background(), pullManifestFetchTimeout)
 		defer cancel()
-		parsed, manifestDigest, manifestRaw, err = fetchPullManifest(ctx, ref, opts)
+		parsed, manifestResolution, manifestRaw, err = fetchPullManifest(ctx, ref, opts)
 		if err != nil {
 			return nil, err
 		}
+		manifestDigest = manifestResolution.Digest
 	}
 	plan := &pullPlan{
-		Ref:            ref,
-		VMName:         name,
-		VMDir:          vmDirectory,
-		Manifest:       parsed,
-		ManifestRaw:    manifestRaw,
-		ManifestDigest: manifestDigest,
+		Ref:                ref,
+		VMName:             name,
+		VMDir:              vmDirectory,
+		Manifest:           parsed,
+		ManifestRaw:        manifestRaw,
+		ManifestDigest:     manifestDigest,
+		ManifestResolution: manifestResolution,
 	}
 	if opts.DryRun {
 		if err := planPullDryRunReuse(plan, opts); err != nil {
@@ -267,6 +286,18 @@ func buildPullPlan(refText string, opts pullOptions) (*pullPlan, error) {
 		}
 	}
 	return plan, nil
+}
+
+func preparePullOptions(opts *pullOptions) error {
+	if opts == nil || opts.Platform == "" || opts.registryPlatform != nil {
+		return nil
+	}
+	platform, err := ociimage.ParsePlatform(opts.Platform)
+	if err != nil {
+		return fmt.Errorf("cove pull: --platform: %w", err)
+	}
+	opts.registryPlatform = &platform
+	return nil
 }
 
 func checkPullTarget(vmDirectory string, resume bool) error {
@@ -299,22 +330,22 @@ func readPullManifest(path string) (ociimage.ParsedManifest, string, error) {
 	return out, digestData(data), nil
 }
 
-func fetchPullManifest(ctx context.Context, ref ociimage.Reference, opts pullOptions) (ociimage.ParsedManifest, string, []byte, error) {
+func fetchPullManifest(ctx context.Context, ref ociimage.Reference, opts pullOptions) (ociimage.ParsedManifest, ociimage.ManifestResolution, []byte, error) {
 	var out ociimage.ParsedManifest
 	client := pullRegistryClient(ref, opts)
-	manifest, digest, err := client.FetchManifest(ctx, ref)
+	manifest, resolution, err := client.FetchManifestInfo(ctx, ref)
 	if err != nil {
-		return out, "", nil, err
+		return out, ociimage.ManifestResolution{}, nil, err
 	}
 	out, err = ociimage.ParseManifest(manifest)
 	if err != nil {
-		return out, "", nil, fmt.Errorf("parse registry manifest: %w", err)
+		return out, ociimage.ManifestResolution{}, nil, fmt.Errorf("parse registry manifest: %w", err)
 	}
 	data, err := json.Marshal(manifest)
 	if err != nil {
-		return out, "", nil, fmt.Errorf("encode registry manifest: %w", err)
+		return out, ociimage.ManifestResolution{}, nil, fmt.Errorf("encode registry manifest: %w", err)
 	}
-	return out, digest, data, nil
+	return out, resolution, data, nil
 }
 
 func recordPullDryRunImportBlobs(plan *pullPlan) {
@@ -641,6 +672,7 @@ func pullRegistryClient(ref ociimage.Reference, opts pullOptions) ociimage.Regis
 		BaseURL:       opts.RegistryBaseURL,
 		Authorization: registryAuthorization(ref, opts.RegistryToken),
 		TokenCache:    ociimage.NewRegistryTokenCache(),
+		Platform:      opts.registryPlatform,
 	}
 }
 
@@ -698,6 +730,7 @@ func printPullDryRun(w io.Writer, plan *pullPlan) {
 	if plan.ManifestDigest != "" {
 		fmt.Fprintf(w, "  manifest digest: %s\n", plan.ManifestDigest)
 	}
+	printPullManifestResolution(w, plan)
 	switch plan.Manifest.Format {
 	case ociimage.FormatLume:
 		fmt.Fprintf(w, "  format: lume (tar-split)\n")
@@ -748,6 +781,22 @@ func printPullDryRun(w io.Writer, plan *pullPlan) {
 	printPullBaseReuse(w, plan)
 }
 
+func printPullManifestResolution(w io.Writer, plan *pullPlan) {
+	if plan == nil || plan.ManifestResolution.IndexDigest == "" {
+		return
+	}
+	fmt.Fprintf(w, "  index digest: %s\n", plan.ManifestResolution.IndexDigest)
+	if plan.ManifestResolution.IndexMediaType != "" {
+		fmt.Fprintf(w, "  index media: %s\n", plan.ManifestResolution.IndexMediaType)
+	}
+	if plan.ManifestResolution.SelectedDigest != "" {
+		fmt.Fprintf(w, "  selected digest: %s\n", plan.ManifestResolution.SelectedDigest)
+	}
+	if platform := remotePlatformString(plan.ManifestResolution.SelectedPlatform); platform != "" {
+		fmt.Fprintf(w, "  platform: %s\n", platform)
+	}
+}
+
 func printPullDryRunJSON(w io.Writer, plan *pullPlan) error {
 	data, err := json.MarshalIndent(pullDryRunOutputFromPlan(plan), "", "  ")
 	if err != nil {
@@ -766,6 +815,13 @@ func pullDryRunOutputFromPlan(plan *pullPlan) pullDryRunOutput {
 		Target:           plan.VMDir,
 		ManifestProvided: pullPlanHasManifest(plan),
 		ManifestDigest:   plan.ManifestDigest,
+	}
+	if plan.ManifestResolution.IndexDigest != "" {
+		out.ResolvedFromIndex = true
+		out.IndexDigest = plan.ManifestResolution.IndexDigest
+		out.IndexMediaType = plan.ManifestResolution.IndexMediaType
+		out.SelectedDigest = plan.ManifestResolution.SelectedDigest
+		out.SelectedPlatform = remotePlatformString(plan.ManifestResolution.SelectedPlatform)
 	}
 	if !out.ManifestProvided {
 		return out
@@ -916,5 +972,7 @@ Flags:
   --fetch-manifest     Fetch registry manifest during dry-run
   --verify-blobs       HEAD registry blobs during dry-run
   --resume             Continue an interrupted pull from disk.img.partial
-  --manifest <path>    Local OCI manifest JSON instead of fetching the registry`)
+  --manifest <path>    Local OCI manifest JSON instead of fetching the registry
+  --platform <os/arch[/variant]>
+                       Select an image-index platform`)
 }

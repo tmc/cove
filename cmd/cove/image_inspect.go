@@ -168,6 +168,7 @@ func runImageInspect(env commandEnv, args []string) error {
 	diff := fs.Bool("diff", false, "compare two image refs")
 	remote := fs.Bool("remote", false, "inspect a registry manifest without pulling")
 	verifyBlobs := fs.Bool("verify-blobs", false, "verify remote config/layer descriptors with HEAD requests")
+	platform := fs.String("platform", "", "select remote image-index platform (os/arch[/variant])")
 	if err := parseFlagsOrHelp(fs, moveImageInspectFlagsFirst(args)); err != nil {
 		if errors.Is(err, errFlagHelp) {
 			return nil
@@ -176,6 +177,9 @@ func runImageInspect(env commandEnv, args []string) error {
 	}
 	if *verifyBlobs && !*remote {
 		return fmt.Errorf("image inspect: -verify-blobs requires -remote")
+	}
+	if *platform != "" && !*remote {
+		return fmt.Errorf("image inspect: -platform requires -remote")
 	}
 	if *remote {
 		if *diff {
@@ -187,7 +191,10 @@ func runImageInspect(env commandEnv, args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), remoteInspectTimeout)
 		defer cancel()
 		if fs.NArg() == 1 {
-			out, err := InspectRemoteImage(ctx, fs.Arg(0), remoteInspectOptions{VerifyBlobs: *verifyBlobs})
+			out, err := InspectRemoteImage(ctx, fs.Arg(0), remoteInspectOptions{
+				VerifyBlobs: *verifyBlobs,
+				Platform:    *platform,
+			})
 			if err != nil {
 				return err
 			}
@@ -196,7 +203,10 @@ func runImageInspect(env commandEnv, args []string) error {
 			}
 			return writeRemoteInspectText(env.Stdout, out)
 		}
-		out, err := InspectRemoteImages(ctx, fs.Args(), remoteInspectOptions{VerifyBlobs: *verifyBlobs})
+		out, err := InspectRemoteImages(ctx, fs.Args(), remoteInspectOptions{
+			VerifyBlobs: *verifyBlobs,
+			Platform:    *platform,
+		})
 		if *asJSON {
 			if writeErr := writeRemoteInspectJSONList(env.Stdout, out); writeErr != nil {
 				return writeErr
@@ -271,6 +281,7 @@ func moveImageInspectFlagsFirst(args []string) []string {
 		"diff":         false,
 		"remote":       false,
 		"verify-blobs": false,
+		"platform":     true,
 	})
 }
 
@@ -308,7 +319,8 @@ Flags:
   -json          emit machine-readable JSON
   -diff          compare two image refs
   -remote        inspect a registry manifest without pulling blobs
-  -verify-blobs  with -remote, HEAD every config/layer descriptor`)
+  -verify-blobs  with -remote, HEAD every config/layer descriptor
+  -platform P    with -remote, select image-index platform os/arch[/variant]`)
 }
 
 func writeInspectJSON(w io.Writer, out ImageInspectOutput) error {

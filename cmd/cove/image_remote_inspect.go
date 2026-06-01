@@ -20,6 +20,7 @@ type remoteInspectOptions struct {
 	RegistryBaseURL string
 	RegistryToken   string
 	VerifyBlobs     bool
+	Platform        string
 }
 
 type ImageRemoteInspectOutput struct {
@@ -107,10 +108,10 @@ func InspectRemoteImage(ctx context.Context, refText string, opts remoteInspectO
 	if ref.Tag == "" && ref.Digest == "" {
 		return ImageRemoteInspectOutput{}, fmt.Errorf("image inspect remote: ref %q must include a tag or digest", refText)
 	}
-	client := pullRegistryClient(ref, pullOptions{
-		RegistryBaseURL: opts.RegistryBaseURL,
-		RegistryToken:   opts.RegistryToken,
-	})
+	client, err := remoteInspectRegistryClient(ref, opts)
+	if err != nil {
+		return ImageRemoteInspectOutput{}, err
+	}
 	manifest, resolution, err := client.FetchManifestInfo(ctx, ref)
 	if err != nil {
 		return ImageRemoteInspectOutput{}, err
@@ -130,6 +131,23 @@ func InspectRemoteImage(ctx context.Context, refText string, opts remoteInspectO
 	out = inspectRemoteVMManifest(parsed, out)
 	out = maybeAuditRemoteBaseChain(ctx, client, ref, parsed, out)
 	return maybeAuditRemoteBlobs(ctx, client, ref, manifest, out, opts)
+}
+
+func remoteInspectRegistryClient(ref ociimage.Reference, opts remoteInspectOptions) (ociimage.RegistryClient, error) {
+	var platform *ociimage.Platform
+	if opts.Platform != "" {
+		p, err := ociimage.ParsePlatform(opts.Platform)
+		if err != nil {
+			return ociimage.RegistryClient{}, fmt.Errorf("image inspect remote: -platform: %w", err)
+		}
+		platform = &p
+	}
+	return ociimage.RegistryClient{
+		BaseURL:       opts.RegistryBaseURL,
+		Authorization: registryAuthorization(ref, opts.RegistryToken),
+		TokenCache:    ociimage.NewRegistryTokenCache(),
+		Platform:      platform,
+	}, nil
 }
 
 func remoteInspectBase(ref ociimage.Reference, resolution ociimage.ManifestResolution, manifest ociimage.Manifest) ImageRemoteInspectOutput {

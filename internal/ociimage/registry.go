@@ -19,6 +19,7 @@ type RegistryClient struct {
 	Token         string
 	Authorization string
 	TokenCache    *RegistryTokenCache
+	Platform      *Platform
 }
 
 // RegistryTokenCache stores registry bearer tokens between requests.
@@ -100,7 +101,7 @@ func (c RegistryClient) fetchManifestTarget(ctx context.Context, ref Reference, 
 	if index, ok, err := parseRegistryIndex(data); err != nil {
 		return manifest, ManifestResolution{}, err
 	} else if ok {
-		child, err := selectRegistryIndexManifest(index)
+		child, err := selectRegistryIndexManifest(index, c.Platform)
 		if err != nil {
 			return manifest, ManifestResolution{}, err
 		}
@@ -167,7 +168,21 @@ func parseRegistryIndex(data []byte) (Index, bool, error) {
 	return index, true, nil
 }
 
-func selectRegistryIndexManifest(index Index) (IndexDescriptor, error) {
+func selectRegistryIndexManifest(index Index, platform *Platform) (IndexDescriptor, error) {
+	if platform != nil {
+		for _, desc := range index.Manifests {
+			if desc.Digest == "" {
+				continue
+			}
+			if desc.MediaType != "" && desc.MediaType != MediaTypeImageManifest && desc.MediaType != MediaTypeDockerManifest {
+				continue
+			}
+			if registryIndexPlatformMatches(desc.Platform, platform) {
+				return desc, nil
+			}
+		}
+		return IndexDescriptor{}, fmt.Errorf("fetch manifest: image index has no OCI image manifest for platform %s", platformSpecString(*platform))
+	}
 	var best IndexDescriptor
 	bestScore := -1
 	for _, desc := range index.Manifests {
@@ -189,12 +204,28 @@ func selectRegistryIndexManifest(index Index) (IndexDescriptor, error) {
 	return best, nil
 }
 
+func registryIndexPlatformMatches(got, want *Platform) bool {
+	if got == nil || want == nil {
+		return false
+	}
+	if normalizePlatformOS(got.OS) != normalizePlatformOS(want.OS) {
+		return false
+	}
+	if normalizePlatformArch(got.Architecture) != normalizePlatformArch(want.Architecture) {
+		return false
+	}
+	if want.Variant != "" && !strings.EqualFold(got.Variant, want.Variant) {
+		return false
+	}
+	return true
+}
+
 func registryIndexPlatformScore(platform *Platform) int {
 	if platform == nil {
 		return 10
 	}
-	osName := strings.ToLower(platform.OS)
-	arch := strings.ToLower(platform.Architecture)
+	osName := normalizePlatformOS(platform.OS)
+	arch := normalizePlatformArch(platform.Architecture)
 	switch {
 	case (osName == "darwin" || osName == "macos") && (arch == "arm64" || arch == "aarch64"):
 		return 50
@@ -208,6 +239,65 @@ func registryIndexPlatformScore(platform *Platform) int {
 		return 10
 	default:
 		return 1
+	}
+}
+
+// ParsePlatform parses an OCI platform in os/arch or os/arch/variant form.
+func ParsePlatform(value string) (Platform, error) {
+	var out Platform
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return out, fmt.Errorf("platform is empty")
+	}
+	parts := strings.Split(value, "/")
+	if len(parts) < 2 || len(parts) > 3 {
+		return out, fmt.Errorf("platform %q must be os/arch or os/arch/variant", value)
+	}
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+		if parts[i] == "" {
+			return out, fmt.Errorf("platform %q has an empty component", value)
+		}
+	}
+	out.OS = strings.ToLower(parts[0])
+	out.Architecture = strings.ToLower(parts[1])
+	if len(parts) == 3 {
+		out.Variant = strings.ToLower(parts[2])
+	}
+	return out, nil
+}
+
+func platformSpecString(platform Platform) string {
+	var b strings.Builder
+	b.WriteString(platform.OS)
+	if platform.OS != "" || platform.Architecture != "" {
+		b.WriteByte('/')
+	}
+	b.WriteString(platform.Architecture)
+	if platform.Variant != "" {
+		b.WriteByte('/')
+		b.WriteString(platform.Variant)
+	}
+	return b.String()
+}
+
+func normalizePlatformOS(value string) string {
+	switch strings.ToLower(value) {
+	case "macos":
+		return "darwin"
+	default:
+		return strings.ToLower(value)
+	}
+}
+
+func normalizePlatformArch(value string) string {
+	switch strings.ToLower(value) {
+	case "aarch64":
+		return "arm64"
+	case "x86_64":
+		return "amd64"
+	default:
+		return strings.ToLower(value)
 	}
 }
 

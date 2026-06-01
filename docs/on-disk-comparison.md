@@ -27,7 +27,7 @@ delegates the disk/runtime work to `tart` or `vetu`.
 | **Layout** | `~/.vz/vms/<name>/`; images under `~/.vz/images/<name>/<tag>/`; OCI blobs/manifests in the content store | `<home>/vms/`; OCI cache under `<cache>/OCIs/<host>/<digest>` | configurable `LumeSettings.vmLocations` | generated worker VM dirs such as `orchard-<name>-<uid>-<restartCount>` |
 | **Quota / size cap** | live APFS directory quota with runtime verb probe and Darwin fallback; persisted in `vmDir/quotas.json` (`internal/vmquota`) | no live cap; `tart set --disk-size` grows disk | none found | passes runtime disk-size knobs; no independent live cap |
 | **VM-state snapshot** | VM-state snapshots plus disk clone snapshots (`snapshots.go`, `disk-snapshots/`) | suspend state only | none found | none found |
-| **Distribution** | OCI push/pull for cove images with OCI index / Docker manifest-list resolution and registry-visible disk format annotations; compatibility push/pull for tart and lume formats; remote registry inspect for cove/Tart/Lume/cove-image artifacts before pull; Lume tar-split pulls prefetch parts concurrently, preserve part order, and verify descriptor size/digest; OCI build-cache import/export; local image tar transfer for fleet (`internal/ociimage/registry.go`, `cmd/cove/push.go`, `pull.go`, `image_remote_inspect.go`, `lume_pull.go`, `fleet_image.go`) | first-class OCI registry push/pull | first-class OCI registry push/pull | pulls images onto workers through the chosen runtime |
+| **Distribution** | OCI push/pull for cove images with OCI index / Docker manifest-list resolution, explicit `--platform` child selection, pull dry-run index-selection reports, and registry-visible disk format annotations; compatibility push/pull for tart and lume formats; remote registry inspect for cove/Tart/Lume/cove-image artifacts before pull; Lume tar-split pulls prefetch parts concurrently, preserve part order, and verify descriptor size/digest; OCI build-cache import/export; local image tar transfer for fleet (`internal/ociimage/registry.go`, `cmd/cove/push.go`, `pull.go`, `image_remote_inspect.go`, `lume_pull.go`, `fleet_image.go`) | first-class OCI registry push/pull | first-class OCI registry push/pull | pulls images onto workers through the chosen runtime |
 | **Base/delta reuse** | cove-format chunked disks support `--base`, blob mount/reuse, base-manifest annotations, resumable pulls, raw/ASIF-aware local base-disk reuse, persistent registry-base materialization shared by builds and pulls, and portable build-cache layers via `--cache-from` / `--cache-to` | local layer cache with digest ranges and APFS share checks | legacy chunk annotations and concurrent reassembly | runtime-dependent |
 | **Placement** | `fleet run --policy=least-loaded|image-affinity`; image-affinity can pre-stage a local image to the selected host; `fleet run --all` fans out concurrently to every non-cordoned host and pre-stages `-fork-from` only to cold targets; cordon/uncordon skips hosts for placement; short local placement leases count as pending load; `fleet health` reports remote reachability/version; repeated SSH operations reuse OpenSSH ControlMaster sockets; initial `cove-fleetd` control-plane boundary now accepts `coved -fleet-url` worker register/heartbeat/report dial-ins, tracks worker image refs, persists leased controller assignments, places assignments with least-loaded, image-affinity, or bin-pack policy plus anti-affinity hints, returns retained top-k placement plans, reconciles stale workers and expired leases, supports controller-side worker cordon/uncordon/drain and operations-summary rollups, queues fleet image-preparation pulls, image-GC assignments, lifecycle-policy assignments, and storage budget/prune assignments onto matching workers, reconciles fork warm-pool quotas into `cove run -fork-from` assignments, probes warm slots with `cove shell` before marking them ready, claims ready warm slots into same-worker guest exec assignments, stops claimed warm VMs after the guest command returns, downsizes warm pools by canceling pending surplus slots or queueing same-worker stop assignments for started surplus slots, exposes named warm-pool get/delete lifecycle operations with graceful claimed-slot deferral and per-pool lifecycle status counts, exposes hosted-style `/v1/sandboxes` create/list/filter/page/get/delete/start/restart/stop/wait/lease/exec/control/events/reports/metering handles over fork-run assignments with ready probes, terminal waits, stop cleanup, retained-VM starts, restarts, enforced TTL-based exclusive modify leases, same-worker shell exec, same-worker screenshot/key/text/mouse control proxying, and per-resource active-interval metering records, persists filterable/paginated hash-chained controller audit events with global verification, binds service-account bearer tokens to audit actors, scopes assignment/warm-pool/sandbox/service-account/audit/metering resources by service-account namespace, enforces `viewer`/`operator`/`admin` service-account roles, ships OpenAI Agents Python `SandboxRunConfig` and public Go `agentsandbox` local/cloud clients with hosted lifecycle, paginated inventory, sandbox event/report history, metering, and GUI event support, renews active `cove` assignments, and executes leased `cove` assignments asynchronously on workers (`cmd/cove/fleet_run.go`, `cmd/cove-fleetd`, `cmd/coved`, `internal/fleetcontrol`, `internal/coved`, `agentsandbox`, `adapters/openai-agents-python`) | none | none | full controller/scheduler model |
 
@@ -56,8 +56,9 @@ delegates the disk/runtime work to `tart` or `vetu`.
    before extraction. `cove image inspect -remote` fetches only registry
    metadata and identifies cove-native, Tart, Lume, and cove image-store
    artifacts before a disk pull, including index/list resolution details,
-   selected platform, disk format for cove-native/image-store artifacts, pull
-   plan, cove base-chain disk-format/size/chunk compatibility, and
+   selected platform, explicit platform child selection, disk format for
+   cove-native/image-store artifacts, pull plan, cove base-chain
+   disk-format/size/chunk compatibility, and
    verification posture; `-verify-blobs` HEAD-audits every remote config/layer
    descriptor without downloading disks, and multiple refs can be inspected as
    one batch for private catalog audits.
@@ -80,10 +81,12 @@ delegates the disk/runtime work to `tart` or `vetu`.
    only the registry manifest, then preflight compatible local or cached base
    disks and summarize local content-store coverage versus registry fetch work,
    including zero chunks and metadata blobs; the same pull plan is available as
-   JSON for CI or fleet placement automation, and can HEAD-audit the registry
-   blobs this host would need for cove-native, Tart, or Lume pulls without
-   downloading them. Pull completion reports the actual reused chunk count,
-   bytes, disk format, and base disk path when the base clone succeeds. Local
+   JSON for CI or fleet placement automation. Manifest-backed dry-runs report
+   OCI index/list child selection and can force `--platform os/arch[/variant]`,
+   then HEAD-audit the registry blobs this host would need for cove-native,
+   Tart, or Lume pulls without downloading them. Pull completion reports the
+   actual reused chunk count, bytes, disk format, and base disk path when the
+   base clone succeeds. Local
    images built from pulled VMs preserve the
    source registry manifest digest, image forks restore it to child
    `disk.provenance`, and store GC treats those image manifests as roots.
@@ -138,8 +141,9 @@ delegates the disk/runtime work to `tart` or `vetu`.
 cove's disk story is no longer "local-only raw disk plus clonefile." It is a VM
 runtime with RAM-overlay disposability, live quota caps, optional ASIF disks
 whose format survives local and cove-native OCI metadata, multi-format OCI
-distribution including concurrent verified Lume tar-split imports, base/delta
-reuse, portable OCI build caches, resumable pulls, and
+distribution including explicit OCI index platform selection, concurrent
+verified Lume tar-split imports, base/delta reuse, portable OCI build caches,
+resumable pulls, and
 image-aware fleet placement with cordon and controller worker drains, local launch leases, and
 concurrent multi-host run fan-out with cold-target image staging and reused SSH
 transports. The first `cove-fleetd` plus `coved -fleet-url` control-plane

@@ -40,10 +40,11 @@ func materializeBuildRegistryBase(ctx context.Context, refText string, opts buil
 		RegistryToken:   opts.RegistryToken,
 		StoreDir:        opts.StoreDir,
 	}
-	parsed, manifestDigest, manifestRaw, err := fetchPullManifest(ctx, ref, pullOpts)
+	parsed, resolution, manifestRaw, err := fetchPullManifest(ctx, ref, pullOpts)
 	if err != nil {
 		return "", nil, fmt.Errorf("cove build: fetch registry base: %w", err)
 	}
+	manifestDigest := resolution.Digest
 	if dir, ok, err := cachedBuildRegistryBase(opts, manifestDigest); err != nil {
 		return "", nil, err
 	} else if ok {
@@ -57,12 +58,13 @@ func materializeBuildRegistryBase(ctx context.Context, refText string, opts buil
 		_ = os.RemoveAll(dir)
 	}
 	plan := &pullPlan{
-		Ref:            ref,
-		VMName:         filepath.Base(dir) + ".covevm",
-		VMDir:          dir,
-		Manifest:       parsed,
-		ManifestRaw:    manifestRaw,
-		ManifestDigest: manifestDigest,
+		Ref:                ref,
+		VMName:             filepath.Base(dir) + ".covevm",
+		VMDir:              dir,
+		Manifest:           parsed,
+		ManifestRaw:        manifestRaw,
+		ManifestDigest:     manifestDigest,
+		ManifestResolution: resolution,
 	}
 	if err := pullBuildRegistryBase(ctx, plan, pullOpts); err != nil {
 		cleanupTemp()

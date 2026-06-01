@@ -283,6 +283,73 @@ func TestBuildPullPlanDryRunFetchManifest(t *testing.T) {
 	}
 }
 
+func TestBuildPullPlanDryRunFetchManifestPlatform(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	darwinManifest, _, _ := pullCompressedChunkedTestManifest(t, []byte("darwin"), 3)
+	linuxManifest, _, _ := pullCompressedChunkedTestManifest(t, []byte("linux-child"), 5)
+	darwinData, darwinDigest := pullTestManifestData(t, darwinManifest)
+	linuxData, linuxDigest := pullTestManifestData(t, linuxManifest)
+	index := ociimage.Index{
+		SchemaVersion: 2,
+		MediaType:     ociimage.MediaTypeImageIndex,
+		Manifests: []ociimage.IndexDescriptor{
+			{
+				Descriptor: ociimage.Descriptor{MediaType: ociimage.MediaTypeImageManifest, Size: int64(len(darwinData)), Digest: darwinDigest},
+				Platform:   &ociimage.Platform{OS: "darwin", Architecture: "arm64"},
+			},
+			{
+				Descriptor: ociimage.Descriptor{MediaType: ociimage.MediaTypeImageManifest, Size: int64(len(linuxData)), Digest: linuxDigest},
+				Platform:   &ociimage.Platform{OS: "linux", Architecture: "arm64"},
+			},
+		},
+	}
+	srv := newRemoteInspectMultiIndexRegistry(t, index, map[string][]byte{
+		darwinDigest: darwinData,
+		linuxDigest:  linuxData,
+	})
+	t.Cleanup(srv.Close)
+
+	plan, err := buildPullPlan("ghcr.io/me/dev-vm:v1", pullOptions{
+		DryRun:          true,
+		FetchManifest:   true,
+		Platform:        "linux/arm64",
+		RegistryBaseURL: srv.URL,
+	})
+	if err != nil {
+		t.Fatalf("buildPullPlan(): %v", err)
+	}
+	if plan.ManifestDigest != linuxDigest || plan.ManifestResolution.SelectedDigest != linuxDigest {
+		t.Fatalf("digest = manifest:%q selected:%q, want linux %q", plan.ManifestDigest, plan.ManifestResolution.SelectedDigest, linuxDigest)
+	}
+	if plan.ManifestResolution.IndexDigest != "sha256:index" || remotePlatformString(plan.ManifestResolution.SelectedPlatform) != "linux/arm64" {
+		t.Fatalf("resolution = %+v, want linux index selection", plan.ManifestResolution)
+	}
+	if plan.Manifest.Annotations.UncompressedDiskSize != int64(len("linux-child")) {
+		t.Fatalf("disk size = %d, want linux child", plan.Manifest.Annotations.UncompressedDiskSize)
+	}
+
+	var out strings.Builder
+	printPullDryRun(&out, plan)
+	for _, want := range []string{"index digest: sha256:index", "selected digest: " + linuxDigest, "platform: linux/arm64"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("dry-run output %q missing %q", out.String(), want)
+		}
+	}
+
+	var jsonOut strings.Builder
+	if err := printPullDryRunJSON(&jsonOut, plan); err != nil {
+		t.Fatalf("printPullDryRunJSON(): %v", err)
+	}
+	var got pullDryRunOutput
+	if err := json.Unmarshal([]byte(jsonOut.String()), &got); err != nil {
+		t.Fatalf("Unmarshal(JSON): %v\n%s", err, jsonOut.String())
+	}
+	if !got.ResolvedFromIndex || got.SelectedPlatform != "linux/arm64" || got.SelectedDigest != linuxDigest {
+		t.Fatalf("JSON resolution = %+v, want linux index selection", got)
+	}
+}
+
 func TestRecordPullDryRunImportBlobs(t *testing.T) {
 	tests := []struct {
 		name string
@@ -989,7 +1056,7 @@ func TestParsePullArgsHelpReturnsNoError(t *testing.T) {
 	if pos != nil {
 		t.Fatalf("parsePullArgs(-h) pos = %#v, want nil", pos)
 	}
-	if opts.DryRun || opts.JSON || opts.FetchManifest || opts.VerifyBlobs || opts.Resume || opts.As != "" || opts.ManifestPath != "" {
+	if opts.DryRun || opts.JSON || opts.FetchManifest || opts.VerifyBlobs || opts.Resume || opts.As != "" || opts.ManifestPath != "" || opts.Platform != "" {
 		t.Fatalf("parsePullArgs(-h) opts = %#v, want zero", opts)
 	}
 }
@@ -1019,12 +1086,13 @@ func TestParsePullArgsFetchManifest(t *testing.T) {
 		"--fetch-manifest",
 		"--verify-blobs",
 		"--json",
+		"--platform", "linux/arm64",
 	}, ioDiscard{})
 	if err != nil {
 		t.Fatalf("parsePullArgs fetch manifest: %v", err)
 	}
-	if !opts.DryRun || !opts.FetchManifest || !opts.VerifyBlobs || !opts.JSON {
-		t.Fatalf("opts = %#v, want dry-run/fetch-manifest/verify-blobs/json", opts)
+	if !opts.DryRun || !opts.FetchManifest || !opts.VerifyBlobs || !opts.JSON || opts.Platform != "linux/arm64" {
+		t.Fatalf("opts = %#v, want dry-run/fetch-manifest/verify-blobs/json/platform", opts)
 	}
 	if strings.Join(pos, ",") != "registry.example/cove/vm:latest" {
 		t.Fatalf("pos = %#v", pos)
@@ -1039,11 +1107,12 @@ func TestParsePullArgsAllowsTrailingFlags(t *testing.T) {
 		"--resume",
 		"--as", "vm",
 		"--manifest=manifest.json",
+		"--platform", "darwin/arm64",
 	}, ioDiscard{})
 	if err != nil {
 		t.Fatalf("parsePullArgs trailing flags: %v", err)
 	}
-	if !opts.DryRun || !opts.JSON || !opts.Resume || opts.As != "vm" || opts.ManifestPath != "manifest.json" {
+	if !opts.DryRun || !opts.JSON || !opts.Resume || opts.As != "vm" || opts.ManifestPath != "manifest.json" || opts.Platform != "darwin/arm64" {
 		t.Fatalf("opts = %#v, want dry-run/as/manifest", opts)
 	}
 	if strings.Join(pos, ",") != "registry.example/cove/vm:latest" {
