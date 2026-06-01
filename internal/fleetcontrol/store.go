@@ -1822,7 +1822,7 @@ func (s *Store) CreateSandboxActor(actor string, req SandboxRequest) (SandboxSta
 	if err := s.persistLocked(); err != nil {
 		return SandboxStatus{}, err
 	}
-	return sandboxStatusFromAssignment(assignment, now), nil
+	return s.sandboxStatusLocked(assignment, now), nil
 }
 
 func (s *Store) GetSandbox(id string) (SandboxStatus, bool) {
@@ -1836,7 +1836,7 @@ func (s *Store) GetSandbox(id string) (SandboxStatus, bool) {
 	if !ok {
 		return SandboxStatus{}, false
 	}
-	return sandboxStatusFromAssignment(assignment, s.now().UTC()), true
+	return s.sandboxStatusLocked(assignment, s.now().UTC()), true
 }
 
 func (s *Store) ListSandboxes() []SandboxStatus {
@@ -1874,7 +1874,7 @@ func (s *Store) ListSandboxesPage(filter SandboxListFilter) SandboxListResult {
 		if !namespaceMatches(assignment.Namespace, filter.Namespace) {
 			continue
 		}
-		sandbox := sandboxStatusFromAssignment(assignment, now)
+		sandbox := s.sandboxStatusLocked(assignment, now)
 		if filter.Status != "" && sandbox.Status != filter.Status {
 			continue
 		}
@@ -2142,7 +2142,7 @@ func (s *Store) OperationsSummary(namespace string) OperationsSummary {
 		}
 
 		if assignment.SandboxID != "" && assignment.SandboxRole == sandboxRoleRun {
-			sandbox := sandboxStatusFromAssignment(assignment, now)
+			sandbox := s.sandboxStatusLocked(assignment, now)
 			sandbox.Status = status
 			summary.Sandboxes.Total++
 			addStatusCount(summary.Sandboxes.ByStatus, status)
@@ -2388,7 +2388,7 @@ func (s *Store) LeaseSandboxActor(actor, id string, req SandboxLeaseRequest) (Sa
 		return SandboxLeaseResult{}, err
 	}
 	lease := SandboxLease{Holder: holder, Expires: expires}
-	return SandboxLeaseResult{Sandbox: sandboxStatusFromAssignment(assignment, now), Lease: lease}, nil
+	return SandboxLeaseResult{Sandbox: s.sandboxStatusLocked(assignment, now), Lease: lease}, nil
 }
 
 func (s *Store) ReleaseSandboxLease(id, holder string) (SandboxStatus, error) {
@@ -2419,7 +2419,7 @@ func (s *Store) ReleaseSandboxLeaseActor(actor, id, holder string) (SandboxStatu
 				return SandboxStatus{}, err
 			}
 		}
-		return sandboxStatusFromAssignment(assignment, now), nil
+		return s.sandboxStatusLocked(assignment, now), nil
 	}
 	if assignment.SandboxLeaseHolder != holder {
 		return SandboxStatus{}, fmt.Errorf("sandbox %q lease held by %q", id, assignment.SandboxLeaseHolder)
@@ -2441,7 +2441,7 @@ func (s *Store) ReleaseSandboxLeaseActor(actor, id, holder string) (SandboxStatu
 	if err := s.persistLocked(); err != nil {
 		return SandboxStatus{}, err
 	}
-	return sandboxStatusFromAssignment(assignment, now), nil
+	return s.sandboxStatusLocked(assignment, now), nil
 }
 
 func (s *Store) StartSandbox(id string) (SandboxStartResult, error) {
@@ -2622,7 +2622,7 @@ func (s *Store) WaitSandboxStatus(id, targetStatus string) (SandboxWaitResult, e
 	if !ok {
 		return SandboxWaitResult{}, fmt.Errorf("sandbox %q not found", id)
 	}
-	sandbox := sandboxStatusFromAssignment(assignment, s.now().UTC())
+	sandbox := s.sandboxStatusLocked(assignment, s.now().UTC())
 	return SandboxWaitResult{
 		Done:         sandboxWaitDone(sandbox.Status, targetStatus),
 		TargetStatus: targetStatus,
@@ -6023,6 +6023,16 @@ func (s *Store) activeSandboxCleanupLocked(id string) (Assignment, bool) {
 		}
 	}
 	return Assignment{}, false
+}
+
+func (s *Store) sandboxStatusLocked(assignment Assignment, now time.Time) SandboxStatus {
+	status := sandboxStatusFromAssignment(assignment, now)
+	if sandboxPendingStopStatus(status.Status) {
+		if cleanup, ok := s.activeSandboxCleanupLocked(status.ID); ok {
+			status.Cleanup = &cleanup
+		}
+	}
+	return status
 }
 
 func (s *Store) cancelSandboxWorkLocked(now time.Time, actor, id, action string) []string {

@@ -956,6 +956,17 @@ func TestStoreDeleteRunningSandboxQueuesStop(t *testing.T) {
 	if deletedAgain.Cleanup == nil || deletedAgain.Cleanup.ID != deleted.Cleanup.ID {
 		t.Fatalf("second DeleteSandbox cleanup = %+v, want %s", deletedAgain.Cleanup, deleted.Cleanup.ID)
 	}
+	status, ok := store.GetSandbox("job-1")
+	if !ok || status.Status != "draining" || status.Cleanup == nil || status.Cleanup.ID != deleted.Cleanup.ID {
+		t.Fatalf("GetSandbox draining = %+v, %v, want cleanup %s", status, ok, deleted.Cleanup.ID)
+	}
+	wait, err := store.WaitSandbox("job-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wait.Done || wait.Sandbox.Cleanup == nil || wait.Sandbox.Cleanup.ID != deleted.Cleanup.ID {
+		t.Fatalf("WaitSandbox draining = %+v, want cleanup %s", wait, deleted.Cleanup.ID)
+	}
 	cleanup, err := store.AwaitAssignment("worker-1")
 	if err != nil {
 		t.Fatal(err)
@@ -967,7 +978,7 @@ func TestStoreDeleteRunningSandboxQueuesStop(t *testing.T) {
 	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: cleanup.ID, Status: "complete"}); err != nil {
 		t.Fatal(err)
 	}
-	wait, err := store.WaitSandbox("job-1")
+	wait, err = store.WaitSandbox("job-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1150,6 +1161,9 @@ func TestStoreRestartRunningSandboxQueuesStopThenStart(t *testing.T) {
 	}
 	if wait.Done || wait.Sandbox.Status != "restarting" {
 		t.Fatalf("WaitSandbox restarting = %+v, want not done", wait)
+	}
+	if wait.Sandbox.Cleanup == nil || wait.Sandbox.Cleanup.ID != restart.Cleanup.ID {
+		t.Fatalf("WaitSandbox restarting cleanup = %+v, want %s", wait.Sandbox.Cleanup, restart.Cleanup.ID)
 	}
 	now = now.Add(time.Second)
 	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: sandbox.Assignment.ID, Status: "complete"}); err != nil {
@@ -6898,6 +6912,49 @@ func TestHandlerSandboxRetryDiagnostics(t *testing.T) {
 	for _, tc := range cases {
 		if tc.got.Status != "pending" || tc.got.Attempt != 1 || tc.got.MaxAttempts != 2 || tc.got.RetryDelay != "1s" || !tc.got.RetryAt.Equal(now.Add(time.Second)) || tc.got.RetryRemainingMillis != 1000 {
 			t.Fatalf("%s retry diagnostics = %+v, want pending attempt 1/2 retry at +1s with 1000ms remaining", tc.name, tc.got)
+		}
+	}
+}
+
+func TestHandlerSandboxCleanupDiagnostics(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 4}}, &record)
+	var created SandboxStatus
+	postJSON(t, server.URL+"/v1/sandboxes", SandboxRequest{ID: "job-1", ImageRef: "base:v1"}, &created)
+	var leased Assignment
+	getJSON(t, server.URL+"/v1/workers/worker-1/assignments", &leased)
+	postJSON(t, server.URL+"/v1/workers/worker-1/reports", WorkerReport{AssignmentID: leased.ID, Status: "ready"}, &record)
+
+	var stopped SandboxStopResult
+	postJSON(t, server.URL+"/v1/sandboxes/job-1/stop", map[string]string{}, &stopped)
+	if stopped.Status != "draining" || stopped.Cleanup == nil {
+		t.Fatalf("stopped sandbox = %+v, want cleanup", stopped)
+	}
+
+	var got SandboxStatus
+	getJSON(t, server.URL+"/v1/sandboxes/job-1", &got)
+	var list SandboxListResult
+	getJSON(t, server.URL+"/v1/sandboxes?status=draining", &list)
+	var wait SandboxWaitResult
+	postJSON(t, server.URL+"/v1/sandboxes/job-1/wait?status=stopped&timeout=0", map[string]string{}, &wait)
+	if len(list.Sandboxes) != 1 {
+		t.Fatalf("sandbox list = %+v, want one draining sandbox", list)
+	}
+	cases := []struct {
+		name string
+		got  SandboxStatus
+	}{
+		{name: "get", got: got},
+		{name: "list", got: list.Sandboxes[0]},
+		{name: "wait", got: wait.Sandbox},
+	}
+	for _, tc := range cases {
+		if tc.got.Status != "draining" || tc.got.Cleanup == nil || tc.got.Cleanup.ID != stopped.Cleanup.ID {
+			t.Fatalf("%s cleanup diagnostics = %+v, want cleanup %s", tc.name, tc.got, stopped.Cleanup.ID)
 		}
 	}
 }

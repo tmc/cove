@@ -865,6 +865,7 @@ type SandboxStatus struct {
 	RetryDelay           string        `json:"retry_delay,omitempty"`
 	RetryAt              time.Time     `json:"retry_at,omitempty"`
 	RetryRemainingMillis int64         `json:"retry_remaining_millis,omitempty"`
+	Cleanup              *Assignment   `json:"cleanup,omitempty"`
 	Assignment           Assignment    `json:"assignment"`
 	Created              time.Time     `json:"created,omitempty"`
 	Updated              time.Time     `json:"updated,omitempty"`

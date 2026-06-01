@@ -71,27 +71,28 @@ type Client struct {
 }
 
 type SandboxStatus struct {
-	Namespace            string    `json:"namespace,omitempty"`
-	ID                   string    `json:"id"`
-	VMName               string    `json:"vm_name,omitempty"`
-	ImageRef             string    `json:"image_ref,omitempty"`
-	ImageManifestDigest  string    `json:"image_manifest_digest,omitempty"`
-	ImageDigestRef       string    `json:"image_digest_ref,omitempty"`
-	ImagePlatform        string    `json:"image_platform,omitempty"`
-	RequiredCapabilities []string  `json:"required_capabilities,omitempty"`
-	Status               string    `json:"status,omitempty"`
-	WorkerID             string    `json:"worker_id,omitempty"`
-	Lease                *Lease    `json:"lease,omitempty"`
-	QueueExpires         time.Time `json:"queue_expires,omitempty"`
-	QueueAgeMillis       int64     `json:"queue_age_millis,omitempty"`
-	QueueRemainingMillis int64     `json:"queue_remaining_millis,omitempty"`
-	MaxAttempts          int       `json:"max_attempts,omitempty"`
-	Attempt              int       `json:"attempt,omitempty"`
-	RetryDelay           string    `json:"retry_delay,omitempty"`
-	RetryAt              time.Time `json:"retry_at,omitempty"`
-	RetryRemainingMillis int64     `json:"retry_remaining_millis,omitempty"`
-	Created              time.Time `json:"created,omitempty"`
-	Updated              time.Time `json:"updated,omitempty"`
+	Namespace            string      `json:"namespace,omitempty"`
+	ID                   string      `json:"id"`
+	VMName               string      `json:"vm_name,omitempty"`
+	ImageRef             string      `json:"image_ref,omitempty"`
+	ImageManifestDigest  string      `json:"image_manifest_digest,omitempty"`
+	ImageDigestRef       string      `json:"image_digest_ref,omitempty"`
+	ImagePlatform        string      `json:"image_platform,omitempty"`
+	RequiredCapabilities []string    `json:"required_capabilities,omitempty"`
+	Status               string      `json:"status,omitempty"`
+	WorkerID             string      `json:"worker_id,omitempty"`
+	Lease                *Lease      `json:"lease,omitempty"`
+	QueueExpires         time.Time   `json:"queue_expires,omitempty"`
+	QueueAgeMillis       int64       `json:"queue_age_millis,omitempty"`
+	QueueRemainingMillis int64       `json:"queue_remaining_millis,omitempty"`
+	MaxAttempts          int         `json:"max_attempts,omitempty"`
+	Attempt              int         `json:"attempt,omitempty"`
+	RetryDelay           string      `json:"retry_delay,omitempty"`
+	RetryAt              time.Time   `json:"retry_at,omitempty"`
+	RetryRemainingMillis int64       `json:"retry_remaining_millis,omitempty"`
+	Cleanup              *Assignment `json:"cleanup,omitempty"`
+	Created              time.Time   `json:"created,omitempty"`
+	Updated              time.Time   `json:"updated,omitempty"`
 }
 
 type SandboxListOptions struct {
