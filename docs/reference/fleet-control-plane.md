@@ -768,9 +768,9 @@ expose image-preparation, maintenance fan-out, the operations dashboard
 summary, worker/assignment inventory, retained controller-run history, and fork
 warm-pool lifecycle controls, so hosted agent clients can pre-stage exact
 images, push image GC/lifecycle/storage policy work, inspect fleet pressure,
-enumerate current work, inspect operations history, prewarm RAM-overlay slots,
-claim a ready slot for a guest command, read pool events, and delete the pool
-through the same fleet credentials.
+enumerate current work, verify audit-chain continuity, inspect operations
+history, prewarm RAM-overlay slots, claim a ready slot for a guest command,
+read pool events, and delete the pool through the same fleet credentials.
 Maintenance helpers include `PushImageGC`, `PushLifecyclePolicy`,
 `PushStorageBudget`, `PushStoragePrune`, their list/get run companions, and
 `GetOperationsSummary` plus `ListControllerRuns` for the aggregate operations
@@ -781,9 +781,11 @@ the REST API. Assignment control helpers include `CancelAssignment` and
 lifecycle helpers include `CordonWorker`,
 `UncordonWorker`, `QuarantineWorker`, `UnquarantineWorker`, `EvacuateWorker`,
 `DrainWorker`, and `DecommissionWorker`, so hosted operators can plan or apply
-maintenance without dropping to raw HTTP. Pass `DryRun` to maintenance pushes
-to inspect planned assignments and structured skipped-worker diagnostics
-without mutating the controller.
+maintenance without dropping to raw HTTP. Audit helpers include
+`ListAuditEvents` for the filtered hash-chained feed and `VerifyAuditLog` for
+global chain verification. Pass `DryRun` to maintenance pushes to inspect
+planned assignments and structured skipped-worker diagnostics without mutating
+the controller.
 
 Go SDK example:
 
@@ -905,6 +907,26 @@ if err != nil {
 	log.Fatal(err)
 }
 log.Printf("controller runs=%d", runs.Count)
+
+audit, err := agentsandbox.ListAuditEvents(ctx, agentsandbox.AuditListOptions{
+	FleetURL:     "https://fleet.internal.example",
+	APIKey:       os.Getenv("COVE_API_KEY"),
+	Namespace:    "team-a",
+	Action:       "assignment.create",
+	AssignmentID: "assignment-123",
+	Limit:        20,
+})
+if err != nil {
+	log.Fatal(err)
+}
+verify, err := agentsandbox.VerifyAuditLog(ctx, agentsandbox.AuditVerifyOptions{
+	FleetURL: "https://fleet.internal.example",
+	APIKey:   os.Getenv("COVE_API_KEY"),
+})
+if err != nil {
+	log.Fatal(err)
+}
+log.Printf("audit events=%d chain_ok=%t", audit.Count, verify.OK)
 
 pool, err := agentsandbox.EnsureWarmPool(ctx, agentsandbox.WarmPoolOptions{
 	FleetURL:             "https://fleet.internal.example",

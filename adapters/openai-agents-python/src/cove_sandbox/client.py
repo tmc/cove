@@ -948,6 +948,62 @@ class CoveFleetClient:
         return _normalize_operations_summary(result, "GET /v1/operations/summary")
 
     @classmethod
+    def list_audit_events(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        actor: str = "",
+        action: str = "",
+        target_type: str = "",
+        target_id: str = "",
+        worker_id: str = "",
+        assignment_id: str = "",
+        sandbox_id: str = "",
+        offset: int = 0,
+        limit: int = 0,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        if offset < 0:
+            raise ValueError("audit offset must be non-negative")
+        if limit < 0:
+            raise ValueError("audit limit must be non-negative")
+        seed = cls(
+            sandbox_id="audit",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        query = {
+            "namespace": namespace or "",
+            "actor": actor,
+            "action": action,
+            "target_type": target_type,
+            "target_id": target_id,
+            "worker_id": worker_id,
+            "assignment_id": assignment_id,
+            "sandbox_id": sandbox_id,
+            "offset": str(offset) if offset else "",
+            "limit": str(limit) if limit else "",
+        }
+        result = seed._request("GET", _query_path("/v1/audit", query), timeout=timeout)
+        return _normalize_audit_page(result, "GET /v1/audit")
+
+    @classmethod
+    def verify_audit_log(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        seed = cls(sandbox_id="audit-verify", fleet_url=fleet_url, api_key=api_key, timeout=timeout)
+        result = seed._request("GET", "/v1/audit/verify", timeout=timeout)
+        return _normalize_audit_verify(result, "GET /v1/audit/verify")
+
+    @classmethod
     def list_workers(
         cls,
         *,
@@ -1992,6 +2048,21 @@ def _normalize_operations_summary(data: dict[str, Any], endpoint: str) -> dict[s
     _normalize_dict_list(result["sandboxes"], "active_sandboxes", endpoint)
     _normalize_dict_list(result["sandboxes"], "draining_sandboxes", endpoint)
     _normalize_dict_list(result["warm_pools"], "pools", endpoint)
+    return result
+
+
+def _normalize_audit_page(data: dict[str, Any], endpoint: str) -> dict[str, Any]:
+    page = dict(data)
+    _normalize_dict_list(page, "events", endpoint)
+    page["count"] = int(page.get("count") or len(page["events"]))
+    return page
+
+
+def _normalize_audit_verify(data: dict[str, Any], endpoint: str) -> dict[str, Any]:
+    result = dict(data)
+    result["ok"] = bool(result.get("ok"))
+    result["events"] = int(result.get("events") or 0)
+    _normalize_dict_list(result, "issues", endpoint)
     return result
 
 

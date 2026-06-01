@@ -589,6 +589,58 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 	}
 }
 
+func TestCloudClientAudit(t *testing.T) {
+	server := newSDKFleetServer(t)
+	ctx := context.Background()
+	page, err := ListAuditEvents(ctx, AuditListOptions{
+		FleetURL:     server.URL,
+		APIKey:       "secret",
+		Namespace:    "team-a",
+		Actor:        "service-account:ci",
+		Action:       "assignment.create",
+		TargetType:   "assignment",
+		TargetID:     "assignment-1",
+		WorkerID:     "worker-1",
+		AssignmentID: "assignment-1",
+		SandboxID:    "job-1",
+		Offset:       1,
+		Limit:        2,
+		Timeout:      time.Second,
+	})
+	if err != nil {
+		t.Fatalf("ListAuditEvents: %v", err)
+	}
+	if page.Count != 1 || page.Offset != 1 || page.Limit != 2 || len(page.Events) != 1 || page.Events[0].ID != "audit-1" {
+		t.Fatalf("ListAuditEvents = %+v, want audit-1 page", page)
+	}
+	if event := page.Events[0]; event.Hash == "" || event.PrevHash == "" || event.Fields["reason"] != "created" {
+		t.Fatalf("audit event = %+v, want hash-chain fields", event)
+	}
+	verify, err := VerifyAuditLog(ctx, AuditVerifyOptions{FleetURL: server.URL, APIKey: "secret", Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("VerifyAuditLog: %v", err)
+	}
+	if !verify.OK || verify.Events != 7 || verify.HeadHash != "hash-1" || len(verify.Issues) != 0 {
+		t.Fatalf("VerifyAuditLog = %+v, want ok head hash", verify)
+	}
+
+	paths := make([]string, 0, len(server.requests))
+	for _, req := range server.requests {
+		paths = append(paths, req.path)
+		if req.authorization != "Bearer secret" {
+			t.Fatalf("authorization for %s = %q, want bearer token", req.path, req.authorization)
+		}
+	}
+	wantPaths := []string{"/v1/audit", "/v1/audit/verify"}
+	if !equalStringSlices(paths, wantPaths) {
+		t.Fatalf("paths = %+v, want %+v", paths, wantPaths)
+	}
+	query := server.requests[0].query
+	if query.Get("namespace") != "team-a" || query.Get("actor") != "service-account:ci" || query.Get("action") != "assignment.create" || query.Get("target_type") != "assignment" || query.Get("target_id") != "assignment-1" || query.Get("worker_id") != "worker-1" || query.Get("assignment_id") != "assignment-1" || query.Get("sandbox_id") != "job-1" || query.Get("offset") != "1" || query.Get("limit") != "2" {
+		t.Fatalf("audit query = %q", query.Encode())
+	}
+}
+
 func TestCloudClientInventory(t *testing.T) {
 	server := newSDKFleetServer(t)
 	ctx := context.Background()
@@ -696,6 +748,16 @@ func TestCloudClientInventoryValidation(t *testing.T) {
 	}
 	if _, err := GetAssignment(ctx, AssignmentGetOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "id required") {
 		t.Fatalf("GetAssignment missing id err = %v, want validation error", err)
+	}
+}
+
+func TestCloudClientAuditValidation(t *testing.T) {
+	ctx := context.Background()
+	if _, err := ListAuditEvents(ctx, AuditListOptions{FleetURL: "https://fleet.example", APIKey: "secret", Limit: -1}); err == nil || !strings.Contains(err.Error(), "limit must be non-negative") {
+		t.Fatalf("ListAuditEvents negative limit err = %v, want validation error", err)
+	}
+	if _, err := ListAuditEvents(ctx, AuditListOptions{FleetURL: "https://fleet.example", APIKey: "secret", Offset: -1}); err == nil || !strings.Contains(err.Error(), "offset must be non-negative") {
+		t.Fatalf("ListAuditEvents negative offset err = %v, want validation error", err)
 	}
 }
 
@@ -1354,6 +1416,19 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/operations/summary":
 			writeSDKJSON(t, w, sdkOperationsSummary())
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/audit":
+			writeSDKJSON(t, w, AuditListResult{
+				Events: []AuditEvent{sdkAuditEvent()},
+				Count:  1,
+				Offset: atoiDefault(r.URL.Query().Get("offset"), 0),
+				Limit:  atoiDefault(r.URL.Query().Get("limit"), 0),
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/audit/verify":
+			writeSDKJSON(t, w, AuditVerifyResult{
+				OK:       true,
+				Events:   7,
+				HeadHash: "hash-1",
+			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/workers":
 			writeSDKJSON(t, w, WorkerListResult{
 				Workers: []HostRecord{sdkHostRecord()},
@@ -1736,6 +1811,24 @@ func sdkOperationsSummary() OperationsSummary {
 			Pools:    []WarmPoolStatus{sdkWarmPoolStatus()},
 		},
 		Metering: MeteringSummary{Namespace: "team-a", Records: 2, DurationMillis: 2000, VMMillis: 2000},
+	}
+}
+
+func sdkAuditEvent() AuditEvent {
+	return AuditEvent{
+		ID:           "audit-1",
+		Time:         time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC),
+		Namespace:    "team-a",
+		Actor:        "service-account:ci",
+		Action:       "assignment.create",
+		TargetType:   "assignment",
+		TargetID:     "assignment-1",
+		WorkerID:     "worker-1",
+		AssignmentID: "assignment-1",
+		Status:       "pending",
+		Fields:       map[string]string{"reason": "created"},
+		PrevHash:     "prev-1",
+		Hash:         "hash-1",
 	}
 }
 

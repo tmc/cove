@@ -174,8 +174,8 @@ provenance. Pass `required_labels` for operator-defined selectors and
 `required_capabilities` to restrict hosted placement to workers that advertise
 runtime traits such as `ram-overlay`. The direct fleet client can also queue
 image preparation before placement or warm-pool replenishment, push image
-GC/lifecycle/storage maintenance work, and read the retained controller-run
-timeline.
+GC/lifecycle/storage maintenance work, read the retained controller-run
+timeline, and inspect or verify the hash-chained audit feed.
 
 For direct fleet-client code, `CoveFleetClient` covers hosted sandbox and
 warm-pool lifecycles plus maintenance controls:
@@ -252,6 +252,18 @@ summary = CoveFleetClient.get_operations_summary(
     namespace="team-a",
 )
 print(summary["workers"]["ready"], summary["sandboxes"]["active"])
+audit = CoveFleetClient.list_audit_events(
+    fleet_url="https://fleet.internal.example",
+    api_key="cove_...",
+    namespace="team-a",
+    action="assignment.create",
+    limit=20,
+)
+verify = CoveFleetClient.verify_audit_log(
+    fleet_url="https://fleet.internal.example",
+    api_key="cove_...",
+)
+print(audit["count"], verify["ok"])
 workers = CoveFleetClient.list_workers(
     fleet_url="https://fleet.internal.example",
     api_key="cove_...",
@@ -331,8 +343,9 @@ Maintenance helpers include `push_image_gc`, `push_lifecycle_policy`,
 `get_*_run` methods, `get_operations_summary`, `list_workers`, `get_worker`,
 `list_assignments`, `get_assignment`, `cancel_assignment`, `retry_assignment`,
 worker lifecycle helpers such as `cordon_worker`, `evacuate_worker`,
-`drain_worker`, and `decommission_worker`, and `list_controller_runs` for the
-aggregate operations dashboard, inventory, maintenance controls, and timeline.
+`drain_worker`, and `decommission_worker`, `list_audit_events`,
+`verify_audit_log`, and `list_controller_runs` for the aggregate operations
+dashboard, inventory, maintenance controls, audit chain, and timeline.
 Pass `dry_run=True` to maintenance pushes to inspect planned
 assignments and structured skipped-worker diagnostics without mutating the
 controller.

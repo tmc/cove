@@ -540,6 +540,51 @@ type OperationsSummaryOptions struct {
 	HTTP      *http.Client
 }
 
+type AuditListOptions struct {
+	FleetURL     string
+	APIKey       string
+	Namespace    string
+	Actor        string
+	Action       string
+	TargetType   string
+	TargetID     string
+	WorkerID     string
+	AssignmentID string
+	SandboxID    string
+	Offset       int
+	Limit        int
+	Timeout      time.Duration
+	HTTP         *http.Client
+}
+
+type AuditListResult struct {
+	Events     []AuditEvent `json:"events"`
+	Count      int          `json:"count"`
+	Offset     int          `json:"offset,omitempty"`
+	Limit      int          `json:"limit,omitempty"`
+	NextOffset int          `json:"next_offset,omitempty"`
+}
+
+type AuditVerifyOptions struct {
+	FleetURL string
+	APIKey   string
+	Timeout  time.Duration
+	HTTP     *http.Client
+}
+
+type AuditVerifyResult struct {
+	OK       bool              `json:"ok"`
+	Events   int               `json:"events"`
+	HeadHash string            `json:"head_hash,omitempty"`
+	Issues   []AuditChainIssue `json:"issues,omitempty"`
+}
+
+type AuditChainIssue struct {
+	Index  int    `json:"index"`
+	ID     string `json:"id,omitempty"`
+	Reason string `json:"reason"`
+}
+
 type WorkerImage struct {
 	Ref                  string `json:"ref"`
 	SourceManifestDigest string `json:"source_manifest_digest,omitempty"`
@@ -993,6 +1038,8 @@ type SandboxEvent struct {
 	PrevHash     string            `json:"prev_hash,omitempty"`
 	Hash         string            `json:"hash,omitempty"`
 }
+
+type AuditEvent = SandboxEvent
 
 type SandboxEventListOptions struct {
 	Actor  string
@@ -1732,6 +1779,55 @@ func GetOperationsSummary(ctx context.Context, opts OperationsSummaryOptions) (O
 	var result OperationsSummary
 	if err := c.request(ctx, http.MethodGet, c.queryPath("/v1/operations/summary", query), nil, &result, c.timeout); err != nil {
 		return OperationsSummary{}, err
+	}
+	return result, nil
+}
+
+func ListAuditEvents(ctx context.Context, opts AuditListOptions) (AuditListResult, error) {
+	if opts.Limit < 0 {
+		return AuditListResult{}, errors.New("agentsandbox: audit limit must be non-negative")
+	}
+	if opts.Offset < 0 {
+		return AuditListResult{}, errors.New("agentsandbox: audit offset must be non-negative")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "audit")
+	if err != nil {
+		return AuditListResult{}, err
+	}
+	query := map[string]string{
+		"namespace":     opts.Namespace,
+		"actor":         opts.Actor,
+		"action":        opts.Action,
+		"target_type":   opts.TargetType,
+		"target_id":     opts.TargetID,
+		"worker_id":     opts.WorkerID,
+		"assignment_id": opts.AssignmentID,
+		"sandbox_id":    opts.SandboxID,
+	}
+	if opts.Offset > 0 {
+		query["offset"] = strconv.Itoa(opts.Offset)
+	}
+	if opts.Limit > 0 {
+		query["limit"] = strconv.Itoa(opts.Limit)
+	}
+	var result AuditListResult
+	if err := c.request(ctx, http.MethodGet, c.queryPath("/v1/audit", query), nil, &result, c.timeout); err != nil {
+		return AuditListResult{}, err
+	}
+	if result.Count == 0 && len(result.Events) > 0 {
+		result.Count = len(result.Events)
+	}
+	return result, nil
+}
+
+func VerifyAuditLog(ctx context.Context, opts AuditVerifyOptions) (AuditVerifyResult, error) {
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "audit-verify")
+	if err != nil {
+		return AuditVerifyResult{}, err
+	}
+	var result AuditVerifyResult
+	if err := c.request(ctx, http.MethodGet, "/v1/audit/verify", nil, &result, c.timeout); err != nil {
+		return AuditVerifyResult{}, err
 	}
 	return result, nil
 }

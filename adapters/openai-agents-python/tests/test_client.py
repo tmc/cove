@@ -523,6 +523,52 @@ def test_fleet_client_maintenance_runs() -> None:
         server.stop()
 
 
+def test_fleet_client_audit() -> None:
+    server = _FleetHTTPServer()
+    server.start()
+    try:
+        page = CoveFleetClient.list_audit_events(
+            fleet_url=server.url,
+            api_key="secret",
+            namespace="team-a",
+            actor="service-account:ci",
+            action="assignment.create",
+            target_type="assignment",
+            target_id="assignment-1",
+            worker_id="worker-1",
+            assignment_id="assignment-1",
+            sandbox_id="job-1",
+            offset=1,
+            limit=2,
+        )
+        assert page["count"] == 1
+        assert page["events"][0]["id"] == "audit-1"
+        assert page["events"][0]["fields"]["reason"] == "created"
+        assert page["events"][0]["hash"] == "hash-1"
+
+        verify = CoveFleetClient.verify_audit_log(fleet_url=server.url, api_key="secret")
+        assert verify["ok"] is True
+        assert verify["events"] == 7
+        assert verify["head_hash"] == "hash-1"
+        assert verify["issues"] == []
+
+        paths = [request["path"] for request in server.requests[-2:]]
+        assert paths == ["/v1/audit", "/v1/audit/verify"]
+        query = server.requests[-2]["query"]
+        assert query["namespace"] == ["team-a"]
+        assert query["actor"] == ["service-account:ci"]
+        assert query["action"] == ["assignment.create"]
+        assert query["target_type"] == ["assignment"]
+        assert query["target_id"] == ["assignment-1"]
+        assert query["worker_id"] == ["worker-1"]
+        assert query["assignment_id"] == ["assignment-1"]
+        assert query["sandbox_id"] == ["job-1"]
+        assert query["offset"] == ["1"]
+        assert query["limit"] == ["2"]
+    finally:
+        server.stop()
+
+
 def test_fleet_client_inventory() -> None:
     server = _FleetHTTPServer()
     server.start()
@@ -601,6 +647,13 @@ def test_fleet_client_inventory_validation() -> None:
         CoveFleetClient.list_assignments(fleet_url="https://fleet.example", api_key="secret", offset=-1)
     with pytest.raises(ValueError, match="assignment id is required"):
         CoveFleetClient.get_assignment(fleet_url="https://fleet.example", api_key="secret", assignment_id="")
+
+
+def test_fleet_client_audit_validation() -> None:
+    with pytest.raises(ValueError, match="audit limit must be non-negative"):
+        CoveFleetClient.list_audit_events(fleet_url="https://fleet.example", api_key="secret", limit=-1)
+    with pytest.raises(ValueError, match="audit offset must be non-negative"):
+        CoveFleetClient.list_audit_events(fleet_url="https://fleet.example", api_key="secret", offset=-1)
 
 
 def test_fleet_client_assignment_controls() -> None:
@@ -1273,6 +1326,24 @@ def _operations_summary() -> dict[str, object]:
     }
 
 
+def _audit_event() -> dict[str, object]:
+    return {
+        "id": "audit-1",
+        "time": "2026-05-31T10:00:00Z",
+        "namespace": "team-a",
+        "actor": "service-account:ci",
+        "action": "assignment.create",
+        "target_type": "assignment",
+        "target_id": "assignment-1",
+        "worker_id": "worker-1",
+        "assignment_id": "assignment-1",
+        "status": "pending",
+        "fields": {"reason": "created"},
+        "prev_hash": "prev-1",
+        "hash": "hash-1",
+    }
+
+
 def _host_record(
     *,
     cordoned: bool = False,
@@ -1646,6 +1717,19 @@ class _FleetHTTPServer:
                     return
                 if path == "/v1/operations/summary":
                     self._write(_operations_summary())
+                    return
+                if path == "/v1/audit":
+                    self._write(
+                        {
+                            "events": [_audit_event()],
+                            "count": 1,
+                            "offset": int(query.get("offset", ["0"])[0]),
+                            "limit": int(query.get("limit", ["0"])[0]),
+                        }
+                    )
+                    return
+                if path == "/v1/audit/verify":
+                    self._write({"ok": True, "events": 7, "head_hash": "hash-1"})
                     return
                 if path == "/v1/workers":
                     self._write(
