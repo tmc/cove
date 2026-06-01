@@ -877,6 +877,9 @@ func (s *Store) CreateSandbox(req SandboxRequest) (SandboxStatus, error) {
 
 func (s *Store) CreateSandboxActor(actor string, req SandboxRequest) (SandboxStatus, error) {
 	imageRef := strings.TrimSpace(req.ImageRef)
+	if strings.TrimSpace(req.ManifestBundle) != "" {
+		return SandboxStatus{}, fmt.Errorf("sandbox manifest_bundle must be resolved before store admission")
+	}
 	if imageRef == "" {
 		return SandboxStatus{}, fmt.Errorf("sandbox image_ref required")
 	}
@@ -1642,6 +1645,9 @@ func (s *Store) PrepareImage(req ImagePrepareRequest) (ImagePrepareResult, error
 func (s *Store) PrepareImageActor(actor string, req ImagePrepareRequest) (ImagePrepareResult, error) {
 	sourceRef := strings.TrimSpace(req.SourceRef)
 	imageRef := strings.TrimSpace(req.ImageRef)
+	if strings.TrimSpace(req.ManifestBundle) != "" {
+		return ImagePrepareResult{}, fmt.Errorf("image prepare manifest_bundle must be resolved before store admission")
+	}
 	if sourceRef == "" {
 		return ImagePrepareResult{}, fmt.Errorf("image prepare source_ref required")
 	}
@@ -3621,6 +3627,9 @@ func (s *Store) nextSandboxIDLocked(now time.Time) string {
 }
 
 func warmPoolFromRequest(req WarmPoolRequest, now time.Time) (WarmPool, error) {
+	if strings.TrimSpace(req.ManifestBundle) != "" {
+		return WarmPool{}, fmt.Errorf("warm pool manifest_bundle must be resolved before store admission")
+	}
 	pool := WarmPool{
 		Namespace:           normalizeNamespace(req.Namespace),
 		Name:                strings.TrimSpace(req.Name),
@@ -4023,6 +4032,9 @@ func normalizePlacementFields(a Assignment) (policy, imageRef, imageManifestDige
 	resources, err = sanitizeResources(a.Resources)
 	if err != nil {
 		return "", "", "", "", nil, Capacity{}, err
+	}
+	if strings.TrimSpace(a.ManifestBundle) != "" {
+		return "", "", "", "", nil, Capacity{}, fmt.Errorf("assignment manifest_bundle must be resolved before store admission")
 	}
 	if imageManifestDigest != "" && imageRef == "" {
 		return "", "", "", "", nil, Capacity{}, fmt.Errorf("assignment image_manifest_digest requires image_ref")

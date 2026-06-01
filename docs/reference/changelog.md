@@ -244,6 +244,12 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   `image_platform`. When a manifest digest is supplied, image-affinity admits
   only workers that report the matching local image provenance, and image
   preparation forces a refresh for stale mutable refs.
+- `cove-fleetd` assignment, placement-plan, warm-pool, sandbox, and image
+  preparation requests now accept `manifest_bundle` directories written by
+  remote inspect or pull dry-runs. The controller verifies the offline bundle,
+  selects `image_platform` when supplied, resolves digest metadata before
+  placement, and image preparation queues `cove image pull` from the selected
+  digest ref instead of the mutable source tag.
 - `cove-fleetd` now reconciles stale workers and expired assignment leases,
   exposes `POST /v1/reconcile`, and `coved` renews active `cove` assignments
   with `running` reports so long jobs do not get reclaimed while still alive.

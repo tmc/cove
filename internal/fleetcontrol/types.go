@@ -239,6 +239,7 @@ type ImagePrepareRequest struct {
 	Namespace           string            `json:"namespace,omitempty"`
 	SourceRef           string            `json:"source_ref"`
 	ImageRef            string            `json:"image_ref"`
+	ManifestBundle      string            `json:"manifest_bundle,omitempty"`
 	ImageManifestDigest string            `json:"image_manifest_digest,omitempty"`
 	ImageDigestRef      string            `json:"image_digest_ref,omitempty"`
 	ImagePlatform       string            `json:"image_platform,omitempty"`
@@ -368,6 +369,7 @@ type WarmPoolRequest struct {
 	Namespace           string            `json:"namespace,omitempty"`
 	Name                string            `json:"name,omitempty"`
 	ImageRef            string            `json:"image_ref"`
+	ManifestBundle      string            `json:"manifest_bundle,omitempty"`
 	ImageManifestDigest string            `json:"image_manifest_digest,omitempty"`
 	ImageDigestRef      string            `json:"image_digest_ref,omitempty"`
 	ImagePlatform       string            `json:"image_platform,omitempty"`
@@ -443,6 +445,7 @@ type SandboxRequest struct {
 	Namespace           string            `json:"namespace,omitempty"`
 	ID                  string            `json:"id,omitempty"`
 	ImageRef            string            `json:"image_ref"`
+	ManifestBundle      string            `json:"manifest_bundle,omitempty"`
 	ImageManifestDigest string            `json:"image_manifest_digest,omitempty"`
 	ImageDigestRef      string            `json:"image_digest_ref,omitempty"`
 	ImagePlatform       string            `json:"image_platform,omitempty"`
@@ -716,6 +719,7 @@ type Assignment struct {
 	SandboxLeaseExpires time.Time         `json:"sandbox_lease_expires,omitempty"`
 	Policy              string            `json:"policy,omitempty"`
 	ImageRef            string            `json:"image_ref,omitempty"`
+	ManifestBundle      string            `json:"manifest_bundle,omitempty"`
 	ImageManifestDigest string            `json:"image_manifest_digest,omitempty"`
 	ImageDigestRef      string            `json:"image_digest_ref,omitempty"`
 	ImagePlatform       string            `json:"image_platform,omitempty"`

@@ -461,6 +461,10 @@ func handleSandboxes(w http.ResponseWriter, r *http.Request, store *Store) {
 		if !applyScopedNamespace(w, identity, &req.Namespace) {
 			return
 		}
+		if err := resolveSandboxManifestBundle(&req); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		result, err := store.CreateSandboxActor(identity.Actor, req)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
@@ -1209,6 +1213,10 @@ func handleImagePrepare(w http.ResponseWriter, r *http.Request, store *Store) {
 	if !applyScopedNamespace(w, identity, &req.Namespace) {
 		return
 	}
+	if err := resolveImagePrepareManifestBundle(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	result, err := store.PrepareImageActor(identity.Actor, req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -1334,6 +1342,10 @@ func handlePlacementPlan(w http.ResponseWriter, r *http.Request, store *Store) {
 	if !applyScopedNamespace(w, identity, &req.Assignment.Namespace) {
 		return
 	}
+	if err := resolveAssignmentManifestBundle(&req.Assignment); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	plan, err := store.PlanAssignment(req.Assignment, req.Limit)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -1363,6 +1375,10 @@ func handleWarmPools(w http.ResponseWriter, r *http.Request, store *Store) {
 			return
 		}
 		if !applyScopedNamespace(w, identity, &req.Namespace) {
+			return
+		}
+		if err := resolveWarmPoolManifestBundle(&req); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		result, err := store.EnsureWarmPoolActor(identity.Actor, req)
@@ -1661,6 +1677,10 @@ func handleAssignments(w http.ResponseWriter, r *http.Request, store *Store) {
 			return
 		}
 		if !applyScopedNamespace(w, identity, &assignment.Namespace) {
+			return
+		}
+		if err := resolveAssignmentManifestBundle(&assignment); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		created, err := store.CreateAssignmentActor(identity.Actor, assignment)

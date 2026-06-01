@@ -19,6 +19,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/tmc/cove/internal/ociimage"
 )
 
 func TestStoreHeartbeatPersistsAndSorts(t *testing.T) {
@@ -3172,6 +3174,78 @@ func TestHandlerPlansPlacement(t *testing.T) {
 	}
 }
 
+func TestHandlerPlansPlacementFromManifestBundle(t *testing.T) {
+	bundleDir, linuxDigest, _ := writeFleetManifestBundle(t)
+	digestRef := "ghcr.io/me/dev-vm@" + linuxDigest
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{
+		ID:        "stale",
+		ImageRefs: []string{"base:v1"},
+		ImageDetails: []WorkerImage{{
+			Ref:                  "base:v1",
+			SourceManifestDigest: "sha256:old",
+		}},
+		Capacity: Capacity{MaxVMs: 4},
+	}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{
+		ID:        "exact",
+		ImageRefs: []string{"base:v1"},
+		ImageDetails: []WorkerImage{{
+			Ref:                  "base:v1",
+			SourceManifestDigest: linuxDigest,
+		}},
+		Capacity: Capacity{MaxVMs: 4},
+	}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "cold", Capacity: Capacity{MaxVMs: 4}}, &record)
+
+	var plan PlacementPlan
+	postJSON(t, server.URL+"/v1/placements/plan", PlacementPlanRequest{
+		Assignment: Assignment{
+			Policy:         PolicyImageAffinity,
+			ImageRef:       "base:v1",
+			ManifestBundle: bundleDir,
+			ImagePlatform:  "linux/arm64",
+			Verb:           "cove",
+		},
+		Limit: 10,
+	}, &plan)
+	if plan.ImageManifestDigest != linuxDigest || plan.ImageDigestRef != digestRef || plan.ImagePlatform != "linux/arm64" {
+		t.Fatalf("plan image identity = %+v, want bundle digest metadata", plan)
+	}
+	if len(plan.Candidates) != 1 || plan.Candidates[0].WorkerID != "exact" || !plan.Candidates[0].HasImage {
+		t.Fatalf("plan candidates = %+v, want exact worker only", plan.Candidates)
+	}
+}
+
+func TestHandlerManifestBundleRejectsTamperedChild(t *testing.T) {
+	bundleDir, linuxDigest, _ := writeFleetManifestBundle(t)
+	if err := os.WriteFile(filepath.Join(bundleDir, filepath.FromSlash(imageManifestBundleChildPath(linuxDigest))), []byte("{}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}}, &record)
+	code := postJSONStatus(t, server.URL+"/v1/placements/plan", "", PlacementPlanRequest{
+		Assignment: Assignment{
+			Policy:         PolicyImageAffinity,
+			ImageRef:       "base:v1",
+			ManifestBundle: bundleDir,
+			ImagePlatform:  "linux/arm64",
+			Verb:           "cove",
+		},
+	})
+	if code != http.StatusBadRequest {
+		t.Fatalf("tampered manifest bundle status = %d, want %d", code, http.StatusBadRequest)
+	}
+}
+
 func TestHandlerWorkerCordonLifecycle(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	server := httptest.NewServer(Handler(store))
@@ -3266,6 +3340,52 @@ func TestHandlerPrepareImage(t *testing.T) {
 	}, &result)
 	if len(result.Assignments) != 1 || result.Assignments[0].WorkerID != "worker-1" {
 		t.Fatalf("prepare result = %+v", result)
+	}
+}
+
+func TestHandlerPrepareImageFromManifestBundle(t *testing.T) {
+	bundleDir, linuxDigest, _ := writeFleetManifestBundle(t)
+	digestRef := "ghcr.io/me/dev-vm@" + linuxDigest
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{
+		ID:        "exact",
+		ImageRefs: []string{"base:v1"},
+		ImageDetails: []WorkerImage{{
+			Ref:                  "base:v1",
+			SourceManifestDigest: linuxDigest,
+		}},
+	}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{
+		ID:        "stale",
+		ImageRefs: []string{"base:v1"},
+		ImageDetails: []WorkerImage{{
+			Ref:                  "base:v1",
+			SourceManifestDigest: "sha256:old",
+		}},
+	}, &record)
+
+	var result ImagePrepareResult
+	postJSON(t, server.URL+"/v1/images/prepare", ImagePrepareRequest{
+		ImageRef:       "base:v1",
+		ManifestBundle: bundleDir,
+		ImagePlatform:  "linux/arm64",
+	}, &result)
+	if result.SourceRef != digestRef || result.ImageManifestDigest != linuxDigest || result.ImageDigestRef != digestRef || result.ImagePlatform != "linux/arm64" {
+		t.Fatalf("prepare result identity = %+v, want digest ref from bundle", result)
+	}
+	if skipReason(result.Skipped, "exact") != "present" {
+		t.Fatalf("skipped = %+v, want exact present", result.Skipped)
+	}
+	if len(result.Assignments) != 1 || result.Assignments[0].WorkerID != "stale" {
+		t.Fatalf("assignments = %+v, want stale refresh", result.Assignments)
+	}
+	wantArgs := []string{"image", "pull", "-tag", "base:v1", "-force", digestRef}
+	if !equalStrings(result.Assignments[0].Args, wantArgs) {
+		t.Fatalf("assignment args = %+v, want %+v", result.Assignments[0].Args, wantArgs)
 	}
 }
 
@@ -3408,6 +3528,40 @@ func TestHandlerWarmPools(t *testing.T) {
 	wantArgs := []string{"shell", claim.VMName, "--", "/bin/true"}
 	if claim.Assignment.WorkerID != "worker-1" || claim.Assignment.WarmPoolSlot != leased.ID || !equalStrings(claim.Assignment.Args, wantArgs) {
 		t.Fatalf("claim assignment = %+v, want args %+v", claim.Assignment, wantArgs)
+	}
+}
+
+func TestHandlerWarmPoolFromManifestBundle(t *testing.T) {
+	bundleDir, linuxDigest, _ := writeFleetManifestBundle(t)
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{
+		ID:        "exact",
+		ImageRefs: []string{"base:v1"},
+		ImageDetails: []WorkerImage{{
+			Ref:                  "base:v1",
+			SourceManifestDigest: linuxDigest,
+		}},
+		Capacity: Capacity{MaxVMs: 4},
+	}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "cold", Capacity: Capacity{MaxVMs: 4}}, &record)
+
+	var result WarmPoolResult
+	postJSON(t, server.URL+"/v1/warm-pools", WarmPoolRequest{
+		Name:           "runner",
+		ImageRef:       "base:v1",
+		ManifestBundle: bundleDir,
+		ImagePlatform:  "linux/arm64",
+		Size:           1,
+	}, &result)
+	if len(result.Created) != 1 || result.Created[0].WorkerID != "exact" {
+		t.Fatalf("warm pool created = %+v, want exact worker", result.Created)
+	}
+	if result.Pool.ImageManifestDigest != linuxDigest || result.Pool.ImageDigestRef != "ghcr.io/me/dev-vm@"+linuxDigest || result.Pool.ImagePlatform != "linux/arm64" {
+		t.Fatalf("warm pool identity = %+v, want bundle metadata", result.Pool)
 	}
 }
 
@@ -3594,6 +3748,39 @@ func TestHandlerSandboxes(t *testing.T) {
 	postJSON(t, server.URL+"/v1/sandboxes/job-2/restart", map[string]string{}, &restart)
 	if restart.Restarting || restart.ID != "job-2" || restart.Status != "pending" {
 		t.Fatalf("restart pending sandbox = %+v, want pending no-op", restart)
+	}
+}
+
+func TestHandlerSandboxFromManifestBundle(t *testing.T) {
+	bundleDir, linuxDigest, _ := writeFleetManifestBundle(t)
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{
+		ID:        "exact",
+		ImageRefs: []string{"base:v1"},
+		ImageDetails: []WorkerImage{{
+			Ref:                  "base:v1",
+			SourceManifestDigest: linuxDigest,
+		}},
+		Capacity: Capacity{MaxVMs: 4},
+	}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "cold", Capacity: Capacity{MaxVMs: 4}}, &record)
+
+	var created SandboxStatus
+	postJSON(t, server.URL+"/v1/sandboxes", SandboxRequest{
+		ID:             "job-1",
+		ImageRef:       "base:v1",
+		ManifestBundle: bundleDir,
+		ImagePlatform:  "linux/arm64",
+	}, &created)
+	if created.WorkerID != "exact" || created.ImageManifestDigest != linuxDigest || created.ImageDigestRef != "ghcr.io/me/dev-vm@"+linuxDigest || created.ImagePlatform != "linux/arm64" {
+		t.Fatalf("sandbox = %+v, want exact bundle metadata", created)
+	}
+	if created.Assignment.ImageManifestDigest != linuxDigest || created.Assignment.ManifestBundle != "" {
+		t.Fatalf("sandbox assignment = %+v, want resolved bundle metadata only", created.Assignment)
 	}
 }
 
@@ -4332,6 +4519,89 @@ func deleteJSONStatusAuth(t *testing.T, url, token string) int {
 	}
 	defer resp.Body.Close()
 	return resp.StatusCode
+}
+
+func writeFleetManifestBundle(t *testing.T) (dir, linuxDigest, darwinDigest string) {
+	t.Helper()
+	darwinData := []byte(`{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json","config":{"mediaType":"application/vnd.oci.image.config.v1+json","size":2,"digest":"sha256:1111111111111111111111111111111111111111111111111111111111111111"},"layers":[]}` + "\n")
+	linuxData := []byte(`{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json","config":{"mediaType":"application/vnd.oci.image.config.v1+json","size":2,"digest":"sha256:2222222222222222222222222222222222222222222222222222222222222222"},"layers":[]}` + "\n")
+	darwinDigest = imageManifestBundleDigestData(darwinData)
+	linuxDigest = imageManifestBundleDigestData(linuxData)
+	index := ociimage.Index{
+		SchemaVersion: 2,
+		MediaType:     ociimage.MediaTypeImageIndex,
+		Manifests: []ociimage.IndexDescriptor{
+			{
+				Descriptor: ociimage.Descriptor{MediaType: ociimage.MediaTypeImageManifest, Size: int64(len(darwinData)), Digest: darwinDigest},
+				Platform:   &ociimage.Platform{OS: "darwin", Architecture: "arm64"},
+			},
+			{
+				Descriptor: ociimage.Descriptor{MediaType: ociimage.MediaTypeImageManifest, Size: int64(len(linuxData)), Digest: linuxDigest},
+				Platform:   &ociimage.Platform{OS: "linux", Architecture: "arm64"},
+			},
+		},
+	}
+	indexData, err := json.Marshal(index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexData = append(indexData, '\n')
+	dir = filepath.Join(t.TempDir(), "bundle")
+	if err := os.MkdirAll(filepath.Join(dir, "manifests"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string][]byte{
+		"index.json":    indexData,
+		"selected.json": linuxData,
+		imageManifestBundleChildPath(darwinDigest): darwinData,
+		imageManifestBundleChildPath(linuxDigest):  linuxData,
+	}
+	for rel, data := range files {
+		if err := os.WriteFile(filepath.Join(dir, filepath.FromSlash(rel)), data, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	summary := imageManifestBundleSummary{
+		SchemaVersion:      1,
+		Ref:                "ghcr.io/me/dev-vm:v1",
+		IndexPath:          "index.json",
+		IndexDigest:        imageManifestBundleDigestData(indexData),
+		IndexFileDigest:    imageManifestBundleDigestData(indexData),
+		SelectedPath:       "selected.json",
+		ManifestDigest:     linuxDigest,
+		SelectedFileDigest: linuxDigest,
+		DigestRef:          "ghcr.io/me/dev-vm@" + linuxDigest,
+		SelectedDigest:     linuxDigest,
+		SelectedPlatform:   "linux/arm64",
+		ChildCount:         2,
+		Children: []imageManifestBundleChildSummary{
+			{
+				Digest:     darwinDigest,
+				Path:       imageManifestBundleChildPath(darwinDigest),
+				FileDigest: darwinDigest,
+				MediaType:  ociimage.MediaTypeImageManifest,
+				Size:       int64(len(darwinData)),
+				Platform:   "darwin/arm64",
+			},
+			{
+				Digest:     linuxDigest,
+				Path:       imageManifestBundleChildPath(linuxDigest),
+				FileDigest: linuxDigest,
+				MediaType:  ociimage.MediaTypeImageManifest,
+				Size:       int64(len(linuxData)),
+				Platform:   "linux/arm64",
+				Selected:   true,
+			},
+		},
+	}
+	summaryData, err := json.MarshalIndent(summary, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "summary.json"), append(summaryData, '\n'), 0644); err != nil {
+		t.Fatal(err)
+	}
+	return dir, linuxDigest, darwinDigest
 }
 
 func testOIDCKey(t *testing.T) (*rsa.PrivateKey, string) {
