@@ -591,6 +591,7 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 	ctx := context.Background()
 	apply := true
 	clear := false
+	hasActive := true
 	warn := 70
 	hard := 90
 
@@ -728,7 +729,7 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 		t.Fatalf("GetStoragePruneRun = %+v, want storage-prune-1", gotPrune)
 	}
 
-	runs, err := ListControllerRuns(ctx, ControllerRunListOptions{FleetURL: server.URL, APIKey: "secret", Namespace: "team-a", Kind: "storage.prune", TargetType: "storage", SourceRef: "registry.example/base:v1", ImageRef: "base:v1", ImageManifestDigest: "sha256:base", ImageDigestRef: "registry.example/base@sha256:base", ImagePlatform: "darwin/arm64", RequiredCapability: "ram-overlay", AssignmentID: "assignment-storage-prune-1", WorkerID: "worker-1", CandidateWorkerID: "worker-1", SkippedWorkerID: "worker-2", Offset: 1, Limit: 2, Timeout: time.Second})
+	runs, err := ListControllerRuns(ctx, ControllerRunListOptions{FleetURL: server.URL, APIKey: "secret", Namespace: "team-a", Kind: "storage.prune", TargetType: "storage", SourceRef: "registry.example/base:v1", ImageRef: "base:v1", ImageManifestDigest: "sha256:base", ImageDigestRef: "registry.example/base@sha256:base", ImagePlatform: "darwin/arm64", RequiredCapability: "ram-overlay", AssignmentID: "assignment-storage-prune-1", AssignmentStatus: "running", HasActiveAssignments: &hasActive, WorkerID: "worker-1", CandidateWorkerID: "worker-1", SkippedWorkerID: "worker-2", Offset: 1, Limit: 2, Timeout: time.Second})
 	if err != nil {
 		t.Fatalf("ListControllerRuns: %v", err)
 	}
@@ -744,6 +745,9 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 	}
 	if !equalStringSlices(runDetail.AssignmentIDs, []string{"assignment-storage-prune-1"}) || len(runDetail.Assignments) != 1 || !equalStringSlices(runDetail.WorkerIDs, []string{"worker-1"}) || !equalStringSlices(runDetail.SkippedWorkerIDs, []string{"worker-2", "worker-3", "worker-4"}) {
 		t.Fatalf("GetControllerRun normalized fields = ids %+v assignments %d workers %+v skipped %+v", runDetail.AssignmentIDs, len(runDetail.Assignments), runDetail.WorkerIDs, runDetail.SkippedWorkerIDs)
+	}
+	if !equalStringSlices(runDetail.AssignmentStatuses, []string{"running"}) || runDetail.AssignmentStatusCounts["running"] != 1 || !equalStringSlices(runDetail.ActiveAssignmentIDs, []string{"assignment-storage-prune-1"}) {
+		t.Fatalf("GetControllerRun status fields = statuses %+v counts %+v active %+v, want running assignment", runDetail.AssignmentStatuses, runDetail.AssignmentStatusCounts, runDetail.ActiveAssignmentIDs)
 	}
 	reconcilePlan, err := PlanReconcile(ctx, ReconcileOptions{FleetURL: server.URL, APIKey: "secret", Timeout: time.Second})
 	if err != nil {
@@ -823,7 +827,7 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 	if body := server.requests[9].body; body["category"] != "build-scratch" || body["older_than"] != "48h" || body["apply"] != true || body["dry_run"] != true {
 		t.Fatalf("storage prune body = %+v", body)
 	}
-	if query := server.requests[12].query; query.Get("kind") != "storage.prune" || query.Get("target_type") != "storage" || query.Get("namespace") != "team-a" || query.Get("source_ref") != "registry.example/base:v1" || query.Get("image_ref") != "base:v1" || query.Get("image_manifest_digest") != "sha256:base" || query.Get("image_digest_ref") != "registry.example/base@sha256:base" || query.Get("image_platform") != "darwin/arm64" || query.Get("required_capability") != "ram-overlay" || query.Get("assignment_id") != "assignment-storage-prune-1" || query.Get("worker_id") != "worker-1" || query.Get("candidate_worker_id") != "worker-1" || query.Get("skipped_worker_id") != "worker-2" {
+	if query := server.requests[12].query; query.Get("kind") != "storage.prune" || query.Get("target_type") != "storage" || query.Get("namespace") != "team-a" || query.Get("source_ref") != "registry.example/base:v1" || query.Get("image_ref") != "base:v1" || query.Get("image_manifest_digest") != "sha256:base" || query.Get("image_digest_ref") != "registry.example/base@sha256:base" || query.Get("image_platform") != "darwin/arm64" || query.Get("required_capability") != "ram-overlay" || query.Get("assignment_id") != "assignment-storage-prune-1" || query.Get("assignment_status") != "running" || query.Get("has_active_assignments") != "true" || query.Get("worker_id") != "worker-1" || query.Get("candidate_worker_id") != "worker-1" || query.Get("skipped_worker_id") != "worker-2" {
 		t.Fatalf("controller runs query = %q", query.Encode())
 	}
 	if body := server.requests[15].body; len(body) != 0 {
@@ -2216,6 +2220,8 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/operations/runs/storage-prune-1":
 			run := sdkStoragePruneResult(false)
+			assignments := append([]Assignment(nil), run.Assignments...)
+			assignments[0].Status = "running"
 			writeSDKJSON(t, w, ControllerRunDetail{
 				Summary: ControllerRunSummary{
 					ID:              "storage-prune-1",
@@ -2228,11 +2234,14 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 					SkipCount:       1,
 					Fields:          map[string]string{"older_than": "48h", "apply": "true"},
 				},
-				AssignmentIDs:    []string{"assignment-storage-prune-1"},
-				Assignments:      run.Assignments,
-				WorkerIDs:        []string{"worker-1"},
-				SkippedWorkerIDs: []string{"worker-2", "worker-3", "worker-4"},
-				StoragePrune:     &run,
+				AssignmentIDs:          []string{"assignment-storage-prune-1"},
+				Assignments:            assignments,
+				AssignmentStatuses:     []string{"running"},
+				AssignmentStatusCounts: map[string]int{"running": 1},
+				ActiveAssignmentIDs:    []string{"assignment-storage-prune-1"},
+				WorkerIDs:              []string{"worker-1"},
+				SkippedWorkerIDs:       []string{"worker-2", "worker-3", "worker-4"},
+				StoragePrune:           &run,
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/reconcile/plan":
 			writeSDKJSON(t, w, sdkReconcilePlan())

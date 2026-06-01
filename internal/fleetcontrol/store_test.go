@@ -4935,7 +4935,7 @@ func TestStoreListControllerRunsPage(t *testing.T) {
 			Ref:                  "base:v1",
 			SourceManifestDigest: "sha256:base",
 		}},
-		Capacity: Capacity{MaxVMs: 3},
+		Capacity: Capacity{MaxVMs: 10},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -4970,6 +4970,17 @@ func TestStoreListControllerRunsPage(t *testing.T) {
 		RequiredCapabilities: []string{"ram-overlay"},
 	})
 	if err != nil {
+		t.Fatal(err)
+	}
+	leased, err := store.AwaitAssignment("desk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leased == nil || leased.ID != prep.Assignments[0].ID {
+		t.Fatalf("leased assignment = %+v, want image prepare %s", leased, prep.Assignments[0].ID)
+	}
+	step()
+	if _, err := store.Report(WorkerReport{ID: "desk", AssignmentID: prep.Assignments[0].ID, Status: "running"}); err != nil {
 		t.Fatal(err)
 	}
 	step()
@@ -5037,6 +5048,15 @@ func TestStoreListControllerRunsPage(t *testing.T) {
 	if assignmentFilter.Count != 1 || len(assignmentFilter.Runs) != 1 || assignmentFilter.Runs[0].ID != prep.ID {
 		t.Fatalf("assignment controller runs = %+v, want image prepare %s", assignmentFilter, prep.ID)
 	}
+	statusFilter := store.ListControllerRunsPage(ControllerRunListFilter{Namespace: "team-a", AssignmentStatus: "running"})
+	if statusFilter.Count != 1 || len(statusFilter.Runs) != 1 || statusFilter.Runs[0].ID != prep.ID {
+		t.Fatalf("status controller runs = %+v, want running image prepare %s", statusFilter, prep.ID)
+	}
+	hasActive := true
+	activeFilter := store.ListControllerRunsPage(ControllerRunListFilter{Namespace: "team-a", HasActiveAssignments: &hasActive})
+	if activeFilter.Count != 5 || len(activeFilter.Runs) != 5 {
+		t.Fatalf("active assignment controller runs = %+v, want five assignment-backed runs", activeFilter)
+	}
 	workerFilter := store.ListControllerRunsPage(ControllerRunListFilter{Namespace: "team-a", WorkerID: "desk"})
 	if workerFilter.Count != 6 || len(workerFilter.Runs) != 6 {
 		t.Fatalf("worker controller runs = %+v, want 6 runs touching desk", workerFilter)
@@ -5051,6 +5071,12 @@ func TestStoreListControllerRunsPage(t *testing.T) {
 	}
 	if !equalStrings(detail.AssignmentIDs, []string{prep.Assignments[0].ID}) || len(detail.Assignments) != 1 || !equalStrings(detail.WorkerIDs, []string{"desk"}) || len(detail.SkippedWorkerIDs) != 0 {
 		t.Fatalf("controller run normalized fields = ids %+v assignments %d workers %+v skipped %+v, want image prepare assignment on desk", detail.AssignmentIDs, len(detail.Assignments), detail.WorkerIDs, detail.SkippedWorkerIDs)
+	}
+	if detail.Assignments[0].Status != "running" || !equalStrings(detail.AssignmentStatuses, []string{"running"}) || detail.AssignmentStatusCounts["running"] != 1 || !equalStrings(detail.ActiveAssignmentIDs, []string{prep.Assignments[0].ID}) {
+		t.Fatalf("controller run live assignment fields = assignments %+v statuses %+v counts %+v active %+v, want running %s", detail.Assignments, detail.AssignmentStatuses, detail.AssignmentStatusCounts, detail.ActiveAssignmentIDs, prep.Assignments[0].ID)
+	}
+	if detail.ImagePreparation.Assignments[0].Status != "pending" {
+		t.Fatalf("retained image preparation assignment status = %q, want pending snapshot", detail.ImagePreparation.Assignments[0].Status)
 	}
 	planDetail, ok := store.GetControllerRun(plan.ID)
 	if !ok || planDetail.Summary.ID != plan.ID || planDetail.Summary.Kind != ControllerRunKindPlacementPlan || planDetail.PlacementPlan == nil || planDetail.PlacementPlan.ImageManifestDigest != "sha256:base" {
@@ -6423,6 +6449,17 @@ func TestHandlerControllerRuns(t *testing.T) {
 		RequiredLabels:       map[string]string{"zone": "desk"},
 		RequiredCapabilities: []string{"ram-overlay"},
 	}, &prep)
+	var leased Assignment
+	for i := 0; i < 2; i++ {
+		getJSON(t, server.URL+"/v1/workers/worker-1/assignments", &leased)
+		if leased.ID == prep.Assignments[0].ID {
+			break
+		}
+	}
+	if leased.ID != prep.Assignments[0].ID {
+		t.Fatalf("leased assignment = %+v, want image prepare %s", leased, prep.Assignments[0].ID)
+	}
+	postJSON(t, server.URL+"/v1/workers/worker-1/reports", WorkerReport{AssignmentID: prep.Assignments[0].ID, Status: "running"}, &record)
 
 	var page ControllerRunListResult
 	getJSONAuth(t, server.URL+"/v1/operations/runs?kind=storage.prune&target_type=storage&limit=1", "token-a", &page)
@@ -6443,6 +6480,16 @@ func TestHandlerControllerRuns(t *testing.T) {
 		t.Fatalf("assignment controller runs = %+v, want image prepare %s", page, prep.ID)
 	}
 	page = ControllerRunListResult{}
+	getJSONAuth(t, server.URL+"/v1/operations/runs?assignment_status=running", "token-a", &page)
+	if page.Count != 1 || len(page.Runs) != 1 || page.Runs[0].ID != prep.ID {
+		t.Fatalf("status controller runs = %+v, want running image prepare %s", page, prep.ID)
+	}
+	page = ControllerRunListResult{}
+	getJSONAuth(t, server.URL+"/v1/operations/runs?has_active_assignments=true&limit=10", "token-a", &page)
+	if page.Count != 2 || len(page.Runs) != 2 {
+		t.Fatalf("active assignment controller runs = %+v, want prune and prepare", page)
+	}
+	page = ControllerRunListResult{}
 	getJSONAuth(t, server.URL+"/v1/operations/runs?worker_id=worker-1&limit=10", "token-a", &page)
 	if page.Count != 2 || len(page.Runs) != 2 {
 		t.Fatalf("worker controller runs = %+v, want prune and prepare on worker-1", page)
@@ -6460,6 +6507,9 @@ func TestHandlerControllerRuns(t *testing.T) {
 	if !equalStrings(detail.AssignmentIDs, []string{prep.Assignments[0].ID}) || len(detail.Assignments) != 1 || !equalStrings(detail.WorkerIDs, []string{"worker-1"}) {
 		t.Fatalf("controller run detail normalized fields = ids %+v assignments %d workers %+v, want image prepare assignment on worker-1", detail.AssignmentIDs, len(detail.Assignments), detail.WorkerIDs)
 	}
+	if detail.Assignments[0].Status != "running" || !equalStrings(detail.AssignmentStatuses, []string{"running"}) || detail.AssignmentStatusCounts["running"] != 1 || !equalStrings(detail.ActiveAssignmentIDs, []string{prep.Assignments[0].ID}) {
+		t.Fatalf("controller run detail live status fields = assignments %+v statuses %+v counts %+v active %+v, want running", detail.Assignments, detail.AssignmentStatuses, detail.AssignmentStatusCounts, detail.ActiveAssignmentIDs)
+	}
 	if code := getJSONStatus(t, server.URL+"/v1/operations/runs/"+prep.ID, "token-b"); code != http.StatusNotFound {
 		t.Fatalf("team-b controller run detail status = %d, want %d", code, http.StatusNotFound)
 	}
@@ -6473,6 +6523,9 @@ func TestHandlerControllerRuns(t *testing.T) {
 	}
 	if code := getJSONStatus(t, server.URL+"/v1/operations/runs?offset=-1", "token-a"); code != http.StatusBadRequest {
 		t.Fatalf("bad controller runs offset status = %d, want %d", code, http.StatusBadRequest)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/operations/runs?has_active_assignments=maybe", "token-a"); code != http.StatusBadRequest {
+		t.Fatalf("bad active assignment filter status = %d, want %d", code, http.StatusBadRequest)
 	}
 }
 

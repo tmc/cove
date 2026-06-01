@@ -3546,6 +3546,7 @@ func (s *Store) ListControllerRunsPage(filter ControllerRunListFilter) Controlle
 	filter.ImagePlatform = strings.TrimSpace(filter.ImagePlatform)
 	filter.RequiredCapability = strings.TrimSpace(filter.RequiredCapability)
 	filter.AssignmentID = strings.TrimSpace(filter.AssignmentID)
+	filter.AssignmentStatus = strings.TrimSpace(filter.AssignmentStatus)
 	filter.WorkerID = strings.TrimSpace(filter.WorkerID)
 	filter.CandidateWorkerID = strings.TrimSpace(filter.CandidateWorkerID)
 	filter.SkippedWorkerID = strings.TrimSpace(filter.SkippedWorkerID)
@@ -3641,13 +3642,17 @@ func (s *Store) controllerRunDetailLocked(id string) (ControllerRunDetail, bool)
 			continue
 		}
 		prep = cloneImagePrepareResult(prep)
+		assignments := s.controllerRunAssignmentsLocked(prep.Assignments)
 		return ControllerRunDetail{
-			Summary:          controllerRunFromImagePrepare(prep),
-			AssignmentIDs:    controllerRunAssignmentIDs(prep.Assignments),
-			Assignments:      cloneAssignments(prep.Assignments),
-			WorkerIDs:        controllerRunAssignmentWorkerIDs(prep.Assignments),
-			SkippedWorkerIDs: controllerRunImagePrepareSkipWorkerIDs(prep.Skipped),
-			ImagePreparation: &prep,
+			Summary:                controllerRunFromImagePrepare(prep),
+			AssignmentIDs:          controllerRunAssignmentIDs(assignments),
+			Assignments:            assignments,
+			AssignmentStatuses:     controllerRunAssignmentStatuses(assignments),
+			AssignmentStatusCounts: controllerRunAssignmentStatusCounts(assignments),
+			ActiveAssignmentIDs:    controllerRunActiveAssignmentIDs(assignments),
+			WorkerIDs:              controllerRunAssignmentWorkerIDs(assignments),
+			SkippedWorkerIDs:       controllerRunImagePrepareSkipWorkerIDs(prep.Skipped),
+			ImagePreparation:       &prep,
 		}, true
 	}
 	for _, run := range s.imageGCRuns {
@@ -3655,13 +3660,17 @@ func (s *Store) controllerRunDetailLocked(id string) (ControllerRunDetail, bool)
 			continue
 		}
 		run = cloneImageGCResult(run)
+		assignments := s.controllerRunAssignmentsLocked(run.Assignments)
 		return ControllerRunDetail{
-			Summary:          controllerRunFromImageGC(run),
-			AssignmentIDs:    controllerRunAssignmentIDs(run.Assignments),
-			Assignments:      cloneAssignments(run.Assignments),
-			WorkerIDs:        controllerRunAssignmentWorkerIDs(run.Assignments),
-			SkippedWorkerIDs: controllerRunImageGCSkipWorkerIDs(run.Skipped),
-			ImageGC:          &run,
+			Summary:                controllerRunFromImageGC(run),
+			AssignmentIDs:          controllerRunAssignmentIDs(assignments),
+			Assignments:            assignments,
+			AssignmentStatuses:     controllerRunAssignmentStatuses(assignments),
+			AssignmentStatusCounts: controllerRunAssignmentStatusCounts(assignments),
+			ActiveAssignmentIDs:    controllerRunActiveAssignmentIDs(assignments),
+			WorkerIDs:              controllerRunAssignmentWorkerIDs(assignments),
+			SkippedWorkerIDs:       controllerRunImageGCSkipWorkerIDs(run.Skipped),
+			ImageGC:                &run,
 		}, true
 	}
 	for _, run := range s.lifecycleRuns {
@@ -3669,13 +3678,17 @@ func (s *Store) controllerRunDetailLocked(id string) (ControllerRunDetail, bool)
 			continue
 		}
 		run = cloneLifecyclePolicyResult(run)
+		assignments := s.controllerRunAssignmentsLocked(run.Assignments)
 		return ControllerRunDetail{
-			Summary:          controllerRunFromLifecyclePolicy(run),
-			AssignmentIDs:    controllerRunAssignmentIDs(run.Assignments),
-			Assignments:      cloneAssignments(run.Assignments),
-			WorkerIDs:        controllerRunAssignmentWorkerIDs(run.Assignments),
-			SkippedWorkerIDs: controllerRunLifecyclePolicySkipWorkerIDs(run.Skipped),
-			LifecyclePolicy:  &run,
+			Summary:                controllerRunFromLifecyclePolicy(run),
+			AssignmentIDs:          controllerRunAssignmentIDs(assignments),
+			Assignments:            assignments,
+			AssignmentStatuses:     controllerRunAssignmentStatuses(assignments),
+			AssignmentStatusCounts: controllerRunAssignmentStatusCounts(assignments),
+			ActiveAssignmentIDs:    controllerRunActiveAssignmentIDs(assignments),
+			WorkerIDs:              controllerRunAssignmentWorkerIDs(assignments),
+			SkippedWorkerIDs:       controllerRunLifecyclePolicySkipWorkerIDs(run.Skipped),
+			LifecyclePolicy:        &run,
 		}, true
 	}
 	for _, run := range s.storageBudgetRuns {
@@ -3683,13 +3696,17 @@ func (s *Store) controllerRunDetailLocked(id string) (ControllerRunDetail, bool)
 			continue
 		}
 		run = cloneStorageBudgetResult(run)
+		assignments := s.controllerRunAssignmentsLocked(run.Assignments)
 		return ControllerRunDetail{
-			Summary:          controllerRunFromStorageBudget(run),
-			AssignmentIDs:    controllerRunAssignmentIDs(run.Assignments),
-			Assignments:      cloneAssignments(run.Assignments),
-			WorkerIDs:        controllerRunAssignmentWorkerIDs(run.Assignments),
-			SkippedWorkerIDs: controllerRunStoragePolicySkipWorkerIDs(run.Skipped),
-			StorageBudget:    &run,
+			Summary:                controllerRunFromStorageBudget(run),
+			AssignmentIDs:          controllerRunAssignmentIDs(assignments),
+			Assignments:            assignments,
+			AssignmentStatuses:     controllerRunAssignmentStatuses(assignments),
+			AssignmentStatusCounts: controllerRunAssignmentStatusCounts(assignments),
+			ActiveAssignmentIDs:    controllerRunActiveAssignmentIDs(assignments),
+			WorkerIDs:              controllerRunAssignmentWorkerIDs(assignments),
+			SkippedWorkerIDs:       controllerRunStoragePolicySkipWorkerIDs(run.Skipped),
+			StorageBudget:          &run,
 		}, true
 	}
 	for _, run := range s.storagePruneRuns {
@@ -3697,24 +3714,48 @@ func (s *Store) controllerRunDetailLocked(id string) (ControllerRunDetail, bool)
 			continue
 		}
 		run = cloneStoragePruneResult(run)
+		assignments := s.controllerRunAssignmentsLocked(run.Assignments)
 		return ControllerRunDetail{
-			Summary:          controllerRunFromStoragePrune(run),
-			AssignmentIDs:    controllerRunAssignmentIDs(run.Assignments),
-			Assignments:      cloneAssignments(run.Assignments),
-			WorkerIDs:        controllerRunAssignmentWorkerIDs(run.Assignments),
-			SkippedWorkerIDs: controllerRunStoragePolicySkipWorkerIDs(run.Skipped),
-			StoragePrune:     &run,
+			Summary:                controllerRunFromStoragePrune(run),
+			AssignmentIDs:          controllerRunAssignmentIDs(assignments),
+			Assignments:            assignments,
+			AssignmentStatuses:     controllerRunAssignmentStatuses(assignments),
+			AssignmentStatusCounts: controllerRunAssignmentStatusCounts(assignments),
+			ActiveAssignmentIDs:    controllerRunActiveAssignmentIDs(assignments),
+			WorkerIDs:              controllerRunAssignmentWorkerIDs(assignments),
+			SkippedWorkerIDs:       controllerRunStoragePolicySkipWorkerIDs(run.Skipped),
+			StoragePrune:           &run,
 		}, true
 	}
 	return ControllerRunDetail{}, false
 }
 
+func (s *Store) controllerRunAssignmentsLocked(assignments []Assignment) []Assignment {
+	if len(assignments) == 0 {
+		return nil
+	}
+	out := make([]Assignment, 0, len(assignments))
+	for _, assignment := range assignments {
+		if current, ok := s.assignments[assignment.ID]; ok {
+			assignment = current
+		}
+		out = append(out, cloneAssignment(assignment))
+	}
+	return out
+}
+
 func controllerRunNeedsDetailFilter(filter ControllerRunListFilter) bool {
-	return filter.AssignmentID != "" || filter.WorkerID != "" || filter.CandidateWorkerID != "" || filter.SkippedWorkerID != ""
+	return filter.AssignmentID != "" || filter.AssignmentStatus != "" || filter.HasActiveAssignments != nil || filter.WorkerID != "" || filter.CandidateWorkerID != "" || filter.SkippedWorkerID != ""
 }
 
 func controllerRunDetailMatchesFilter(detail ControllerRunDetail, filter ControllerRunListFilter) bool {
 	if filter.AssignmentID != "" && !containsString(detail.AssignmentIDs, filter.AssignmentID) {
+		return false
+	}
+	if filter.AssignmentStatus != "" && !containsString(detail.AssignmentStatuses, filter.AssignmentStatus) {
+		return false
+	}
+	if filter.HasActiveAssignments != nil && (len(detail.ActiveAssignmentIDs) > 0) != *filter.HasActiveAssignments {
 		return false
 	}
 	if filter.WorkerID != "" && !controllerRunDetailHasWorker(detail, filter.WorkerID) {
@@ -3745,6 +3786,35 @@ func controllerRunAssignmentWorkerIDs(assignments []Assignment) []string {
 	ids := make([]string, 0, len(assignments))
 	for _, assignment := range assignments {
 		ids = append(ids, assignment.WorkerID)
+	}
+	return controllerRunUniqueStrings(ids)
+}
+
+func controllerRunAssignmentStatuses(assignments []Assignment) []string {
+	statuses := make([]string, 0, len(assignments))
+	for _, assignment := range assignments {
+		statuses = append(statuses, normalizeOperationStatus(assignment.Status))
+	}
+	return controllerRunUniqueStrings(statuses)
+}
+
+func controllerRunAssignmentStatusCounts(assignments []Assignment) map[string]int {
+	if len(assignments) == 0 {
+		return nil
+	}
+	counts := make(map[string]int)
+	for _, assignment := range assignments {
+		addStatusCount(counts, assignment.Status)
+	}
+	return counts
+}
+
+func controllerRunActiveAssignmentIDs(assignments []Assignment) []string {
+	ids := make([]string, 0, len(assignments))
+	for _, assignment := range assignments {
+		if activeAssignmentStatus(normalizeOperationStatus(assignment.Status)) {
+			ids = append(ids, assignment.ID)
+		}
 	}
 	return controllerRunUniqueStrings(ids)
 }

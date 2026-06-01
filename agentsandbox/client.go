@@ -566,26 +566,28 @@ type StoragePruneListResult struct {
 }
 
 type ControllerRunListOptions struct {
-	FleetURL            string
-	APIKey              string
-	Namespace           string
-	Kind                string
-	TargetType          string
-	TargetID            string
-	SourceRef           string
-	ImageRef            string
-	ImageManifestDigest string
-	ImageDigestRef      string
-	ImagePlatform       string
-	RequiredCapability  string
-	AssignmentID        string
-	WorkerID            string
-	CandidateWorkerID   string
-	SkippedWorkerID     string
-	Offset              int
-	Limit               int
-	Timeout             time.Duration
-	HTTP                *http.Client
+	FleetURL             string
+	APIKey               string
+	Namespace            string
+	Kind                 string
+	TargetType           string
+	TargetID             string
+	SourceRef            string
+	ImageRef             string
+	ImageManifestDigest  string
+	ImageDigestRef       string
+	ImagePlatform        string
+	RequiredCapability   string
+	AssignmentID         string
+	AssignmentStatus     string
+	HasActiveAssignments *bool
+	WorkerID             string
+	CandidateWorkerID    string
+	SkippedWorkerID      string
+	Offset               int
+	Limit                int
+	Timeout              time.Duration
+	HTTP                 *http.Client
 }
 
 type ControllerRunGetOptions struct {
@@ -605,18 +607,21 @@ type ControllerRunListResult struct {
 }
 
 type ControllerRunDetail struct {
-	Summary            ControllerRunSummary   `json:"summary"`
-	AssignmentIDs      []string               `json:"assignment_ids,omitempty"`
-	Assignments        []Assignment           `json:"assignments,omitempty"`
-	WorkerIDs          []string               `json:"worker_ids,omitempty"`
-	CandidateWorkerIDs []string               `json:"candidate_worker_ids,omitempty"`
-	SkippedWorkerIDs   []string               `json:"skipped_worker_ids,omitempty"`
-	PlacementPlan      *PlacementPlan         `json:"placement_plan,omitempty"`
-	ImagePreparation   *ImagePrepareResult    `json:"image_preparation,omitempty"`
-	ImageGC            *ImageGCResult         `json:"image_gc,omitempty"`
-	LifecyclePolicy    *LifecyclePolicyResult `json:"lifecycle_policy,omitempty"`
-	StorageBudget      *StorageBudgetResult   `json:"storage_budget,omitempty"`
-	StoragePrune       *StoragePruneResult    `json:"storage_prune,omitempty"`
+	Summary                ControllerRunSummary   `json:"summary"`
+	AssignmentIDs          []string               `json:"assignment_ids,omitempty"`
+	Assignments            []Assignment           `json:"assignments,omitempty"`
+	AssignmentStatuses     []string               `json:"assignment_statuses,omitempty"`
+	AssignmentStatusCounts map[string]int         `json:"assignment_status_counts,omitempty"`
+	ActiveAssignmentIDs    []string               `json:"active_assignment_ids,omitempty"`
+	WorkerIDs              []string               `json:"worker_ids,omitempty"`
+	CandidateWorkerIDs     []string               `json:"candidate_worker_ids,omitempty"`
+	SkippedWorkerIDs       []string               `json:"skipped_worker_ids,omitempty"`
+	PlacementPlan          *PlacementPlan         `json:"placement_plan,omitempty"`
+	ImagePreparation       *ImagePrepareResult    `json:"image_preparation,omitempty"`
+	ImageGC                *ImageGCResult         `json:"image_gc,omitempty"`
+	LifecyclePolicy        *LifecyclePolicyResult `json:"lifecycle_policy,omitempty"`
+	StorageBudget          *StorageBudgetResult   `json:"storage_budget,omitempty"`
+	StoragePrune           *StoragePruneResult    `json:"storage_prune,omitempty"`
 }
 
 type ControllerRunSummary struct {
@@ -2369,9 +2374,13 @@ func ListControllerRuns(ctx context.Context, opts ControllerRunListOptions) (Con
 		"image_platform":        opts.ImagePlatform,
 		"required_capability":   opts.RequiredCapability,
 		"assignment_id":         opts.AssignmentID,
+		"assignment_status":     opts.AssignmentStatus,
 		"worker_id":             opts.WorkerID,
 		"candidate_worker_id":   opts.CandidateWorkerID,
 		"skipped_worker_id":     opts.SkippedWorkerID,
+	}
+	if opts.HasActiveAssignments != nil {
+		query["has_active_assignments"] = strconv.FormatBool(*opts.HasActiveAssignments)
 	}
 	if opts.Offset > 0 {
 		query["offset"] = strconv.Itoa(opts.Offset)

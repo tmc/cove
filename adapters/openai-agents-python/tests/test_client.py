@@ -636,6 +636,8 @@ def test_fleet_client_maintenance_runs() -> None:
             image_platform="darwin/arm64",
             required_capability="ram-overlay",
             assignment_id="assignment-storage-prune-1",
+            assignment_status="running",
+            has_active_assignments=True,
             worker_id="worker-1",
             candidate_worker_id="worker-1",
             skipped_worker_id="worker-2",
@@ -654,6 +656,10 @@ def test_fleet_client_maintenance_runs() -> None:
         assert run_detail["storage_prune"]["older_than"] == "48h"
         assert run_detail["assignment_ids"] == ["assignment-storage-prune-1"]
         assert run_detail["assignments"][0]["worker_id"] == "worker-1"
+        assert run_detail["assignments"][0]["status"] == "running"
+        assert run_detail["assignment_statuses"] == ["running"]
+        assert run_detail["assignment_status_counts"]["running"] == 1
+        assert run_detail["active_assignment_ids"] == ["assignment-storage-prune-1"]
         assert run_detail["worker_ids"] == ["worker-1"]
         assert run_detail["skipped_worker_ids"] == ["worker-2", "worker-3", "worker-4"]
         reconcile_plan = CoveFleetClient.plan_reconcile(
@@ -723,6 +729,8 @@ def test_fleet_client_maintenance_runs() -> None:
         assert server.requests[-5]["query"]["image_platform"] == ["darwin/arm64"]
         assert server.requests[-5]["query"]["required_capability"] == ["ram-overlay"]
         assert server.requests[-5]["query"]["assignment_id"] == ["assignment-storage-prune-1"]
+        assert server.requests[-5]["query"]["assignment_status"] == ["running"]
+        assert server.requests[-5]["query"]["has_active_assignments"] == ["true"]
         assert server.requests[-5]["query"]["worker_id"] == ["worker-1"]
         assert server.requests[-5]["query"]["candidate_worker_id"] == ["worker-1"]
         assert server.requests[-5]["query"]["skipped_worker_id"] == ["worker-2"]
@@ -2591,6 +2599,8 @@ class _FleetHTTPServer:
                     )
                     return
                 if path == "/v1/operations/runs/storage-prune-1":
+                    assignment = _storage_prune_result()["assignments"][0].copy()
+                    assignment["status"] = "running"
                     self._write(
                         {
                             "summary": {
@@ -2605,7 +2615,10 @@ class _FleetHTTPServer:
                                 "fields": {"older_than": "48h", "apply": "true"},
                             },
                             "assignment_ids": ["assignment-storage-prune-1"],
-                            "assignments": _storage_prune_result()["assignments"],
+                            "assignments": [assignment],
+                            "assignment_statuses": ["running"],
+                            "assignment_status_counts": {"running": 1},
+                            "active_assignment_ids": ["assignment-storage-prune-1"],
                             "worker_ids": ["worker-1"],
                             "skipped_worker_ids": ["worker-2", "worker-3", "worker-4"],
                             "storage_prune": _storage_prune_result(),

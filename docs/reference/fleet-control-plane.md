@@ -81,6 +81,7 @@ curl 'http://127.0.0.1:9758/v1/operations/runs?kind=storage.prune&limit=20'
 curl 'http://127.0.0.1:9758/v1/operations/runs?target_type=image&target_id=macos-runner:latest'
 curl 'http://127.0.0.1:9758/v1/operations/runs?image_manifest_digest=sha256:...&required_capability=ram-overlay&limit=20'
 curl 'http://127.0.0.1:9758/v1/operations/runs?worker_id=mini-1&assignment_id=assignment-...&limit=20'
+curl 'http://127.0.0.1:9758/v1/operations/runs?assignment_status=running&has_active_assignments=true&limit=20'
 curl http://127.0.0.1:9758/v1/operations/runs/image-prepare-...
 curl http://127.0.0.1:9758/v1/workers
 curl 'http://127.0.0.1:9758/v1/workers?status=ready&label=zone=desk&capability=ram-overlay&image_ref=macos-runner:latest&limit=50'
@@ -225,7 +226,8 @@ placement plans, image preparations, image-GC runs, lifecycle-policy pushes,
 and storage budget/prune runs into one paginated timeline with `kind`,
 `target_type`, `target_id`, `source_ref`, `image_ref`,
 `image_manifest_digest`, `image_digest_ref`, `image_platform`,
-`required_capability`, `assignment_id`, `worker_id`,
+`required_capability`, `assignment_id`, `assignment_status`,
+`has_active_assignments`, `worker_id`,
 `candidate_worker_id`, `skipped_worker_id`, `offset`, and `limit` filters.
 Scoped service-account tokens see only runs in their namespace. Run summaries
 include the source run `id`, `kind`, creation time, assignment/skip/candidate
@@ -240,9 +242,13 @@ returns the same summary plus the retained source object under one of
 `placement_plan`, `image_preparation`, `image_gc`, `lifecycle_policy`,
 `storage_budget`, or `storage_prune`, giving dashboards a single drill-down
 path from the aggregate timeline. The detail response also normalizes common
-operator fields as `assignment_ids`, `assignments`, `worker_ids`,
+operator fields as `assignment_ids`, `assignments`, `assignment_statuses`,
+`assignment_status_counts`, `active_assignment_ids`, `worker_ids`,
 `candidate_worker_ids`, and `skipped_worker_ids`, so dashboards can render the
 run's affected work and workers without first switching on the source kind.
+The normalized assignment fields prefer the current assignment record when it is
+still present, while the retained source object remains the original controller
+run snapshot for audit and replay.
 
 Service-account and audit endpoints:
 
@@ -1043,15 +1049,18 @@ if err != nil {
 }
 log.Printf("drained sandboxes=%d skipped=%d", len(drain.Sandboxes), len(drain.Skipped))
 
+hasActive := true
 runs, err := agentsandbox.ListControllerRuns(ctx, agentsandbox.ControllerRunListOptions{
-	FleetURL:            "https://fleet.internal.example",
-	APIKey:              os.Getenv("COVE_API_KEY"),
-	Namespace:           "team-a",
-	Kind:                "image.prepare",
-	ImageManifestDigest: "sha256:...",
-	RequiredCapability:  "ram-overlay",
-	WorkerID:            "mini-1",
-	Limit:               20,
+	FleetURL:             "https://fleet.internal.example",
+	APIKey:               os.Getenv("COVE_API_KEY"),
+	Namespace:            "team-a",
+	Kind:                 "image.prepare",
+	ImageManifestDigest:  "sha256:...",
+	RequiredCapability:   "ram-overlay",
+	AssignmentStatus:     "running",
+	HasActiveAssignments: &hasActive,
+	WorkerID:             "mini-1",
+	Limit:                20,
 })
 if err != nil {
 	log.Fatal(err)

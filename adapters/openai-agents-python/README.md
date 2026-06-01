@@ -235,6 +235,8 @@ runs = CoveFleetClient.list_controller_runs(
     kind="image.prepare",
     image_manifest_digest="sha256:...",
     required_capability="ram-overlay",
+    assignment_status="running",
+    has_active_assignments=True,
     worker_id="mini-1",
     limit=20,
 )
@@ -247,6 +249,7 @@ if runs["runs"]:
     )
     print(detail["summary"]["kind"])
     print(detail.get("assignment_ids", []))
+    print(detail.get("assignment_status_counts", {}))
 
 plan = CoveFleetClient.plan_sandbox(
     fleet_url="https://fleet.internal.example",

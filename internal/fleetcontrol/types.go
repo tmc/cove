@@ -651,22 +651,24 @@ const (
 )
 
 type ControllerRunListFilter struct {
-	Namespace           string `json:"namespace,omitempty"`
-	Kind                string `json:"kind,omitempty"`
-	TargetType          string `json:"target_type,omitempty"`
-	TargetID            string `json:"target_id,omitempty"`
-	SourceRef           string `json:"source_ref,omitempty"`
-	ImageRef            string `json:"image_ref,omitempty"`
-	ImageManifestDigest string `json:"image_manifest_digest,omitempty"`
-	ImageDigestRef      string `json:"image_digest_ref,omitempty"`
-	ImagePlatform       string `json:"image_platform,omitempty"`
-	RequiredCapability  string `json:"required_capability,omitempty"`
-	AssignmentID        string `json:"assignment_id,omitempty"`
-	WorkerID            string `json:"worker_id,omitempty"`
-	CandidateWorkerID   string `json:"candidate_worker_id,omitempty"`
-	SkippedWorkerID     string `json:"skipped_worker_id,omitempty"`
-	Offset              int    `json:"offset,omitempty"`
-	Limit               int    `json:"limit,omitempty"`
+	Namespace            string `json:"namespace,omitempty"`
+	Kind                 string `json:"kind,omitempty"`
+	TargetType           string `json:"target_type,omitempty"`
+	TargetID             string `json:"target_id,omitempty"`
+	SourceRef            string `json:"source_ref,omitempty"`
+	ImageRef             string `json:"image_ref,omitempty"`
+	ImageManifestDigest  string `json:"image_manifest_digest,omitempty"`
+	ImageDigestRef       string `json:"image_digest_ref,omitempty"`
+	ImagePlatform        string `json:"image_platform,omitempty"`
+	RequiredCapability   string `json:"required_capability,omitempty"`
+	AssignmentID         string `json:"assignment_id,omitempty"`
+	AssignmentStatus     string `json:"assignment_status,omitempty"`
+	HasActiveAssignments *bool  `json:"has_active_assignments,omitempty"`
+	WorkerID             string `json:"worker_id,omitempty"`
+	CandidateWorkerID    string `json:"candidate_worker_id,omitempty"`
+	SkippedWorkerID      string `json:"skipped_worker_id,omitempty"`
+	Offset               int    `json:"offset,omitempty"`
+	Limit                int    `json:"limit,omitempty"`
 }
 
 type ControllerRunListResult struct {
@@ -678,18 +680,21 @@ type ControllerRunListResult struct {
 }
 
 type ControllerRunDetail struct {
-	Summary            ControllerRunSummary   `json:"summary"`
-	AssignmentIDs      []string               `json:"assignment_ids,omitempty"`
-	Assignments        []Assignment           `json:"assignments,omitempty"`
-	WorkerIDs          []string               `json:"worker_ids,omitempty"`
-	CandidateWorkerIDs []string               `json:"candidate_worker_ids,omitempty"`
-	SkippedWorkerIDs   []string               `json:"skipped_worker_ids,omitempty"`
-	PlacementPlan      *PlacementPlan         `json:"placement_plan,omitempty"`
-	ImagePreparation   *ImagePrepareResult    `json:"image_preparation,omitempty"`
-	ImageGC            *ImageGCResult         `json:"image_gc,omitempty"`
-	LifecyclePolicy    *LifecyclePolicyResult `json:"lifecycle_policy,omitempty"`
-	StorageBudget      *StorageBudgetResult   `json:"storage_budget,omitempty"`
-	StoragePrune       *StoragePruneResult    `json:"storage_prune,omitempty"`
+	Summary                ControllerRunSummary   `json:"summary"`
+	AssignmentIDs          []string               `json:"assignment_ids,omitempty"`
+	Assignments            []Assignment           `json:"assignments,omitempty"`
+	AssignmentStatuses     []string               `json:"assignment_statuses,omitempty"`
+	AssignmentStatusCounts map[string]int         `json:"assignment_status_counts,omitempty"`
+	ActiveAssignmentIDs    []string               `json:"active_assignment_ids,omitempty"`
+	WorkerIDs              []string               `json:"worker_ids,omitempty"`
+	CandidateWorkerIDs     []string               `json:"candidate_worker_ids,omitempty"`
+	SkippedWorkerIDs       []string               `json:"skipped_worker_ids,omitempty"`
+	PlacementPlan          *PlacementPlan         `json:"placement_plan,omitempty"`
+	ImagePreparation       *ImagePrepareResult    `json:"image_preparation,omitempty"`
+	ImageGC                *ImageGCResult         `json:"image_gc,omitempty"`
+	LifecyclePolicy        *LifecyclePolicyResult `json:"lifecycle_policy,omitempty"`
+	StorageBudget          *StorageBudgetResult   `json:"storage_budget,omitempty"`
+	StoragePrune           *StoragePruneResult    `json:"storage_prune,omitempty"`
 }
 
 type ControllerRunSummary struct {
