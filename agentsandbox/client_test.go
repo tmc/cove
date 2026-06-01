@@ -774,7 +774,7 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 	if summary.ControllerRuns.Total != 2 || summary.ControllerRuns.Active != 1 || summary.ControllerRuns.Attention != 1 || summary.ControllerRuns.ByKind["storage.prune"] != 1 || summary.ControllerRuns.ByAssignmentStatus["running"] != 1 {
 		t.Fatalf("controller run operations summary = %+v, want active storage prune and attention run", summary.ControllerRuns)
 	}
-	if summary.ControllerRuns.Skipped != 4 || summary.ControllerRuns.BySkipReason["capability"] != 2 || summary.ControllerRuns.BySkipReason["status"] != 2 || summary.ControllerRuns.BySkipStatus["cordoned"] != 2 || summary.ControllerRuns.ByMissingCapability["ram-overlay"] != 2 || len(summary.ControllerRuns.SkippedWorkers) != 2 || summary.ControllerRuns.SkippedWorkers[0].WorkerID != "worker-2" || summary.ControllerRuns.SkippedWorkers[1].WorkerID != "worker-3" {
+	if summary.ControllerRuns.Skipped != 4 || summary.ControllerRuns.BySkipReason["capability"] != 2 || summary.ControllerRuns.BySkipReason["status"] != 2 || summary.ControllerRuns.BySkipStatus["cordoned"] != 2 || summary.ControllerRuns.ByMissingCapability["ram-overlay"] != 2 || len(summary.ControllerRuns.SkippedWorkers) != 2 || summary.ControllerRuns.SkippedWorkers[0].WorkerID != "worker-2" || summary.ControllerRuns.SkippedWorkers[1].WorkerID != "worker-3" || summary.ControllerRuns.SkippedWorkers[1].ByStatus["cordoned"] != 2 {
 		t.Fatalf("controller run skip summary = %+v, want capability and cordoned status skips", summary.ControllerRuns)
 	}
 	if len(summary.Workers.Capabilities) != 2 || summary.Workers.Capabilities[0].Name != "asif" || summary.Workers.Capabilities[0].Ready != 1 {
@@ -2941,6 +2941,7 @@ func sdkOperationsSummary() OperationsSummary {
 				WorkerID: "worker-3",
 				Total:    2,
 				ByReason: map[string]int{"status": 2},
+				ByStatus: map[string]int{"cordoned": 2},
 			}},
 		},
 		Metering: MeteringSummary{Namespace: "team-a", Records: 2, DurationMillis: 2000, VMMillis: 2000},

@@ -703,6 +703,7 @@ def test_fleet_client_maintenance_runs() -> None:
         assert summary["controller_runs"]["by_missing_capability"]["ram-overlay"] == 2
         assert summary["controller_runs"]["skipped_workers"][0]["worker_id"] == "worker-2"
         assert summary["controller_runs"]["skipped_workers"][1]["worker_id"] == "worker-3"
+        assert summary["controller_runs"]["skipped_workers"][1]["by_status"]["cordoned"] == 2
         assert summary["metering"]["records"] == 2
 
         paths = [request["path"] for request in server.requests[-17:]]
@@ -2158,6 +2159,7 @@ def _operations_summary() -> dict[str, object]:
                     "worker_id": "worker-3",
                     "total": 2,
                     "by_reason": {"status": 2},
+                    "by_status": {"cordoned": 2},
                 }
             ],
         },

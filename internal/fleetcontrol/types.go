@@ -1122,6 +1122,7 @@ type ControllerRunSkippedWorkerSummary struct {
 	WorkerID string         `json:"worker_id"`
 	Total    int            `json:"total"`
 	ByReason map[string]int `json:"by_reason,omitempty"`
+	ByStatus map[string]int `json:"by_status,omitempty"`
 }
 
 type WorkerOperationsSummary struct {

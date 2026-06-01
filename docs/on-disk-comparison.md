@@ -137,8 +137,9 @@ delegates the disk/runtime work to `tart` or `vetu`.
    capabilities; the operations summary reports per-capability coverage by
    worker status plus controller-run active/attention rollups by kind, live
    assignment status, skip reason, skip status, missing capability, and skipped
-   worker, so operators can see whether RAM-overlay capacity is ready and
-   whether preparation or maintenance fan-out is currently blocked;
+   worker with per-worker status counts, so operators can see whether
+   RAM-overlay capacity is ready and whether preparation or maintenance fan-out
+   is currently blocked by specific cordoned, quarantined, or stale workers;
    placement plans retain skipped-worker reasons for capability, capacity,
    label, status, and exact-image mismatches and can be filtered by immutable
    image provenance and required capability, and assignment, placement-plan,

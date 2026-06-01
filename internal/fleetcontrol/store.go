@@ -3941,11 +3941,15 @@ func addControllerRunSkippedWorker(summaries map[string]*ControllerRunSkippedWor
 		summary = &ControllerRunSkippedWorkerSummary{
 			WorkerID: workerID,
 			ByReason: make(map[string]int),
+			ByStatus: make(map[string]int),
 		}
 		summaries[workerID] = summary
 	}
 	summary.Total++
 	summary.ByReason[reason]++
+	if status := controllerRunSkipStatus(skip); status != "" {
+		summary.ByStatus[status]++
+	}
 }
 
 func sortedControllerRunSkippedWorkers(summaries map[string]*ControllerRunSkippedWorkerSummary) []ControllerRunSkippedWorkerSummary {

@@ -82,6 +82,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - The operations summary and retained controller-run timeline now expose worker
   skip-status rollups and filters, so cordoned, quarantined, stale, or otherwise
   unavailable workers are dashboard-drillable.
+- Skipped-worker summaries now include per-worker status counts, making it clear
+  which retained runs skipped a specific worker because it was cordoned,
+  quarantined, stale, or otherwise unavailable.
 - The public Go `agentsandbox` package and OpenAI Agents Python adapter now
   expose the hosted `/v1/operations/summary` dashboard so agent clients can
   inspect worker readiness, capability coverage, active work, warm pools, and

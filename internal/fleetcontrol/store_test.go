@@ -1632,7 +1632,7 @@ func TestStoreOperationsSummaryControllerRuns(t *testing.T) {
 	if runs.ByMissingCapability["ram-overlay"] != 2 {
 		t.Fatalf("controller run missing capabilities = %+v, want two ram-overlay skips", runs.ByMissingCapability)
 	}
-	if len(runs.SkippedWorkers) != 2 || runs.SkippedWorkers[0].WorkerID != "worker-2" || runs.SkippedWorkers[0].Total != 2 || runs.SkippedWorkers[0].ByReason["capability"] != 2 || runs.SkippedWorkers[1].WorkerID != "worker-3" || runs.SkippedWorkers[1].Total != 2 || runs.SkippedWorkers[1].ByReason["status"] != 2 {
+	if len(runs.SkippedWorkers) != 2 || runs.SkippedWorkers[0].WorkerID != "worker-2" || runs.SkippedWorkers[0].Total != 2 || runs.SkippedWorkers[0].ByReason["capability"] != 2 || len(runs.SkippedWorkers[0].ByStatus) != 0 || runs.SkippedWorkers[1].WorkerID != "worker-3" || runs.SkippedWorkers[1].Total != 2 || runs.SkippedWorkers[1].ByReason["status"] != 2 || runs.SkippedWorkers[1].ByStatus["cordoned"] != 2 {
 		t.Fatalf("controller run skipped workers = %+v, want worker-2 capability and worker-3 status skips", runs.SkippedWorkers)
 	}
 	if runs.ByKind[ControllerRunKindImagePrepare] != 1 || runs.ByKind[ControllerRunKindStoragePrune] != 1 || runs.ByKind[ControllerRunKindImageGC] != 0 {
