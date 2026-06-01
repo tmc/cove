@@ -17,10 +17,11 @@ const remoteInspectTimeout = 30 * time.Second
 const remoteBaseChainLimit = 8
 
 type remoteInspectOptions struct {
-	RegistryBaseURL string
-	RegistryToken   string
-	VerifyBlobs     bool
-	Platform        string
+	RegistryBaseURL       string
+	RegistryToken         string
+	VerifyBlobs           bool
+	Platform              string
+	InspectIndexManifests bool
 }
 
 type ImageRemoteInspectOutput struct {
@@ -70,11 +71,27 @@ type ImageRemoteInspectOutput struct {
 }
 
 type ImageRemoteIndexManifest struct {
-	Digest    string `json:"digest"`
-	MediaType string `json:"media_type,omitempty"`
-	Size      int64  `json:"size,omitempty"`
-	Platform  string `json:"platform,omitempty"`
-	Selected  bool   `json:"selected,omitempty"`
+	Digest              string `json:"digest"`
+	MediaType           string `json:"media_type,omitempty"`
+	Size                int64  `json:"size,omitempty"`
+	Platform            string `json:"platform,omitempty"`
+	Selected            bool   `json:"selected,omitempty"`
+	Kind                string `json:"kind,omitempty"`
+	Format              string `json:"format,omitempty"`
+	PullPlan            string `json:"pull_plan,omitempty"`
+	DiskSize            int64  `json:"disk_size,omitempty"`
+	DiskFormat          string `json:"disk_format,omitempty"`
+	CompressedDiskBytes int64  `json:"compressed_disk_bytes,omitempty"`
+	ChunkCount          int    `json:"chunk_count,omitempty"`
+	ZeroChunks          int    `json:"zero_chunks,omitempty"`
+	DiskLayerCount      int    `json:"disk_layer_count,omitempty"`
+	DiskPartCount       int    `json:"disk_part_count,omitempty"`
+	MetadataBlobs       int    `json:"metadata_blobs,omitempty"`
+	MetadataBytes       int64  `json:"metadata_bytes,omitempty"`
+	ConfigBytes         int64  `json:"config_bytes,omitempty"`
+	NVRAMBytes          int64  `json:"nvram_bytes,omitempty"`
+	BaseManifest        string `json:"base_manifest,omitempty"`
+	Error               string `json:"error,omitempty"`
 }
 
 type ImageRemoteBaseManifest struct {
@@ -131,6 +148,7 @@ func InspectRemoteImage(ctx context.Context, refText string, opts remoteInspectO
 		if err != nil {
 			return out, err
 		}
+		out = maybeInspectRemoteIndexManifests(ctx, client, ref, out, opts)
 		return maybeAuditRemoteBlobs(ctx, client, ref, manifest, out, opts)
 	}
 	parsed, err := ociimage.ParseManifest(manifest)
@@ -139,6 +157,7 @@ func InspectRemoteImage(ctx context.Context, refText string, opts remoteInspectO
 	}
 	out = inspectRemoteVMManifest(parsed, out)
 	out = maybeAuditRemoteBaseChain(ctx, client, ref, parsed, out)
+	out = maybeInspectRemoteIndexManifests(ctx, client, ref, out, opts)
 	return maybeAuditRemoteBlobs(ctx, client, ref, manifest, out, opts)
 }
 
@@ -196,6 +215,107 @@ func remoteIndexManifestOutputs(resolution ociimage.ManifestResolution) []ImageR
 		})
 	}
 	return out
+}
+
+func maybeInspectRemoteIndexManifests(ctx context.Context, client ociimage.RegistryClient, ref ociimage.Reference, out ImageRemoteInspectOutput, opts remoteInspectOptions) ImageRemoteInspectOutput {
+	if !opts.InspectIndexManifests || len(out.IndexManifests) == 0 {
+		return out
+	}
+	for i := range out.IndexManifests {
+		detail, err := inspectRemoteIndexManifest(ctx, client, ref, out.IndexManifests[i].Digest)
+		if err != nil {
+			out.IndexManifests[i].Error = err.Error()
+			continue
+		}
+		out.IndexManifests[i].Kind = detail.Kind
+		out.IndexManifests[i].Format = detail.Format
+		out.IndexManifests[i].PullPlan = detail.PullPlan
+		out.IndexManifests[i].DiskSize = detail.DiskSize
+		out.IndexManifests[i].DiskFormat = detail.DiskFormat
+		out.IndexManifests[i].CompressedDiskBytes = detail.CompressedDiskBytes
+		out.IndexManifests[i].ChunkCount = detail.ChunkCount
+		out.IndexManifests[i].ZeroChunks = detail.ZeroChunks
+		out.IndexManifests[i].DiskLayerCount = detail.DiskLayerCount
+		out.IndexManifests[i].DiskPartCount = detail.DiskPartCount
+		out.IndexManifests[i].MetadataBlobs = detail.MetadataBlobs
+		out.IndexManifests[i].MetadataBytes = detail.MetadataBytes
+		out.IndexManifests[i].ConfigBytes = detail.ConfigBytes
+		out.IndexManifests[i].NVRAMBytes = detail.NVRAMBytes
+		out.IndexManifests[i].BaseManifest = detail.BaseManifest
+	}
+	return out
+}
+
+func inspectRemoteIndexManifest(ctx context.Context, client ociimage.RegistryClient, ref ociimage.Reference, digest string) (ImageRemoteIndexManifest, error) {
+	childRef := ref
+	childRef.Tag = ""
+	childRef.Digest = digest
+	manifest, _, err := client.FetchManifestInfo(ctx, childRef)
+	if err != nil {
+		return ImageRemoteIndexManifest{}, err
+	}
+	base := remoteInspectManifestBase(manifest)
+	if isCoveImageArtifactManifest(manifest) {
+		return remoteIndexManifestFromOutput(inspectRemoteCoveImageArtifactManifestOnly(manifest, base)), nil
+	}
+	parsed, err := ociimage.ParseManifest(manifest)
+	if err != nil {
+		return ImageRemoteIndexManifest{}, fmt.Errorf("parse manifest: %w", err)
+	}
+	return remoteIndexManifestFromOutput(inspectRemoteVMManifest(parsed, base)), nil
+}
+
+func remoteInspectManifestBase(manifest ociimage.Manifest) ImageRemoteInspectOutput {
+	var total int64
+	for _, layer := range manifest.Layers {
+		total += layer.Size
+	}
+	return ImageRemoteInspectOutput{
+		Kind:            "vm-oci",
+		MediaType:       manifest.MediaType,
+		ConfigMediaType: manifest.Config.MediaType,
+		LayerCount:      len(manifest.Layers),
+		TotalLayerBytes: total,
+	}
+}
+
+func inspectRemoteCoveImageArtifactManifestOnly(manifest ociimage.Manifest, out ImageRemoteInspectOutput) ImageRemoteInspectOutput {
+	out.Kind = "image-store"
+	out.Format = "cove-image"
+	out.PullPlan = "cove image-store artifact"
+	out.ConfigBytes = manifest.Config.Size
+	for _, layer := range manifest.Layers {
+		title := layer.Annotations[ociTitleAnnotation]
+		switch {
+		case layer.MediaType == coveImageDiskType || title == "disk.img.gz":
+			out.DiskLayerCount++
+			out.CompressedDiskBytes += layer.Size
+		case layer.MediaType == coveImageFileType:
+			out.MetadataBlobs++
+			out.MetadataBytes += layer.Size
+		}
+	}
+	return out
+}
+
+func remoteIndexManifestFromOutput(out ImageRemoteInspectOutput) ImageRemoteIndexManifest {
+	return ImageRemoteIndexManifest{
+		Kind:                out.Kind,
+		Format:              out.Format,
+		PullPlan:            out.PullPlan,
+		DiskSize:            out.DiskSize,
+		DiskFormat:          out.DiskFormat,
+		CompressedDiskBytes: out.CompressedDiskBytes,
+		ChunkCount:          out.ChunkCount,
+		ZeroChunks:          out.ZeroChunks,
+		DiskLayerCount:      out.DiskLayerCount,
+		DiskPartCount:       out.DiskPartCount,
+		MetadataBlobs:       out.MetadataBlobs,
+		MetadataBytes:       out.MetadataBytes,
+		ConfigBytes:         out.ConfigBytes,
+		NVRAMBytes:          out.NVRAMBytes,
+		BaseManifest:        out.BaseManifest,
+	}
 }
 
 func isCoveImageArtifactManifest(manifest ociimage.Manifest) bool {
@@ -667,6 +787,27 @@ func writeRemoteInspectText(w io.Writer, out ImageRemoteInspectOutput) error {
 				}
 				if manifest.MediaType != "" {
 					fmt.Fprintf(w, " media=%s", manifest.MediaType)
+				}
+				if manifest.Format != "" {
+					fmt.Fprintf(w, " format=%s", manifest.Format)
+				}
+				if manifest.DiskFormat != "" {
+					fmt.Fprintf(w, " disk_format=%s", manifest.DiskFormat)
+				}
+				if manifest.DiskSize > 0 {
+					fmt.Fprintf(w, " disk_size=%s", bytefmt.Size(manifest.DiskSize))
+				}
+				if manifest.CompressedDiskBytes > 0 {
+					fmt.Fprintf(w, " transport=%s", bytefmt.Size(manifest.CompressedDiskBytes))
+				}
+				if manifest.ChunkCount > 0 {
+					fmt.Fprintf(w, " chunks=%d", manifest.ChunkCount)
+				}
+				if manifest.DiskPartCount > 0 {
+					fmt.Fprintf(w, " parts=%d", manifest.DiskPartCount)
+				}
+				if manifest.Error != "" {
+					fmt.Fprintf(w, " error=%q", manifest.Error)
 				}
 				fmt.Fprintln(w)
 			}

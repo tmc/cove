@@ -169,6 +169,7 @@ func runImageInspect(env commandEnv, args []string) error {
 	remote := fs.Bool("remote", false, "inspect a registry manifest without pulling")
 	verifyBlobs := fs.Bool("verify-blobs", false, "verify remote config/layer descriptors with HEAD requests")
 	platform := fs.String("platform", "", "select remote image-index platform (os/arch[/variant])")
+	allPlatforms := fs.Bool("all-platforms", false, "inspect every remote image-index child manifest")
 	if err := parseFlagsOrHelp(fs, moveImageInspectFlagsFirst(args)); err != nil {
 		if errors.Is(err, errFlagHelp) {
 			return nil
@@ -181,6 +182,9 @@ func runImageInspect(env commandEnv, args []string) error {
 	if *platform != "" && !*remote {
 		return fmt.Errorf("image inspect: -platform requires -remote")
 	}
+	if *allPlatforms && !*remote {
+		return fmt.Errorf("image inspect: -all-platforms requires -remote")
+	}
 	if *remote {
 		if *diff {
 			return fmt.Errorf("image inspect: -remote cannot be combined with -diff")
@@ -192,8 +196,9 @@ func runImageInspect(env commandEnv, args []string) error {
 		defer cancel()
 		if fs.NArg() == 1 {
 			out, err := InspectRemoteImage(ctx, fs.Arg(0), remoteInspectOptions{
-				VerifyBlobs: *verifyBlobs,
-				Platform:    *platform,
+				VerifyBlobs:           *verifyBlobs,
+				Platform:              *platform,
+				InspectIndexManifests: *allPlatforms,
 			})
 			if err != nil {
 				return err
@@ -204,8 +209,9 @@ func runImageInspect(env commandEnv, args []string) error {
 			return writeRemoteInspectText(env.Stdout, out)
 		}
 		out, err := InspectRemoteImages(ctx, fs.Args(), remoteInspectOptions{
-			VerifyBlobs: *verifyBlobs,
-			Platform:    *platform,
+			VerifyBlobs:           *verifyBlobs,
+			Platform:              *platform,
+			InspectIndexManifests: *allPlatforms,
 		})
 		if *asJSON {
 			if writeErr := writeRemoteInspectJSONList(env.Stdout, out); writeErr != nil {
@@ -277,11 +283,12 @@ func runImageInspect(env commandEnv, args []string) error {
 
 func moveImageInspectFlagsFirst(args []string) []string {
 	return moveKnownFlagsFirst(args, map[string]bool{
-		"json":         false,
-		"diff":         false,
-		"remote":       false,
-		"verify-blobs": false,
-		"platform":     true,
+		"json":          false,
+		"diff":          false,
+		"remote":        false,
+		"verify-blobs":  false,
+		"platform":      true,
+		"all-platforms": false,
 	})
 }
 
@@ -320,7 +327,9 @@ Flags:
   -diff          compare two image refs
   -remote        inspect a registry manifest without pulling blobs
   -verify-blobs  with -remote, HEAD every config/layer descriptor
-  -platform P    with -remote, select image-index platform os/arch[/variant]`)
+  -platform P    with -remote, select image-index platform os/arch[/variant]
+  -all-platforms
+                 with -remote, inspect every image-index child manifest`)
 }
 
 func writeInspectJSON(w io.Writer, out ImageInspectOutput) error {

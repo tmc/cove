@@ -123,6 +123,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   image-index or Docker manifest-list child explicitly, and pull dry-runs report
   the index digest, selected manifest digest, selected platform, and selectable
   child manifest candidates.
+- `cove image inspect -remote -all-platforms` now fetches each index/list child
+  manifest and classifies every platform without downloading disk blobs, making
+  private mixed-platform catalog audits more complete.
 - `cove pull --dry-run --verify-blobs` now HEAD-audits registry blobs this host
   would need to fetch for cove-native, Tart, or Lume pulls without downloading
   blob bodies.

@@ -28,6 +28,7 @@ cove pull <ref> --dry-run --fetch-manifest --json # machine-readable registry pu
 cove pull <ref> --dry-run --fetch-manifest --verify-blobs # HEAD referenced blobs
 cove image inspect -remote <ref> -json            # inspect registry metadata only
 cove image inspect -remote <ref> -platform linux/arm64 -json # inspect one platform
+cove image inspect -remote <ref> -all-platforms -json # classify every index child
 cove image inspect -remote -verify-blobs <ref>    # HEAD every referenced blob
 cove image inspect -remote <ref> <ref> -json      # audit several registry refs
 ```
@@ -45,7 +46,9 @@ details, selectable child manifests, the selected platform, the disk format for
 cove-native and image-store artifacts, the pull plan for
 cove/Tart/Lume/image-store artifacts, cove base-chain
 availability/compatibility when a base manifest is declared, and the
-verification work cove will perform during pull/import.
+verification work cove will perform during pull/import. Add `-all-platforms` to
+fetch each child manifest and classify every platform without downloading disk
+blobs.
 Add `-verify-blobs` to send HEAD requests for every config and layer descriptor
 so a private catalog audit can catch missing registry blobs without downloading
 VM disks. Plain `--dry-run` is network-free. Use `--manifest` to validate local

@@ -231,8 +231,9 @@ func TestInspectRemoteImageResolvesIndexPlatform(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	out, err := InspectRemoteImage(context.Background(), "ghcr.io/me/dev-vm:v1", remoteInspectOptions{
-		RegistryBaseURL: srv.URL,
-		Platform:        "linux/arm64",
+		RegistryBaseURL:       srv.URL,
+		Platform:              "linux/arm64",
+		InspectIndexManifests: true,
 	})
 	if err != nil {
 		t.Fatalf("InspectRemoteImage: %v", err)
@@ -245,6 +246,9 @@ func TestInspectRemoteImageResolvesIndexPlatform(t *testing.T) {
 	}
 	if len(out.IndexManifests) != 2 || out.IndexManifests[0].Platform != "darwin/arm64" || out.IndexManifests[1].Platform != "linux/arm64" || !out.IndexManifests[1].Selected {
 		t.Fatalf("index manifests = %+v, want darwin and selected linux candidates", out.IndexManifests)
+	}
+	if out.IndexManifests[0].Format != "cove" || out.IndexManifests[0].DiskSize != int64(len("darwin")) || out.IndexManifests[1].Format != "cove" || out.IndexManifests[1].DiskSize != int64(len("linux-child")) {
+		t.Fatalf("index manifest details = %+v, want cove summaries for both children", out.IndexManifests)
 	}
 	if out.DiskSize != int64(len("linux-child")) {
 		t.Fatalf("disk size = %d, want linux child", out.DiskSize)
@@ -439,8 +443,8 @@ func TestWriteRemoteInspectText(t *testing.T) {
 		SelectedDigest:    "sha256:" + strings.Repeat("2", 64),
 		SelectedPlatform:  "darwin/arm64",
 		IndexManifests: []ImageRemoteIndexManifest{
-			{Digest: "sha256:" + strings.Repeat("1", 64), MediaType: ociimage.MediaTypeImageManifest, Size: 1024, Platform: "linux/arm64"},
-			{Digest: "sha256:" + strings.Repeat("2", 64), MediaType: ociimage.MediaTypeImageManifest, Size: 2048, Platform: "darwin/arm64", Selected: true},
+			{Digest: "sha256:" + strings.Repeat("1", 64), MediaType: ociimage.MediaTypeImageManifest, Size: 1024, Platform: "linux/arm64", Format: "cove", DiskSize: 4096, DiskFormat: "raw", CompressedDiskBytes: 128, ChunkCount: 1},
+			{Digest: "sha256:" + strings.Repeat("2", 64), MediaType: ociimage.MediaTypeImageManifest, Size: 2048, Platform: "darwin/arm64", Selected: true, Format: "tart", DiskSize: 8192, CompressedDiskBytes: 256, ChunkCount: 2},
 		},
 		Kind:                "vm-oci",
 		Format:              "cove",
@@ -471,7 +475,7 @@ func TestWriteRemoteInspectText(t *testing.T) {
 	if err != nil {
 		t.Fatalf("writeRemoteInspectText: %v", err)
 	}
-	for _, want := range []string{"Remote image ghcr.io/me/dev-vm:v1", "format:          cove", "pull plan:       cove chunked pull", "verification:    manifest parsed", "index manifests: 2", "platform=darwin/arm64", "size=2.0 KB", "blob audit:      missing", "missing:       layer[0]:sha256:missing", "disk format:     raw", "chunks:          2", "base audit:      ok", "disk_format=raw", "matching_chunks=2", "matching_bytes=8.0 KB"} {
+	for _, want := range []string{"Remote image ghcr.io/me/dev-vm:v1", "format:          cove", "pull plan:       cove chunked pull", "verification:    manifest parsed", "index manifests: 2", "platform=darwin/arm64", "size=2.0 KB", "format=tart", "disk_size=8.0 KB", "transport=256 B", "blob audit:      missing", "missing:       layer[0]:sha256:missing", "disk format:     raw", "chunks:          2", "base audit:      ok", "disk_format=raw", "matching_chunks=2", "matching_bytes=8.0 KB"} {
 		if !strings.Contains(b.String(), want) {
 			t.Fatalf("text missing %q:\n%s", want, b.String())
 		}
@@ -519,11 +523,19 @@ func TestMoveImageInspectFlagsFirst(t *testing.T) {
 		"-remote",
 		"-json",
 		"-verify-blobs",
+		"-all-platforms",
 		"-platform", "linux/arm64",
 	}), " ")
-	want := "-remote -json -verify-blobs -platform linux/arm64 registry.example.com/team/vm:v1"
+	want := "-remote -json -verify-blobs -all-platforms -platform linux/arm64 registry.example.com/team/vm:v1"
 	if got != want {
 		t.Fatalf("args = %q, want %q", got, want)
+	}
+}
+
+func TestRunImageInspectAllPlatformsRequiresRemote(t *testing.T) {
+	err := runImageInspect(imageTestEnv(), []string{"-all-platforms", "local:latest"})
+	if err == nil || !strings.Contains(err.Error(), "-all-platforms requires -remote") {
+		t.Fatalf("runImageInspect() error = %v, want -all-platforms requires -remote", err)
 	}
 }
 

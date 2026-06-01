@@ -57,8 +57,9 @@ delegates the disk/runtime work to `tart` or `vetu`.
    metadata and identifies cove-native, Tart, Lume, and cove image-store
    artifacts before a disk pull, including index/list resolution details,
    selectable child manifests, selected platform, explicit platform child
-   selection, disk format for cove-native/image-store artifacts, pull plan,
-   cove base-chain disk-format/size/chunk compatibility, and
+   selection, optional all-platform child-manifest classification, disk format
+   for cove-native/image-store artifacts, pull plan, cove base-chain
+   disk-format/size/chunk compatibility, and
    verification posture; `-verify-blobs` HEAD-audits every remote config/layer
    descriptor without downloading disks, and multiple refs can be inspected as
    one batch for private catalog audits.

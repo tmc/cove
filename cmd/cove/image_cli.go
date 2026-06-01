@@ -62,7 +62,7 @@ Subcommands:
   build -from <vm> -tag <name[:tag]>   Snapshot a stopped VM into the image store
   list [-json]                         List local images
   inspect [-json] <name[:tag]>         Show manifest details and downstream forks
-  inspect [-json] -remote <registry/ref:tag|digest>... [-platform os/arch[/variant]]
+  inspect [-json] -remote <registry/ref:tag|digest>... [-platform os/arch[/variant]] [-all-platforms]
                                        Show remote registry manifest metadata
   verify <name[:tag]> [-strict] [-json]
                                        Check freshness, provenance, and layout
