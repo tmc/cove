@@ -218,6 +218,7 @@ func TestInspectRemoteImageResolvesIndex(t *testing.T) {
 	}
 	srv := newRemoteInspectIndexRegistry(t, index, manifestData, manifestDigest)
 	t.Cleanup(srv.Close)
+	indexData := remoteInspectIndexData(t, index)
 
 	out, err := InspectRemoteImage(context.Background(), "ghcr.io/me/dev-vm:v1", remoteInspectOptions{RegistryBaseURL: srv.URL})
 	if err != nil {
@@ -228,6 +229,20 @@ func TestInspectRemoteImageResolvesIndex(t *testing.T) {
 	}
 	if out.DigestRef != "ghcr.io/me/dev-vm@"+manifestDigest || out.IndexDigestRef != "ghcr.io/me/dev-vm@sha256:index" {
 		t.Fatalf("digest refs = selected:%q index:%q, want child and index refs", out.DigestRef, out.IndexDigestRef)
+	}
+	if string(out.indexRaw) != string(indexData) {
+		t.Fatalf("index raw = %q, want registry index bytes %q", string(out.indexRaw), string(indexData))
+	}
+	indexOut := filepath.Join(t.TempDir(), "index.json")
+	if err := writeRemoteInspectIndexOut(out, indexOut); err != nil {
+		t.Fatalf("writeRemoteInspectIndexOut: %v", err)
+	}
+	gotIndex, err := os.ReadFile(indexOut)
+	if err != nil {
+		t.Fatalf("read index-out: %v", err)
+	}
+	if string(gotIndex) != string(indexData) || out.IndexDigest != "sha256:index" {
+		t.Fatalf("index-out = %q recorded_digest=%s, want registry index bytes recorded as sha256:index", string(gotIndex), out.IndexDigest)
 	}
 	if !out.ResolvedFromIndex || out.IndexDigest != "sha256:index" || out.SelectedDigest != manifestDigest || out.SelectedPlatform != "darwin/arm64" {
 		t.Fatalf("resolution = index:%v index_digest:%q selected:%q platform:%q", out.ResolvedFromIndex, out.IndexDigest, out.SelectedDigest, out.SelectedPlatform)
@@ -719,9 +734,10 @@ func TestMoveImageInspectFlagsFirst(t *testing.T) {
 		"-verify-blobs",
 		"-all-platforms",
 		"-manifest-out", "manifest.json",
+		"-index-out", "index.json",
 		"-platform", "linux/arm64",
 	}), " ")
-	want := "-remote -json -verify-blobs -all-platforms -manifest-out manifest.json -platform linux/arm64 registry.example.com/team/vm:v1"
+	want := "-remote -json -verify-blobs -all-platforms -manifest-out manifest.json -index-out index.json -platform linux/arm64 registry.example.com/team/vm:v1"
 	if got != want {
 		t.Fatalf("args = %q, want %q", got, want)
 	}
@@ -745,6 +761,20 @@ func TestRunImageInspectManifestOutRejectsBatch(t *testing.T) {
 	err := runImageInspect(imageTestEnv(), []string{"-remote", "-manifest-out", "manifest.json", "registry.example.com/team/a:v1", "registry.example.com/team/b:v1"})
 	if err == nil || !strings.Contains(err.Error(), "-manifest-out requires exactly one remote ref") {
 		t.Fatalf("runImageInspect() error = %v, want single-ref manifest-out error", err)
+	}
+}
+
+func TestRunImageInspectIndexOutRequiresRemote(t *testing.T) {
+	err := runImageInspect(imageTestEnv(), []string{"-index-out", "index.json", "local:latest"})
+	if err == nil || !strings.Contains(err.Error(), "-index-out requires -remote") {
+		t.Fatalf("runImageInspect() error = %v, want -index-out requires -remote", err)
+	}
+}
+
+func TestRunImageInspectIndexOutRejectsBatch(t *testing.T) {
+	err := runImageInspect(imageTestEnv(), []string{"-remote", "-index-out", "index.json", "registry.example.com/team/a:v1", "registry.example.com/team/b:v1"})
+	if err == nil || !strings.Contains(err.Error(), "-index-out requires exactly one remote ref") {
+		t.Fatalf("runImageInspect() error = %v, want single-ref index-out error", err)
 	}
 }
 
@@ -811,14 +841,13 @@ func cloneStringMap(in map[string]string) map[string]string {
 
 func newRemoteInspectIndexRegistry(t *testing.T, index ociimage.Index, manifestData []byte, manifestDigest string) *httptest.Server {
 	t.Helper()
+	indexData := remoteInspectIndexData(t, index)
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v2/me/dev-vm/manifests/v1":
 			w.Header().Set("Content-Type", ociimage.MediaTypeImageIndex)
 			w.Header().Set("Docker-Content-Digest", "sha256:index")
-			if err := json.NewEncoder(w).Encode(index); err != nil {
-				t.Errorf("encode index: %v", err)
-			}
+			_, _ = w.Write(indexData)
 		case "/v2/me/dev-vm/manifests/" + manifestDigest:
 			w.Header().Set("Content-Type", ociimage.MediaTypeImageManifest)
 			w.Header().Set("Docker-Content-Digest", manifestDigest)
@@ -831,14 +860,13 @@ func newRemoteInspectIndexRegistry(t *testing.T, index ociimage.Index, manifestD
 
 func newRemoteInspectMultiIndexRegistry(t *testing.T, index ociimage.Index, manifests map[string][]byte) *httptest.Server {
 	t.Helper()
+	indexData := remoteInspectIndexData(t, index)
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/v2/me/dev-vm/manifests/v1":
 			w.Header().Set("Content-Type", ociimage.MediaTypeImageIndex)
 			w.Header().Set("Docker-Content-Digest", "sha256:index")
-			if err := json.NewEncoder(w).Encode(index); err != nil {
-				t.Errorf("encode index: %v", err)
-			}
+			_, _ = w.Write(indexData)
 		case strings.HasPrefix(r.URL.Path, "/v2/me/dev-vm/manifests/"):
 			digest := strings.TrimPrefix(r.URL.Path, "/v2/me/dev-vm/manifests/")
 			data, ok := manifests[digest]
@@ -861,17 +889,25 @@ type remoteInspectMultiIndexBlobRegistry struct {
 	blobGets  atomic.Int64
 }
 
+func remoteInspectIndexData(t *testing.T, index ociimage.Index) []byte {
+	t.Helper()
+	data, err := json.Marshal(index)
+	if err != nil {
+		t.Fatalf("Marshal(index): %v", err)
+	}
+	return append(data, '\n')
+}
+
 func newRemoteInspectMultiIndexBlobRegistry(t *testing.T, index ociimage.Index, manifests map[string][]byte, blobs map[string]bool) *remoteInspectMultiIndexBlobRegistry {
 	t.Helper()
 	srv := &remoteInspectMultiIndexBlobRegistry{}
+	indexData := remoteInspectIndexData(t, index)
 	srv.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/v2/me/dev-vm/manifests/v1":
 			w.Header().Set("Content-Type", ociimage.MediaTypeImageIndex)
 			w.Header().Set("Docker-Content-Digest", "sha256:index")
-			if err := json.NewEncoder(w).Encode(index); err != nil {
-				t.Errorf("encode index: %v", err)
-			}
+			_, _ = w.Write(indexData)
 		case strings.HasPrefix(r.URL.Path, "/v2/me/dev-vm/manifests/"):
 			digest := strings.TrimPrefix(r.URL.Path, "/v2/me/dev-vm/manifests/")
 			data, ok := manifests[digest]

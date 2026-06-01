@@ -309,11 +309,13 @@ var cliDocSpecs = []cliDocSpec{
 		{Name: "--resume", Summary: "Continue an interrupted pull from disk.img.partial."},
 		{Name: "--manifest", Argument: "<path>", Summary: "Local OCI manifest JSON instead of fetching the registry."},
 		{Name: "--manifest-out", Argument: "<path>", Summary: "Write fetched selected manifest JSON during dry-run."},
+		{Name: "--index-out", Argument: "<path>", Summary: "Write fetched index/list JSON during dry-run."},
 		{Name: "--platform", Argument: "<os/arch[/variant]>", Summary: "Select an image-index platform."},
 	}, Examples: []string{
 		"cove pull ghcr.io/me/dev-vm:v1 --dry-run",
 		"cove pull ghcr.io/me/dev-vm:v1 --dry-run --fetch-manifest --all-platforms --verify-blobs --json",
 		"cove pull ghcr.io/me/dev-vm:v1 --dry-run --fetch-manifest --manifest-out manifest.json",
+		"cove pull ghcr.io/me/dev-vm:v1 --dry-run --fetch-manifest --index-out index.json",
 		"cove pull ghcr.io/me/dev-vm:v1 --resume",
 		"cove pull ghcr.io/me/dev-vm:v1 --as restored-vm",
 	}},

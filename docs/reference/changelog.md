@@ -128,6 +128,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `cove image inspect -remote -manifest-out <path>` now writes the exact
   selected registry manifest bytes after index resolution for catalog audits
   that should not create a pull target.
+- `cove image inspect -remote -index-out <path>` and
+  `cove pull --dry-run --fetch-manifest --index-out <path>` now write the exact
+  top-level OCI index or Docker manifest-list bytes when a tag resolves through
+  a multi-platform object.
 - `cove pull --platform <os/arch[/variant]>` and
   `cove image inspect -remote -platform <os/arch[/variant]>` now select an OCI
   image-index or Docker manifest-list child explicitly, and pull dry-runs report

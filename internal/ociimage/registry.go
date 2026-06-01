@@ -35,6 +35,7 @@ type ManifestResolution struct {
 	MediaType        string
 	ManifestData     []byte
 	IndexDigest      string
+	IndexData        []byte
 	IndexMediaType   string
 	SelectedDigest   string
 	SelectedPlatform *Platform
@@ -114,6 +115,7 @@ func (c RegistryClient) fetchManifestTarget(ctx context.Context, ref Reference, 
 		}
 		if resolution.IndexDigest == "" {
 			resolution.IndexDigest = digest
+			resolution.IndexData = append([]byte(nil), data...)
 			resolution.IndexMediaType = index.MediaType
 			resolution.SelectedDigest = child.Digest
 			resolution.SelectedPlatform = child.Platform

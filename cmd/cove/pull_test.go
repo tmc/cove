@@ -340,11 +340,14 @@ func TestBuildPullPlanDryRunFetchManifestPlatform(t *testing.T) {
 	})
 	t.Cleanup(srv.Close)
 	manifestOut := filepath.Join(t.TempDir(), "linux-manifest.json")
+	indexOut := filepath.Join(t.TempDir(), "index.json")
+	indexData := remoteInspectIndexData(t, index)
 
 	plan, err := buildPullPlan("ghcr.io/me/dev-vm:v1", pullOptions{
 		DryRun:          true,
 		FetchManifest:   true,
 		ManifestOut:     manifestOut,
+		IndexOut:        indexOut,
 		Platform:        "linux/arm64",
 		RegistryBaseURL: srv.URL,
 	})
@@ -360,8 +363,14 @@ func TestBuildPullPlanDryRunFetchManifestPlatform(t *testing.T) {
 	if string(plan.ManifestRaw) != string(linuxData) {
 		t.Fatalf("ManifestRaw = %q, want exact selected child bytes %q", string(plan.ManifestRaw), string(linuxData))
 	}
+	if string(plan.ManifestResolution.IndexData) != string(indexData) {
+		t.Fatalf("IndexData = %q, want exact registry index bytes %q", string(plan.ManifestResolution.IndexData), string(indexData))
+	}
 	if err := writePullManifestOut(plan); err != nil {
 		t.Fatalf("writePullManifestOut(): %v", err)
+	}
+	if err := writePullIndexOut(plan); err != nil {
+		t.Fatalf("writePullIndexOut(): %v", err)
 	}
 	gotManifestOut, err := os.ReadFile(manifestOut)
 	if err != nil {
@@ -369,6 +378,13 @@ func TestBuildPullPlanDryRunFetchManifestPlatform(t *testing.T) {
 	}
 	if string(gotManifestOut) != string(linuxData) || digestData(gotManifestOut) != linuxDigest {
 		t.Fatalf("manifest-out = %q digest=%s, want selected child digest %s", string(gotManifestOut), digestData(gotManifestOut), linuxDigest)
+	}
+	gotIndexOut, err := os.ReadFile(indexOut)
+	if err != nil {
+		t.Fatalf("read index-out: %v", err)
+	}
+	if string(gotIndexOut) != string(indexData) || plan.ManifestResolution.IndexDigest != "sha256:index" {
+		t.Fatalf("index-out = %q recorded_digest=%s, want registry index bytes recorded as sha256:index", string(gotIndexOut), plan.ManifestResolution.IndexDigest)
 	}
 	if plan.ManifestResolution.IndexDigest != "sha256:index" || remotePlatformString(plan.ManifestResolution.SelectedPlatform) != "linux/arm64" {
 		t.Fatalf("resolution = %+v, want linux index selection", plan.ManifestResolution)
@@ -379,7 +395,7 @@ func TestBuildPullPlanDryRunFetchManifestPlatform(t *testing.T) {
 
 	var out strings.Builder
 	printPullDryRun(&out, plan)
-	for _, want := range []string{"index digest: sha256:index", "selected digest: " + linuxDigest, "platform: linux/arm64", "index manifests: 2", "platform=darwin/arm64", "* " + linuxDigest} {
+	for _, want := range []string{"index digest: sha256:index", "index out: " + indexOut, "selected digest: " + linuxDigest, "platform: linux/arm64", "index manifests: 2", "platform=darwin/arm64", "* " + linuxDigest} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("dry-run output %q missing %q", out.String(), want)
 		}
@@ -395,6 +411,9 @@ func TestBuildPullPlanDryRunFetchManifestPlatform(t *testing.T) {
 	}
 	if !got.ResolvedFromIndex || got.SelectedPlatform != "linux/arm64" || got.SelectedDigest != linuxDigest {
 		t.Fatalf("JSON resolution = %+v, want linux index selection", got)
+	}
+	if got.IndexOut != indexOut || got.IndexDigestRef != "ghcr.io/me/dev-vm@sha256:index" {
+		t.Fatalf("JSON index fields = out:%q ref:%q, want %q and index digest ref", got.IndexOut, got.IndexDigestRef, indexOut)
 	}
 	if len(got.IndexManifests) != 2 || got.IndexManifests[0].Platform != "darwin/arm64" || got.IndexManifests[1].Platform != "linux/arm64" || !got.IndexManifests[1].Selected {
 		t.Fatalf("JSON index manifests = %+v, want selected linux candidate", got.IndexManifests)
@@ -1164,6 +1183,13 @@ func TestHandlePullManifestOutRequiresFetchManifest(t *testing.T) {
 	}
 }
 
+func TestHandlePullIndexOutRequiresFetchManifest(t *testing.T) {
+	err := handlePull(commandTestEnv(), []string{"--dry-run", "--index-out", "index.json", "ghcr.io/me/dev-vm:v1"})
+	if err == nil || !strings.Contains(err.Error(), "--index-out requires --fetch-manifest") {
+		t.Fatalf("handlePull() error = %v, want --index-out requires fetch-manifest", err)
+	}
+}
+
 func TestHandlePullRejectsFetchManifestWithManifest(t *testing.T) {
 	err := handlePull(commandTestEnv(), []string{
 		"--dry-run",
@@ -1211,7 +1237,7 @@ func TestParsePullArgsHelpReturnsNoError(t *testing.T) {
 	if pos != nil {
 		t.Fatalf("parsePullArgs(-h) pos = %#v, want nil", pos)
 	}
-	if opts.DryRun || opts.JSON || opts.FetchManifest || opts.VerifyBlobs || opts.AllPlatforms || opts.Resume || opts.As != "" || opts.ManifestPath != "" || opts.ManifestOut != "" || opts.Platform != "" {
+	if opts.DryRun || opts.JSON || opts.FetchManifest || opts.VerifyBlobs || opts.AllPlatforms || opts.Resume || opts.As != "" || opts.ManifestPath != "" || opts.ManifestOut != "" || opts.IndexOut != "" || opts.Platform != "" {
 		t.Fatalf("parsePullArgs(-h) opts = %#v, want zero", opts)
 	}
 }
@@ -1242,13 +1268,14 @@ func TestParsePullArgsFetchManifest(t *testing.T) {
 		"--verify-blobs",
 		"--all-platforms",
 		"--manifest-out", "selected.json",
+		"--index-out", "index.json",
 		"--json",
 		"--platform", "linux/arm64",
 	}, ioDiscard{})
 	if err != nil {
 		t.Fatalf("parsePullArgs fetch manifest: %v", err)
 	}
-	if !opts.DryRun || !opts.FetchManifest || !opts.VerifyBlobs || !opts.AllPlatforms || !opts.JSON || opts.ManifestOut != "selected.json" || opts.Platform != "linux/arm64" {
+	if !opts.DryRun || !opts.FetchManifest || !opts.VerifyBlobs || !opts.AllPlatforms || !opts.JSON || opts.ManifestOut != "selected.json" || opts.IndexOut != "index.json" || opts.Platform != "linux/arm64" {
 		t.Fatalf("opts = %#v, want dry-run/fetch-manifest/verify-blobs/all-platforms/json/platform", opts)
 	}
 	if strings.Join(pos, ",") != "registry.example/cove/vm:latest" {

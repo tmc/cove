@@ -171,6 +171,7 @@ func runImageInspect(env commandEnv, args []string) error {
 	platform := fs.String("platform", "", "select remote image-index platform (os/arch[/variant])")
 	allPlatforms := fs.Bool("all-platforms", false, "inspect every remote image-index child manifest")
 	manifestOut := fs.String("manifest-out", "", "write selected remote manifest JSON to path")
+	indexOut := fs.String("index-out", "", "write remote index/list JSON to path")
 	if err := parseFlagsOrHelp(fs, moveImageInspectFlagsFirst(args)); err != nil {
 		if errors.Is(err, errFlagHelp) {
 			return nil
@@ -189,6 +190,9 @@ func runImageInspect(env commandEnv, args []string) error {
 	if *manifestOut != "" && !*remote {
 		return fmt.Errorf("image inspect: -manifest-out requires -remote")
 	}
+	if *indexOut != "" && !*remote {
+		return fmt.Errorf("image inspect: -index-out requires -remote")
+	}
 	if *remote {
 		if *diff {
 			return fmt.Errorf("image inspect: -remote cannot be combined with -diff")
@@ -198,6 +202,9 @@ func runImageInspect(env commandEnv, args []string) error {
 		}
 		if *manifestOut != "" && fs.NArg() != 1 {
 			return fmt.Errorf("image inspect: -manifest-out requires exactly one remote ref")
+		}
+		if *indexOut != "" && fs.NArg() != 1 {
+			return fmt.Errorf("image inspect: -index-out requires exactly one remote ref")
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), remoteInspectTimeout)
 		defer cancel()
@@ -211,6 +218,9 @@ func runImageInspect(env commandEnv, args []string) error {
 				return err
 			}
 			if err := writeRemoteInspectManifestOut(out, *manifestOut); err != nil {
+				return err
+			}
+			if err := writeRemoteInspectIndexOut(out, *indexOut); err != nil {
 				return err
 			}
 			if *asJSON {
@@ -300,6 +310,7 @@ func moveImageInspectFlagsFirst(args []string) []string {
 		"platform":      true,
 		"all-platforms": false,
 		"manifest-out":  true,
+		"index-out":     true,
 	})
 }
 
@@ -342,7 +353,9 @@ Flags:
   -all-platforms
                  with -remote, inspect every image-index child manifest
   -manifest-out P
-                 with -remote, write selected manifest JSON to path`)
+                 with -remote, write selected manifest JSON to path
+  -index-out P
+                 with -remote, write index/list JSON to path`)
 }
 
 func writeInspectJSON(w io.Writer, out ImageInspectOutput) error {

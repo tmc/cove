@@ -26,10 +26,12 @@ cove pull <ref> --dry-run --fetch-manifest --platform linux/arm64 # pick an inde
 cove pull <ref> --dry-run --json --manifest manifest.json # machine-readable pull plan
 cove pull <ref> --dry-run --fetch-manifest --json # machine-readable registry pull plan
 cove pull <ref> --dry-run --fetch-manifest --manifest-out manifest.json # save selected manifest
+cove pull <ref> --dry-run --fetch-manifest --index-out index.json # save index/list manifest
 cove pull <ref> --dry-run --fetch-manifest --verify-blobs # HEAD referenced blobs
 cove pull <ref> --dry-run --fetch-manifest --all-platforms --verify-blobs --json # audit every index child
 cove image inspect -remote <ref> -json            # inspect registry metadata only
 cove image inspect -remote <ref> -manifest-out manifest.json # save selected manifest
+cove image inspect -remote <ref> -index-out index.json # save index/list manifest
 cove image inspect -remote <ref> -platform linux/arm64 -json # inspect one platform
 cove image inspect -remote <ref> -all-platforms -json # classify and audit every index child
 cove image inspect -remote -verify-blobs <ref>    # HEAD every referenced blob
@@ -54,9 +56,11 @@ verification work cove will perform during pull/import. It also prints
 copy-pasteable digest refs for the selected manifest and, when a tag resolved
 through an index/list, the top-level index digest ref. Add
 `-manifest-out <path>` to write the exact selected registry manifest bytes after
-index resolution without creating a pull target. Add `-all-platforms` to fetch
-each child manifest, classify every platform, and audit cove base chains for
-each cove-native child without downloading disk blobs. Combine
+index resolution without creating a pull target. Add `-index-out <path>` when
+the ref resolves through an index/list to preserve the exact top-level
+tag-resolution object. Add `-all-platforms` to fetch each child manifest,
+classify every platform, and audit cove base chains for each cove-native child
+without downloading disk blobs. Combine
 `-all-platforms` with `-verify-blobs` to HEAD-audit every child manifest's
 config and layer descriptors and report per-child blob status in the index
 manifest list.
@@ -66,13 +70,14 @@ VM disks. Plain `--dry-run` is network-free. Use `--manifest` to validate local
 manifest JSON, or `--fetch-manifest` to fetch only the registry manifest without
 downloading disk blobs. Add `--manifest-out <path>` with `--fetch-manifest` to
 write the exact selected registry manifest bytes after index resolution, which
-can later be fed to network-free `--manifest <path>` validation. When a
-cove-native manifest is available during `--dry-run`, cove also checks whether a
-compatible local or registry-cache base disk can be reused and prints the
-reusable chunks, bytes, disk format, and source path. Manifest-backed dry-runs
-that resolve an index also print the index digest, selected manifest digest,
-selected platform, copy-pasteable digest refs, and selectable child manifest
-candidates. Add
+can later be fed to network-free `--manifest <path>` validation. Add
+`--index-out <path>` to save the exact fetched top-level index/list bytes for
+the same tag-resolution audit. When a cove-native manifest is available during
+`--dry-run`, cove also checks whether a compatible local or registry-cache base
+disk can be reused and prints the reusable chunks, bytes, disk format, and
+source path. Manifest-backed dry-runs that resolve an index also print the index
+digest, selected manifest digest, selected platform, copy-pasteable digest refs,
+and selectable child manifest candidates. Add
 `--all-platforms` with `--fetch-manifest` to fetch each child manifest and
 include per-child format, disk size/format, transport bytes, cove base-chain
 audit, and optional `--verify-blobs` descriptor audit in the same pull preflight.

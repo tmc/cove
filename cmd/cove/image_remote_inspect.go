@@ -72,6 +72,7 @@ type ImageRemoteInspectOutput struct {
 	Created             string                     `json:"created,omitempty"`
 	BuiltAt             string                     `json:"built_at,omitempty"`
 	manifestRaw         []byte
+	indexRaw            []byte
 }
 
 type ImageRemoteIndexManifest struct {
@@ -211,6 +212,7 @@ func remoteInspectBase(ref ociimage.Reference, resolution ociimage.ManifestResol
 		LayerCount:        len(manifest.Layers),
 		TotalLayerBytes:   total,
 		manifestRaw:       append([]byte(nil), resolution.ManifestData...),
+		indexRaw:          append([]byte(nil), resolution.IndexData...),
 	}
 }
 
@@ -237,6 +239,23 @@ func writeRemoteInspectManifestOut(out ImageRemoteInspectOutput, path string) er
 			_ = os.Remove(tmp)
 		}
 		return fmt.Errorf("image inspect remote: write manifest-out: %w", err)
+	}
+	return nil
+}
+
+func writeRemoteInspectIndexOut(out ImageRemoteInspectOutput, path string) error {
+	if strings.TrimSpace(path) == "" {
+		return nil
+	}
+	if len(out.indexRaw) == 0 {
+		return fmt.Errorf("image inspect remote: -index-out requires an index or manifest-list resolution")
+	}
+	tmp, err := atomicWriteFile(path, out.indexRaw, 0644)
+	if err != nil {
+		if tmp != "" {
+			_ = os.Remove(tmp)
+		}
+		return fmt.Errorf("image inspect remote: write index-out: %w", err)
 	}
 	return nil
 }

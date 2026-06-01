@@ -1,6 +1,7 @@
 package ociimage
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -100,6 +101,10 @@ func TestRegistryClientFetchManifestResolvesIndex(t *testing.T) {
 		},
 	}
 	var paths []string
+	var indexData bytes.Buffer
+	if err := json.NewEncoder(&indexData).Encode(index); err != nil {
+		t.Fatalf("Encode(index data): %v", err)
+	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		paths = append(paths, r.URL.Path)
 		switch r.URL.Path {
@@ -109,9 +114,7 @@ func TestRegistryClientFetchManifestResolvesIndex(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", MediaTypeImageIndex)
 			w.Header().Set("Docker-Content-Digest", "sha256:index")
-			if err := json.NewEncoder(w).Encode(index); err != nil {
-				t.Fatalf("Encode(index): %v", err)
-			}
+			_, _ = w.Write(indexData.Bytes())
 		case "/v2/team/vm/manifests/" + manifestDigest:
 			w.Header().Set("Content-Type", MediaTypeImageManifest)
 			w.Header().Set("Docker-Content-Digest", manifestDigest)
@@ -134,6 +137,9 @@ func TestRegistryClientFetchManifestResolvesIndex(t *testing.T) {
 	}
 	if resolution.IndexDigest != "sha256:index" || resolution.IndexMediaType != MediaTypeImageIndex {
 		t.Fatalf("index resolution = %+v, want digest/media type", resolution)
+	}
+	if string(resolution.IndexData) != indexData.String() {
+		t.Fatalf("index data = %q, want registry index bytes %q", string(resolution.IndexData), indexData.String())
 	}
 	if resolution.SelectedDigest != manifestDigest {
 		t.Fatalf("selected digest = %q, want %q", resolution.SelectedDigest, manifestDigest)
