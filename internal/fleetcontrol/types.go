@@ -400,6 +400,7 @@ type ImagePrepareRequest struct {
 	RequiredLabels       map[string]string `json:"required_labels,omitempty"`
 	RequiredCapabilities []string          `json:"required_capabilities,omitempty"`
 	Force                bool              `json:"force,omitempty"`
+	DryRun               bool              `json:"dry_run,omitempty"`
 }
 
 type ImagePrepareResult struct {
@@ -413,6 +414,7 @@ type ImagePrepareResult struct {
 	ImagePlatform        string             `json:"image_platform,omitempty"`
 	RequiredLabels       map[string]string  `json:"required_labels,omitempty"`
 	RequiredCapabilities []string           `json:"required_capabilities,omitempty"`
+	DryRun               bool               `json:"dry_run,omitempty"`
 	Assignments          []Assignment       `json:"assignments,omitempty"`
 	Skipped              []ImagePrepareSkip `json:"skipped,omitempty"`
 }

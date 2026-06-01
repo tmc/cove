@@ -190,6 +190,7 @@ prepare = CoveFleetClient.prepare_image(
     image_platform="darwin/arm64",
     required_labels={"zone": "desk"},
     required_capabilities=("ram-overlay",),
+    dry_run=True,
 )
 print(len(prepare["assignments"]), len(prepare["skipped"]))
 

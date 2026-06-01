@@ -369,6 +369,9 @@ Image preparation endpoint:
 curl -X POST http://127.0.0.1:9758/v1/images/prepare \
   -H 'content-type: application/json' \
   -d '{"manifest_bundle":"manifests","image_ref":"macos-runner:latest","image_platform":"darwin/arm64","required_labels":{"zone":"desk"},"required_capabilities":["ram-overlay"]}'
+curl -X POST http://127.0.0.1:9758/v1/images/prepare \
+  -H 'content-type: application/json' \
+  -d '{"manifest_bundle":"manifests","image_ref":"macos-runner:latest","image_platform":"darwin/arm64","required_capabilities":["ram-overlay"],"dry_run":true}'
 curl 'http://127.0.0.1:9758/v1/images/preparations?image_ref=macos-runner:latest&limit=20'
 curl http://127.0.0.1:9758/v1/images/preparations/image-prepare-...
 ```
@@ -393,6 +396,9 @@ populates the digest fields, and queues the pull from the selected digest ref
 instead of the mutable source tag.
 Each successful preparation response is persisted with `id`, `created`, label
 selector, and required-capability selector, including skipped-only no-op runs.
+Set `dry_run:true` to return the same planned pull assignments and skipped
+workers without creating assignments, audit events, or retained preparation
+history.
 `GET /v1/images/preparations` returns
 paginated preparation history with `source_ref`, `image_ref`,
 `image_manifest_digest`, `offset`, and `limit` filters; scoped service-account
@@ -752,6 +758,7 @@ prep, err := agentsandbox.PrepareImage(ctx, agentsandbox.ImagePrepareOptions{
 	ImagePlatform:        "darwin/arm64",
 	RequiredLabels:       map[string]string{"zone": "desk"},
 	RequiredCapabilities: []string{"ram-overlay"},
+	DryRun:               true,
 })
 if err != nil {
 	log.Fatal(err)

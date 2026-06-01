@@ -264,8 +264,10 @@ def test_fleet_client_image_preparation() -> None:
             required_labels={"zone": "desk"},
             required_capabilities=("ram-overlay", "asif", ""),
             force=True,
+            dry_run=True,
         )
         assert result["id"] == "image-prepare-1"
+        assert result["dry_run"] is True
         assert result["assignments"][0]["worker_id"] == "worker-1"
         assert result["skipped"][0] == {"worker_id": "worker-2", "reason": "present"}
 
@@ -310,6 +312,7 @@ def test_fleet_client_image_preparation() -> None:
         assert prepare["required_labels"] == {"zone": "desk"}
         assert prepare["required_capabilities"] == ["ram-overlay", "asif"]
         assert prepare["force"] is True
+        assert prepare["dry_run"] is True
         query = server.requests[-2]["query"]
         assert query["namespace"] == ["team-a"]
         assert query["source_ref"] == [digest_ref]
@@ -600,7 +603,7 @@ def _metering(sandbox_id: str) -> dict[str, object]:
     }
 
 
-def _image_prepare_result() -> dict[str, object]:
+def _image_prepare_result(*, dry_run: bool = False) -> dict[str, object]:
     digest = "sha256:" + "1" * 64
     digest_ref = "ghcr.io/me/base@" + digest
     assignment = {
@@ -627,6 +630,7 @@ def _image_prepare_result() -> dict[str, object]:
         "image_platform": "darwin/arm64",
         "required_labels": {"zone": "desk"},
         "required_capabilities": ["ram-overlay", "asif"],
+        "dry_run": dry_run,
         "assignments": [assignment],
         "skipped": [{"worker_id": "worker-2", "reason": "present"}],
     }
@@ -901,7 +905,7 @@ class _FleetHTTPServer:
                     )
                     return
                 if path == "/v1/images/prepare":
-                    self._write(_image_prepare_result())
+                    self._write(_image_prepare_result(dry_run=body.get("dry_run") is True))
                     return
                 if path == "/v1/placements/plan":
                     self._write(

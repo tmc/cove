@@ -2474,7 +2474,9 @@ func (s *Store) PrepareImageActor(actor string, req ImagePrepareRequest) (ImageP
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.reconcileLocked(now)
+	if !req.DryRun {
+		s.reconcileLocked(now)
+	}
 	result := ImagePrepareResult{
 		ID:                   s.nextImagePrepareIDLocked(now),
 		Created:              now,
@@ -2486,6 +2488,7 @@ func (s *Store) PrepareImageActor(actor string, req ImagePrepareRequest) (ImageP
 		ImagePlatform:        strings.TrimSpace(req.ImagePlatform),
 		RequiredLabels:       labels,
 		RequiredCapabilities: capabilities,
+		DryRun:               req.DryRun,
 	}
 	for _, host := range s.sortedHostsLocked() {
 		host = s.statusLocked(host)
@@ -2508,8 +2511,12 @@ func (s *Store) PrepareImageActor(actor string, req ImagePrepareRequest) (ImageP
 			continue
 		}
 		force := req.Force || (result.ImageManifestDigest != "" && containsString(host.ImageRefs, imageRef))
+		id := s.nextAssignmentIDLocked(now)
+		if req.DryRun {
+			id = fmt.Sprintf("planned-%s-%d", id, len(result.Assignments)+1)
+		}
 		assignment := Assignment{
-			ID:                   s.nextAssignmentIDLocked(now),
+			ID:                   id,
 			Namespace:            namespace,
 			WorkerID:             host.ID,
 			ImageRef:             imageRef,
@@ -2524,13 +2531,18 @@ func (s *Store) PrepareImageActor(actor string, req ImagePrepareRequest) (ImageP
 			Created:              now,
 			Updated:              now,
 		}
-		s.assignments[assignment.ID] = assignment
+		if !req.DryRun {
+			s.assignments[assignment.ID] = assignment
+		}
 		result.Assignments = append(result.Assignments, cloneAssignment(assignment))
 	}
 	if len(result.Assignments) == 0 && len(result.Skipped) == 0 {
 		return result, fmt.Errorf("no workers match image prepare")
 	}
 	result = normalizeImagePrepareResult(result)
+	if req.DryRun {
+		return result, nil
+	}
 	s.preparations = append(s.preparations, cloneImagePrepareResult(result))
 	if len(result.Assignments) > 0 {
 		fields := map[string]string{

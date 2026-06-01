@@ -419,6 +419,7 @@ class CoveFleetClient:
         required_labels: Mapping[str, str] | None = None,
         required_capabilities: Sequence[str] | str | None = None,
         force: bool = False,
+        dry_run: bool = False,
         api_key: str | None = None,
         namespace: str | None = None,
         timeout: float = 30.0,
@@ -451,6 +452,8 @@ class CoveFleetClient:
             body["required_capabilities"] = capabilities
         if force:
             body["force"] = True
+        if dry_run:
+            body["dry_run"] = True
         seed = cls(
             sandbox_id="image-prepare",
             fleet_url=fleet_url,

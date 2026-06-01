@@ -268,12 +268,13 @@ func TestCloudClientImagePreparation(t *testing.T) {
 		RequiredLabels:       map[string]string{"zone": "desk"},
 		RequiredCapabilities: []string{"ram-overlay", "asif", ""},
 		Force:                true,
+		DryRun:               true,
 		Timeout:              time.Second,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.ID != "image-prepare-1" || len(result.Assignments) != 1 || result.Assignments[0].WorkerID != "worker-1" {
+	if !result.DryRun || result.ID != "image-prepare-1" || len(result.Assignments) != 1 || result.Assignments[0].WorkerID != "worker-1" {
 		t.Fatalf("PrepareImage = %+v, want image-prepare-1 worker-1", result)
 	}
 	if len(result.Skipped) != 1 || result.Skipped[0].WorkerID != "worker-2" || result.Skipped[0].Reason != "present" {
@@ -320,7 +321,7 @@ func TestCloudClientImagePreparation(t *testing.T) {
 		}
 	}
 	body := server.requests[0].body
-	if body["namespace"] != "team-a" || body["image_ref"] != "base:v1" || body["manifest_bundle"] != "manifests" || body["force"] != true {
+	if body["namespace"] != "team-a" || body["image_ref"] != "base:v1" || body["manifest_bundle"] != "manifests" || body["force"] != true || body["dry_run"] != true {
 		t.Fatalf("prepare body = %+v, want image identity and force", body)
 	}
 	if _, ok := body["source_ref"]; ok {
@@ -741,16 +742,16 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 		server.requests = append(server.requests, req)
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/images/prepare":
-			writeSDKJSON(t, w, sdkImagePrepareResult())
+			writeSDKJSON(t, w, sdkImagePrepareResult(req.body["dry_run"] == true))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/images/preparations":
 			writeSDKJSON(t, w, ImagePrepareListResult{
-				Preparations: []ImagePrepareResult{sdkImagePrepareResult()},
+				Preparations: []ImagePrepareResult{sdkImagePrepareResult(false)},
 				Count:        1,
 				Offset:       atoiDefault(r.URL.Query().Get("offset"), 0),
 				Limit:        atoiDefault(r.URL.Query().Get("limit"), 0),
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/images/preparations/image-prepare-1":
-			writeSDKJSON(t, w, sdkImagePrepareResult())
+			writeSDKJSON(t, w, sdkImagePrepareResult(false))
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/warm-pools":
 			status := sdkWarmPoolStatus()
 			writeSDKJSON(t, w, WarmPoolResult{
@@ -886,7 +887,7 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 	return server
 }
 
-func sdkImagePrepareResult() ImagePrepareResult {
+func sdkImagePrepareResult(dryRun bool) ImagePrepareResult {
 	const digest = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
 	digestRef := "ghcr.io/me/base@" + digest
 	return ImagePrepareResult{
@@ -902,6 +903,7 @@ func sdkImagePrepareResult() ImagePrepareResult {
 			"ram-overlay",
 			"asif",
 		},
+		DryRun: dryRun,
 		Assignments: []Assignment{{
 			ID:                  "assignment-prepare-1",
 			Namespace:           "team-a",

@@ -8,6 +8,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 ## Unreleased
 
 ### Added
+- `POST /v1/images/prepare` now accepts `dry_run:true`, returning the same
+  planned pull assignments and skipped-worker reasons without creating
+  assignments, audit events, or retained preparation history.
 - The public Go `agentsandbox` package and OpenAI Agents Python adapter now
   expose hosted image-preparation controls. SDK callers can queue
   manifest-bundle-backed pulls to label- and capability-filtered workers, then

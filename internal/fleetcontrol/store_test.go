@@ -3403,6 +3403,48 @@ func TestStorePrepareImageCreatesMissingWorkerAssignments(t *testing.T) {
 	}
 }
 
+func TestStorePrepareImageDryRunDoesNotMutate(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	for _, hb := range []WorkerHeartbeat{
+		{ID: "cold", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}},
+		{ID: "warm", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}, ImageRefs: []string{"macos-runner:latest"}},
+	} {
+		if _, err := store.UpsertHeartbeat(hb); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result, err := store.PrepareImage(ImagePrepareRequest{
+		SourceRef:            "registry.example/cove/macos-runner:latest",
+		ImageRef:             "macos-runner:latest",
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay"},
+		DryRun:               true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.DryRun || len(result.Assignments) != 1 || result.Assignments[0].WorkerID != "cold" {
+		t.Fatalf("dry-run result = %+v, want one planned cold assignment", result)
+	}
+	if !strings.HasPrefix(result.Assignments[0].ID, "planned-assignment-") {
+		t.Fatalf("dry-run assignment id = %q, want planned assignment id", result.Assignments[0].ID)
+	}
+	if skipReason(result.Skipped, "warm") != "present" {
+		t.Fatalf("dry-run skipped = %+v, want warm present", result.Skipped)
+	}
+	if _, ok := store.GetAssignment(result.Assignments[0].ID); ok {
+		t.Fatalf("dry-run assignment %q was stored", result.Assignments[0].ID)
+	}
+	page := store.ListImagePreparationsPage(ImagePrepareListFilter{ImageRef: "macos-runner:latest"})
+	if page.Count != 0 || len(page.Preparations) != 0 {
+		t.Fatalf("dry-run history = %+v, want none", page)
+	}
+	audit := store.ListAuditPage(AuditListFilter{Action: "image.prepare"})
+	if audit.Count != 0 || len(audit.Events) != 0 {
+		t.Fatalf("dry-run audit = %+v, want none", audit)
+	}
+}
+
 func TestStorePrepareImageUsesManifestDigest(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	for _, hb := range []WorkerHeartbeat{

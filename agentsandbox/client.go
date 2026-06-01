@@ -186,6 +186,7 @@ type ImagePrepareOptions struct {
 	RequiredLabels       map[string]string
 	RequiredCapabilities []string
 	Force                bool
+	DryRun               bool
 	Timeout              time.Duration
 	HTTP                 *http.Client
 }
@@ -222,6 +223,7 @@ type ImagePrepareResult struct {
 	ImagePlatform        string             `json:"image_platform,omitempty"`
 	RequiredLabels       map[string]string  `json:"required_labels,omitempty"`
 	RequiredCapabilities []string           `json:"required_capabilities,omitempty"`
+	DryRun               bool               `json:"dry_run,omitempty"`
 	Assignments          []Assignment       `json:"assignments,omitempty"`
 	Skipped              []ImagePrepareSkip `json:"skipped,omitempty"`
 }
@@ -729,6 +731,9 @@ func PrepareImage(ctx context.Context, opts ImagePrepareOptions) (ImagePrepareRe
 	}
 	if opts.Force {
 		body["force"] = true
+	}
+	if opts.DryRun {
+		body["dry_run"] = true
 	}
 	var result ImagePrepareResult
 	if err := c.request(ctx, http.MethodPost, "/v1/images/prepare", body, &result, c.timeout); err != nil {
