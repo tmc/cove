@@ -1531,6 +1531,13 @@ func TestStoreOperationsSummaryControllerRuns(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{
+		ID:       "worker-2",
+		Labels:   map[string]string{"zone": "desk"},
+		Capacity: Capacity{MaxVMs: 4},
+	}); err != nil {
+		t.Fatal(err)
+	}
 	prep, err := store.PrepareImage(ImagePrepareRequest{
 		Namespace:            "team-a",
 		SourceRef:            "registry.example/runner:v1",
@@ -1581,6 +1588,12 @@ func TestStoreOperationsSummaryControllerRuns(t *testing.T) {
 	runs := summary.ControllerRuns
 	if runs.Total != 2 || runs.AssignmentBacked != 2 || runs.Active != 1 || runs.Attention != 1 {
 		t.Fatalf("controller run summary = %+v, want two assignment-backed runs with one active and one attention", runs)
+	}
+	if runs.Skipped != 2 || runs.BySkipReason["capability"] != 2 {
+		t.Fatalf("controller run skips = total %d reasons %+v, want two capability skips", runs.Skipped, runs.BySkipReason)
+	}
+	if len(runs.SkippedWorkers) != 1 || runs.SkippedWorkers[0].WorkerID != "worker-2" || runs.SkippedWorkers[0].Total != 2 || runs.SkippedWorkers[0].ByReason["capability"] != 2 {
+		t.Fatalf("controller run skipped workers = %+v, want worker-2 capability skips", runs.SkippedWorkers)
 	}
 	if runs.ByKind[ControllerRunKindImagePrepare] != 1 || runs.ByKind[ControllerRunKindStoragePrune] != 1 || runs.ByKind[ControllerRunKindImageGC] != 0 {
 		t.Fatalf("controller run kinds = %+v, want team-a prepare and prune only", runs.ByKind)

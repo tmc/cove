@@ -2146,9 +2146,11 @@ func (s *Store) OperationsSummary(namespace string) OperationsSummary {
 		ControllerRuns: ControllerRunOperationsSummary{
 			ByKind:             make(map[string]int),
 			ByAssignmentStatus: make(map[string]int),
+			BySkipReason:       make(map[string]int),
 		},
 	}
 	capabilityCoverage := make(map[string]*WorkerCapabilitySummary)
+	controllerRunSkippedWorkers := make(map[string]*ControllerRunSkippedWorkerSummary)
 
 	for _, host := range s.sortedHostsLocked() {
 		host = s.statusLocked(host)
@@ -2263,7 +2265,14 @@ func (s *Store) OperationsSummary(namespace string) OperationsSummary {
 			summary.ControllerRuns.Attention++
 			summary.ControllerRuns.AttentionRuns = append(summary.ControllerRuns.AttentionRuns, cloneControllerRunSummary(run))
 		}
+		for _, skip := range controllerRunSkips(detail) {
+			reason := controllerRunSkipReason(skip.reason)
+			summary.ControllerRuns.Skipped++
+			summary.ControllerRuns.BySkipReason[reason]++
+			addControllerRunSkippedWorker(controllerRunSkippedWorkers, skip)
+		}
 	}
+	summary.ControllerRuns.SkippedWorkers = sortedControllerRunSkippedWorkers(controllerRunSkippedWorkers)
 	summary.Metering = sandboxMeteringSummary(namespace, "", metering)
 	return summary
 }
@@ -3801,6 +3810,100 @@ func controllerRunDetailMatchesFilter(detail ControllerRunDetail, filter Control
 
 func controllerRunDetailHasWorker(detail ControllerRunDetail, workerID string) bool {
 	return containsString(detail.WorkerIDs, workerID) || containsString(detail.CandidateWorkerIDs, workerID) || containsString(detail.SkippedWorkerIDs, workerID)
+}
+
+type controllerRunSkip struct {
+	workerID string
+	reason   string
+}
+
+func controllerRunSkips(detail ControllerRunDetail) []controllerRunSkip {
+	if detail.PlacementPlan != nil {
+		out := make([]controllerRunSkip, 0, len(detail.PlacementPlan.Skipped))
+		for _, skip := range detail.PlacementPlan.Skipped {
+			out = append(out, controllerRunSkip{workerID: skip.WorkerID, reason: skip.Reason})
+		}
+		return out
+	}
+	if detail.ImagePreparation != nil {
+		out := make([]controllerRunSkip, 0, len(detail.ImagePreparation.Skipped))
+		for _, skip := range detail.ImagePreparation.Skipped {
+			out = append(out, controllerRunSkip{workerID: skip.WorkerID, reason: skip.Reason})
+		}
+		return out
+	}
+	if detail.ImageGC != nil {
+		out := make([]controllerRunSkip, 0, len(detail.ImageGC.Skipped))
+		for _, skip := range detail.ImageGC.Skipped {
+			out = append(out, controllerRunSkip{workerID: skip.WorkerID, reason: skip.Reason})
+		}
+		return out
+	}
+	if detail.LifecyclePolicy != nil {
+		out := make([]controllerRunSkip, 0, len(detail.LifecyclePolicy.Skipped))
+		for _, skip := range detail.LifecyclePolicy.Skipped {
+			out = append(out, controllerRunSkip{workerID: skip.WorkerID, reason: skip.Reason})
+		}
+		return out
+	}
+	if detail.StorageBudget != nil {
+		out := make([]controllerRunSkip, 0, len(detail.StorageBudget.Skipped))
+		for _, skip := range detail.StorageBudget.Skipped {
+			out = append(out, controllerRunSkip{workerID: skip.WorkerID, reason: skip.Reason})
+		}
+		return out
+	}
+	if detail.StoragePrune != nil {
+		out := make([]controllerRunSkip, 0, len(detail.StoragePrune.Skipped))
+		for _, skip := range detail.StoragePrune.Skipped {
+			out = append(out, controllerRunSkip{workerID: skip.WorkerID, reason: skip.Reason})
+		}
+		return out
+	}
+	return nil
+}
+
+func addControllerRunSkippedWorker(summaries map[string]*ControllerRunSkippedWorkerSummary, skip controllerRunSkip) {
+	workerID := strings.TrimSpace(skip.workerID)
+	if workerID == "" {
+		return
+	}
+	reason := controllerRunSkipReason(skip.reason)
+	summary := summaries[workerID]
+	if summary == nil {
+		summary = &ControllerRunSkippedWorkerSummary{
+			WorkerID: workerID,
+			ByReason: make(map[string]int),
+		}
+		summaries[workerID] = summary
+	}
+	summary.Total++
+	summary.ByReason[reason]++
+}
+
+func sortedControllerRunSkippedWorkers(summaries map[string]*ControllerRunSkippedWorkerSummary) []ControllerRunSkippedWorkerSummary {
+	if len(summaries) == 0 {
+		return nil
+	}
+	workers := make([]string, 0, len(summaries))
+	for workerID := range summaries {
+		workers = append(workers, workerID)
+	}
+	sort.Strings(workers)
+	out := make([]ControllerRunSkippedWorkerSummary, 0, len(workers))
+	for _, workerID := range workers {
+		summary := *summaries[workerID]
+		out = append(out, summary)
+	}
+	return out
+}
+
+func controllerRunSkipReason(reason string) string {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return "unknown"
+	}
+	return reason
 }
 
 func controllerRunNeedsAttention(detail ControllerRunDetail) bool {

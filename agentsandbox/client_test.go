@@ -773,6 +773,9 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 	if summary.ControllerRuns.Total != 2 || summary.ControllerRuns.Active != 1 || summary.ControllerRuns.Attention != 1 || summary.ControllerRuns.ByKind["storage.prune"] != 1 || summary.ControllerRuns.ByAssignmentStatus["running"] != 1 {
 		t.Fatalf("controller run operations summary = %+v, want active storage prune and attention run", summary.ControllerRuns)
 	}
+	if summary.ControllerRuns.Skipped != 2 || summary.ControllerRuns.BySkipReason["capability"] != 2 || len(summary.ControllerRuns.SkippedWorkers) != 1 || summary.ControllerRuns.SkippedWorkers[0].WorkerID != "worker-2" {
+		t.Fatalf("controller run skip summary = %+v, want worker-2 capability skips", summary.ControllerRuns)
+	}
 	if len(summary.Workers.Capabilities) != 2 || summary.Workers.Capabilities[0].Name != "asif" || summary.Workers.Capabilities[0].Ready != 1 {
 		t.Fatalf("operations capabilities = %+v, want sorted capability coverage", summary.Workers.Capabilities)
 	}
@@ -2905,8 +2908,10 @@ func sdkOperationsSummary() OperationsSummary {
 			AssignmentBacked:   2,
 			Active:             1,
 			Attention:          1,
+			Skipped:            2,
 			ByKind:             map[string]int{"storage.prune": 1, "image.gc": 1},
 			ByAssignmentStatus: map[string]int{"running": 1, "failed": 1},
+			BySkipReason:       map[string]int{"capability": 2},
 			ActiveRuns: []ControllerRunSummary{{
 				ID:              "storage-prune-1",
 				Created:         now,
@@ -2924,6 +2929,11 @@ func sdkOperationsSummary() OperationsSummary {
 				TargetType:      "image-cache",
 				TargetID:        "all",
 				AssignmentCount: 1,
+			}},
+			SkippedWorkers: []ControllerRunSkippedWorkerSummary{{
+				WorkerID: "worker-2",
+				Total:    2,
+				ByReason: map[string]int{"capability": 2},
 			}},
 		},
 		Metering: MeteringSummary{Namespace: "team-a", Records: 2, DurationMillis: 2000, VMMillis: 2000},

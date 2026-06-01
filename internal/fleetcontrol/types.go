@@ -1099,14 +1099,23 @@ type OperationsSummary struct {
 }
 
 type ControllerRunOperationsSummary struct {
-	Total              int                    `json:"total"`
-	AssignmentBacked   int                    `json:"assignment_backed"`
-	Active             int                    `json:"active"`
-	Attention          int                    `json:"attention"`
-	ByKind             map[string]int         `json:"by_kind,omitempty"`
-	ByAssignmentStatus map[string]int         `json:"by_assignment_status,omitempty"`
-	ActiveRuns         []ControllerRunSummary `json:"active_runs,omitempty"`
-	AttentionRuns      []ControllerRunSummary `json:"attention_runs,omitempty"`
+	Total              int                                 `json:"total"`
+	AssignmentBacked   int                                 `json:"assignment_backed"`
+	Active             int                                 `json:"active"`
+	Attention          int                                 `json:"attention"`
+	Skipped            int                                 `json:"skipped"`
+	ByKind             map[string]int                      `json:"by_kind,omitempty"`
+	ByAssignmentStatus map[string]int                      `json:"by_assignment_status,omitempty"`
+	BySkipReason       map[string]int                      `json:"by_skip_reason,omitempty"`
+	ActiveRuns         []ControllerRunSummary              `json:"active_runs,omitempty"`
+	AttentionRuns      []ControllerRunSummary              `json:"attention_runs,omitempty"`
+	SkippedWorkers     []ControllerRunSkippedWorkerSummary `json:"skipped_workers,omitempty"`
+}
+
+type ControllerRunSkippedWorkerSummary struct {
+	WorkerID string         `json:"worker_id"`
+	Total    int            `json:"total"`
+	ByReason map[string]int `json:"by_reason,omitempty"`
 }
 
 type WorkerOperationsSummary struct {

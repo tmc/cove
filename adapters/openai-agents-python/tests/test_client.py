@@ -690,8 +690,11 @@ def test_fleet_client_maintenance_runs() -> None:
         assert summary["warm_pools"]["pools"][0]["name"] == "runner"
         assert summary["controller_runs"]["active"] == 1
         assert summary["controller_runs"]["attention"] == 1
+        assert summary["controller_runs"]["skipped"] == 2
         assert summary["controller_runs"]["by_kind"]["storage.prune"] == 1
         assert summary["controller_runs"]["by_assignment_status"]["running"] == 1
+        assert summary["controller_runs"]["by_skip_reason"]["capability"] == 2
+        assert summary["controller_runs"]["skipped_workers"][0]["worker_id"] == "worker-2"
         assert summary["metering"]["records"] == 2
 
         paths = [request["path"] for request in server.requests[-17:]]
@@ -2105,8 +2108,10 @@ def _operations_summary() -> dict[str, object]:
             "assignment_backed": 2,
             "active": 1,
             "attention": 1,
+            "skipped": 2,
             "by_kind": {"storage.prune": 1, "image.gc": 1},
             "by_assignment_status": {"running": 1, "failed": 1},
+            "by_skip_reason": {"capability": 2},
             "active_runs": [
                 {
                     "id": "storage-prune-1",
@@ -2127,6 +2132,13 @@ def _operations_summary() -> dict[str, object]:
                     "target_type": "image-cache",
                     "target_id": "all",
                     "assignment_count": 1,
+                }
+            ],
+            "skipped_workers": [
+                {
+                    "worker_id": "worker-2",
+                    "total": 2,
+                    "by_reason": {"capability": 2},
                 }
             ],
         },

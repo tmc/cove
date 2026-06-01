@@ -214,8 +214,8 @@ reconciles first, then returns worker readiness/cordon/quarantine/stale counts
 with attention workers and per-capability coverage, assignment status counts
 with active assignments, hosted sandbox status counts with active and draining
 handles, warm-pool desired/slot counts, retained controller-run counts by kind
-with live assignment-status rollups, active runs, attention runs, and aggregate
-sandbox metering. The
+with live assignment-status rollups, active runs, attention runs, skip-reason
+counts, skipped-worker rollups, and aggregate sandbox metering. The
 capability coverage section shows each reported worker capability, status
 counts, and the workers carrying it, so operators can see whether traits such
 as `ram-overlay`, `asif`, or `apfs-quota` are actually available before
