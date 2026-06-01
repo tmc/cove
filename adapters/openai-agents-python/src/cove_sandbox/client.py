@@ -1105,6 +1105,52 @@ class CoveFleetClient:
         return _normalize_operations_summary(result, "GET /v1/operations/summary")
 
     @classmethod
+    def list_operations_summary_snapshots(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        since: str = "",
+        until: str = "",
+        offset: int = 0,
+        limit: int = 0,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        if offset < 0:
+            raise ValueError("operations summary history offset must be non-negative")
+        if limit < 0:
+            raise ValueError("operations summary history limit must be non-negative")
+        seed = cls(
+            sandbox_id="operations-summary-history",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        result = seed._request(
+            "GET",
+            _query_path(
+                "/v1/operations/summary/history",
+                {
+                    "namespace": namespace or "",
+                    "since": since,
+                    "until": until,
+                    "offset": str(offset) if offset else "",
+                    "limit": str(limit) if limit else "",
+                },
+            ),
+            timeout=timeout,
+        )
+        snapshots = result.get("snapshots") or []
+        if not isinstance(snapshots, list):
+            raise CoveError("GET /v1/operations/summary/history: expected snapshots list")
+        page = dict(result)
+        page["snapshots"] = [dict(item) for item in snapshots if isinstance(item, dict)]
+        page["count"] = int(page.get("count") or len(page["snapshots"]))
+        return page
+
+    @classmethod
     def list_sandbox_metering(
         cls,
         *,

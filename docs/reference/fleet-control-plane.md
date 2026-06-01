@@ -77,6 +77,7 @@ Inventory endpoints:
 curl http://127.0.0.1:9758/healthz
 curl http://127.0.0.1:9758/v1/operations/summary
 curl http://127.0.0.1:9758/v1/operations/summary?namespace=team-a
+curl 'http://127.0.0.1:9758/v1/operations/summary/history?namespace=team-a&limit=20'
 curl 'http://127.0.0.1:9758/v1/operations/runs?kind=storage.prune&limit=20'
 curl 'http://127.0.0.1:9758/v1/operations/runs?target_type=image&target_id=macos-runner:latest'
 curl 'http://127.0.0.1:9758/v1/operations/runs?image_manifest_digest=sha256:...&required_capability=ram-overlay&limit=20'
@@ -226,8 +227,13 @@ Operators can see which workers are repeatedly skipped because they are
 `cordoned`, `quarantined`, or `stale`, and whether traits such as `ram-overlay`,
 `asif`, or
 `apfs-quota` are actually available before admitting capability-constrained
-work. The optional `namespace` query filters assignment, sandbox, warm-pool,
-and metering counts; worker inventory stays fleet-global. Because the response
+work. Each successful summary read records a compact sample, retaining the
+latest 1024 samples. `GET /v1/operations/summary/history` returns those
+retained samples with `namespace`, `since`, `until`, `offset`, and `limit`
+filters so dashboards can chart worker readiness, active hosted work, attention
+runs, and skipped fan-out over time.
+The optional `namespace` query filters assignment, sandbox, warm-pool, and
+metering counts; worker inventory stays fleet-global. Because the response
 includes fleet-global worker state, scoped service-account tokens cannot read
 it.
 `GET /v1/operations/runs` is the retained controller-run feed. It merges
@@ -851,8 +857,9 @@ for read-only admission checks plus the retained placement history that records
 feasible candidates and skipped-worker diagnostics.
 Maintenance helpers include `PushImageGC`, `PushLifecyclePolicy`,
 `PushStorageBudget`, `PushStoragePrune`, their list/get run companions, and
-`GetOperationsSummary` plus `ListControllerRuns` for the aggregate operations
-dashboard and timeline. Reconcile helpers include `PlanReconcile` and
+`GetOperationsSummary`, `ListOperationsSummarySnapshots`, plus
+`ListControllerRuns` for the aggregate operations dashboard, trends, and
+timeline. Reconcile helpers include `PlanReconcile` and
 `Reconcile` for the same unscoped dry-run/apply repair path as
 `/v1/reconcile/plan` and `/v1/reconcile`. Assignment helpers include
 `CreateAssignment`, `ListAssignments`, and `GetAssignment`, with the same
@@ -924,6 +931,17 @@ if err != nil {
 	log.Fatal(err)
 }
 log.Printf("ready workers=%d active sandboxes=%d active controller runs=%d", summary.Workers.Ready, summary.Sandboxes.Active, summary.ControllerRuns.Active)
+
+history, err := agentsandbox.ListOperationsSummarySnapshots(ctx, agentsandbox.OperationsSummaryHistoryOptions{
+	FleetURL:  "https://fleet.internal.example",
+	APIKey:    os.Getenv("COVE_API_KEY"),
+	Namespace: "team-a",
+	Limit:     20,
+})
+if err != nil {
+	log.Fatal(err)
+}
+log.Printf("operations samples=%d", history.Count)
 
 reconcilePlan, err := agentsandbox.PlanReconcile(ctx, agentsandbox.ReconcileOptions{
 	FleetURL: "https://fleet.internal.example",

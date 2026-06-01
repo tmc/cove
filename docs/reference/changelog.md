@@ -85,6 +85,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - Skipped-worker summaries now include per-worker status counts, making it clear
   which retained runs skipped a specific worker because it was cordoned,
   quarantined, stale, or otherwise unavailable.
+- `GET /v1/operations/summary` now records compact dashboard samples, and
+  `GET /v1/operations/summary/history` plus Go/Python hosted clients expose the
+  latest retained trend samples with namespace, time-window, and pagination
+  filters.
 - The public Go `agentsandbox` package and OpenAI Agents Python adapter now
   expose the hosted `/v1/operations/summary` dashboard so agent clients can
   inspect worker readiness, capability coverage, active work, warm pools, and

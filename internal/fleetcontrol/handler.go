@@ -106,6 +106,9 @@ func Handler(store *Store) http.Handler {
 	mux.HandleFunc("/v1/saml-bindings", func(w http.ResponseWriter, r *http.Request) {
 		handleSAMLBindings(w, r, store)
 	})
+	mux.HandleFunc("/v1/operations/summary/history", func(w http.ResponseWriter, r *http.Request) {
+		handleOperationsSummaryHistory(w, r, store)
+	})
 	mux.HandleFunc("/v1/operations/summary", func(w http.ResponseWriter, r *http.Request) {
 		handleOperationsSummary(w, r, store)
 	})
@@ -298,7 +301,32 @@ func handleOperationsSummary(w http.ResponseWriter, r *http.Request, store *Stor
 	if !reconcile(w, store) {
 		return
 	}
-	writeJSON(w, http.StatusOK, store.OperationsSummary(namespaceFilterFromRequest(r, identity)))
+	summary := store.OperationsSummary(namespaceFilterFromRequest(r, identity))
+	if err := store.RecordOperationsSummary(summary); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, summary)
+}
+
+func handleOperationsSummaryHistory(w http.ResponseWriter, r *http.Request, store *Store) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	if !requireUnscoped(w, r, store) {
+		return
+	}
+	filter, err := operationsSummarySnapshotListFilterFromRequest(r, namespaceFilterFromRequest(r, identity))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, store.ListOperationsSummarySnapshotsPage(filter))
 }
 
 func handleControllerRuns(w http.ResponseWriter, r *http.Request, store *Store) {
@@ -338,6 +366,44 @@ func handleControllerRun(w http.ResponseWriter, r *http.Request, store *Store) {
 		return
 	}
 	writeJSON(w, http.StatusOK, detail)
+}
+
+func operationsSummarySnapshotListFilterFromRequest(r *http.Request, namespace string) (OperationsSummarySnapshotListFilter, error) {
+	filter := OperationsSummarySnapshotListFilter{Namespace: namespace}
+	var err error
+	if filter.Since, err = timeFilterFromRequest(r, "operations summary history", "since"); err != nil {
+		return OperationsSummarySnapshotListFilter{}, err
+	}
+	if filter.Until, err = timeFilterFromRequest(r, "operations summary history", "until"); err != nil {
+		return OperationsSummarySnapshotListFilter{}, err
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 0 {
+			return OperationsSummarySnapshotListFilter{}, fmt.Errorf("operations summary history limit must be non-negative")
+		}
+		filter.Limit = limit
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		offset, err := strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			return OperationsSummarySnapshotListFilter{}, fmt.Errorf("operations summary history offset must be non-negative")
+		}
+		filter.Offset = offset
+	}
+	return filter, nil
+}
+
+func timeFilterFromRequest(r *http.Request, subject, name string) (time.Time, error) {
+	raw := strings.TrimSpace(r.URL.Query().Get(name))
+	if raw == "" {
+		return time.Time{}, nil
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, raw)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("%s %s must be RFC3339 time", subject, name)
+	}
+	return parsed.UTC(), nil
 }
 
 func controllerRunListFilterFromRequest(r *http.Request, namespace string) (ControllerRunListFilter, error) {

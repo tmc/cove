@@ -252,6 +252,14 @@ if runs["runs"]:
         run_id=runs["runs"][0]["id"],
     )
     print(detail["summary"]["kind"])
+
+history = CoveFleetClient.list_operations_summary_snapshots(
+    fleet_url="https://fleet.internal.example",
+    api_key="cove_...",
+    namespace="team-a",
+    limit=20,
+)
+print(history["count"])
     print(detail.get("assignment_ids", []))
     print(detail.get("assignment_status_counts", {}))
 
@@ -501,7 +509,7 @@ worker lifecycle helpers such as `cordon_worker`, `evacuate_worker`,
 `list_worker_sandboxes`, `list_worker_events`, `list_worker_reports`,
 `get_worker_metering`, `list_sandbox_metering`, `list_assignment_events`,
 `list_assignment_reports`, and `get_assignment_metering`, and
-`list_controller_runs` for the aggregate
+`list_controller_runs` plus `list_operations_summary_snapshots` for the aggregate
 operations dashboard, inventory, maintenance controls, audit chain, and
 timeline.
 Pass `dry_run=True` to maintenance pushes to inspect planned

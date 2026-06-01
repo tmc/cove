@@ -666,6 +666,18 @@ type OperationsSummaryOptions struct {
 	HTTP      *http.Client
 }
 
+type OperationsSummaryHistoryOptions struct {
+	FleetURL  string
+	APIKey    string
+	Namespace string
+	Since     time.Time
+	Until     time.Time
+	Offset    int
+	Limit     int
+	Timeout   time.Duration
+	HTTP      *http.Client
+}
+
 type AuditListOptions struct {
 	FleetURL     string
 	APIKey       string
@@ -1301,6 +1313,73 @@ type OperationsSummary struct {
 	WarmPools      WarmPoolOperationsSummary      `json:"warm_pools"`
 	ControllerRuns ControllerRunOperationsSummary `json:"controller_runs"`
 	Metering       MeteringSummary                `json:"metering"`
+}
+
+type OperationsSummarySnapshotListResult struct {
+	Snapshots  []OperationsSummarySnapshot `json:"snapshots"`
+	Count      int                         `json:"count"`
+	Offset     int                         `json:"offset,omitempty"`
+	Limit      int                         `json:"limit,omitempty"`
+	NextOffset int                         `json:"next_offset,omitempty"`
+}
+
+type OperationsSummarySnapshot struct {
+	Time           time.Time                       `json:"time"`
+	Namespace      string                          `json:"namespace,omitempty"`
+	Workers        WorkerOperationsSnapshot        `json:"workers"`
+	Assignments    AssignmentOperationsSnapshot    `json:"assignments"`
+	Sandboxes      SandboxOperationsSnapshot       `json:"sandboxes"`
+	WarmPools      WarmPoolOperationsSnapshot      `json:"warm_pools"`
+	ControllerRuns ControllerRunOperationsSnapshot `json:"controller_runs"`
+	Metering       MeteringSummary                 `json:"metering"`
+}
+
+type WorkerOperationsSnapshot struct {
+	Total       int            `json:"total"`
+	Ready       int            `json:"ready"`
+	Cordoned    int            `json:"cordoned"`
+	Quarantined int            `json:"quarantined"`
+	Stale       int            `json:"stale"`
+	ByStatus    map[string]int `json:"by_status,omitempty"`
+}
+
+type AssignmentOperationsSnapshot struct {
+	Total    int            `json:"total"`
+	Active   int            `json:"active"`
+	Terminal int            `json:"terminal"`
+	ByStatus map[string]int `json:"by_status,omitempty"`
+}
+
+type SandboxOperationsSnapshot struct {
+	Total    int            `json:"total"`
+	Active   int            `json:"active"`
+	Terminal int            `json:"terminal"`
+	ByStatus map[string]int `json:"by_status,omitempty"`
+}
+
+type WarmPoolOperationsSnapshot struct {
+	Total    int            `json:"total"`
+	Desired  int            `json:"desired"`
+	Slots    int            `json:"slots"`
+	Active   int            `json:"active"`
+	Ready    int            `json:"ready"`
+	Claimed  int            `json:"claimed"`
+	Draining int            `json:"draining"`
+	Terminal int            `json:"terminal"`
+	ByStatus map[string]int `json:"by_status,omitempty"`
+}
+
+type ControllerRunOperationsSnapshot struct {
+	Total               int            `json:"total"`
+	AssignmentBacked    int            `json:"assignment_backed"`
+	Active              int            `json:"active"`
+	Attention           int            `json:"attention"`
+	Skipped             int            `json:"skipped"`
+	ByKind              map[string]int `json:"by_kind,omitempty"`
+	ByAssignmentStatus  map[string]int `json:"by_assignment_status,omitempty"`
+	BySkipReason        map[string]int `json:"by_skip_reason,omitempty"`
+	BySkipStatus        map[string]int `json:"by_skip_status,omitempty"`
+	ByMissingCapability map[string]int `json:"by_missing_capability,omitempty"`
 }
 
 type ControllerRunOperationsSummary struct {
@@ -2481,6 +2560,37 @@ func GetOperationsSummary(ctx context.Context, opts OperationsSummaryOptions) (O
 	var result OperationsSummary
 	if err := c.request(ctx, http.MethodGet, c.queryPath("/v1/operations/summary", query), nil, &result, c.timeout); err != nil {
 		return OperationsSummary{}, err
+	}
+	return result, nil
+}
+
+func ListOperationsSummarySnapshots(ctx context.Context, opts OperationsSummaryHistoryOptions) (OperationsSummarySnapshotListResult, error) {
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "operations-summary-history")
+	if err != nil {
+		return OperationsSummarySnapshotListResult{}, err
+	}
+	if opts.Offset < 0 {
+		return OperationsSummarySnapshotListResult{}, errors.New("agentsandbox: operations summary history offset must be non-negative")
+	}
+	if opts.Limit < 0 {
+		return OperationsSummarySnapshotListResult{}, errors.New("agentsandbox: operations summary history limit must be non-negative")
+	}
+	query := map[string]string{"namespace": opts.Namespace}
+	if !opts.Since.IsZero() {
+		query["since"] = opts.Since.UTC().Format(time.RFC3339Nano)
+	}
+	if !opts.Until.IsZero() {
+		query["until"] = opts.Until.UTC().Format(time.RFC3339Nano)
+	}
+	if opts.Offset > 0 {
+		query["offset"] = strconv.Itoa(opts.Offset)
+	}
+	if opts.Limit > 0 {
+		query["limit"] = strconv.Itoa(opts.Limit)
+	}
+	var result OperationsSummarySnapshotListResult
+	if err := c.request(ctx, http.MethodGet, c.queryPath("/v1/operations/summary/history", query), nil, &result, c.timeout); err != nil {
+		return OperationsSummarySnapshotListResult{}, err
 	}
 	return result, nil
 }

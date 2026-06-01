@@ -41,6 +41,7 @@ type Store struct {
 	lifecycleRuns     []LifecyclePolicyResult
 	storageBudgetRuns []StorageBudgetResult
 	storagePruneRuns  []StoragePruneResult
+	operationsHistory []OperationsSummarySnapshot
 	audit             []AuditEvent
 	metering          []SandboxMeteringRecord
 	reports           []AssignmentReport
@@ -52,23 +53,24 @@ type Store struct {
 }
 
 type storeFile struct {
-	Hosts             []HostRecord            `json:"hosts"`
-	Assignments       []Assignment            `json:"assignments,omitempty"`
-	WarmPools         []WarmPool              `json:"warm_pools,omitempty"`
-	PlacementPlans    []PlacementPlan         `json:"placement_plans,omitempty"`
-	ImagePreparations []ImagePrepareResult    `json:"image_preparations,omitempty"`
-	ImageGCRuns       []ImageGCResult         `json:"image_gc_runs,omitempty"`
-	LifecycleRuns     []LifecyclePolicyResult `json:"lifecycle_runs,omitempty"`
-	StorageBudgetRuns []StorageBudgetResult   `json:"storage_budget_runs,omitempty"`
-	StoragePruneRuns  []StoragePruneResult    `json:"storage_prune_runs,omitempty"`
-	AuditEvents       []AuditEvent            `json:"audit_events,omitempty"`
-	MeteringRecords   []SandboxMeteringRecord `json:"metering_records,omitempty"`
-	AssignmentReports []AssignmentReport      `json:"assignment_reports,omitempty"`
-	ServiceAccounts   []serviceAccountRecord  `json:"service_accounts,omitempty"`
-	OIDCBindings      []oidcBindingRecord     `json:"oidc_bindings,omitempty"`
-	SAMLBindings      []samlBindingRecord     `json:"saml_bindings,omitempty"`
-	SAMLReplays       []samlReplayRecord      `json:"saml_replays,omitempty"`
-	SAMLSessions      []samlSessionRecord     `json:"saml_sessions,omitempty"`
+	Hosts             []HostRecord                `json:"hosts"`
+	Assignments       []Assignment                `json:"assignments,omitempty"`
+	WarmPools         []WarmPool                  `json:"warm_pools,omitempty"`
+	PlacementPlans    []PlacementPlan             `json:"placement_plans,omitempty"`
+	ImagePreparations []ImagePrepareResult        `json:"image_preparations,omitempty"`
+	ImageGCRuns       []ImageGCResult             `json:"image_gc_runs,omitempty"`
+	LifecycleRuns     []LifecyclePolicyResult     `json:"lifecycle_runs,omitempty"`
+	StorageBudgetRuns []StorageBudgetResult       `json:"storage_budget_runs,omitempty"`
+	StoragePruneRuns  []StoragePruneResult        `json:"storage_prune_runs,omitempty"`
+	OperationsHistory []OperationsSummarySnapshot `json:"operations_history,omitempty"`
+	AuditEvents       []AuditEvent                `json:"audit_events,omitempty"`
+	MeteringRecords   []SandboxMeteringRecord     `json:"metering_records,omitempty"`
+	AssignmentReports []AssignmentReport          `json:"assignment_reports,omitempty"`
+	ServiceAccounts   []serviceAccountRecord      `json:"service_accounts,omitempty"`
+	OIDCBindings      []oidcBindingRecord         `json:"oidc_bindings,omitempty"`
+	SAMLBindings      []samlBindingRecord         `json:"saml_bindings,omitempty"`
+	SAMLReplays       []samlReplayRecord          `json:"saml_replays,omitempty"`
+	SAMLSessions      []samlSessionRecord         `json:"saml_sessions,omitempty"`
 }
 
 type serviceAccountRecord struct {
@@ -133,10 +135,11 @@ type samlSessionRecord struct {
 }
 
 const (
-	sandboxRoleRun     = "run"
-	sandboxRoleStop    = "stop"
-	sandboxRoleExec    = "exec"
-	sandboxRoleControl = "control"
+	sandboxRoleRun                = "run"
+	sandboxRoleStop               = "stop"
+	sandboxRoleExec               = "exec"
+	sandboxRoleControl            = "control"
+	maxOperationsSummarySnapshots = 1024
 )
 
 func OpenStore(path string, ttl time.Duration) (*Store, error) {
@@ -282,6 +285,14 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		}
 		s.storagePruneRuns = append(s.storagePruneRuns, run)
 	}
+	for _, snapshot := range file.OperationsHistory {
+		snapshot = normalizeOperationsSummarySnapshot(snapshot)
+		if snapshot.Time.IsZero() {
+			continue
+		}
+		s.operationsHistory = append(s.operationsHistory, snapshot)
+	}
+	s.trimOperationsSummaryHistoryLocked()
 	for _, event := range file.AuditEvents {
 		event = normalizeAuditEvent(event)
 		if event.ID == "" || event.Action == "" || event.Time.IsZero() {
@@ -2283,6 +2294,131 @@ func (s *Store) OperationsSummary(namespace string) OperationsSummary {
 	summary.ControllerRuns.SkippedWorkers = sortedControllerRunSkippedWorkers(controllerRunSkippedWorkers)
 	summary.Metering = sandboxMeteringSummary(namespace, "", metering)
 	return summary
+}
+
+func (s *Store) RecordOperationsSummary(summary OperationsSummary) error {
+	snapshot := operationsSummarySnapshot(summary)
+	if snapshot.Time.IsZero() {
+		snapshot.Time = s.now().UTC()
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.operationsHistory = append(s.operationsHistory, snapshot)
+	s.trimOperationsSummaryHistoryLocked()
+	return s.persistLocked()
+}
+
+func (s *Store) ListOperationsSummarySnapshotsPage(filter OperationsSummarySnapshotListFilter) OperationsSummarySnapshotListResult {
+	filter.Namespace = normalizeNamespace(filter.Namespace)
+	if !filter.Since.IsZero() {
+		filter.Since = filter.Since.UTC()
+	}
+	if !filter.Until.IsZero() {
+		filter.Until = filter.Until.UTC()
+	}
+	if filter.Offset < 0 {
+		filter.Offset = 0
+	}
+	if filter.Limit < 0 {
+		filter.Limit = 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	snapshots := s.sortedOperationsSummarySnapshotsLocked()
+	filtered := snapshots[:0]
+	for _, snapshot := range snapshots {
+		if !namespaceMatches(snapshot.Namespace, filter.Namespace) {
+			continue
+		}
+		if !filter.Since.IsZero() && snapshot.Time.Before(filter.Since) {
+			continue
+		}
+		if !filter.Until.IsZero() && snapshot.Time.After(filter.Until) {
+			continue
+		}
+		filtered = append(filtered, snapshot)
+	}
+	result := OperationsSummarySnapshotListResult{Offset: filter.Offset, Limit: filter.Limit}
+	if filter.Offset >= len(filtered) {
+		return result
+	}
+	end := len(filtered) - filter.Offset
+	start := 0
+	if filter.Limit > 0 && end > filter.Limit {
+		start = end - filter.Limit
+		result.NextOffset = filter.Offset + filter.Limit
+	}
+	result.Snapshots = cloneOperationsSummarySnapshots(filtered[start:end])
+	result.Count = len(result.Snapshots)
+	return result
+}
+
+func operationsSummarySnapshot(summary OperationsSummary) OperationsSummarySnapshot {
+	return normalizeOperationsSummarySnapshot(OperationsSummarySnapshot{
+		Time:      summary.Time,
+		Namespace: summary.Namespace,
+		Workers: WorkerOperationsSnapshot{
+			Total:       summary.Workers.Total,
+			Ready:       summary.Workers.Ready,
+			Cordoned:    summary.Workers.Cordoned,
+			Quarantined: summary.Workers.Quarantined,
+			Stale:       summary.Workers.Stale,
+			ByStatus:    summary.Workers.ByStatus,
+		},
+		Assignments: AssignmentOperationsSnapshot{
+			Total:    summary.Assignments.Total,
+			Active:   summary.Assignments.Active,
+			Terminal: summary.Assignments.Terminal,
+			ByStatus: summary.Assignments.ByStatus,
+		},
+		Sandboxes: SandboxOperationsSnapshot{
+			Total:    summary.Sandboxes.Total,
+			Active:   summary.Sandboxes.Active,
+			Terminal: summary.Sandboxes.Terminal,
+			ByStatus: summary.Sandboxes.ByStatus,
+		},
+		WarmPools: WarmPoolOperationsSnapshot{
+			Total:    summary.WarmPools.Total,
+			Desired:  summary.WarmPools.Desired,
+			Slots:    summary.WarmPools.Slots,
+			Active:   summary.WarmPools.Active,
+			Ready:    summary.WarmPools.Ready,
+			Claimed:  summary.WarmPools.Claimed,
+			Draining: summary.WarmPools.Draining,
+			Terminal: summary.WarmPools.Terminal,
+			ByStatus: summary.WarmPools.ByStatus,
+		},
+		ControllerRuns: ControllerRunOperationsSnapshot{
+			Total:               summary.ControllerRuns.Total,
+			AssignmentBacked:    summary.ControllerRuns.AssignmentBacked,
+			Active:              summary.ControllerRuns.Active,
+			Attention:           summary.ControllerRuns.Attention,
+			Skipped:             summary.ControllerRuns.Skipped,
+			ByKind:              summary.ControllerRuns.ByKind,
+			ByAssignmentStatus:  summary.ControllerRuns.ByAssignmentStatus,
+			BySkipReason:        summary.ControllerRuns.BySkipReason,
+			BySkipStatus:        summary.ControllerRuns.BySkipStatus,
+			ByMissingCapability: summary.ControllerRuns.ByMissingCapability,
+		},
+		Metering: summary.Metering,
+	})
+}
+
+func normalizeOperationsSummarySnapshot(snapshot OperationsSummarySnapshot) OperationsSummarySnapshot {
+	if !snapshot.Time.IsZero() {
+		snapshot.Time = snapshot.Time.UTC()
+	}
+	snapshot.Namespace = normalizeNamespace(snapshot.Namespace)
+	snapshot.Workers.ByStatus = cloneIntMap(snapshot.Workers.ByStatus)
+	snapshot.Assignments.ByStatus = cloneIntMap(snapshot.Assignments.ByStatus)
+	snapshot.Sandboxes.ByStatus = cloneIntMap(snapshot.Sandboxes.ByStatus)
+	snapshot.WarmPools.ByStatus = cloneIntMap(snapshot.WarmPools.ByStatus)
+	snapshot.ControllerRuns.ByKind = cloneIntMap(snapshot.ControllerRuns.ByKind)
+	snapshot.ControllerRuns.ByAssignmentStatus = cloneIntMap(snapshot.ControllerRuns.ByAssignmentStatus)
+	snapshot.ControllerRuns.BySkipReason = cloneIntMap(snapshot.ControllerRuns.BySkipReason)
+	snapshot.ControllerRuns.BySkipStatus = cloneIntMap(snapshot.ControllerRuns.BySkipStatus)
+	snapshot.ControllerRuns.ByMissingCapability = cloneIntMap(snapshot.ControllerRuns.ByMissingCapability)
+	return snapshot
 }
 
 func (s *Store) ExecSandbox(id string, req SandboxExecRequest) (SandboxExecResult, error) {
@@ -5297,6 +5433,7 @@ func (s *Store) persistLocked() error {
 	lifecycleRuns := s.sortedLifecyclePolicyRunsLocked()
 	storageBudgetRuns := s.sortedStorageBudgetRunsLocked()
 	storagePruneRuns := s.sortedStoragePruneRunsLocked()
+	operationsHistory := s.sortedOperationsSummarySnapshotsLocked()
 	audit := cloneAuditEvents(s.audit)
 	metering := s.sortedMeteringLocked()
 	reports := s.sortedAssignmentReportsLocked()
@@ -5305,7 +5442,7 @@ func (s *Store) persistLocked() error {
 	samlBindings := s.sortedSAMLBindingsLocked()
 	samlReplays := s.sortedSAMLReplaysLocked()
 	samlSessions := s.sortedSAMLSessionRecordsLocked()
-	data, err := json.MarshalIndent(storeFile{Hosts: hosts, Assignments: assignments, WarmPools: warmPools, PlacementPlans: plans, ImagePreparations: preparations, ImageGCRuns: imageGCRuns, LifecycleRuns: lifecycleRuns, StorageBudgetRuns: storageBudgetRuns, StoragePruneRuns: storagePruneRuns, AuditEvents: audit, MeteringRecords: metering, AssignmentReports: reports, ServiceAccounts: accounts, OIDCBindings: oidcBindings, SAMLBindings: samlBindings, SAMLReplays: samlReplays, SAMLSessions: samlSessions}, "", "  ")
+	data, err := json.MarshalIndent(storeFile{Hosts: hosts, Assignments: assignments, WarmPools: warmPools, PlacementPlans: plans, ImagePreparations: preparations, ImageGCRuns: imageGCRuns, LifecycleRuns: lifecycleRuns, StorageBudgetRuns: storageBudgetRuns, StoragePruneRuns: storagePruneRuns, OperationsHistory: operationsHistory, AuditEvents: audit, MeteringRecords: metering, AssignmentReports: reports, ServiceAccounts: accounts, OIDCBindings: oidcBindings, SAMLBindings: samlBindings, SAMLReplays: samlReplays, SAMLSessions: samlSessions}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode fleet store: %w", err)
 	}
@@ -5439,6 +5576,25 @@ func (s *Store) sortedStoragePruneRunsLocked() []StoragePruneResult {
 		return runs[i].ID < runs[j].ID
 	})
 	return runs
+}
+
+func (s *Store) sortedOperationsSummarySnapshotsLocked() []OperationsSummarySnapshot {
+	snapshots := cloneOperationsSummarySnapshots(s.operationsHistory)
+	sort.Slice(snapshots, func(i, j int) bool {
+		if !snapshots[i].Time.Equal(snapshots[j].Time) {
+			return snapshots[i].Time.Before(snapshots[j].Time)
+		}
+		return snapshots[i].Namespace < snapshots[j].Namespace
+	})
+	return snapshots
+}
+
+func (s *Store) trimOperationsSummaryHistoryLocked() {
+	if len(s.operationsHistory) <= maxOperationsSummarySnapshots {
+		return
+	}
+	snapshots := s.sortedOperationsSummarySnapshotsLocked()
+	s.operationsHistory = cloneOperationsSummarySnapshots(snapshots[len(snapshots)-maxOperationsSummarySnapshots:])
 }
 
 func (s *Store) sortedControllerRunsLocked() []ControllerRunSummary {
@@ -5928,6 +6084,35 @@ func cloneStoragePolicySkips(in []StoragePolicySkip) []StoragePolicySkip {
 		out[i] = in[i]
 		out[i].MissingLabels = cloneLabels(in[i].MissingLabels)
 		out[i].MissingCapabilities = cloneStrings(in[i].MissingCapabilities)
+	}
+	return out
+}
+
+func cloneOperationsSummarySnapshot(in OperationsSummarySnapshot) OperationsSummarySnapshot {
+	out := in
+	if !out.Time.IsZero() {
+		out.Time = out.Time.UTC()
+	}
+	out.Namespace = normalizeNamespace(out.Namespace)
+	out.Workers.ByStatus = cloneIntMap(in.Workers.ByStatus)
+	out.Assignments.ByStatus = cloneIntMap(in.Assignments.ByStatus)
+	out.Sandboxes.ByStatus = cloneIntMap(in.Sandboxes.ByStatus)
+	out.WarmPools.ByStatus = cloneIntMap(in.WarmPools.ByStatus)
+	out.ControllerRuns.ByKind = cloneIntMap(in.ControllerRuns.ByKind)
+	out.ControllerRuns.ByAssignmentStatus = cloneIntMap(in.ControllerRuns.ByAssignmentStatus)
+	out.ControllerRuns.BySkipReason = cloneIntMap(in.ControllerRuns.BySkipReason)
+	out.ControllerRuns.BySkipStatus = cloneIntMap(in.ControllerRuns.BySkipStatus)
+	out.ControllerRuns.ByMissingCapability = cloneIntMap(in.ControllerRuns.ByMissingCapability)
+	return out
+}
+
+func cloneOperationsSummarySnapshots(in []OperationsSummarySnapshot) []OperationsSummarySnapshot {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]OperationsSummarySnapshot, len(in))
+	for i := range in {
+		out[i] = cloneOperationsSummarySnapshot(in[i])
 	}
 	return out
 }
@@ -9240,6 +9425,17 @@ func cloneLabels(in map[string]string) map[string]string {
 		return nil
 	}
 	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func cloneIntMap(in map[string]int) map[string]int {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]int, len(in))
 	for k, v := range in {
 		out[k] = v
 	}

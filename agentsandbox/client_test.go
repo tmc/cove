@@ -783,6 +783,16 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 	if len(summary.Workers.Attention) != 1 || summary.Workers.Attention[0].ID != "worker-2" || !summary.Workers.Attention[0].Cordoned {
 		t.Fatalf("operations attention workers = %+v, want cordoned worker-2", summary.Workers.Attention)
 	}
+	history, err := ListOperationsSummarySnapshots(ctx, OperationsSummaryHistoryOptions{FleetURL: server.URL, APIKey: "secret", Namespace: "team-a", Since: time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC), Until: time.Date(2026, 5, 31, 10, 10, 0, 0, time.UTC), Offset: 1, Limit: 2, Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("ListOperationsSummarySnapshots: %v", err)
+	}
+	if history.Count != 1 || history.Snapshots[0].Namespace != "team-a" || history.Snapshots[0].ControllerRuns.Skipped != 4 || history.Snapshots[0].Workers.ByStatus["cordoned"] != 1 {
+		t.Fatalf("ListOperationsSummarySnapshots = %+v, want compact operations trend snapshot", history)
+	}
+	if _, err := ListOperationsSummarySnapshots(ctx, OperationsSummaryHistoryOptions{FleetURL: server.URL, APIKey: "secret", Offset: -1, Timeout: time.Second}); err == nil || !strings.Contains(err.Error(), "offset must be non-negative") {
+		t.Fatalf("ListOperationsSummarySnapshots negative offset err = %v, want validation error", err)
+	}
 
 	paths := make([]string, 0, len(server.requests))
 	for _, req := range server.requests {
@@ -809,6 +819,7 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 		"/v1/reconcile/plan",
 		"/v1/reconcile",
 		"/v1/operations/summary",
+		"/v1/operations/summary/history",
 	}
 	if !equalStringSlices(paths, wantPaths) {
 		t.Fatalf("paths = %+v, want %+v", paths, wantPaths)
@@ -842,6 +853,9 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 	}
 	if query := server.requests[16].query; query.Get("namespace") != "team-a" {
 		t.Fatalf("operations summary query = %q", query.Encode())
+	}
+	if query := server.requests[17].query; query.Get("namespace") != "team-a" || query.Get("since") != "2026-05-31T10:00:00Z" || query.Get("until") != "2026-05-31T10:10:00Z" || query.Get("offset") != "1" || query.Get("limit") != "2" {
+		t.Fatalf("operations summary history query = %q", query.Encode())
 	}
 }
 
@@ -2256,6 +2270,13 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 			writeSDKJSON(t, w, sdkReconcileResult())
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/operations/summary":
 			writeSDKJSON(t, w, sdkOperationsSummary())
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/operations/summary/history":
+			writeSDKJSON(t, w, OperationsSummarySnapshotListResult{
+				Snapshots: []OperationsSummarySnapshot{sdkOperationsSummarySnapshot()},
+				Count:     1,
+				Offset:    atoiDefault(r.URL.Query().Get("offset"), 0),
+				Limit:     atoiDefault(r.URL.Query().Get("limit"), 0),
+			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/audit":
 			writeSDKJSON(t, w, AuditListResult{
 				Events: []AuditEvent{sdkAuditEvent()},
@@ -2945,6 +2966,58 @@ func sdkOperationsSummary() OperationsSummary {
 			}},
 		},
 		Metering: MeteringSummary{Namespace: "team-a", Records: 2, DurationMillis: 2000, VMMillis: 2000},
+	}
+}
+
+func sdkOperationsSummarySnapshot() OperationsSummarySnapshot {
+	summary := sdkOperationsSummary()
+	return OperationsSummarySnapshot{
+		Time:      summary.Time,
+		Namespace: summary.Namespace,
+		Workers: WorkerOperationsSnapshot{
+			Total:       summary.Workers.Total,
+			Ready:       summary.Workers.Ready,
+			Cordoned:    summary.Workers.Cordoned,
+			Quarantined: summary.Workers.Quarantined,
+			Stale:       summary.Workers.Stale,
+			ByStatus:    summary.Workers.ByStatus,
+		},
+		Assignments: AssignmentOperationsSnapshot{
+			Total:    summary.Assignments.Total,
+			Active:   summary.Assignments.Active,
+			Terminal: summary.Assignments.Terminal,
+			ByStatus: summary.Assignments.ByStatus,
+		},
+		Sandboxes: SandboxOperationsSnapshot{
+			Total:    summary.Sandboxes.Total,
+			Active:   summary.Sandboxes.Active,
+			Terminal: summary.Sandboxes.Terminal,
+			ByStatus: summary.Sandboxes.ByStatus,
+		},
+		WarmPools: WarmPoolOperationsSnapshot{
+			Total:    summary.WarmPools.Total,
+			Desired:  summary.WarmPools.Desired,
+			Slots:    summary.WarmPools.Slots,
+			Active:   summary.WarmPools.Active,
+			Ready:    summary.WarmPools.Ready,
+			Claimed:  summary.WarmPools.Claimed,
+			Draining: summary.WarmPools.Draining,
+			Terminal: summary.WarmPools.Terminal,
+			ByStatus: summary.WarmPools.ByStatus,
+		},
+		ControllerRuns: ControllerRunOperationsSnapshot{
+			Total:               summary.ControllerRuns.Total,
+			AssignmentBacked:    summary.ControllerRuns.AssignmentBacked,
+			Active:              summary.ControllerRuns.Active,
+			Attention:           summary.ControllerRuns.Attention,
+			Skipped:             summary.ControllerRuns.Skipped,
+			ByKind:              summary.ControllerRuns.ByKind,
+			ByAssignmentStatus:  summary.ControllerRuns.ByAssignmentStatus,
+			BySkipReason:        summary.ControllerRuns.BySkipReason,
+			BySkipStatus:        summary.ControllerRuns.BySkipStatus,
+			ByMissingCapability: summary.ControllerRuns.ByMissingCapability,
+		},
+		Metering: summary.Metering,
 	}
 }
 

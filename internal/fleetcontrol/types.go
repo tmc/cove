@@ -1102,6 +1102,81 @@ type OperationsSummary struct {
 	Metering       SandboxMeteringSummary         `json:"metering"`
 }
 
+type OperationsSummarySnapshotListFilter struct {
+	Namespace string    `json:"namespace,omitempty"`
+	Since     time.Time `json:"since,omitempty"`
+	Until     time.Time `json:"until,omitempty"`
+	Offset    int       `json:"offset,omitempty"`
+	Limit     int       `json:"limit,omitempty"`
+}
+
+type OperationsSummarySnapshotListResult struct {
+	Snapshots  []OperationsSummarySnapshot `json:"snapshots"`
+	Count      int                         `json:"count"`
+	Offset     int                         `json:"offset,omitempty"`
+	Limit      int                         `json:"limit,omitempty"`
+	NextOffset int                         `json:"next_offset,omitempty"`
+}
+
+type OperationsSummarySnapshot struct {
+	Time           time.Time                       `json:"time"`
+	Namespace      string                          `json:"namespace,omitempty"`
+	Workers        WorkerOperationsSnapshot        `json:"workers"`
+	Assignments    AssignmentOperationsSnapshot    `json:"assignments"`
+	Sandboxes      SandboxOperationsSnapshot       `json:"sandboxes"`
+	WarmPools      WarmPoolOperationsSnapshot      `json:"warm_pools"`
+	ControllerRuns ControllerRunOperationsSnapshot `json:"controller_runs"`
+	Metering       SandboxMeteringSummary          `json:"metering"`
+}
+
+type WorkerOperationsSnapshot struct {
+	Total       int            `json:"total"`
+	Ready       int            `json:"ready"`
+	Cordoned    int            `json:"cordoned"`
+	Quarantined int            `json:"quarantined"`
+	Stale       int            `json:"stale"`
+	ByStatus    map[string]int `json:"by_status,omitempty"`
+}
+
+type AssignmentOperationsSnapshot struct {
+	Total    int            `json:"total"`
+	Active   int            `json:"active"`
+	Terminal int            `json:"terminal"`
+	ByStatus map[string]int `json:"by_status,omitempty"`
+}
+
+type SandboxOperationsSnapshot struct {
+	Total    int            `json:"total"`
+	Active   int            `json:"active"`
+	Terminal int            `json:"terminal"`
+	ByStatus map[string]int `json:"by_status,omitempty"`
+}
+
+type WarmPoolOperationsSnapshot struct {
+	Total    int            `json:"total"`
+	Desired  int            `json:"desired"`
+	Slots    int            `json:"slots"`
+	Active   int            `json:"active"`
+	Ready    int            `json:"ready"`
+	Claimed  int            `json:"claimed"`
+	Draining int            `json:"draining"`
+	Terminal int            `json:"terminal"`
+	ByStatus map[string]int `json:"by_status,omitempty"`
+}
+
+type ControllerRunOperationsSnapshot struct {
+	Total               int            `json:"total"`
+	AssignmentBacked    int            `json:"assignment_backed"`
+	Active              int            `json:"active"`
+	Attention           int            `json:"attention"`
+	Skipped             int            `json:"skipped"`
+	ByKind              map[string]int `json:"by_kind,omitempty"`
+	ByAssignmentStatus  map[string]int `json:"by_assignment_status,omitempty"`
+	BySkipReason        map[string]int `json:"by_skip_reason,omitempty"`
+	BySkipStatus        map[string]int `json:"by_skip_status,omitempty"`
+	ByMissingCapability map[string]int `json:"by_missing_capability,omitempty"`
+}
+
 type ControllerRunOperationsSummary struct {
 	Total               int                                 `json:"total"`
 	AssignmentBacked    int                                 `json:"assignment_backed"`

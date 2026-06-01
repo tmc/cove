@@ -1649,6 +1649,76 @@ func TestStoreOperationsSummaryControllerRuns(t *testing.T) {
 	}
 }
 
+func TestStoreOperationsSummarySnapshots(t *testing.T) {
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	path := filepath.Join(t.TempDir(), "fleet.json")
+	store, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", Capabilities: []string{"ram-overlay"}}); err != nil {
+		t.Fatal(err)
+	}
+	first := store.OperationsSummary("team-a")
+	if err := store.RecordOperationsSummary(first); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Minute)
+	if _, err := store.CordonWorker("worker-1", "maintenance"); err != nil {
+		t.Fatal(err)
+	}
+	second := store.OperationsSummary("team-a")
+	if err := store.RecordOperationsSummary(second); err != nil {
+		t.Fatal(err)
+	}
+
+	page := store.ListOperationsSummarySnapshotsPage(OperationsSummarySnapshotListFilter{Namespace: "team-a", Limit: 1})
+	if page.Count != 1 || page.NextOffset != 1 || len(page.Snapshots) != 1 || page.Snapshots[0].Workers.Cordoned != 1 || page.Snapshots[0].Workers.ByStatus["cordoned"] != 1 {
+		t.Fatalf("latest operations summary snapshot = %+v, want cordoned worker snapshot with next offset", page)
+	}
+	page = store.ListOperationsSummarySnapshotsPage(OperationsSummarySnapshotListFilter{Namespace: "team-a", Offset: 1, Limit: 1})
+	if page.Count != 1 || page.NextOffset != 0 || len(page.Snapshots) != 1 || page.Snapshots[0].Workers.Ready != 1 || page.Snapshots[0].Workers.ByStatus["ready"] != 1 {
+		t.Fatalf("older operations summary snapshot = %+v, want ready worker snapshot", page)
+	}
+	page = store.ListOperationsSummarySnapshotsPage(OperationsSummarySnapshotListFilter{Namespace: "team-a", Since: second.Time})
+	if page.Count != 1 || page.Snapshots[0].Time != second.Time || page.Snapshots[0].Workers.Cordoned != 1 {
+		t.Fatalf("since operations summary snapshots = %+v, want second snapshot only", page)
+	}
+
+	reopened, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page = reopened.ListOperationsSummarySnapshotsPage(OperationsSummarySnapshotListFilter{Namespace: "team-a"})
+	if page.Count != 2 || page.Snapshots[0].Time != first.Time || page.Snapshots[1].Time != second.Time || page.Snapshots[1].Workers.ByStatus["cordoned"] != 1 {
+		t.Fatalf("reopened operations summary snapshots = %+v, want persisted ready and cordoned snapshots", page)
+	}
+}
+
+func TestStoreOperationsSummarySnapshotRetention(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	base := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	store.mu.Lock()
+	for i := 0; i < maxOperationsSummarySnapshots+1; i++ {
+		store.operationsHistory = append(store.operationsHistory, OperationsSummarySnapshot{
+			Time:      base.Add(time.Duration(i) * time.Second),
+			Namespace: "team-a",
+			Workers:   WorkerOperationsSnapshot{Total: i},
+		})
+	}
+	store.trimOperationsSummaryHistoryLocked()
+	store.mu.Unlock()
+
+	page := store.ListOperationsSummarySnapshotsPage(OperationsSummarySnapshotListFilter{Namespace: "team-a"})
+	if page.Count != maxOperationsSummarySnapshots {
+		t.Fatalf("operations summary snapshot count = %d, want %d", page.Count, maxOperationsSummarySnapshots)
+	}
+	if page.Snapshots[0].Workers.Total != 1 || page.Snapshots[len(page.Snapshots)-1].Workers.Total != maxOperationsSummarySnapshots {
+		t.Fatalf("retained operations summary totals = %d..%d, want 1..%d", page.Snapshots[0].Workers.Total, page.Snapshots[len(page.Snapshots)-1].Workers.Total, maxOperationsSummarySnapshots)
+	}
+}
+
 func TestStoreSandboxExecQueuesSameWorkerShell(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
@@ -6546,8 +6616,19 @@ func TestHandlerOperationsSummary(t *testing.T) {
 	if len(summary.Workers.Capabilities) != 1 || summary.Workers.Capabilities[0].Name != "ram-overlay" || summary.Workers.Capabilities[0].Ready != 1 {
 		t.Fatalf("operations capability summary = %+v, want ready ram-overlay", summary.Workers.Capabilities)
 	}
+	var history OperationsSummarySnapshotListResult
+	getJSON(t, server.URL+"/v1/operations/summary/history?namespace=team-a&limit=1", &history)
+	if history.Count != 1 || len(history.Snapshots) != 1 || history.Snapshots[0].Namespace != "team-a" || history.Snapshots[0].Workers.Total != 1 || history.Snapshots[0].Assignments.Total != 1 || history.Snapshots[0].Sandboxes.Total != 1 {
+		t.Fatalf("operations summary history = %+v, want retained team-a snapshot", history)
+	}
 	if code := getJSONStatus(t, server.URL+"/v1/operations/summary", "token-a"); code != http.StatusForbidden {
 		t.Fatalf("scoped operations summary status = %d, want %d", code, http.StatusForbidden)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/operations/summary/history", "token-a"); code != http.StatusForbidden {
+		t.Fatalf("scoped operations summary history status = %d, want %d", code, http.StatusForbidden)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/operations/summary/history?since=soon", ""); code != http.StatusBadRequest {
+		t.Fatalf("bad operations summary history since status = %d, want %d", code, http.StatusBadRequest)
 	}
 }
 
