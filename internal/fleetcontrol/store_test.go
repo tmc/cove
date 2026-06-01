@@ -1063,13 +1063,23 @@ func TestStoreStopSandboxCancelsSandboxWork(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	status, ok := store.GetSandbox("job-1")
+	wantOpen := []string{execResult.Assignment.ID, controlResult.Assignment.ID}
+	if !ok || !equalStrings(openAssignmentIDs(status.OpenAssignments), wantOpen) {
+		t.Fatalf("GetSandbox open assignments = %+v, %v, want %+v", status.OpenAssignments, ok, wantOpen)
+	}
+
 	stopped, err := store.StopSandbox("job-1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantCanceled := []string{execResult.Assignment.ID, controlResult.Assignment.ID}
+	wantCanceled := wantOpen
 	if stopped.Status != "draining" || stopped.Cleanup == nil || !equalStrings(stopped.CanceledAssignments, wantCanceled) {
 		t.Fatalf("StopSandbox = %+v, want draining cleanup and canceled %+v", stopped, wantCanceled)
+	}
+	status, ok = store.GetSandbox("job-1")
+	if !ok || len(status.OpenAssignments) != 0 {
+		t.Fatalf("GetSandbox after stop open assignments = %+v, %v, want none", status.OpenAssignments, ok)
 	}
 	for _, id := range wantCanceled {
 		assignment, ok := store.GetAssignment(id)
@@ -7116,6 +7126,29 @@ func TestHandlerSandboxWorkTimeoutBecomesRunTimeout(t *testing.T) {
 	if controlResult.Done || controlResult.Assignment.RunTimeout != "2ns" {
 		t.Fatalf("control result = %+v, want pending assignment with 2ns run timeout", controlResult)
 	}
+	wantOpen := []string{execResult.Assignment.ID, controlResult.Assignment.ID}
+	var got SandboxStatus
+	getJSON(t, server.URL+"/v1/sandboxes/job-1", &got)
+	var list SandboxListResult
+	getJSON(t, server.URL+"/v1/sandboxes?status=ready", &list)
+	var wait SandboxWaitResult
+	postJSON(t, server.URL+"/v1/sandboxes/job-1/wait?status=ready&timeout=0", map[string]string{}, &wait)
+	if len(list.Sandboxes) != 1 {
+		t.Fatalf("sandbox list = %+v, want one ready sandbox", list)
+	}
+	cases := []struct {
+		name string
+		got  SandboxStatus
+	}{
+		{name: "get", got: got},
+		{name: "list", got: list.Sandboxes[0]},
+		{name: "wait", got: wait.Sandbox},
+	}
+	for _, tc := range cases {
+		if !equalStrings(openAssignmentIDs(tc.got.OpenAssignments), wantOpen) {
+			t.Fatalf("%s open assignments = %+v, want %+v", tc.name, tc.got.OpenAssignments, wantOpen)
+		}
+	}
 	before := len(store.ListAssignments())
 	if code := postJSONStatus(t, server.URL+"/v1/sandboxes/job-1/exec", "", SandboxExecRequest{Command: []string{"true"}, Timeout: "bad"}); code != http.StatusBadRequest {
 		t.Fatalf("bad exec timeout status = %d, want 400", code)
@@ -8346,6 +8379,14 @@ func equalStrings(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func openAssignmentIDs(assignments []Assignment) []string {
+	ids := make([]string, 0, len(assignments))
+	for _, assignment := range assignments {
+		ids = append(ids, assignment.ID)
+	}
+	return ids
 }
 
 func statusByAssignmentID(assignments []Assignment, id string) string {

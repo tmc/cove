@@ -85,6 +85,9 @@ func TestCloudClientCreateExecControlDelete(t *testing.T) {
 	if list[0].Cleanup == nil || list[0].Cleanup.ID != "cleanup-1" {
 		t.Fatalf("List cleanup diagnostics = %+v, want cleanup-1", list[0].Cleanup)
 	}
+	if !equalStringSlices(assignmentIDs(list[0].OpenAssignments), []string{"exec-1", "control-1"}) {
+		t.Fatalf("List open assignments = %+v, want exec-1/control-1", list[0].OpenAssignments)
+	}
 	wait, err := client.Wait(ctx, 2500*time.Millisecond)
 	if err != nil {
 		t.Fatalf("Wait: %v", err)
@@ -2368,8 +2371,10 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 			queueExpires := time.Date(2026, 5, 31, 10, 10, 0, 0, time.UTC)
 			retryAt := time.Date(2026, 5, 31, 10, 0, 12, 0, time.UTC)
 			cleanup := sdkMaintenanceAssignment("cleanup-1", "ctl", "-vm", "cove-sandbox-job-1", "stop")
+			openExec := sdkSandboxWorkAssignment("exec-1", "exec", "running")
+			openControl := sdkSandboxWorkAssignment("control-1", "control", "pending")
 			writeSDKJSON(t, w, map[string]any{
-				"sandboxes": []SandboxStatus{{Namespace: "team-a", ID: "job-1", VMName: "cove-sandbox-job-1", ImageRef: "base:v1", ImageManifestDigest: "sha256:1111111111111111111111111111111111111111111111111111111111111111", ImageDigestRef: "ghcr.io/me/dev-vm@sha256:1111111111111111111111111111111111111111111111111111111111111111", ImagePlatform: "darwin/arm64", RequiredCapabilities: []string{"ram-overlay"}, Status: "pending", QueueExpires: queueExpires, QueueAgeMillis: 1500, QueueRemainingMillis: 8500, MaxAttempts: 3, Attempt: 1, RetryDelay: "20s", RetryAt: retryAt, RetryRemainingMillis: 12000, Cleanup: &cleanup}},
+				"sandboxes": []SandboxStatus{{Namespace: "team-a", ID: "job-1", VMName: "cove-sandbox-job-1", ImageRef: "base:v1", ImageManifestDigest: "sha256:1111111111111111111111111111111111111111111111111111111111111111", ImageDigestRef: "ghcr.io/me/dev-vm@sha256:1111111111111111111111111111111111111111111111111111111111111111", ImagePlatform: "darwin/arm64", RequiredCapabilities: []string{"ram-overlay"}, Status: "pending", QueueExpires: queueExpires, QueueAgeMillis: 1500, QueueRemainingMillis: 8500, MaxAttempts: 3, Attempt: 1, RetryDelay: "20s", RetryAt: retryAt, RetryRemainingMillis: 12000, Cleanup: &cleanup, OpenAssignments: []Assignment{openExec, openControl}}},
 				"count":     1,
 				"offset":    atoiDefault(r.URL.Query().Get("offset"), 0),
 				"limit":     atoiDefault(r.URL.Query().Get("limit"), 0),
@@ -2717,6 +2722,14 @@ func sdkMaintenanceAssignment(id string, args ...string) Assignment {
 		Args:                 args,
 		Status:               "pending",
 	}
+}
+
+func sdkSandboxWorkAssignment(id, role, status string) Assignment {
+	assignment := sdkMaintenanceAssignment(id, "shell", "true")
+	assignment.SandboxID = "job-1"
+	assignment.SandboxRole = role
+	assignment.Status = status
+	return assignment
 }
 
 func sdkOperationsSummary() OperationsSummary {
@@ -3080,6 +3093,14 @@ func equalStringSlices(got, want []string) bool {
 		}
 	}
 	return true
+}
+
+func assignmentIDs(assignments []Assignment) []string {
+	ids := make([]string, 0, len(assignments))
+	for _, assignment := range assignments {
+		ids = append(ids, assignment.ID)
+	}
+	return ids
 }
 
 func equalAnyStringSlice(got any, want []string) bool {

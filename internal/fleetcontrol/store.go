@@ -6032,7 +6032,29 @@ func (s *Store) sandboxStatusLocked(assignment Assignment, now time.Time) Sandbo
 			status.Cleanup = &cleanup
 		}
 	}
+	status.OpenAssignments = s.openSandboxAssignmentsLocked(status.ID)
 	return status
+}
+
+func (s *Store) openSandboxAssignmentsLocked(id string) []Assignment {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil
+	}
+	open := make([]Assignment, 0)
+	for _, assignment := range s.sortedAssignmentsLocked() {
+		if assignment.SandboxID != id {
+			continue
+		}
+		if assignment.SandboxRole != sandboxRoleExec && assignment.SandboxRole != sandboxRoleControl {
+			continue
+		}
+		if !openAssignmentStatus(normalizeOperationStatus(assignment.Status)) {
+			continue
+		}
+		open = append(open, cloneAssignment(assignment))
+	}
+	return open
 }
 
 func (s *Store) cancelSandboxWorkLocked(now time.Time, actor, id, action string) []string {
