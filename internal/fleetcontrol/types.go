@@ -130,15 +130,16 @@ type AuditEvent struct {
 }
 
 type AuditListFilter struct {
-	Namespace  string `json:"namespace,omitempty"`
-	Actor      string `json:"actor,omitempty"`
-	Action     string `json:"action,omitempty"`
-	TargetType string `json:"target_type,omitempty"`
-	TargetID   string `json:"target_id,omitempty"`
-	WorkerID   string `json:"worker_id,omitempty"`
-	SandboxID  string `json:"sandbox_id,omitempty"`
-	Offset     int    `json:"offset,omitempty"`
-	Limit      int    `json:"limit,omitempty"`
+	Namespace    string `json:"namespace,omitempty"`
+	Actor        string `json:"actor,omitempty"`
+	Action       string `json:"action,omitempty"`
+	TargetType   string `json:"target_type,omitempty"`
+	TargetID     string `json:"target_id,omitempty"`
+	WorkerID     string `json:"worker_id,omitempty"`
+	AssignmentID string `json:"assignment_id,omitempty"`
+	SandboxID    string `json:"sandbox_id,omitempty"`
+	Offset       int    `json:"offset,omitempty"`
+	Limit        int    `json:"limit,omitempty"`
 }
 
 type AuditListResult struct {

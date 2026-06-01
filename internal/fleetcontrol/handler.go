@@ -278,13 +278,14 @@ func handleAudit(w http.ResponseWriter, r *http.Request, store *Store) {
 
 func auditListFilterFromRequest(r *http.Request, namespace string) (AuditListFilter, error) {
 	filter := AuditListFilter{
-		Namespace:  namespace,
-		Actor:      strings.TrimSpace(r.URL.Query().Get("actor")),
-		Action:     strings.TrimSpace(r.URL.Query().Get("action")),
-		TargetType: strings.TrimSpace(r.URL.Query().Get("target_type")),
-		TargetID:   strings.TrimSpace(r.URL.Query().Get("target_id")),
-		WorkerID:   strings.TrimSpace(r.URL.Query().Get("worker_id")),
-		SandboxID:  strings.TrimSpace(r.URL.Query().Get("sandbox_id")),
+		Namespace:    namespace,
+		Actor:        strings.TrimSpace(r.URL.Query().Get("actor")),
+		Action:       strings.TrimSpace(r.URL.Query().Get("action")),
+		TargetType:   strings.TrimSpace(r.URL.Query().Get("target_type")),
+		TargetID:     strings.TrimSpace(r.URL.Query().Get("target_id")),
+		WorkerID:     strings.TrimSpace(r.URL.Query().Get("worker_id")),
+		AssignmentID: strings.TrimSpace(r.URL.Query().Get("assignment_id")),
+		SandboxID:    strings.TrimSpace(r.URL.Query().Get("sandbox_id")),
 	}
 	if filter.SandboxID == "" {
 		filter.SandboxID = strings.TrimSpace(r.URL.Query().Get("sandbox"))
@@ -2180,6 +2181,9 @@ func handleAssignment(w http.ResponseWriter, r *http.Request, store *Store) {
 		case "cancel":
 			handleAssignmentCancel(w, r, store, parts[0])
 			return
+		case "events":
+			handleAssignmentEvents(w, r, store, parts[0])
+			return
 		case "retry":
 			handleAssignmentRetry(w, r, store, parts[0])
 			return
@@ -2207,6 +2211,62 @@ func handleAssignment(w http.ResponseWriter, r *http.Request, store *Store) {
 		return
 	}
 	writeJSON(w, http.StatusOK, assignment)
+}
+
+func handleAssignmentEvents(w http.ResponseWriter, r *http.Request, store *Store, id string) {
+	if id == "" || r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	if !reconcile(w, store) {
+		return
+	}
+	assignment, ok := store.GetAssignment(id)
+	if !ok || !canAccessNamespace(identity, assignment.Namespace) {
+		writeError(w, http.StatusNotFound, "assignment not found")
+		return
+	}
+	filter, err := assignmentEventsFilterFromRequest(r, assignment.Namespace, id)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, store.ListAssignmentEventsPage(assignment.Namespace, id, filter))
+}
+
+func assignmentEventsFilterFromRequest(r *http.Request, namespace, id string) (AuditListFilter, error) {
+	filter := AuditListFilter{
+		Namespace:    namespace,
+		AssignmentID: id,
+		Actor:        strings.TrimSpace(r.URL.Query().Get("actor")),
+		Action:       strings.TrimSpace(r.URL.Query().Get("action")),
+		TargetType:   strings.TrimSpace(r.URL.Query().Get("target_type")),
+		TargetID:     strings.TrimSpace(r.URL.Query().Get("target_id")),
+		WorkerID:     strings.TrimSpace(r.URL.Query().Get("worker_id")),
+		SandboxID:    strings.TrimSpace(r.URL.Query().Get("sandbox_id")),
+	}
+	if filter.SandboxID == "" {
+		filter.SandboxID = strings.TrimSpace(r.URL.Query().Get("sandbox"))
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 0 {
+			return AuditListFilter{}, fmt.Errorf("assignment events limit must be non-negative")
+		}
+		filter.Limit = limit
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		offset, err := strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			return AuditListFilter{}, fmt.Errorf("assignment events offset must be non-negative")
+		}
+		filter.Offset = offset
+	}
+	return filter, nil
 }
 
 func handleAssignmentCancel(w http.ResponseWriter, r *http.Request, store *Store, id string) {

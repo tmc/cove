@@ -237,6 +237,7 @@ curl http://127.0.0.1:9758/v1/audit
 curl http://127.0.0.1:9758/v1/audit?limit=50
 curl 'http://127.0.0.1:9758/v1/audit?action=assignment.create&actor=service-account:ci&target_type=assignment&limit=50'
 curl 'http://127.0.0.1:9758/v1/audit?worker_id=mini-1&limit=50'
+curl 'http://127.0.0.1:9758/v1/audit?assignment_id=probe-1&limit=50'
 curl 'http://127.0.0.1:9758/v1/audit?offset=50&limit=50'
 curl http://127.0.0.1:9758/v1/audit/verify
 curl -X DELETE http://127.0.0.1:9758/v1/service-accounts/ci
@@ -252,9 +253,9 @@ fields that chain the global audit log;
 `GET /v1/audit/verify` recomputes the chain and returns `ok`, `events`,
 `head_hash`, and any chain issues. `GET /v1/audit` returns `events`, `count`,
 `offset`, `limit`, and `next_offset`; query filters include `namespace`,
-`actor`, `action`, `target_type`, `target_id`, `worker_id`, and `sandbox_id`.
-`limit` preserves the existing latest-events behavior, and `offset` pages backward
-through matching events. Service-account tokens are stored only as
+`actor`, `action`, `target_type`, `target_id`, `worker_id`, `assignment_id`,
+and `sandbox_id`. `limit` preserves the existing latest-events behavior, and
+`offset` pages backward through matching events. Service-account tokens are stored only as
 SHA-256 hashes, so operators should provide high-entropy random tokens and keep
 the plaintext in their own secret manager. Supplying a matching bearer token on
 operator requests records audit actor `service-account:<name>`;
@@ -687,6 +688,7 @@ curl http://127.0.0.1:9758/v1/assignments
 curl 'http://127.0.0.1:9758/v1/assignments?status=failed&worker_id=mini-1&limit=50'
 curl 'http://127.0.0.1:9758/v1/assignments?verb=cove&image_ref=macos-runner:latest&offset=50&limit=50'
 curl http://127.0.0.1:9758/v1/assignments/probe-1
+curl 'http://127.0.0.1:9758/v1/assignments/probe-1/events?limit=50'
 curl -X POST http://127.0.0.1:9758/v1/assignments/probe-1/cancel \
   -H 'content-type: application/json' \
   -d '{"reason":"bad input"}'
@@ -709,6 +711,12 @@ after the guest command returns.
 `leased_to`, `verb`, `image_ref`, `sandbox_id` or `sandbox`, `warm_pool`,
 `offset`, and `limit`; scoped service-account tokens are still limited to their
 namespace, and unscoped callers can use the existing `namespace` query.
+`GET /v1/assignments/{id}/events` returns the assignment-scoped slice of the
+hash-chained controller audit feed. It includes create, lease, report, cancel,
+retry, evacuation, and reassignment events carrying the same `assignment_id`;
+`actor`, `action`, `target_type`, `target_id`, `worker_id`, `sandbox_id`,
+`offset`, and `limit` filters match the global audit-list semantics. Scoped
+service-account tokens can only read assignment events in their namespace.
 Reconciliation marks expired workers stale, requeues expired assignment leases,
 rejects late reports for reclaimed leases, and can move a policy-placed
 assignment from a stale worker to another ready worker.

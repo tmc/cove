@@ -2735,6 +2735,7 @@ func (s *Store) ListAuditPage(filter AuditListFilter) AuditListResult {
 	filter.TargetType = strings.TrimSpace(filter.TargetType)
 	filter.TargetID = strings.TrimSpace(filter.TargetID)
 	filter.WorkerID = strings.TrimSpace(filter.WorkerID)
+	filter.AssignmentID = strings.TrimSpace(filter.AssignmentID)
 	filter.SandboxID = strings.TrimSpace(filter.SandboxID)
 	if filter.Offset < 0 {
 		filter.Offset = 0
@@ -2765,6 +2766,9 @@ func (s *Store) ListAuditPage(filter AuditListFilter) AuditListResult {
 		if filter.WorkerID != "" && event.WorkerID != filter.WorkerID {
 			continue
 		}
+		if filter.AssignmentID != "" && event.AssignmentID != filter.AssignmentID {
+			continue
+		}
 		if filter.SandboxID != "" && !auditEventMatchesSandbox(event, filter.SandboxID) {
 			continue
 		}
@@ -2788,6 +2792,12 @@ func (s *Store) ListAuditPage(filter AuditListFilter) AuditListResult {
 func (s *Store) ListSandboxEventsPage(namespace, id string, filter AuditListFilter) AuditListResult {
 	filter.Namespace = namespace
 	filter.SandboxID = strings.TrimSpace(id)
+	return s.ListAuditPage(filter)
+}
+
+func (s *Store) ListAssignmentEventsPage(namespace, id string, filter AuditListFilter) AuditListResult {
+	filter.Namespace = namespace
+	filter.AssignmentID = strings.TrimSpace(id)
 	return s.ListAuditPage(filter)
 }
 

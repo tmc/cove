@@ -237,6 +237,10 @@ func TestStoreListAuditPageFilters(t *testing.T) {
 	if page.Count != 1 || page.Events[0].WorkerID != "worker-2" || page.Events[0].AssignmentID != other.ID {
 		t.Fatalf("worker-2 audit page = %+v, want assignment %s only", page, other.ID)
 	}
+	page = store.ListAuditPage(AuditListFilter{AssignmentID: teamA.ID})
+	if page.Count != 1 || page.Events[0].AssignmentID != teamA.ID || page.Events[0].WorkerID != "worker-1" {
+		t.Fatalf("assignment audit page = %+v, want assignment %s only", page, teamA.ID)
+	}
 	if events := store.ListAuditFiltered(AuditListFilter{Actor: "missing"}); len(events) != 0 {
 		t.Fatalf("missing actor audit events = %+v, want none", events)
 	}
@@ -4202,6 +4206,22 @@ func TestHandlerAssignmentProtocol(t *testing.T) {
 	if finished.Status != "complete" || finished.LastReport == nil || finished.LastReport.Status != "complete" {
 		t.Fatalf("finished assignment = %+v", finished)
 	}
+	var events AuditListResult
+	getJSON(t, server.URL+"/v1/assignments/assignment-1/events?action=assignment.report&limit=1", &events)
+	if events.Count != 1 || len(events.Events) != 1 || events.Events[0].AssignmentID != "assignment-1" || events.Events[0].Action != "assignment.report" {
+		t.Fatalf("assignment events = %+v, want report for assignment-1", events)
+	}
+	events = AuditListResult{}
+	getJSON(t, server.URL+"/v1/audit?assignment_id=assignment-1&action=assignment.lease&limit=1", &events)
+	if events.Count != 1 || len(events.Events) != 1 || events.Events[0].AssignmentID != "assignment-1" || events.Events[0].Action != "assignment.lease" {
+		t.Fatalf("assignment audit filter = %+v, want lease for assignment-1", events)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/assignments/missing/events", ""); code != http.StatusNotFound {
+		t.Fatalf("missing assignment events status = %d, want %d", code, http.StatusNotFound)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/assignments/assignment-1/events?limit=-1", ""); code != http.StatusBadRequest {
+		t.Fatalf("bad assignment events limit status = %d, want %d", code, http.StatusBadRequest)
+	}
 
 	var list struct {
 		Assignments []Assignment `json:"assignments"`
@@ -5452,6 +5472,19 @@ func TestHandlerServiceAccountNamespaceScope(t *testing.T) {
 	}
 	if code := getJSONStatus(t, server.URL+"/v1/assignments/"+teamB.ID, "token-a"); code != http.StatusNotFound {
 		t.Fatalf("cross-namespace GET status = %d, want 404", code)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/assignments/"+teamB.ID+"/events", "token-a"); code != http.StatusNotFound {
+		t.Fatalf("cross-namespace assignment events status = %d, want 404", code)
+	}
+	var events AuditListResult
+	getJSONAuth(t, server.URL+"/v1/assignments/"+teamA.ID+"/events", "token-a", &events)
+	if events.Count == 0 || len(events.Events) == 0 {
+		t.Fatalf("team-a assignment events = %+v, want events for %s", events, teamA.ID)
+	}
+	for _, event := range events.Events {
+		if event.Namespace != "team-a" || event.AssignmentID != teamA.ID {
+			t.Fatalf("team-a assignment event = %+v, want namespace team-a assignment %s", event, teamA.ID)
+		}
 	}
 
 	var accounts struct {
