@@ -790,8 +790,11 @@ lifecycle helpers include `CordonWorker`,
 maintenance without dropping to raw HTTP. Audit helpers include
 `ListAuditEvents` for the filtered hash-chained feed and `VerifyAuditLog` for
 global chain verification. Identity helpers include `ListServiceAccounts`,
-`UpsertServiceAccount`, and `DeleteServiceAccount` for scoped bearer-token
-bootstrap and rotation. Scoped observability helpers include
+`UpsertServiceAccount`, `DeleteServiceAccount`, `ListOIDCBindings`,
+`UpsertOIDCBinding`, `DeleteOIDCBinding`, `ListSAMLBindings`,
+`UpsertSAMLBinding`, `RefreshSAMLBinding`, `SAMLBindingLogin`, and
+`CreateSAMLSession` for scoped bearer-token bootstrap, federated identity
+bindings, and browserless SAML session exchange. Scoped observability helpers include
 `ListWorkerSandboxes`, `ListWorkerEvents`, `ListWorkerReports`,
 `GetWorkerMetering`, `ListAssignmentEvents`, `ListAssignmentReports`, and
 `GetAssignmentMetering`. Pass `DryRun` to maintenance pushes to inspect planned
@@ -1002,6 +1005,31 @@ if err != nil {
 	log.Fatal(err)
 }
 log.Printf("service accounts=%d rotated=%s", accounts.Count, rotated.ServiceAccount.Name)
+
+oidc, err := agentsandbox.UpsertOIDCBinding(ctx, agentsandbox.OIDCBindingUpsertOptions{
+	FleetURL:  "https://fleet.internal.example",
+	APIKey:    os.Getenv("COVE_API_KEY"),
+	Name:      "github-main",
+	Issuer:    "https://token.actions.githubusercontent.com",
+	Subject:   "repo:tmc/cove:ref:refs/heads/main",
+	Audience:  "cove-fleet",
+	Namespace: "team-a",
+	Role:      "operator",
+	JWKSURL:   "https://token.actions.githubusercontent.com/.well-known/jwks",
+})
+if err != nil {
+	log.Fatal(err)
+}
+samlLogin, err := agentsandbox.SAMLBindingLogin(ctx, agentsandbox.SAMLBindingLoginOptions{
+	FleetURL:   "https://fleet.internal.example",
+	APIKey:     os.Getenv("COVE_API_KEY"),
+	Name:       "okta",
+	RelayState: "cli",
+})
+if err != nil {
+	log.Fatal(err)
+}
+log.Printf("oidc=%s saml_redirect=%s", oidc.Binding.Name, samlLogin.RedirectURL)
 
 pool, err := agentsandbox.EnsureWarmPool(ctx, agentsandbox.WarmPoolOptions{
 	FleetURL:             "https://fleet.internal.example",

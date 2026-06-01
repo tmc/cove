@@ -176,7 +176,7 @@ runtime traits such as `ram-overlay`. The direct fleet client can also queue
 image preparation before placement or warm-pool replenishment, push image
 GC/lifecycle/storage maintenance work, read retained placement-plan history and
 the retained controller-run timeline, inspect or verify the hash-chained audit
-feed, manage scoped service-account tokens, and drill into
+feed, manage scoped service-account tokens and OIDC/SAML identity bindings, and drill into
 worker- or assignment-scoped events, reports, metering, and hosted sandbox
 lists.
 
@@ -298,6 +298,24 @@ rotated = CoveFleetClient.upsert_service_account(
     token="cove_ci_...",
 )
 print(accounts["count"], rotated["service_account"]["name"])
+oidc = CoveFleetClient.upsert_oidc_binding(
+    fleet_url="https://fleet.internal.example",
+    api_key="cove_...",
+    namespace="team-a",
+    name="github-main",
+    issuer="https://token.actions.githubusercontent.com",
+    subject="repo:tmc/cove:ref:refs/heads/main",
+    audience="cove-fleet",
+    role="operator",
+    jwks_url="https://token.actions.githubusercontent.com/.well-known/jwks",
+)
+saml_login = CoveFleetClient.saml_binding_login(
+    fleet_url="https://fleet.internal.example",
+    api_key="cove_...",
+    name="okta",
+    relay_state="cli",
+)
+print(oidc["binding"]["name"], saml_login["redirect_url"])
 workers = CoveFleetClient.list_workers(
     fleet_url="https://fleet.internal.example",
     api_key="cove_...",
@@ -393,7 +411,10 @@ Maintenance helpers include `push_image_gc`, `push_lifecycle_policy`,
 worker lifecycle helpers such as `cordon_worker`, `evacuate_worker`,
 `drain_worker`, and `decommission_worker`, `list_audit_events`,
 `verify_audit_log`, `list_service_accounts`, `upsert_service_account`,
-`delete_service_account`, scoped observability helpers such as
+`delete_service_account`, `list_oidc_bindings`, `upsert_oidc_binding`,
+`delete_oidc_binding`, `list_saml_bindings`, `upsert_saml_binding`,
+`refresh_saml_binding`, `saml_binding_login`, `create_saml_session`, and
+`delete_saml_binding`, scoped observability helpers such as
 `list_worker_sandboxes`, `list_worker_events`, `list_worker_reports`,
 `get_worker_metering`, `list_assignment_events`, `list_assignment_reports`,
 and `get_assignment_metering`, and `list_controller_runs` for the aggregate

@@ -1121,6 +1121,219 @@ class CoveFleetClient:
         return _normalize_service_account_result(result, "DELETE /v1/service-accounts/{name}")
 
     @classmethod
+    def list_oidc_bindings(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        seed = cls(sandbox_id="oidc-bindings", fleet_url=fleet_url, api_key=api_key, namespace=namespace, timeout=timeout)
+        result = seed._request(
+            "GET",
+            _query_path("/v1/oidc-bindings", {"namespace": namespace or ""}),
+            timeout=timeout,
+        )
+        return _normalize_binding_page(result, "oidc_bindings", "GET /v1/oidc-bindings")
+
+    @classmethod
+    def upsert_oidc_binding(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        name: str,
+        issuer: str = "",
+        subject: str = "",
+        audience: str = "",
+        namespace: str | None = None,
+        role: str = "",
+        jwks_url: str = "",
+        keys: Sequence[Mapping[str, object]] | None = None,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        name = name.strip()
+        if not name:
+            raise ValueError("oidc binding name is required")
+        seed = cls(sandbox_id="oidc-binding", fleet_url=fleet_url, api_key=api_key, namespace=namespace, timeout=timeout)
+        body: dict[str, object] = {"name": name}
+        for key, value in (
+            ("issuer", issuer),
+            ("subject", subject),
+            ("audience", audience),
+            ("role", role),
+            ("jwks_url", jwks_url),
+        ):
+            value = value.strip()
+            if value:
+                body[key] = value
+        if namespace:
+            body["namespace"] = namespace
+        if keys:
+            body["keys"] = [dict(item) for item in keys]
+        result = seed._request("POST", "/v1/oidc-bindings", body, timeout=timeout)
+        return _normalize_binding_result(result, "POST /v1/oidc-bindings")
+
+    @classmethod
+    def delete_oidc_binding(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        name: str,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        name = name.strip()
+        if not name:
+            raise ValueError("oidc binding name is required")
+        seed = cls(sandbox_id="oidc-binding", fleet_url=fleet_url, api_key=api_key, timeout=timeout)
+        result = seed._request("DELETE", _oidc_binding_path(name), timeout=timeout)
+        return _normalize_binding_result(result, "DELETE /v1/oidc-bindings/{name}")
+
+    @classmethod
+    def list_saml_bindings(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        seed = cls(sandbox_id="saml-bindings", fleet_url=fleet_url, api_key=api_key, namespace=namespace, timeout=timeout)
+        result = seed._request(
+            "GET",
+            _query_path("/v1/saml-bindings", {"namespace": namespace or ""}),
+            timeout=timeout,
+        )
+        return _normalize_binding_page(result, "saml_bindings", "GET /v1/saml-bindings")
+
+    @classmethod
+    def upsert_saml_binding(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        name: str,
+        entity_id: str = "",
+        subject: str = "",
+        sso_url: str = "",
+        audience: str = "",
+        namespace: str | None = None,
+        role: str = "",
+        certificate_pem: str = "",
+        metadata_url: str = "",
+        metadata_xml: str = "",
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        name = name.strip()
+        if not name:
+            raise ValueError("saml binding name is required")
+        seed = cls(sandbox_id="saml-binding", fleet_url=fleet_url, api_key=api_key, namespace=namespace, timeout=timeout)
+        body: dict[str, object] = {"name": name}
+        for key, value in (
+            ("entity_id", entity_id),
+            ("subject", subject),
+            ("sso_url", sso_url),
+            ("audience", audience),
+            ("role", role),
+            ("certificate_pem", certificate_pem),
+            ("metadata_url", metadata_url),
+            ("metadata_xml", metadata_xml),
+        ):
+            value = value.strip()
+            if value:
+                body[key] = value
+        if namespace:
+            body["namespace"] = namespace
+        result = seed._request("POST", "/v1/saml-bindings", body, timeout=timeout)
+        return _normalize_binding_result(result, "POST /v1/saml-bindings")
+
+    @classmethod
+    def delete_saml_binding(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        name: str,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        name = name.strip()
+        if not name:
+            raise ValueError("saml binding name is required")
+        seed = cls(sandbox_id="saml-binding", fleet_url=fleet_url, api_key=api_key, timeout=timeout)
+        result = seed._request("DELETE", _saml_binding_path(name), timeout=timeout)
+        return _normalize_binding_result(result, "DELETE /v1/saml-bindings/{name}")
+
+    @classmethod
+    def refresh_saml_binding(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        name: str,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        name = name.strip()
+        if not name:
+            raise ValueError("saml binding name is required")
+        seed = cls(sandbox_id="saml-binding-refresh", fleet_url=fleet_url, api_key=api_key, timeout=timeout)
+        result = seed._request("POST", _saml_binding_action_path(name, "refresh"), {}, timeout=timeout)
+        return _normalize_binding_result(result, "POST /v1/saml-bindings/{name}/refresh")
+
+    @classmethod
+    def saml_binding_login(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        name: str,
+        relay_state: str = "",
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        name = name.strip()
+        if not name:
+            raise ValueError("saml binding name is required")
+        seed = cls(sandbox_id="saml-binding-login", fleet_url=fleet_url, api_key=api_key, timeout=timeout)
+        result = seed._request(
+            "GET",
+            _query_path(_saml_binding_action_path(name, "login"), {"relay_state": relay_state}),
+            timeout=timeout,
+        )
+        return _normalize_saml_login(result, "GET /v1/saml-bindings/{name}/login")
+
+    @classmethod
+    def create_saml_session(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        saml_response: str = "",
+        saml_assertion: str = "",
+        relay_state: str = "",
+        ttl: str = "",
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        saml_response = saml_response.strip()
+        saml_assertion = saml_assertion.strip()
+        if not saml_response and not saml_assertion:
+            raise ValueError("saml response or assertion is required")
+        seed = cls(sandbox_id="saml-session", fleet_url=fleet_url, api_key=api_key, timeout=timeout)
+        body: dict[str, object] = {}
+        if saml_response:
+            body["saml_response"] = saml_response
+        if saml_assertion:
+            body["saml_assertion"] = saml_assertion
+        relay_state = relay_state.strip()
+        if relay_state:
+            body["relay_state"] = relay_state
+        ttl = ttl.strip()
+        if ttl:
+            body["ttl"] = ttl
+        result = seed._request("POST", "/v1/saml/acs", body, timeout=timeout)
+        return _normalize_saml_session(result, "POST /v1/saml/acs")
+
+    @classmethod
     def list_workers(
         cls,
         *,
@@ -2445,6 +2658,38 @@ def _normalize_service_account_result(data: dict[str, Any], endpoint: str) -> di
     return result
 
 
+def _normalize_binding_page(data: dict[str, Any], key: str, endpoint: str) -> dict[str, Any]:
+    page = dict(data)
+    _normalize_dict_list(page, key, endpoint)
+    page["count"] = int(page.get("count") or len(page[key]))
+    return page
+
+
+def _normalize_binding_result(data: dict[str, Any], endpoint: str) -> dict[str, Any]:
+    result = dict(data)
+    binding = result.get("binding") or {}
+    if not isinstance(binding, dict):
+        raise CoveError(f"{endpoint}: expected binding object")
+    result["binding"] = dict(binding)
+    return result
+
+
+def _normalize_saml_login(data: dict[str, Any], endpoint: str) -> dict[str, Any]:
+    result = _normalize_binding_result(data, endpoint)
+    if not isinstance(result.get("saml_request"), str):
+        raise CoveError(f"{endpoint}: expected saml_request string")
+    if not isinstance(result.get("redirect_url"), str):
+        raise CoveError(f"{endpoint}: expected redirect_url string")
+    return result
+
+
+def _normalize_saml_session(data: dict[str, Any], endpoint: str) -> dict[str, Any]:
+    result = _normalize_binding_result(data, endpoint)
+    if not isinstance(result.get("token"), str):
+        raise CoveError(f"{endpoint}: expected token string")
+    return result
+
+
 def _normalize_report_page(data: dict[str, Any], endpoint: str) -> dict[str, Any]:
     page = dict(data)
     _normalize_dict_list(page, "reports", endpoint)
@@ -2531,6 +2776,18 @@ def _placement_plan_path(plan_id: str) -> str:
 
 def _service_account_path(name: str) -> str:
     return "/v1/service-accounts/" + urllib.parse.quote(name, safe="")
+
+
+def _oidc_binding_path(name: str) -> str:
+    return "/v1/oidc-bindings/" + urllib.parse.quote(name, safe="")
+
+
+def _saml_binding_path(name: str) -> str:
+    return "/v1/saml-bindings/" + urllib.parse.quote(name, safe="")
+
+
+def _saml_binding_action_path(name: str, action: str) -> str:
+    return _saml_binding_path(name) + "/" + urllib.parse.quote(action, safe="")
 
 
 def _image_preparation_path(preparation_id: str) -> str:

@@ -657,6 +657,161 @@ type ServiceAccountResult struct {
 	ServiceAccount ServiceAccount `json:"service_account"`
 }
 
+type OIDCKey struct {
+	KID string `json:"kid,omitempty"`
+	Alg string `json:"alg,omitempty"`
+	PEM string `json:"pem"`
+}
+
+type OIDCBinding struct {
+	Name        string    `json:"name"`
+	Issuer      string    `json:"issuer"`
+	Subject     string    `json:"subject"`
+	Audience    string    `json:"audience"`
+	Namespace   string    `json:"namespace,omitempty"`
+	Role        string    `json:"role,omitempty"`
+	JWKSURL     string    `json:"jwks_url,omitempty"`
+	JWKSFetched time.Time `json:"jwks_fetched,omitempty"`
+	KeyIDs      []string  `json:"key_ids,omitempty"`
+	Created     time.Time `json:"created,omitempty"`
+	Updated     time.Time `json:"updated,omitempty"`
+}
+
+type OIDCBindingListOptions struct {
+	FleetURL  string
+	APIKey    string
+	Namespace string
+	Timeout   time.Duration
+	HTTP      *http.Client
+}
+
+type OIDCBindingUpsertOptions struct {
+	FleetURL  string
+	APIKey    string
+	Name      string
+	Issuer    string
+	Subject   string
+	Audience  string
+	Namespace string
+	Role      string
+	JWKSURL   string
+	Keys      []OIDCKey
+	Timeout   time.Duration
+	HTTP      *http.Client
+}
+
+type OIDCBindingDeleteOptions struct {
+	FleetURL string
+	APIKey   string
+	Name     string
+	Timeout  time.Duration
+	HTTP     *http.Client
+}
+
+type OIDCBindingListResult struct {
+	Bindings []OIDCBinding `json:"oidc_bindings"`
+	Count    int           `json:"count,omitempty"`
+}
+
+type OIDCBindingResult struct {
+	Binding OIDCBinding `json:"binding"`
+}
+
+type SAMLBinding struct {
+	Name              string    `json:"name"`
+	EntityID          string    `json:"entity_id"`
+	Subject           string    `json:"subject,omitempty"`
+	SSOURL            string    `json:"sso_url"`
+	Audience          string    `json:"audience"`
+	Namespace         string    `json:"namespace,omitempty"`
+	Role              string    `json:"role,omitempty"`
+	MetadataURL       string    `json:"metadata_url,omitempty"`
+	MetadataFetched   time.Time `json:"metadata_fetched,omitempty"`
+	CertificateSHA256 string    `json:"certificate_sha256,omitempty"`
+	Created           time.Time `json:"created,omitempty"`
+	Updated           time.Time `json:"updated,omitempty"`
+}
+
+type SAMLBindingListOptions struct {
+	FleetURL  string
+	APIKey    string
+	Namespace string
+	Timeout   time.Duration
+	HTTP      *http.Client
+}
+
+type SAMLBindingUpsertOptions struct {
+	FleetURL       string
+	APIKey         string
+	Name           string
+	EntityID       string
+	Subject        string
+	SSOURL         string
+	Audience       string
+	Namespace      string
+	Role           string
+	CertificatePEM string
+	MetadataURL    string
+	MetadataXML    string
+	Timeout        time.Duration
+	HTTP           *http.Client
+}
+
+type SAMLBindingNameOptions struct {
+	FleetURL string
+	APIKey   string
+	Name     string
+	Timeout  time.Duration
+	HTTP     *http.Client
+}
+
+type SAMLBindingLoginOptions struct {
+	FleetURL   string
+	APIKey     string
+	Name       string
+	RelayState string
+	Timeout    time.Duration
+	HTTP       *http.Client
+}
+
+type SAMLSessionOptions struct {
+	FleetURL      string
+	APIKey        string
+	SAMLResponse  string
+	SAMLAssertion string
+	RelayState    string
+	TTL           string
+	Timeout       time.Duration
+	HTTP          *http.Client
+}
+
+type SAMLBindingListResult struct {
+	Bindings []SAMLBinding `json:"saml_bindings"`
+	Count    int           `json:"count,omitempty"`
+}
+
+type SAMLBindingResult struct {
+	Binding SAMLBinding `json:"binding"`
+}
+
+type SAMLAuthnRequestResult struct {
+	Binding      SAMLBinding `json:"binding"`
+	RequestID    string      `json:"request_id"`
+	IssueInstant time.Time   `json:"issue_instant"`
+	RelayState   string      `json:"relay_state,omitempty"`
+	XML          string      `json:"xml"`
+	SAMLRequest  string      `json:"saml_request"`
+	RedirectURL  string      `json:"redirect_url"`
+}
+
+type SAMLSessionResult struct {
+	Token      string      `json:"token,omitempty"`
+	Expires    time.Time   `json:"expires"`
+	Binding    SAMLBinding `json:"binding"`
+	Subject    string      `json:"subject,omitempty"`
+	RelayState string      `json:"relay_state,omitempty"`
+}
+
 type WorkerImage struct {
 	Ref                  string `json:"ref"`
 	SourceManifestDigest string `json:"source_manifest_digest,omitempty"`
@@ -2115,6 +2270,213 @@ func DeleteServiceAccount(ctx context.Context, opts ServiceAccountDeleteOptions)
 	var result ServiceAccountResult
 	if err := c.request(ctx, http.MethodDelete, serviceAccountPath(name), nil, &result, c.timeout); err != nil {
 		return ServiceAccountResult{}, err
+	}
+	return result, nil
+}
+
+func ListOIDCBindings(ctx context.Context, opts OIDCBindingListOptions) (OIDCBindingListResult, error) {
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "oidc-bindings")
+	if err != nil {
+		return OIDCBindingListResult{}, err
+	}
+	var result OIDCBindingListResult
+	if err := c.request(ctx, http.MethodGet, c.queryPath("/v1/oidc-bindings", map[string]string{"namespace": opts.Namespace}), nil, &result, c.timeout); err != nil {
+		return OIDCBindingListResult{}, err
+	}
+	if result.Count == 0 && len(result.Bindings) > 0 {
+		result.Count = len(result.Bindings)
+	}
+	return result, nil
+}
+
+func UpsertOIDCBinding(ctx context.Context, opts OIDCBindingUpsertOptions) (OIDCBindingResult, error) {
+	name := strings.TrimSpace(opts.Name)
+	if name == "" {
+		return OIDCBindingResult{}, errors.New("agentsandbox: oidc binding name required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "oidc-binding")
+	if err != nil {
+		return OIDCBindingResult{}, err
+	}
+	body := map[string]any{"name": name}
+	if issuer := strings.TrimSpace(opts.Issuer); issuer != "" {
+		body["issuer"] = issuer
+	}
+	if subject := strings.TrimSpace(opts.Subject); subject != "" {
+		body["subject"] = subject
+	}
+	if audience := strings.TrimSpace(opts.Audience); audience != "" {
+		body["audience"] = audience
+	}
+	if ns := strings.TrimSpace(opts.Namespace); ns != "" {
+		body["namespace"] = ns
+	}
+	if role := strings.TrimSpace(opts.Role); role != "" {
+		body["role"] = role
+	}
+	if jwksURL := strings.TrimSpace(opts.JWKSURL); jwksURL != "" {
+		body["jwks_url"] = jwksURL
+	}
+	if len(opts.Keys) > 0 {
+		body["keys"] = opts.Keys
+	}
+	var result OIDCBindingResult
+	if err := c.request(ctx, http.MethodPost, "/v1/oidc-bindings", body, &result, c.timeout); err != nil {
+		return OIDCBindingResult{}, err
+	}
+	return result, nil
+}
+
+func DeleteOIDCBinding(ctx context.Context, opts OIDCBindingDeleteOptions) (OIDCBindingResult, error) {
+	name := strings.TrimSpace(opts.Name)
+	if name == "" {
+		return OIDCBindingResult{}, errors.New("agentsandbox: oidc binding name required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "oidc-binding")
+	if err != nil {
+		return OIDCBindingResult{}, err
+	}
+	var result OIDCBindingResult
+	if err := c.request(ctx, http.MethodDelete, oidcBindingPath(name), nil, &result, c.timeout); err != nil {
+		return OIDCBindingResult{}, err
+	}
+	return result, nil
+}
+
+func ListSAMLBindings(ctx context.Context, opts SAMLBindingListOptions) (SAMLBindingListResult, error) {
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "saml-bindings")
+	if err != nil {
+		return SAMLBindingListResult{}, err
+	}
+	var result SAMLBindingListResult
+	if err := c.request(ctx, http.MethodGet, c.queryPath("/v1/saml-bindings", map[string]string{"namespace": opts.Namespace}), nil, &result, c.timeout); err != nil {
+		return SAMLBindingListResult{}, err
+	}
+	if result.Count == 0 && len(result.Bindings) > 0 {
+		result.Count = len(result.Bindings)
+	}
+	return result, nil
+}
+
+func UpsertSAMLBinding(ctx context.Context, opts SAMLBindingUpsertOptions) (SAMLBindingResult, error) {
+	name := strings.TrimSpace(opts.Name)
+	if name == "" {
+		return SAMLBindingResult{}, errors.New("agentsandbox: saml binding name required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "saml-binding")
+	if err != nil {
+		return SAMLBindingResult{}, err
+	}
+	body := map[string]any{"name": name}
+	if entityID := strings.TrimSpace(opts.EntityID); entityID != "" {
+		body["entity_id"] = entityID
+	}
+	if subject := strings.TrimSpace(opts.Subject); subject != "" {
+		body["subject"] = subject
+	}
+	if ssoURL := strings.TrimSpace(opts.SSOURL); ssoURL != "" {
+		body["sso_url"] = ssoURL
+	}
+	if audience := strings.TrimSpace(opts.Audience); audience != "" {
+		body["audience"] = audience
+	}
+	if ns := strings.TrimSpace(opts.Namespace); ns != "" {
+		body["namespace"] = ns
+	}
+	if role := strings.TrimSpace(opts.Role); role != "" {
+		body["role"] = role
+	}
+	if certificate := strings.TrimSpace(opts.CertificatePEM); certificate != "" {
+		body["certificate_pem"] = certificate
+	}
+	if metadataURL := strings.TrimSpace(opts.MetadataURL); metadataURL != "" {
+		body["metadata_url"] = metadataURL
+	}
+	if metadataXML := strings.TrimSpace(opts.MetadataXML); metadataXML != "" {
+		body["metadata_xml"] = metadataXML
+	}
+	var result SAMLBindingResult
+	if err := c.request(ctx, http.MethodPost, "/v1/saml-bindings", body, &result, c.timeout); err != nil {
+		return SAMLBindingResult{}, err
+	}
+	return result, nil
+}
+
+func DeleteSAMLBinding(ctx context.Context, opts SAMLBindingNameOptions) (SAMLBindingResult, error) {
+	name := strings.TrimSpace(opts.Name)
+	if name == "" {
+		return SAMLBindingResult{}, errors.New("agentsandbox: saml binding name required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "saml-binding")
+	if err != nil {
+		return SAMLBindingResult{}, err
+	}
+	var result SAMLBindingResult
+	if err := c.request(ctx, http.MethodDelete, samlBindingPath(name), nil, &result, c.timeout); err != nil {
+		return SAMLBindingResult{}, err
+	}
+	return result, nil
+}
+
+func RefreshSAMLBinding(ctx context.Context, opts SAMLBindingNameOptions) (SAMLBindingResult, error) {
+	name := strings.TrimSpace(opts.Name)
+	if name == "" {
+		return SAMLBindingResult{}, errors.New("agentsandbox: saml binding name required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "saml-binding-refresh")
+	if err != nil {
+		return SAMLBindingResult{}, err
+	}
+	var result SAMLBindingResult
+	if err := c.request(ctx, http.MethodPost, samlBindingActionPath(name, "refresh"), map[string]any{}, &result, c.timeout); err != nil {
+		return SAMLBindingResult{}, err
+	}
+	return result, nil
+}
+
+func SAMLBindingLogin(ctx context.Context, opts SAMLBindingLoginOptions) (SAMLAuthnRequestResult, error) {
+	name := strings.TrimSpace(opts.Name)
+	if name == "" {
+		return SAMLAuthnRequestResult{}, errors.New("agentsandbox: saml binding name required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "saml-binding-login")
+	if err != nil {
+		return SAMLAuthnRequestResult{}, err
+	}
+	query := map[string]string{"relay_state": opts.RelayState}
+	var result SAMLAuthnRequestResult
+	if err := c.request(ctx, http.MethodGet, c.queryPath(samlBindingActionPath(name, "login"), query), nil, &result, c.timeout); err != nil {
+		return SAMLAuthnRequestResult{}, err
+	}
+	return result, nil
+}
+
+func CreateSAMLSession(ctx context.Context, opts SAMLSessionOptions) (SAMLSessionResult, error) {
+	response := strings.TrimSpace(opts.SAMLResponse)
+	assertion := strings.TrimSpace(opts.SAMLAssertion)
+	if response == "" && assertion == "" {
+		return SAMLSessionResult{}, errors.New("agentsandbox: saml response or assertion required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "saml-session")
+	if err != nil {
+		return SAMLSessionResult{}, err
+	}
+	body := map[string]any{}
+	if response != "" {
+		body["saml_response"] = response
+	}
+	if assertion != "" {
+		body["saml_assertion"] = assertion
+	}
+	if relayState := strings.TrimSpace(opts.RelayState); relayState != "" {
+		body["relay_state"] = relayState
+	}
+	if ttl := strings.TrimSpace(opts.TTL); ttl != "" {
+		body["ttl"] = ttl
+	}
+	var result SAMLSessionResult
+	if err := c.request(ctx, http.MethodPost, "/v1/saml/acs", body, &result, c.timeout); err != nil {
+		return SAMLSessionResult{}, err
 	}
 	return result, nil
 }
@@ -3602,6 +3964,18 @@ func placementPlanPath(id string) string {
 
 func serviceAccountPath(name string) string {
 	return "/v1/service-accounts/" + url.PathEscape(name)
+}
+
+func oidcBindingPath(name string) string {
+	return "/v1/oidc-bindings/" + url.PathEscape(name)
+}
+
+func samlBindingPath(name string) string {
+	return "/v1/saml-bindings/" + url.PathEscape(name)
+}
+
+func samlBindingActionPath(name, action string) string {
+	return samlBindingPath(name) + "/" + url.PathEscape(action)
 }
 
 func imagePreparationPath(id string) string {

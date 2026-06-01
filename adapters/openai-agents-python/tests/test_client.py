@@ -660,6 +660,126 @@ def test_fleet_client_service_accounts() -> None:
         server.stop()
 
 
+def test_fleet_client_identity_bindings() -> None:
+    server = _FleetHTTPServer()
+    server.start()
+    try:
+        oidc_page = CoveFleetClient.list_oidc_bindings(
+            fleet_url=server.url,
+            api_key="secret",
+            namespace="team-a",
+        )
+        assert oidc_page["count"] == 1
+        assert oidc_page["oidc_bindings"][0]["name"] == "github-main"
+        oidc = CoveFleetClient.upsert_oidc_binding(
+            fleet_url=server.url,
+            api_key="secret",
+            name="github-main",
+            issuer="https://token.actions.githubusercontent.com",
+            subject="repo:tmc/cove:ref:refs/heads/main",
+            audience="cove-fleet",
+            namespace="team-a",
+            role="operator",
+            jwks_url="https://token.actions.githubusercontent.com/.well-known/jwks",
+            keys=({"kid": "kid-1", "alg": "RS256", "pem": "pem"},),
+        )
+        assert oidc["binding"]["name"] == "github-main"
+        assert oidc["binding"]["key_ids"] == ["kid-1"]
+        deleted_oidc = CoveFleetClient.delete_oidc_binding(
+            fleet_url=server.url,
+            api_key="secret",
+            name="github-main",
+        )
+        assert deleted_oidc["binding"]["name"] == "github-main"
+
+        saml_page = CoveFleetClient.list_saml_bindings(
+            fleet_url=server.url,
+            api_key="secret",
+            namespace="team-a",
+        )
+        assert saml_page["count"] == 1
+        assert saml_page["saml_bindings"][0]["name"] == "okta"
+        saml = CoveFleetClient.upsert_saml_binding(
+            fleet_url=server.url,
+            api_key="secret",
+            name="okta",
+            entity_id="https://idp.example/saml",
+            subject="ci@example.com",
+            sso_url="https://idp.example/sso",
+            audience="https://fleet.example/saml/acs",
+            namespace="team-a",
+            role="operator",
+            certificate_pem="pem",
+            metadata_url="https://idp.example/metadata.xml",
+            metadata_xml="<EntityDescriptor/>",
+        )
+        assert saml["binding"]["name"] == "okta"
+        assert saml["binding"]["certificate_sha256"] == "sha256-cert"
+        refreshed = CoveFleetClient.refresh_saml_binding(
+            fleet_url=server.url,
+            api_key="secret",
+            name="okta",
+        )
+        assert refreshed["binding"]["name"] == "okta"
+        login = CoveFleetClient.saml_binding_login(
+            fleet_url=server.url,
+            api_key="secret",
+            name="okta",
+            relay_state="cli",
+        )
+        assert login["binding"]["name"] == "okta"
+        assert login["relay_state"] == "cli"
+        assert login["redirect_url"].startswith("https://idp.example")
+        session = CoveFleetClient.create_saml_session(
+            fleet_url=server.url,
+            api_key="secret",
+            saml_response="response",
+            relay_state="cli",
+            ttl="1h",
+        )
+        assert session["token"] == "saml-session-token"
+        assert session["binding"]["name"] == "okta"
+        deleted_saml = CoveFleetClient.delete_saml_binding(
+            fleet_url=server.url,
+            api_key="secret",
+            name="okta",
+        )
+        assert deleted_saml["binding"]["name"] == "okta"
+
+        paths = [request["path"] for request in server.requests[-9:]]
+        assert paths == [
+            "/v1/oidc-bindings",
+            "/v1/oidc-bindings",
+            "/v1/oidc-bindings/github-main",
+            "/v1/saml-bindings",
+            "/v1/saml-bindings",
+            "/v1/saml-bindings/okta/refresh",
+            "/v1/saml-bindings/okta/login",
+            "/v1/saml/acs",
+            "/v1/saml-bindings/okta",
+        ]
+        assert server.requests[-9]["query"]["namespace"] == ["team-a"]
+        assert server.requests[-8]["body"]["jwks_url"] == "https://token.actions.githubusercontent.com/.well-known/jwks"
+        assert server.requests[-8]["body"]["keys"] == [{"kid": "kid-1", "alg": "RS256", "pem": "pem"}]
+        assert server.requests[-5]["body"]["metadata_xml"] == "<EntityDescriptor/>"
+        assert server.requests[-3]["query"]["relay_state"] == ["cli"]
+        assert server.requests[-2]["body"] == {"saml_response": "response", "relay_state": "cli", "ttl": "1h"}
+        assert all(request["authorization"] == "Bearer secret" for request in server.requests[-9:])
+
+        with pytest.raises(ValueError, match="oidc binding name is required"):
+            CoveFleetClient.upsert_oidc_binding(fleet_url="https://fleet.example", api_key="secret", name="")
+        with pytest.raises(ValueError, match="oidc binding name is required"):
+            CoveFleetClient.delete_oidc_binding(fleet_url="https://fleet.example", api_key="secret", name="")
+        with pytest.raises(ValueError, match="saml binding name is required"):
+            CoveFleetClient.upsert_saml_binding(fleet_url="https://fleet.example", api_key="secret", name="")
+        with pytest.raises(ValueError, match="saml binding name is required"):
+            CoveFleetClient.saml_binding_login(fleet_url="https://fleet.example", api_key="secret", name="")
+        with pytest.raises(ValueError, match="saml response or assertion is required"):
+            CoveFleetClient.create_saml_session(fleet_url="https://fleet.example", api_key="secret")
+    finally:
+        server.stop()
+
+
 def test_fleet_client_scoped_observability() -> None:
     server = _FleetHTTPServer()
     server.start()
@@ -1638,6 +1758,59 @@ def _service_account() -> dict[str, object]:
     }
 
 
+def _oidc_binding() -> dict[str, object]:
+    return {
+        "name": "github-main",
+        "issuer": "https://token.actions.githubusercontent.com",
+        "subject": "repo:tmc/cove:ref:refs/heads/main",
+        "audience": "cove-fleet",
+        "namespace": "team-a",
+        "role": "operator",
+        "jwks_url": "https://token.actions.githubusercontent.com/.well-known/jwks",
+        "key_ids": ["kid-1"],
+        "created": "2026-05-31T10:00:00Z",
+        "updated": "2026-05-31T10:00:00Z",
+    }
+
+
+def _saml_binding() -> dict[str, object]:
+    return {
+        "name": "okta",
+        "entity_id": "https://idp.example/saml",
+        "subject": "ci@example.com",
+        "sso_url": "https://idp.example/sso",
+        "audience": "https://fleet.example/saml/acs",
+        "namespace": "team-a",
+        "role": "operator",
+        "metadata_url": "https://idp.example/metadata.xml",
+        "certificate_sha256": "sha256-cert",
+        "created": "2026-05-31T10:00:00Z",
+        "updated": "2026-05-31T10:00:00Z",
+    }
+
+
+def _saml_login(relay_state: str = "") -> dict[str, object]:
+    return {
+        "binding": _saml_binding(),
+        "request_id": "_saml-request-1",
+        "issue_instant": "2026-05-31T10:01:00Z",
+        "relay_state": relay_state,
+        "xml": "<AuthnRequest/>",
+        "saml_request": "encoded-request",
+        "redirect_url": "https://idp.example/sso?SAMLRequest=encoded-request",
+    }
+
+
+def _saml_session(relay_state: str = "") -> dict[str, object]:
+    return {
+        "token": "saml-session-token",
+        "expires": "2026-05-31T11:00:00Z",
+        "binding": _saml_binding(),
+        "subject": "ci@example.com",
+        "relay_state": relay_state,
+    }
+
+
 def _assignment_report() -> dict[str, object]:
     return {
         "namespace": "team-a",
@@ -2059,6 +2232,15 @@ class _FleetHTTPServer:
                 if path == "/v1/service-accounts":
                     self._write({"service_accounts": [_service_account()]})
                     return
+                if path == "/v1/oidc-bindings":
+                    self._write({"oidc_bindings": [_oidc_binding()]})
+                    return
+                if path == "/v1/saml-bindings":
+                    self._write({"saml_bindings": [_saml_binding()]})
+                    return
+                if path == "/v1/saml-bindings/okta/login":
+                    self._write(_saml_login(str(query.get("relay_state", [""])[0])))
+                    return
                 if path == "/v1/workers":
                     self._write(
                         {
@@ -2307,6 +2489,43 @@ class _FleetHTTPServer:
                         }
                     )
                     return
+                if path == "/v1/oidc-bindings":
+                    binding = _oidc_binding()
+                    binding.update(
+                        {
+                            "name": str(body.get("name") or ""),
+                            "issuer": str(body.get("issuer") or ""),
+                            "subject": str(body.get("subject") or ""),
+                            "audience": str(body.get("audience") or ""),
+                            "namespace": str(body.get("namespace") or ""),
+                            "role": str(body.get("role") or ""),
+                            "jwks_url": str(body.get("jwks_url") or ""),
+                        }
+                    )
+                    self._write({"binding": binding})
+                    return
+                if path == "/v1/saml-bindings":
+                    binding = _saml_binding()
+                    binding.update(
+                        {
+                            "name": str(body.get("name") or ""),
+                            "entity_id": str(body.get("entity_id") or ""),
+                            "subject": str(body.get("subject") or ""),
+                            "sso_url": str(body.get("sso_url") or ""),
+                            "audience": str(body.get("audience") or ""),
+                            "namespace": str(body.get("namespace") or ""),
+                            "role": str(body.get("role") or ""),
+                            "metadata_url": str(body.get("metadata_url") or ""),
+                        }
+                    )
+                    self._write({"binding": binding})
+                    return
+                if path == "/v1/saml-bindings/okta/refresh":
+                    self._write({"binding": _saml_binding()})
+                    return
+                if path == "/v1/saml/acs":
+                    self._write(_saml_session(str(body.get("relay_state") or "")))
+                    return
                 if path == "/v1/workers/worker-1/cordon":
                     self._write(_host_record(cordoned=True, cordon_reason=str(body.get("reason") or "")))
                     return
@@ -2410,6 +2629,12 @@ class _FleetHTTPServer:
                     return
                 if path == "/v1/service-accounts/ci":
                     self._write({"service_account": _service_account()})
+                    return
+                if path == "/v1/oidc-bindings/github-main":
+                    self._write({"binding": _oidc_binding()})
+                    return
+                if path == "/v1/saml-bindings/okta":
+                    self._write({"binding": _saml_binding()})
                     return
                 self.send_error(404)
 

@@ -755,6 +755,146 @@ func TestCloudClientServiceAccounts(t *testing.T) {
 	}
 }
 
+func TestCloudClientIdentityBindings(t *testing.T) {
+	server := newSDKFleetServer(t)
+	ctx := context.Background()
+	oidcPage, err := ListOIDCBindings(ctx, OIDCBindingListOptions{
+		FleetURL:  server.URL,
+		APIKey:    "secret",
+		Namespace: "team-a",
+		Timeout:   time.Second,
+	})
+	if err != nil {
+		t.Fatalf("ListOIDCBindings: %v", err)
+	}
+	if oidcPage.Count != 1 || oidcPage.Bindings[0].Name != "github-main" {
+		t.Fatalf("ListOIDCBindings = %+v, want github-main", oidcPage)
+	}
+	oidc, err := UpsertOIDCBinding(ctx, OIDCBindingUpsertOptions{
+		FleetURL:  server.URL,
+		APIKey:    "secret",
+		Name:      "github-main",
+		Issuer:    "https://token.actions.githubusercontent.com",
+		Subject:   "repo:tmc/cove:ref:refs/heads/main",
+		Audience:  "cove-fleet",
+		Namespace: "team-a",
+		Role:      "operator",
+		JWKSURL:   "https://token.actions.githubusercontent.com/.well-known/jwks",
+		Keys:      []OIDCKey{{KID: "kid-1", Alg: "RS256", PEM: "pem"}},
+		Timeout:   time.Second,
+	})
+	if err != nil {
+		t.Fatalf("UpsertOIDCBinding: %v", err)
+	}
+	if oidc.Binding.Name != "github-main" || oidc.Binding.KeyIDs[0] != "kid-1" {
+		t.Fatalf("UpsertOIDCBinding = %+v, want github-main", oidc)
+	}
+	if _, err := DeleteOIDCBinding(ctx, OIDCBindingDeleteOptions{FleetURL: server.URL, APIKey: "secret", Name: "github-main", Timeout: time.Second}); err != nil {
+		t.Fatalf("DeleteOIDCBinding: %v", err)
+	}
+	samlPage, err := ListSAMLBindings(ctx, SAMLBindingListOptions{
+		FleetURL:  server.URL,
+		APIKey:    "secret",
+		Namespace: "team-a",
+		Timeout:   time.Second,
+	})
+	if err != nil {
+		t.Fatalf("ListSAMLBindings: %v", err)
+	}
+	if samlPage.Count != 1 || samlPage.Bindings[0].Name != "okta" {
+		t.Fatalf("ListSAMLBindings = %+v, want okta", samlPage)
+	}
+	saml, err := UpsertSAMLBinding(ctx, SAMLBindingUpsertOptions{
+		FleetURL:       server.URL,
+		APIKey:         "secret",
+		Name:           "okta",
+		EntityID:       "https://idp.example/saml",
+		Subject:        "ci@example.com",
+		SSOURL:         "https://idp.example/sso",
+		Audience:       "https://fleet.example/saml/acs",
+		Namespace:      "team-a",
+		Role:           "operator",
+		CertificatePEM: "pem",
+		MetadataURL:    "https://idp.example/metadata.xml",
+		MetadataXML:    "<EntityDescriptor/>",
+		Timeout:        time.Second,
+	})
+	if err != nil {
+		t.Fatalf("UpsertSAMLBinding: %v", err)
+	}
+	if saml.Binding.Name != "okta" || saml.Binding.CertificateSHA256 == "" {
+		t.Fatalf("UpsertSAMLBinding = %+v, want okta fingerprint", saml)
+	}
+	if _, err := RefreshSAMLBinding(ctx, SAMLBindingNameOptions{FleetURL: server.URL, APIKey: "secret", Name: "okta", Timeout: time.Second}); err != nil {
+		t.Fatalf("RefreshSAMLBinding: %v", err)
+	}
+	login, err := SAMLBindingLogin(ctx, SAMLBindingLoginOptions{FleetURL: server.URL, APIKey: "secret", Name: "okta", RelayState: "cli", Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("SAMLBindingLogin: %v", err)
+	}
+	if login.Binding.Name != "okta" || login.RelayState != "cli" || login.RedirectURL == "" {
+		t.Fatalf("SAMLBindingLogin = %+v, want redirect", login)
+	}
+	session, err := CreateSAMLSession(ctx, SAMLSessionOptions{FleetURL: server.URL, APIKey: "secret", SAMLResponse: "response", RelayState: "cli", TTL: "1h", Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("CreateSAMLSession: %v", err)
+	}
+	if session.Token != "saml-session-token" || session.Binding.Name != "okta" {
+		t.Fatalf("CreateSAMLSession = %+v, want token", session)
+	}
+	if _, err := DeleteSAMLBinding(ctx, SAMLBindingNameOptions{FleetURL: server.URL, APIKey: "secret", Name: "okta", Timeout: time.Second}); err != nil {
+		t.Fatalf("DeleteSAMLBinding: %v", err)
+	}
+	wantPaths := []string{
+		"/v1/oidc-bindings",
+		"/v1/oidc-bindings",
+		"/v1/oidc-bindings/github-main",
+		"/v1/saml-bindings",
+		"/v1/saml-bindings",
+		"/v1/saml-bindings/okta/refresh",
+		"/v1/saml-bindings/okta/login",
+		"/v1/saml/acs",
+		"/v1/saml-bindings/okta",
+	}
+	paths := make([]string, 0, len(server.requests))
+	for _, req := range server.requests {
+		paths = append(paths, req.path)
+		if req.authorization != "Bearer secret" {
+			t.Fatalf("authorization for %s = %q, want bearer token", req.path, req.authorization)
+		}
+	}
+	if !equalStringSlices(paths, wantPaths) {
+		t.Fatalf("paths = %+v, want %+v", paths, wantPaths)
+	}
+	if query := server.requests[0].query; query.Get("namespace") != "team-a" {
+		t.Fatalf("oidc list query = %q", query.Encode())
+	}
+	if body := server.requests[1].body; body["issuer"] != "https://token.actions.githubusercontent.com" || body["namespace"] != "team-a" || body["jwks_url"] == "" {
+		t.Fatalf("oidc body = %+v", body)
+	}
+	if query := server.requests[6].query; query.Get("relay_state") != "cli" {
+		t.Fatalf("saml login query = %q", query.Encode())
+	}
+	if body := server.requests[7].body; body["saml_response"] != "response" || body["relay_state"] != "cli" || body["ttl"] != "1h" {
+		t.Fatalf("saml session body = %+v", body)
+	}
+	if _, err := UpsertOIDCBinding(ctx, OIDCBindingUpsertOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "oidc binding name required") {
+		t.Fatalf("missing oidc binding name err = %v, want validation error", err)
+	}
+	if _, err := DeleteOIDCBinding(ctx, OIDCBindingDeleteOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "oidc binding name required") {
+		t.Fatalf("missing oidc binding delete name err = %v, want validation error", err)
+	}
+	if _, err := UpsertSAMLBinding(ctx, SAMLBindingUpsertOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "saml binding name required") {
+		t.Fatalf("missing saml binding name err = %v, want validation error", err)
+	}
+	if _, err := SAMLBindingLogin(ctx, SAMLBindingLoginOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "saml binding name required") {
+		t.Fatalf("missing saml login name err = %v, want validation error", err)
+	}
+	if _, err := CreateSAMLSession(ctx, SAMLSessionOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "saml response or assertion required") {
+		t.Fatalf("missing saml response err = %v, want validation error", err)
+	}
+}
+
 func TestCloudClientScopedObservability(t *testing.T) {
 	server := newSDKFleetServer(t)
 	ctx := context.Background()
@@ -1803,6 +1943,47 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 			}})
 		case r.Method == http.MethodDelete && r.URL.Path == "/v1/service-accounts/ci":
 			writeSDKJSON(t, w, ServiceAccountResult{ServiceAccount: sdkServiceAccount()})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/oidc-bindings":
+			writeSDKJSON(t, w, OIDCBindingListResult{Bindings: []OIDCBinding{sdkOIDCBinding()}})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/oidc-bindings":
+			writeSDKJSON(t, w, OIDCBindingResult{Binding: OIDCBinding{
+				Name:      stringValue(req.body["name"]),
+				Issuer:    stringValue(req.body["issuer"]),
+				Subject:   stringValue(req.body["subject"]),
+				Audience:  stringValue(req.body["audience"]),
+				Namespace: stringValue(req.body["namespace"]),
+				Role:      stringValue(req.body["role"]),
+				JWKSURL:   stringValue(req.body["jwks_url"]),
+				KeyIDs:    []string{"kid-1"},
+				Created:   time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC),
+				Updated:   time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC),
+			}})
+		case r.Method == http.MethodDelete && r.URL.Path == "/v1/oidc-bindings/github-main":
+			writeSDKJSON(t, w, OIDCBindingResult{Binding: sdkOIDCBinding()})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/saml-bindings":
+			writeSDKJSON(t, w, SAMLBindingListResult{Bindings: []SAMLBinding{sdkSAMLBinding()}})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/saml-bindings":
+			writeSDKJSON(t, w, SAMLBindingResult{Binding: SAMLBinding{
+				Name:              stringValue(req.body["name"]),
+				EntityID:          stringValue(req.body["entity_id"]),
+				Subject:           stringValue(req.body["subject"]),
+				SSOURL:            stringValue(req.body["sso_url"]),
+				Audience:          stringValue(req.body["audience"]),
+				Namespace:         stringValue(req.body["namespace"]),
+				Role:              stringValue(req.body["role"]),
+				MetadataURL:       stringValue(req.body["metadata_url"]),
+				CertificateSHA256: "sha256-cert",
+				Created:           time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC),
+				Updated:           time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC),
+			}})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/saml-bindings/okta/refresh":
+			writeSDKJSON(t, w, SAMLBindingResult{Binding: sdkSAMLBinding()})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/saml-bindings/okta/login":
+			writeSDKJSON(t, w, sdkSAMLLogin(r.URL.Query().Get("relay_state")))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/saml/acs":
+			writeSDKJSON(t, w, sdkSAMLSession(stringValue(req.body["relay_state"])))
+		case r.Method == http.MethodDelete && r.URL.Path == "/v1/saml-bindings/okta":
+			writeSDKJSON(t, w, SAMLBindingResult{Binding: sdkSAMLBinding()})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/workers/worker-1/cordon":
 			record := sdkHostRecord()
 			record.Cordoned = true
@@ -2032,6 +2213,59 @@ func sdkServiceAccount() ServiceAccount {
 		Role:      "operator",
 		Created:   time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC),
 		Updated:   time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC),
+	}
+}
+
+func sdkOIDCBinding() OIDCBinding {
+	return OIDCBinding{
+		Name:      "github-main",
+		Issuer:    "https://token.actions.githubusercontent.com",
+		Subject:   "repo:tmc/cove:ref:refs/heads/main",
+		Audience:  "cove-fleet",
+		Namespace: "team-a",
+		Role:      "operator",
+		JWKSURL:   "https://token.actions.githubusercontent.com/.well-known/jwks",
+		KeyIDs:    []string{"kid-1"},
+		Created:   time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC),
+		Updated:   time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC),
+	}
+}
+
+func sdkSAMLBinding() SAMLBinding {
+	return SAMLBinding{
+		Name:              "okta",
+		EntityID:          "https://idp.example/saml",
+		Subject:           "ci@example.com",
+		SSOURL:            "https://idp.example/sso",
+		Audience:          "https://fleet.example/saml/acs",
+		Namespace:         "team-a",
+		Role:              "operator",
+		MetadataURL:       "https://idp.example/metadata.xml",
+		CertificateSHA256: "sha256-cert",
+		Created:           time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC),
+		Updated:           time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC),
+	}
+}
+
+func sdkSAMLLogin(relayState string) SAMLAuthnRequestResult {
+	return SAMLAuthnRequestResult{
+		Binding:      sdkSAMLBinding(),
+		RequestID:    "_saml-request-1",
+		IssueInstant: time.Date(2026, 5, 31, 10, 1, 0, 0, time.UTC),
+		RelayState:   relayState,
+		XML:          "<AuthnRequest/>",
+		SAMLRequest:  "encoded-request",
+		RedirectURL:  "https://idp.example/sso?SAMLRequest=encoded-request",
+	}
+}
+
+func sdkSAMLSession(relayState string) SAMLSessionResult {
+	return SAMLSessionResult{
+		Token:      "saml-session-token",
+		Expires:    time.Date(2026, 5, 31, 11, 0, 0, 0, time.UTC),
+		Binding:    sdkSAMLBinding(),
+		Subject:    "ci@example.com",
+		RelayState: relayState,
 	}
 }
 
