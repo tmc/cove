@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"io"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -4881,6 +4882,43 @@ func TestHandlerSAMLBindingRBACScopes(t *testing.T) {
 	getJSONAuth(t, server.URL+"/v1/saml-bindings", "admin-b", &list)
 	if len(list.SAMLBindings) != 0 {
 		t.Fatalf("team-b saml bindings = %+v, want none", list.SAMLBindings)
+	}
+	resp := getJSONRequest(t, server.URL+"/v1/saml-bindings/okta/metadata", "admin-a")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("saml metadata status = %d, want 200", resp.StatusCode)
+	}
+	if contentType := resp.Header.Get("content-type"); !strings.Contains(contentType, "application/samlmetadata+xml") {
+		t.Fatalf("saml metadata content-type = %q", contentType)
+	}
+	metadata, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := etree.NewDocument()
+	if err := doc.ReadFromBytes(metadata); err != nil {
+		t.Fatalf("parse saml metadata: %v\n%s", err, metadata)
+	}
+	root := doc.Root()
+	if !samlElementIs(root, "EntityDescriptor") || samlAttr(root, "entityID") != "https://fleet.example/saml/acs" {
+		t.Fatalf("metadata root = %s entityID=%q", root.Tag, samlAttr(root, "entityID"))
+	}
+	sp := samlFirstChild(root, "SPSSODescriptor")
+	if sp == nil || samlAttr(sp, "WantAssertionsSigned") != "true" || samlAttr(sp, "AuthnRequestsSigned") != "false" {
+		t.Fatalf("metadata SP descriptor = %+v", sp)
+	}
+	acs := samlFirstChild(sp, "AssertionConsumerService")
+	if acs == nil || samlAttr(acs, "Binding") != "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" || samlAttr(acs, "Location") != "https://fleet.example/saml/acs" {
+		t.Fatalf("metadata ACS = %+v", acs)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/saml-bindings/okta/metadata", "admin-b"); code != http.StatusNotFound {
+		t.Fatalf("cross-namespace saml metadata status = %d, want 404", code)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/saml-bindings/missing/metadata", "admin-a"); code != http.StatusNotFound {
+		t.Fatalf("missing saml metadata status = %d, want 404", code)
+	}
+	if code := postJSONStatus(t, server.URL+"/v1/saml-bindings/okta/metadata", "admin-a", map[string]string{}); code != http.StatusMethodNotAllowed {
+		t.Fatalf("saml metadata POST status = %d, want 405", code)
 	}
 	var record HostRecord
 	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 2}}, &record)

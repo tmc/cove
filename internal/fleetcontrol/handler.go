@@ -401,6 +401,14 @@ func handleSAMLBindings(w http.ResponseWriter, r *http.Request, store *Store) {
 }
 
 func handleSAMLBinding(w http.ResponseWriter, r *http.Request, store *Store) {
+	if name, ok, err := samlBindingMetadataPath(r.URL.Path); ok || err != nil {
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		handleSAMLBindingMetadata(w, r, store, name)
+		return
+	}
 	name, err := nameFromPath(r.URL.Path, "/v1/saml-bindings/", "saml binding")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -432,6 +440,46 @@ func handleSAMLBinding(w http.ResponseWriter, r *http.Request, store *Store) {
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+func samlBindingMetadataPath(path string) (string, bool, error) {
+	raw := strings.TrimPrefix(path, "/v1/saml-bindings/")
+	parts := strings.Split(raw, "/")
+	if len(parts) != 2 || parts[1] != "metadata" {
+		return "", false, nil
+	}
+	name, err := url.PathUnescape(parts[0])
+	if err != nil {
+		return "", true, fmt.Errorf("decode saml binding name: %w", err)
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", true, fmt.Errorf("saml binding name required")
+	}
+	return name, true, nil
+}
+
+func handleSAMLBindingMetadata(w http.ResponseWriter, r *http.Request, store *Store, name string) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	namespace := ""
+	if identity.Scoped {
+		namespace = identity.Namespace
+	}
+	metadata, err := store.SAMLMetadataNamespace(name, namespace)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	w.Header().Set("content-type", "application/samlmetadata+xml; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(metadata)
 }
 
 func handleSandboxes(w http.ResponseWriter, r *http.Request, store *Store) {

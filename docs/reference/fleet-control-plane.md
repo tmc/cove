@@ -191,6 +191,7 @@ curl -X POST http://127.0.0.1:9758/v1/saml-bindings \
     "certificate_pem":"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"
   }'
 curl http://127.0.0.1:9758/v1/saml-bindings
+curl http://127.0.0.1:9758/v1/saml-bindings/okta/metadata
 curl http://127.0.0.1:9758/v1/audit
 curl http://127.0.0.1:9758/v1/audit?limit=50
 curl 'http://127.0.0.1:9758/v1/audit?action=assignment.create&actor=service-account:ci&target_type=assignment&limit=50'
@@ -234,10 +235,13 @@ SAML response or assertion whose XML signature verifies against the binding
 certificate, issuer matches `entity_id`, audience matches `audience`, optional
 subject matches, and assertion conditions are currently valid. Matching
 assertions record audit actor `saml:<binding-name>` and inherit the binding's
-namespace and role. The controller records accepted assertion IDs until their
-time window expires and rejects replayed assertions across process restarts.
-Keep assertions short lived; SP-initiated login flows and IdP metadata
-management are still out of scope for this private controller surface.
+namespace and role. `GET /v1/saml-bindings/{name}/metadata` returns SAML 2.0 SP
+metadata XML using the binding audience as the SP entity ID and HTTP-POST ACS
+location, so IdP setup can be driven from the controller record. The controller
+records accepted assertion IDs until their time window expires and rejects
+replayed assertions across process restarts. Keep assertions short lived;
+SP-initiated browser login flows and IdP metadata import/refresh are still out
+of scope for this private controller surface.
 If a service account has `namespace` set, assignment, warm-pool, sandbox,
 service-account, and audit list/read/mutation requests through that bearer token
 are scoped to that namespace; attempts to write another namespace are rejected.

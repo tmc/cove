@@ -8,6 +8,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 ## Unreleased
 
 ### Added
+- `cove-fleetd` now exposes `GET /v1/saml-bindings/{name}/metadata` to emit
+  SAML 2.0 service-provider metadata XML for a stored binding, scoped by the
+  same viewer/admin namespace rules as the binding API.
 - `cove-fleetd` now exposes `POST /v1/workers/{id}/evacuate` for dry-run and
   applied worker maintenance. It cordons applied targets, reassigns movable
   pending work, drains hosted sandboxes, reports blockers, and only cancels

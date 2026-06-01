@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"math/big"
@@ -2888,6 +2889,27 @@ func (s *Store) ListSAMLBindingsNamespace(namespace string) []SAMLBinding {
 	return out
 }
 
+func (s *Store) SAMLMetadata(name string) ([]byte, error) {
+	return s.SAMLMetadataNamespace(name, "")
+}
+
+func (s *Store) SAMLMetadataNamespace(name, namespace string) ([]byte, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, fmt.Errorf("saml binding name required")
+	}
+	namespace = normalizeNamespace(namespace)
+	s.mu.Lock()
+	record, ok := s.samlBindings[name]
+	if !ok || !namespaceMatches(record.Namespace, namespace) {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("saml binding %q not found", name)
+	}
+	binding := publicSAMLBinding(record)
+	s.mu.Unlock()
+	return samlMetadataXML(binding)
+}
+
 func (s *Store) Get(id string) (HostRecord, bool) {
 	id = strings.TrimSpace(id)
 	s.mu.Lock()
@@ -3467,6 +3489,50 @@ func publicSAMLBinding(record samlBindingRecord) SAMLBinding {
 		Created:           record.Created,
 		Updated:           record.Updated,
 	}
+}
+
+type samlMetadataEntityDescriptor struct {
+	XMLName         xml.Name                    `xml:"md:EntityDescriptor"`
+	XMLNSMD         string                      `xml:"xmlns:md,attr"`
+	EntityID        string                      `xml:"entityID,attr"`
+	SPSSODescriptor samlMetadataSPSSODescriptor `xml:"md:SPSSODescriptor"`
+}
+
+type samlMetadataSPSSODescriptor struct {
+	AuthnRequestsSigned        string                        `xml:"AuthnRequestsSigned,attr"`
+	WantAssertionsSigned       string                        `xml:"WantAssertionsSigned,attr"`
+	ProtocolSupportEnumeration string                        `xml:"protocolSupportEnumeration,attr"`
+	AssertionConsumerService   samlMetadataAssertionConsumer `xml:"md:AssertionConsumerService"`
+}
+
+type samlMetadataAssertionConsumer struct {
+	Binding   string `xml:"Binding,attr"`
+	Location  string `xml:"Location,attr"`
+	Index     int    `xml:"index,attr"`
+	IsDefault string `xml:"isDefault,attr"`
+}
+
+func samlMetadataXML(binding SAMLBinding) ([]byte, error) {
+	entity := samlMetadataEntityDescriptor{
+		XMLNSMD:  "urn:oasis:names:tc:SAML:2.0:metadata",
+		EntityID: binding.Audience,
+		SPSSODescriptor: samlMetadataSPSSODescriptor{
+			AuthnRequestsSigned:        "false",
+			WantAssertionsSigned:       "true",
+			ProtocolSupportEnumeration: "urn:oasis:names:tc:SAML:2.0:protocol",
+			AssertionConsumerService: samlMetadataAssertionConsumer{
+				Binding:   "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST",
+				Location:  binding.Audience,
+				Index:     0,
+				IsDefault: "true",
+			},
+		},
+	}
+	data, err := xml.MarshalIndent(entity, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("marshal saml metadata: %w", err)
+	}
+	return append([]byte(xml.Header), append(data, '\n')...), nil
 }
 
 func clonePlacementCandidates(in []PlacementCandidate) []PlacementCandidate {
