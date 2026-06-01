@@ -36,8 +36,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   and the Go `agentsandbox` package, OpenAI Agents Python adapter, and
   `SandboxRunConfig` cloud options expose the field.
 - `coved` now observes controller-side forced cancellation for active `cove`
-  assignments, stops the local command, and reports terminal `canceled` status
-  back to the controller instead of letting canceled work continue on the host.
+  and `cove-control` assignments, stops the local command or control request,
+  and reports terminal `canceled` status back to the controller instead of
+  letting canceled work continue on the host.
 - The public Go `agentsandbox` package and OpenAI Agents Python adapter now
   expose hosted sandbox metering list helpers for `/v1/metering/sandboxes`, so
   SDK operators can query namespace or sandbox usage without first constructing

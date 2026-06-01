@@ -403,12 +403,46 @@ func (w *FleetWorker) runControlAssignment(ctx context.Context, assignment fleet
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	w.reportAssignmentStatus(runCtx, assignment.ID, "running")
-	response, err := w.sendControlRequest(runCtx, vmName, request)
-	if err != nil {
+	type controlResult struct {
+		response string
+		err      error
+	}
+	done := make(chan controlResult, 1)
+	go func() {
+		response, err := w.sendControlRequest(runCtx, vmName, request)
+		done <- controlResult{response: response, err: err}
+	}()
+	ticker := time.NewTicker(w.assignmentInterval)
+	defer ticker.Stop()
+	var response string
+	var controlErr error
+	canceled := false
+	for {
+		select {
+		case result := <-done:
+			response = result.response
+			controlErr = result.err
+			goto finished
+		case <-ticker.C:
+			if w.assignmentCanceled(runCtx, assignment.ID) {
+				canceled = true
+				cancel()
+				continue
+			}
+			w.reportAssignmentStatus(runCtx, assignment.ID, "running")
+		}
+	}
+finished:
+	if canceled {
+		report.Status = "canceled"
+		report.Error = "assignment canceled"
+		return report
+	}
+	if controlErr != nil {
 		if runCtx.Err() == context.DeadlineExceeded {
 			report.Error = fmt.Sprintf("assignment timed out after %s", timeout)
 		} else {
-			report.Error = err.Error()
+			report.Error = controlErr.Error()
 		}
 		return report
 	}
@@ -467,6 +501,15 @@ func (w *FleetWorker) sendControlRequest(ctx context.Context, vmName string, req
 	if deadline, ok := ctx.Deadline(); ok {
 		_ = conn.SetDeadline(deadline)
 	}
+	ctxDone := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = conn.Close()
+		case <-ctxDone:
+		}
+	}()
+	defer close(ctxDone)
 	if _, err := conn.Write(request); err != nil {
 		return "", fmt.Errorf("write control request: %w", err)
 	}

@@ -1300,9 +1300,10 @@ running, ready, claimed, draining, or restarting assignments require
 `{"force":true}` because the controller is only changing its assignment state.
 Hosted sandbox run assignments are rejected by this endpoint; use sandbox
 stop/delete so the controller can create the required cleanup assignment.
-`coved` observes forced cancellation while a `cove` assignment is active, stops
-the local command, and sends a terminal `canceled` report; a late non-canceled
-worker report is rejected because the lease has already been cleared.
+`coved` observes forced cancellation while a `cove` or `cove-control`
+assignment is active, stops the local command or control request, and sends a
+terminal `canceled` report; a late non-canceled worker report is rejected
+because the lease has already been cleared.
 Cancellation is audited as `assignment.cancel` and scoped service-account
 tokens can only cancel assignments in their namespace.
 `POST /v1/assignments/{id}/retry` requeues a terminal generic assignment with
