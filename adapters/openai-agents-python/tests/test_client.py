@@ -24,6 +24,18 @@ def test_json_error_includes_placement_plan_id() -> None:
     assert _json_error(data) == "no ready worker matches assignment (placement_plan=placement-plan-1)"
 
 
+def test_json_error_includes_sandbox_cap_diagnostics() -> None:
+    data = (
+        b'{"error":"sandbox namespace \\"team-a\\" has 1 active sandboxes, '
+        b'max_active_sandboxes is 1","active_count":1,"max_active_sandboxes":1}'
+    )
+    assert (
+        _json_error(data)
+        == 'sandbox namespace "team-a" has 1 active sandboxes, max_active_sandboxes is 1 '
+        "(active_sandboxes=1 max_active_sandboxes=1)"
+    )
+
+
 def test_resolve_keys() -> None:
     key, modifiers = _resolve_keys(["cmd", "shift", "a"])
     assert key == 0

@@ -27,6 +27,18 @@ func TestResponseErrorIncludesPlacementPlanID(t *testing.T) {
 	}
 }
 
+func TestResponseErrorIncludesSandboxCapDiagnostics(t *testing.T) {
+	resp := &http.Response{
+		Status:     "400 Bad Request",
+		StatusCode: http.StatusBadRequest,
+		Body:       io.NopCloser(strings.NewReader(`{"error":"sandbox namespace \"team-a\" has 1 active sandboxes, max_active_sandboxes is 1","active_count":1,"max_active_sandboxes":1}`)),
+	}
+	err := responseError(http.MethodPost, "/v1/sandboxes", resp)
+	if err == nil || !strings.Contains(err.Error(), "active_sandboxes=1 max_active_sandboxes=1") {
+		t.Fatalf("responseError = %v, want sandbox cap diagnostics", err)
+	}
+}
+
 func TestCloudClientCreateExecControlDelete(t *testing.T) {
 	server := newSDKFleetServer(t)
 	ctx := context.Background()

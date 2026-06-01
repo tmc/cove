@@ -3137,5 +3137,19 @@ def _json_error(data: bytes) -> str:
             plan_id = str(plan.get("id") or "").strip()
             if plan_id:
                 return f"{msg} (placement_plan={plan_id})"
+        max_active = _int_value(loaded.get("max_active_sandboxes"))
+        if msg and max_active > 0:
+            active = _int_value(loaded.get("active_count"))
+            return f"{msg} (active_sandboxes={active} max_active_sandboxes={max_active})"
         return msg
     return ""
+
+
+def _int_value(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    return 0

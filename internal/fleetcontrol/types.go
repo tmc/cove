@@ -838,8 +838,11 @@ type SandboxRequest struct {
 }
 
 type SandboxAdmissionError struct {
-	Error         string         `json:"error"`
-	PlacementPlan *PlacementPlan `json:"placement_plan,omitempty"`
+	Error              string          `json:"error"`
+	PlacementPlan      *PlacementPlan  `json:"placement_plan,omitempty"`
+	MaxActiveSandboxes int             `json:"max_active_sandboxes,omitempty"`
+	ActiveCount        int             `json:"active_count,omitempty"`
+	ActiveSandboxes    []SandboxStatus `json:"active_sandboxes,omitempty"`
 }
 
 type SandboxStatus struct {

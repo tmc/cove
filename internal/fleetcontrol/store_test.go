@@ -6738,8 +6738,20 @@ func TestHandlerSandboxMaxActiveSandboxes(t *testing.T) {
 	if created.Namespace != "team-a" || created.ID != "job-1" {
 		t.Fatalf("created sandbox = %+v, want team-a job-1", created)
 	}
-	if code := postJSONStatus(t, server.URL+"/v1/sandboxes", "", SandboxRequest{Namespace: "team-a", ID: "job-2", ImageRef: "base:v1", MaxActiveSandboxes: 1}); code != http.StatusBadRequest {
-		t.Fatalf("over cap sandbox status = %d, want 400", code)
+	resp := postJSONRequest(t, server.URL+"/v1/sandboxes", "", SandboxRequest{Namespace: "team-a", ID: "job-2", ImageRef: "base:v1", MaxActiveSandboxes: 1})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("over cap sandbox status = %d, want 400", resp.StatusCode)
+	}
+	var admission SandboxAdmissionError
+	if err := json.NewDecoder(resp.Body).Decode(&admission); err != nil {
+		t.Fatal(err)
+	}
+	if admission.MaxActiveSandboxes != 1 || admission.ActiveCount != 1 || len(admission.ActiveSandboxes) != 1 || admission.ActiveSandboxes[0].ID != "job-1" {
+		t.Fatalf("over cap diagnostics = %+v, want active job-1 and cap 1", admission)
+	}
+	if !strings.Contains(admission.Error, "max_active_sandboxes") {
+		t.Fatalf("over cap error = %q, want max_active_sandboxes", admission.Error)
 	}
 	postJSON(t, server.URL+"/v1/sandboxes", SandboxRequest{Namespace: "team-b", ID: "job-b", ImageRef: "base:v1", MaxActiveSandboxes: 1}, &created)
 	if created.Namespace != "team-b" || created.ID != "job-b" {

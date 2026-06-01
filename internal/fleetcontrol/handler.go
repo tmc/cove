@@ -853,6 +853,16 @@ func sandboxListFilterFromRequest(r *http.Request, namespace string) (SandboxLis
 }
 
 func writeSandboxAdmissionError(w http.ResponseWriter, store *Store, req SandboxRequest, err error) {
+	if isSandboxCapAdmissionError(err) {
+		active := activeSandboxAdmissionDiagnostics(store, req.Namespace)
+		writeJSON(w, http.StatusBadRequest, SandboxAdmissionError{
+			Error:              err.Error(),
+			MaxActiveSandboxes: req.MaxActiveSandboxes,
+			ActiveCount:        len(active),
+			ActiveSandboxes:    active,
+		})
+		return
+	}
 	if !isPlacementAdmissionError(err) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -866,6 +876,21 @@ func writeSandboxAdmissionError(w http.ResponseWriter, store *Store, req Sandbox
 		Error:         err.Error(),
 		PlacementPlan: &plan,
 	})
+}
+
+func isSandboxCapAdmissionError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "max_active_sandboxes")
+}
+
+func activeSandboxAdmissionDiagnostics(store *Store, namespace string) []SandboxStatus {
+	list := store.ListSandboxesFiltered(SandboxListFilter{Namespace: namespace})
+	active := make([]SandboxStatus, 0, len(list))
+	for _, sandbox := range list {
+		if !sandboxTerminalStatus(sandbox.Status) {
+			active = append(active, sandbox)
+		}
+	}
+	return active
 }
 
 func isPlacementAdmissionError(err error) bool {

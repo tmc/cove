@@ -4648,13 +4648,18 @@ func responseError(method, path string, resp *http.Response) error {
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	msg := strings.TrimSpace(string(data))
 	var errBody struct {
-		Error         string         `json:"error"`
-		PlacementPlan *PlacementPlan `json:"placement_plan"`
+		Error              string         `json:"error"`
+		PlacementPlan      *PlacementPlan `json:"placement_plan"`
+		MaxActiveSandboxes int            `json:"max_active_sandboxes"`
+		ActiveCount        int            `json:"active_count"`
 	}
 	if json.Unmarshal(data, &errBody) == nil && strings.TrimSpace(errBody.Error) != "" {
 		msg = strings.TrimSpace(errBody.Error)
 		if errBody.PlacementPlan != nil && strings.TrimSpace(errBody.PlacementPlan.ID) != "" {
 			msg += " (placement_plan=" + strings.TrimSpace(errBody.PlacementPlan.ID) + ")"
+		}
+		if errBody.MaxActiveSandboxes > 0 {
+			msg += fmt.Sprintf(" (active_sandboxes=%d max_active_sandboxes=%d)", errBody.ActiveCount, errBody.MaxActiveSandboxes)
 		}
 	}
 	if msg == "" {
