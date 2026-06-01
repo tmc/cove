@@ -125,9 +125,11 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   child manifest candidates.
 - `cove image inspect -remote -all-platforms` now fetches each index/list child
   manifest and classifies every platform without downloading disk blobs, making
-  private mixed-platform catalog audits more complete. Combined with
-  `-verify-blobs`, remote inspect now HEAD-audits each child manifest's config
-  and layer descriptors and reports per-child blob status.
+  private mixed-platform catalog audits more complete. Cove-native child
+  entries now include their own base-chain audit with disk-format/size/chunk
+  compatibility and reusable bytes. Combined with `-verify-blobs`, remote
+  inspect now HEAD-audits each child manifest's config and layer descriptors and
+  reports per-child blob status.
 - `cove pull --dry-run --verify-blobs` now HEAD-audits registry blobs this host
   would need to fetch for cove-native, Tart, or Lume pulls without downloading
   blob bodies.

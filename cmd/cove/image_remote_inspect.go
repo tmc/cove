@@ -71,31 +71,34 @@ type ImageRemoteInspectOutput struct {
 }
 
 type ImageRemoteIndexManifest struct {
-	Digest              string   `json:"digest"`
-	MediaType           string   `json:"media_type,omitempty"`
-	Size                int64    `json:"size,omitempty"`
-	Platform            string   `json:"platform,omitempty"`
-	Selected            bool     `json:"selected,omitempty"`
-	Kind                string   `json:"kind,omitempty"`
-	Format              string   `json:"format,omitempty"`
-	PullPlan            string   `json:"pull_plan,omitempty"`
-	DiskSize            int64    `json:"disk_size,omitempty"`
-	DiskFormat          string   `json:"disk_format,omitempty"`
-	CompressedDiskBytes int64    `json:"compressed_disk_bytes,omitempty"`
-	ChunkCount          int      `json:"chunk_count,omitempty"`
-	ZeroChunks          int      `json:"zero_chunks,omitempty"`
-	DiskLayerCount      int      `json:"disk_layer_count,omitempty"`
-	DiskPartCount       int      `json:"disk_part_count,omitempty"`
-	MetadataBlobs       int      `json:"metadata_blobs,omitempty"`
-	MetadataBytes       int64    `json:"metadata_bytes,omitempty"`
-	ConfigBytes         int64    `json:"config_bytes,omitempty"`
-	NVRAMBytes          int64    `json:"nvram_bytes,omitempty"`
-	BaseManifest        string   `json:"base_manifest,omitempty"`
-	BlobAudit           string   `json:"blob_audit,omitempty"`
-	BlobDescriptors     int      `json:"blob_descriptors,omitempty"`
-	BlobBytes           int64    `json:"blob_bytes,omitempty"`
-	MissingBlobs        []string `json:"missing_blobs,omitempty"`
-	Error               string   `json:"error,omitempty"`
+	Digest              string                    `json:"digest"`
+	MediaType           string                    `json:"media_type,omitempty"`
+	Size                int64                     `json:"size,omitempty"`
+	Platform            string                    `json:"platform,omitempty"`
+	Selected            bool                      `json:"selected,omitempty"`
+	Kind                string                    `json:"kind,omitempty"`
+	Format              string                    `json:"format,omitempty"`
+	PullPlan            string                    `json:"pull_plan,omitempty"`
+	DiskSize            int64                     `json:"disk_size,omitempty"`
+	DiskFormat          string                    `json:"disk_format,omitempty"`
+	CompressedDiskBytes int64                     `json:"compressed_disk_bytes,omitempty"`
+	ChunkCount          int                       `json:"chunk_count,omitempty"`
+	ZeroChunks          int                       `json:"zero_chunks,omitempty"`
+	DiskLayerCount      int                       `json:"disk_layer_count,omitempty"`
+	DiskPartCount       int                       `json:"disk_part_count,omitempty"`
+	MetadataBlobs       int                       `json:"metadata_blobs,omitempty"`
+	MetadataBytes       int64                     `json:"metadata_bytes,omitempty"`
+	ConfigBytes         int64                     `json:"config_bytes,omitempty"`
+	NVRAMBytes          int64                     `json:"nvram_bytes,omitempty"`
+	BaseManifest        string                    `json:"base_manifest,omitempty"`
+	BaseChainAudit      string                    `json:"base_chain_audit,omitempty"`
+	BaseChainDepth      int                       `json:"base_chain_depth,omitempty"`
+	BaseChain           []ImageRemoteBaseManifest `json:"base_chain,omitempty"`
+	BlobAudit           string                    `json:"blob_audit,omitempty"`
+	BlobDescriptors     int                       `json:"blob_descriptors,omitempty"`
+	BlobBytes           int64                     `json:"blob_bytes,omitempty"`
+	MissingBlobs        []string                  `json:"missing_blobs,omitempty"`
+	Error               string                    `json:"error,omitempty"`
 }
 
 type ImageRemoteBaseManifest struct {
@@ -252,6 +255,9 @@ func copyRemoteIndexManifestDetail(dst *ImageRemoteIndexManifest, detail ImageRe
 	dst.ConfigBytes = detail.ConfigBytes
 	dst.NVRAMBytes = detail.NVRAMBytes
 	dst.BaseManifest = detail.BaseManifest
+	dst.BaseChainAudit = detail.BaseChainAudit
+	dst.BaseChainDepth = detail.BaseChainDepth
+	dst.BaseChain = detail.BaseChain
 	dst.BlobAudit = detail.BlobAudit
 	dst.BlobDescriptors = detail.BlobDescriptors
 	dst.BlobBytes = detail.BlobBytes
@@ -275,7 +281,9 @@ func inspectRemoteIndexManifest(ctx context.Context, client ociimage.RegistryCli
 		if err != nil {
 			return ImageRemoteIndexManifest{}, fmt.Errorf("parse manifest: %w", err)
 		}
-		detail = remoteIndexManifestFromOutput(inspectRemoteVMManifest(parsed, base))
+		out := inspectRemoteVMManifest(parsed, base)
+		out = maybeAuditRemoteBaseChain(ctx, client, childRef, parsed, out)
+		detail = remoteIndexManifestFromOutput(out)
 	}
 	if verifyBlobs {
 		audit, err := auditRemoteBlobs(ctx, client, childRef, manifest)
@@ -338,6 +346,9 @@ func remoteIndexManifestFromOutput(out ImageRemoteInspectOutput) ImageRemoteInde
 		ConfigBytes:         out.ConfigBytes,
 		NVRAMBytes:          out.NVRAMBytes,
 		BaseManifest:        out.BaseManifest,
+		BaseChainAudit:      out.BaseChainAudit,
+		BaseChainDepth:      out.BaseChainDepth,
+		BaseChain:           out.BaseChain,
 		BlobAudit:           out.BlobAudit,
 		BlobDescriptors:     out.BlobDescriptors,
 		BlobBytes:           out.BlobBytes,
@@ -844,6 +855,15 @@ func writeRemoteInspectText(w io.Writer, out ImageRemoteInspectOutput) error {
 				if manifest.DiskPartCount > 0 {
 					fmt.Fprintf(w, " parts=%d", manifest.DiskPartCount)
 				}
+				if manifest.BaseManifest != "" {
+					fmt.Fprintf(w, " base_manifest=%s", manifest.BaseManifest)
+				}
+				if manifest.BaseChainAudit != "" {
+					fmt.Fprintf(w, " base_audit=%s", manifest.BaseChainAudit)
+					if manifest.BaseChainDepth > 0 {
+						fmt.Fprintf(w, " base_depth=%d", manifest.BaseChainDepth)
+					}
+				}
 				if manifest.BlobAudit != "" {
 					fmt.Fprintf(w, " blob_audit=%s", manifest.BlobAudit)
 					if manifest.BlobDescriptors > 0 {
@@ -862,6 +882,28 @@ func writeRemoteInspectText(w io.Writer, out ImageRemoteInspectOutput) error {
 				fmt.Fprintln(w)
 				for _, missing := range manifest.MissingBlobs {
 					fmt.Fprintf(w, "      missing: %s\n", missing)
+				}
+				for _, entry := range manifest.BaseChain {
+					fmt.Fprintf(w, "      base: %s %s", entry.Digest, entry.Status)
+					if entry.Format != "" {
+						fmt.Fprintf(w, " format=%s", entry.Format)
+					}
+					if entry.DiskFormat != "" {
+						fmt.Fprintf(w, " disk_format=%s", entry.DiskFormat)
+					}
+					if entry.MatchingChunks > 0 {
+						fmt.Fprintf(w, " matching_chunks=%d", entry.MatchingChunks)
+					}
+					if entry.MatchingBytes > 0 {
+						fmt.Fprintf(w, " matching_bytes=%s", bytefmt.Size(entry.MatchingBytes))
+					}
+					if entry.BaseManifest != "" {
+						fmt.Fprintf(w, " parent=%s", entry.BaseManifest)
+					}
+					if entry.Error != "" {
+						fmt.Fprintf(w, " error=%s", entry.Error)
+					}
+					fmt.Fprintln(w)
 				}
 			}
 		}

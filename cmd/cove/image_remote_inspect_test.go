@@ -256,6 +256,70 @@ func TestInspectRemoteImageResolvesIndexPlatform(t *testing.T) {
 	}
 }
 
+func TestInspectRemoteImageAllPlatformsBaseChainAudit(t *testing.T) {
+	darwinBase, _, _ := pullCompressedChunkedTestManifest(t, []byte("darwin"), 3)
+	darwinBaseData, darwinBaseDigest := pullTestManifestData(t, darwinBase)
+	darwinManifest := darwinBase
+	darwinManifest.Annotations = cloneStringMap(darwinManifest.Annotations)
+	darwinManifest.Annotations[ociimage.CoveBaseManifest] = darwinBaseDigest
+	linuxManifest, _, _ := pullCompressedChunkedTestManifest(t, []byte("linux-child"), 5)
+	missingBaseDigest := "sha256:" + strings.Repeat("f", 64)
+	linuxManifest.Annotations = cloneStringMap(linuxManifest.Annotations)
+	linuxManifest.Annotations[ociimage.CoveBaseManifest] = missingBaseDigest
+	darwinData, darwinDigest := pullTestManifestData(t, darwinManifest)
+	linuxData, linuxDigest := pullTestManifestData(t, linuxManifest)
+	index := ociimage.Index{
+		SchemaVersion: 2,
+		MediaType:     ociimage.MediaTypeImageIndex,
+		Manifests: []ociimage.IndexDescriptor{
+			{
+				Descriptor: ociimage.Descriptor{MediaType: ociimage.MediaTypeImageManifest, Size: int64(len(darwinData)), Digest: darwinDigest},
+				Platform:   &ociimage.Platform{OS: "darwin", Architecture: "arm64"},
+			},
+			{
+				Descriptor: ociimage.Descriptor{MediaType: ociimage.MediaTypeImageManifest, Size: int64(len(linuxData)), Digest: linuxDigest},
+				Platform:   &ociimage.Platform{OS: "linux", Architecture: "arm64"},
+			},
+		},
+	}
+	srv := newRemoteInspectMultiIndexRegistry(t, index, map[string][]byte{
+		darwinDigest:     darwinData,
+		darwinBaseDigest: darwinBaseData,
+		linuxDigest:      linuxData,
+	})
+	t.Cleanup(srv.Close)
+
+	out, err := InspectRemoteImage(context.Background(), "ghcr.io/me/dev-vm:v1", remoteInspectOptions{
+		RegistryBaseURL:       srv.URL,
+		Platform:              "linux/arm64",
+		InspectIndexManifests: true,
+	})
+	if err != nil {
+		t.Fatalf("InspectRemoteImage: %v", err)
+	}
+	if out.BaseChainAudit != "missing" || out.BaseChainDepth != 1 {
+		t.Fatalf("selected base audit = %q depth=%d chain=%+v, want missing depth 1", out.BaseChainAudit, out.BaseChainDepth, out.BaseChain)
+	}
+	children := map[string]ImageRemoteIndexManifest{}
+	for _, child := range out.IndexManifests {
+		children[child.Platform] = child
+	}
+	darwin := children["darwin/arm64"]
+	if darwin.BaseManifest != darwinBaseDigest || darwin.BaseChainAudit != "ok" || darwin.BaseChainDepth != 1 || len(darwin.BaseChain) != 1 {
+		t.Fatalf("darwin child base audit = manifest:%q status:%q depth:%d chain:%+v, want one ok parent", darwin.BaseManifest, darwin.BaseChainAudit, darwin.BaseChainDepth, darwin.BaseChain)
+	}
+	if darwin.BaseChain[0].Digest != darwinBaseDigest || darwin.BaseChain[0].Status != "ok" || darwin.BaseChain[0].MatchingBytes != int64(len("darwin")) {
+		t.Fatalf("darwin base entry = %+v, want reusable parent", darwin.BaseChain[0])
+	}
+	linux := children["linux/arm64"]
+	if linux.BaseManifest != missingBaseDigest || linux.BaseChainAudit != "missing" || linux.BaseChainDepth != 1 || len(linux.BaseChain) != 1 {
+		t.Fatalf("linux child base audit = manifest:%q status:%q depth:%d chain:%+v, want missing parent", linux.BaseManifest, linux.BaseChainAudit, linux.BaseChainDepth, linux.BaseChain)
+	}
+	if linux.BaseChain[0].Digest != missingBaseDigest || linux.BaseChain[0].Status != "missing" {
+		t.Fatalf("linux base entry = %+v, want missing parent %s", linux.BaseChain[0], missingBaseDigest)
+	}
+}
+
 func TestInspectRemoteImageAllPlatformsVerifyBlobs(t *testing.T) {
 	darwinManifest, _, _ := pullCompressedChunkedTestManifest(t, []byte("darwin"), 3)
 	linuxManifest, _, _ := pullCompressedChunkedTestManifest(t, []byte("linux-child"), 5)
@@ -510,7 +574,31 @@ func TestWriteRemoteInspectText(t *testing.T) {
 		SelectedDigest:    "sha256:" + strings.Repeat("2", 64),
 		SelectedPlatform:  "darwin/arm64",
 		IndexManifests: []ImageRemoteIndexManifest{
-			{Digest: "sha256:" + strings.Repeat("1", 64), MediaType: ociimage.MediaTypeImageManifest, Size: 1024, Platform: "linux/arm64", Format: "cove", DiskSize: 4096, DiskFormat: "raw", CompressedDiskBytes: 128, ChunkCount: 1, BlobAudit: "ok", BlobDescriptors: 2, BlobBytes: 512},
+			{
+				Digest:              "sha256:" + strings.Repeat("1", 64),
+				MediaType:           ociimage.MediaTypeImageManifest,
+				Size:                1024,
+				Platform:            "linux/arm64",
+				Format:              "cove",
+				DiskSize:            4096,
+				DiskFormat:          "raw",
+				CompressedDiskBytes: 128,
+				ChunkCount:          1,
+				BaseManifest:        "sha256:" + strings.Repeat("3", 64),
+				BaseChainAudit:      "ok",
+				BaseChainDepth:      1,
+				BaseChain: []ImageRemoteBaseManifest{{
+					Digest:         "sha256:" + strings.Repeat("4", 64),
+					Status:         "ok",
+					Format:         "cove",
+					DiskFormat:     "raw",
+					MatchingChunks: 1,
+					MatchingBytes:  4096,
+				}},
+				BlobAudit:       "ok",
+				BlobDescriptors: 2,
+				BlobBytes:       512,
+			},
 			{Digest: "sha256:" + strings.Repeat("2", 64), MediaType: ociimage.MediaTypeImageManifest, Size: 2048, Platform: "darwin/arm64", Selected: true, Format: "tart", DiskSize: 8192, CompressedDiskBytes: 256, ChunkCount: 2, BlobAudit: "missing", BlobDescriptors: 3, MissingBlobs: []string{"layer[1]:sha256:missing"}},
 		},
 		Kind:                "vm-oci",
@@ -542,7 +630,7 @@ func TestWriteRemoteInspectText(t *testing.T) {
 	if err != nil {
 		t.Fatalf("writeRemoteInspectText: %v", err)
 	}
-	for _, want := range []string{"Remote image ghcr.io/me/dev-vm:v1", "format:          cove", "pull plan:       cove chunked pull", "verification:    manifest parsed", "index manifests: 2", "platform=darwin/arm64", "size=2.0 KB", "format=tart", "disk_size=8.0 KB", "transport=256 B", "blob_audit=ok", "blobs=2", "blob_bytes=512 B", "blob_audit=missing", "missing=1", "missing: layer[1]:sha256:missing", "blob audit:      missing", "missing:       layer[0]:sha256:missing", "disk format:     raw", "chunks:          2", "base audit:      ok", "disk_format=raw", "matching_chunks=2", "matching_bytes=8.0 KB"} {
+	for _, want := range []string{"Remote image ghcr.io/me/dev-vm:v1", "format:          cove", "pull plan:       cove chunked pull", "verification:    manifest parsed", "index manifests: 2", "platform=darwin/arm64", "size=2.0 KB", "format=tart", "disk_size=8.0 KB", "transport=256 B", "base_manifest=sha256:3333", "base_audit=ok", "base_depth=1", "base: sha256:4444", "matching_chunks=1", "matching_bytes=4.0 KB", "blob_audit=ok", "blobs=2", "blob_bytes=512 B", "blob_audit=missing", "missing=1", "missing: layer[1]:sha256:missing", "blob audit:      missing", "missing:       layer[0]:sha256:missing", "disk format:     raw", "chunks:          2", "base audit:      ok", "disk_format=raw", "matching_chunks=2", "matching_bytes=8.0 KB"} {
 		if !strings.Contains(b.String(), want) {
 			t.Fatalf("text missing %q:\n%s", want, b.String())
 		}

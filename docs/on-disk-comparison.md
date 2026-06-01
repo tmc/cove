@@ -59,7 +59,8 @@ delegates the disk/runtime work to `tart` or `vetu`.
    selectable child manifests, selected platform, explicit platform child
    selection, optional all-platform child-manifest classification, disk format
    for cove-native/image-store artifacts, pull plan, cove base-chain
-   disk-format/size/chunk compatibility, and
+   disk-format/size/chunk compatibility for selected and all-platform cove
+   child manifests, and
    verification posture; `-verify-blobs` HEAD-audits remote config/layer
    descriptors without downloading disks, including per-child audits when
    combined with `-all-platforms`, and multiple refs can be inspected as one
@@ -87,19 +88,21 @@ delegates the disk/runtime work to `tart` or `vetu`.
    OCI index/list child candidates and selection, can force
    `--platform os/arch[/variant]`, then HEAD-audit the registry blobs this host
    would need for cove-native, Tart, or Lume pulls without downloading them.
-   Remote inspect can apply the same HEAD-only blob audit to every child of a
-   mixed-platform index before choosing which disk to pull.
+   Remote inspect can apply the same base-chain compatibility and HEAD-only blob
+   audits to every child of a mixed-platform index before choosing which disk to
+   pull.
    Pull completion reports the actual reused chunk count, bytes, disk format,
    and base disk path when the base clone succeeds. Local
    images built from pulled VMs preserve the
    source registry manifest digest, image forks restore it to child
    `disk.provenance`, and store GC treats those image manifests as roots.
-   Remote inspect walks declared base-manifest chains by digest and reports
-   missing parents, raw/ASIF or size incompatibilities, reusable chunk counts,
-   and reusable bytes before disk download. Builds can also import and export
-   cove build-cache artifacts as OCI images, so cache entries and block-delta
-   blobs can move between runners through the same private registry path as
-   images.
+   Remote inspect walks declared base-manifest chains by digest for the selected
+   manifest and, with `-all-platforms`, for each cove-native index child,
+   reporting missing parents, raw/ASIF or size incompatibilities, reusable chunk
+   counts, and reusable bytes before disk download. Builds can also import and
+   export cove build-cache artifacts as OCI images, so cache entries and
+   block-delta blobs can move between runners through the same private registry
+   path as images.
 
 6. **Image-aware, drainable fleet placement.** cove is not orchard's controller,
    but its fleet CLI now understands image locality, operator drain intent, and
