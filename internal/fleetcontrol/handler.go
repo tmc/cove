@@ -3035,14 +3035,18 @@ func handleAssignments(w http.ResponseWriter, r *http.Request, store *Store) {
 
 func assignmentListFilterFromRequest(r *http.Request, namespace string) (AssignmentListFilter, error) {
 	filter := AssignmentListFilter{
-		Namespace: namespace,
-		Status:    strings.TrimSpace(r.URL.Query().Get("status")),
-		WorkerID:  strings.TrimSpace(r.URL.Query().Get("worker_id")),
-		LeasedTo:  strings.TrimSpace(r.URL.Query().Get("leased_to")),
-		Verb:      strings.TrimSpace(r.URL.Query().Get("verb")),
-		ImageRef:  strings.TrimSpace(r.URL.Query().Get("image_ref")),
-		SandboxID: strings.TrimSpace(r.URL.Query().Get("sandbox_id")),
-		WarmPool:  strings.TrimSpace(r.URL.Query().Get("warm_pool")),
+		Namespace:           namespace,
+		Status:              strings.TrimSpace(r.URL.Query().Get("status")),
+		WorkerID:            strings.TrimSpace(r.URL.Query().Get("worker_id")),
+		LeasedTo:            strings.TrimSpace(r.URL.Query().Get("leased_to")),
+		Verb:                strings.TrimSpace(r.URL.Query().Get("verb")),
+		ImageRef:            strings.TrimSpace(r.URL.Query().Get("image_ref")),
+		ImageManifestDigest: strings.TrimSpace(r.URL.Query().Get("image_manifest_digest")),
+		ImageDigestRef:      strings.TrimSpace(r.URL.Query().Get("image_digest_ref")),
+		ImagePlatform:       strings.TrimSpace(r.URL.Query().Get("image_platform")),
+		RequiredCapability:  strings.TrimSpace(r.URL.Query().Get("required_capability")),
+		SandboxID:           strings.TrimSpace(r.URL.Query().Get("sandbox_id")),
+		WarmPool:            strings.TrimSpace(r.URL.Query().Get("warm_pool")),
 	}
 	if filter.SandboxID == "" {
 		filter.SandboxID = strings.TrimSpace(r.URL.Query().Get("sandbox"))

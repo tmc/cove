@@ -3650,6 +3650,10 @@ func (s *Store) ListAssignmentsPage(filter AssignmentListFilter) AssignmentListR
 	filter.LeasedTo = strings.TrimSpace(filter.LeasedTo)
 	filter.Verb = strings.TrimSpace(filter.Verb)
 	filter.ImageRef = strings.TrimSpace(filter.ImageRef)
+	filter.ImageManifestDigest = strings.TrimSpace(filter.ImageManifestDigest)
+	filter.ImageDigestRef = strings.TrimSpace(filter.ImageDigestRef)
+	filter.ImagePlatform = strings.TrimSpace(filter.ImagePlatform)
+	filter.RequiredCapability = strings.TrimSpace(filter.RequiredCapability)
 	filter.SandboxID = strings.TrimSpace(filter.SandboxID)
 	filter.WarmPool = strings.TrimSpace(filter.WarmPool)
 	if filter.Offset < 0 {
@@ -3680,6 +3684,18 @@ func (s *Store) ListAssignmentsPage(filter AssignmentListFilter) AssignmentListR
 			continue
 		}
 		if filter.ImageRef != "" && assignment.ImageRef != filter.ImageRef {
+			continue
+		}
+		if filter.ImageManifestDigest != "" && assignment.ImageManifestDigest != filter.ImageManifestDigest {
+			continue
+		}
+		if filter.ImageDigestRef != "" && assignment.ImageDigestRef != filter.ImageDigestRef {
+			continue
+		}
+		if filter.ImagePlatform != "" && assignment.ImagePlatform != filter.ImagePlatform {
+			continue
+		}
+		if filter.RequiredCapability != "" && !containsString(assignment.RequiredCapabilities, filter.RequiredCapability) {
 			continue
 		}
 		if filter.SandboxID != "" && assignment.SandboxID != filter.SandboxID {

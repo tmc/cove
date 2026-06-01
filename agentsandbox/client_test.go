@@ -1344,19 +1344,23 @@ func TestCloudClientInventory(t *testing.T) {
 	}
 
 	assignments, err := ListAssignments(ctx, AssignmentListOptions{
-		FleetURL:  server.URL,
-		APIKey:    "secret",
-		Namespace: "team-a",
-		Status:    "running",
-		WorkerID:  "worker-1",
-		LeasedTo:  "worker-1",
-		Verb:      "cove",
-		ImageRef:  "base:v1",
-		SandboxID: "job-1",
-		WarmPool:  "runner",
-		Offset:    1,
-		Limit:     2,
-		Timeout:   time.Second,
+		FleetURL:            server.URL,
+		APIKey:              "secret",
+		Namespace:           "team-a",
+		Status:              "running",
+		WorkerID:            "worker-1",
+		LeasedTo:            "worker-1",
+		Verb:                "cove",
+		ImageRef:            "base:v1",
+		ImageManifestDigest: "sha256:base",
+		ImageDigestRef:      "ghcr.io/me/base@sha256:base",
+		ImagePlatform:       "darwin/arm64",
+		RequiredCapability:  "ram-overlay",
+		SandboxID:           "job-1",
+		WarmPool:            "runner",
+		Offset:              1,
+		Limit:               2,
+		Timeout:             time.Second,
 	})
 	if err != nil {
 		t.Fatalf("ListAssignments: %v", err)
@@ -1427,7 +1431,7 @@ func TestCloudClientInventory(t *testing.T) {
 	if !equalAnyStringSlice(createBody["args"], []string{"run", "-fork-from", "base:v1", "-ephemeral"}) {
 		t.Fatalf("create assignment args = %+v, want run args", createBody["args"])
 	}
-	if query := server.requests[3].query; query.Get("namespace") != "team-a" || query.Get("status") != "running" || query.Get("worker_id") != "worker-1" || query.Get("leased_to") != "worker-1" || query.Get("verb") != "cove" || query.Get("image_ref") != "base:v1" || query.Get("sandbox_id") != "job-1" || query.Get("warm_pool") != "runner" || query.Get("offset") != "1" || query.Get("limit") != "2" {
+	if query := server.requests[3].query; query.Get("namespace") != "team-a" || query.Get("status") != "running" || query.Get("worker_id") != "worker-1" || query.Get("leased_to") != "worker-1" || query.Get("verb") != "cove" || query.Get("image_ref") != "base:v1" || query.Get("image_manifest_digest") != "sha256:base" || query.Get("image_digest_ref") != "ghcr.io/me/base@sha256:base" || query.Get("image_platform") != "darwin/arm64" || query.Get("required_capability") != "ram-overlay" || query.Get("sandbox_id") != "job-1" || query.Get("warm_pool") != "runner" || query.Get("offset") != "1" || query.Get("limit") != "2" {
 		t.Fatalf("assignment query = %q", query.Encode())
 	}
 }

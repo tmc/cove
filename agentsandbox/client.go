@@ -1091,20 +1091,24 @@ type AssignmentCreateOptions struct {
 }
 
 type AssignmentListOptions struct {
-	FleetURL  string
-	APIKey    string
-	Namespace string
-	Status    string
-	WorkerID  string
-	LeasedTo  string
-	Verb      string
-	ImageRef  string
-	SandboxID string
-	WarmPool  string
-	Offset    int
-	Limit     int
-	Timeout   time.Duration
-	HTTP      *http.Client
+	FleetURL            string
+	APIKey              string
+	Namespace           string
+	Status              string
+	WorkerID            string
+	LeasedTo            string
+	Verb                string
+	ImageRef            string
+	ImageManifestDigest string
+	ImageDigestRef      string
+	ImagePlatform       string
+	RequiredCapability  string
+	SandboxID           string
+	WarmPool            string
+	Offset              int
+	Limit               int
+	Timeout             time.Duration
+	HTTP                *http.Client
 }
 
 type AssignmentGetOptions struct {
@@ -3104,14 +3108,18 @@ func ListAssignments(ctx context.Context, opts AssignmentListOptions) (Assignmen
 		return AssignmentListResult{}, err
 	}
 	query := map[string]string{
-		"namespace":  opts.Namespace,
-		"status":     opts.Status,
-		"worker_id":  opts.WorkerID,
-		"leased_to":  opts.LeasedTo,
-		"verb":       opts.Verb,
-		"image_ref":  opts.ImageRef,
-		"sandbox_id": opts.SandboxID,
-		"warm_pool":  opts.WarmPool,
+		"namespace":             opts.Namespace,
+		"status":                opts.Status,
+		"worker_id":             opts.WorkerID,
+		"leased_to":             opts.LeasedTo,
+		"verb":                  opts.Verb,
+		"image_ref":             opts.ImageRef,
+		"image_manifest_digest": opts.ImageManifestDigest,
+		"image_digest_ref":      opts.ImageDigestRef,
+		"image_platform":        opts.ImagePlatform,
+		"required_capability":   opts.RequiredCapability,
+		"sandbox_id":            opts.SandboxID,
+		"warm_pool":             opts.WarmPool,
 	}
 	if opts.Offset > 0 {
 		query["offset"] = strconv.Itoa(opts.Offset)

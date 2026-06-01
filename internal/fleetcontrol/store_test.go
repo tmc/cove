@@ -2993,10 +2993,16 @@ func TestStoreListAssignmentsPageFilters(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
 	store := NewMemoryStore(time.Minute)
 	store.now = func() time.Time { return now }
-	for _, id := range []string{"worker-1", "worker-2"} {
-		if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: id}); err != nil {
-			t.Fatal(err)
-		}
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{
+		ID:           "worker-2",
+		Capabilities: []string{"ram-overlay"},
+		ImageRefs:    []string{"base:v1"},
+		ImageDetails: []WorkerImage{{Ref: "base:v1", SourceManifestDigest: "sha256:base"}},
+	}); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := store.CreateAssignment(Assignment{ID: "a1", Namespace: "team-a", WorkerID: "worker-1", Verb: "noop"}); err != nil {
 		t.Fatal(err)
@@ -3007,7 +3013,17 @@ func TestStoreListAssignmentsPageFilters(t *testing.T) {
 	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: "a1", Status: "failed"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.CreateAssignment(Assignment{ID: "a2", Namespace: "team-a", WorkerID: "worker-2", Verb: "cove", ImageRef: "base:v1"}); err != nil {
+	if _, err := store.CreateAssignment(Assignment{
+		ID:                   "a2",
+		Namespace:            "team-a",
+		WorkerID:             "worker-2",
+		Verb:                 "cove",
+		ImageRef:             "base:v1",
+		ImageManifestDigest:  "sha256:base",
+		ImageDigestRef:       "registry.example/base@sha256:base",
+		ImagePlatform:        "darwin/arm64",
+		RequiredCapabilities: []string{"ram-overlay"},
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.CreateAssignment(Assignment{ID: "a3", Namespace: "team-a", WorkerID: "worker-1", Verb: "noop"}); err != nil {
@@ -3039,6 +3055,18 @@ func TestStoreListAssignmentsPageFilters(t *testing.T) {
 	}
 	if got := store.ListAssignmentsFiltered(AssignmentListFilter{Namespace: "team-a", WorkerID: "worker-2", Verb: "cove", ImageRef: "base:v1"}); len(got) != 1 || got[0].ID != "a2" {
 		t.Fatalf("worker/image assignments = %+v, want a2", got)
+	}
+	if got := store.ListAssignmentsFiltered(AssignmentListFilter{Namespace: "team-a", ImageManifestDigest: "sha256:base"}); len(got) != 1 || got[0].ID != "a2" {
+		t.Fatalf("manifest digest assignments = %+v, want a2", got)
+	}
+	if got := store.ListAssignmentsFiltered(AssignmentListFilter{Namespace: "team-a", ImageDigestRef: "registry.example/base@sha256:base"}); len(got) != 1 || got[0].ID != "a2" {
+		t.Fatalf("digest ref assignments = %+v, want a2", got)
+	}
+	if got := store.ListAssignmentsFiltered(AssignmentListFilter{Namespace: "team-a", ImagePlatform: "darwin/arm64"}); len(got) != 1 || got[0].ID != "a2" {
+		t.Fatalf("platform assignments = %+v, want a2", got)
+	}
+	if got := store.ListAssignmentsFiltered(AssignmentListFilter{Namespace: "team-a", RequiredCapability: "ram-overlay"}); len(got) != 1 || got[0].ID != "a2" {
+		t.Fatalf("capability assignments = %+v, want a2", got)
 	}
 	if got := store.ListAssignmentsFiltered(AssignmentListFilter{Namespace: "team-a", WarmPool: "runner"}); len(got) != 1 || got[0].ID != "warm-slot" {
 		t.Fatalf("warm pool assignments = %+v, want warm-slot", got)
@@ -5593,7 +5621,12 @@ func TestHandlerWorkerEvents(t *testing.T) {
 
 	var record HostRecord
 	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1"}, &record)
-	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-2"}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{
+		ID:           "worker-2",
+		Capabilities: []string{"ram-overlay"},
+		ImageRefs:    []string{"base:v1"},
+		ImageDetails: []WorkerImage{{Ref: "base:v1", SourceManifestDigest: "sha256:base"}},
+	}, &record)
 	var other Assignment
 	postJSON(t, server.URL+"/v1/assignments", Assignment{WorkerID: "worker-2", Verb: "noop"}, &other)
 	var created Assignment
@@ -5624,7 +5657,12 @@ func TestHandlerWorkerReports(t *testing.T) {
 
 	var record HostRecord
 	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1"}, &record)
-	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-2"}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{
+		ID:           "worker-2",
+		Capabilities: []string{"ram-overlay"},
+		ImageRefs:    []string{"base:v1"},
+		ImageDetails: []WorkerImage{{Ref: "base:v1", SourceManifestDigest: "sha256:base"}},
+	}, &record)
 	var other Assignment
 	postJSON(t, server.URL+"/v1/assignments", Assignment{ID: "assignment-2", WorkerID: "worker-2", Verb: "noop"}, &other)
 	var created Assignment
@@ -5830,7 +5868,12 @@ func TestHandlerAssignmentListFilters(t *testing.T) {
 
 	var record HostRecord
 	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1"}, &record)
-	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-2"}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{
+		ID:           "worker-2",
+		Capabilities: []string{"ram-overlay"},
+		ImageRefs:    []string{"base:v1"},
+		ImageDetails: []WorkerImage{{Ref: "base:v1", SourceManifestDigest: "sha256:base"}},
+	}, &record)
 	var created Assignment
 	postJSON(t, server.URL+"/v1/assignments", Assignment{ID: "a1", Namespace: "team-a", WorkerID: "worker-1", Verb: "noop"}, &created)
 	var leased Assignment
@@ -5839,7 +5882,17 @@ func TestHandlerAssignmentListFilters(t *testing.T) {
 		t.Fatalf("leased = %+v, want a1", leased)
 	}
 	postJSON(t, server.URL+"/v1/workers/worker-1/reports", WorkerReport{AssignmentID: "a1", Status: "failed"}, &record)
-	postJSON(t, server.URL+"/v1/assignments", Assignment{ID: "a2", Namespace: "team-a", WorkerID: "worker-2", Verb: "cove", ImageRef: "base:v1"}, &created)
+	postJSON(t, server.URL+"/v1/assignments", Assignment{
+		ID:                   "a2",
+		Namespace:            "team-a",
+		WorkerID:             "worker-2",
+		Verb:                 "cove",
+		ImageRef:             "base:v1",
+		ImageManifestDigest:  "sha256:base",
+		ImageDigestRef:       "registry.example/base@sha256:base",
+		ImagePlatform:        "darwin/arm64",
+		RequiredCapabilities: []string{"ram-overlay"},
+	}, &created)
 	postJSON(t, server.URL+"/v1/assignments", Assignment{ID: "b1", Namespace: "team-b", WorkerID: "worker-1", Verb: "noop"}, &created)
 
 	var list AssignmentListResult
@@ -5858,7 +5911,7 @@ func TestHandlerAssignmentListFilters(t *testing.T) {
 		t.Fatalf("failed worker assignments = %+v, want a1", list)
 	}
 	list = AssignmentListResult{}
-	getJSON(t, server.URL+"/v1/assignments?verb=cove&image_ref=base:v1", &list)
+	getJSON(t, server.URL+"/v1/assignments?verb=cove&image_ref=base:v1&image_manifest_digest=sha256:base&image_digest_ref=registry.example%2Fbase%40sha256:base&image_platform=darwin%2Farm64&required_capability=ram-overlay", &list)
 	if list.Count != 1 || len(list.Assignments) != 1 || list.Assignments[0].ID != "a2" {
 		t.Fatalf("cove image assignments = %+v, want a2", list)
 	}

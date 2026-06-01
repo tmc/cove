@@ -820,7 +820,8 @@ dashboard and timeline. Reconcile helpers include `PlanReconcile` and
 `Reconcile` for the same unscoped dry-run/apply repair path as
 `/v1/reconcile/plan` and `/v1/reconcile`. Assignment helpers include
 `CreateAssignment`, `ListAssignments`, and `GetAssignment`, with the same
-generic submission path, priority, queue deadline, filters, and pagination as the REST API. Worker
+generic submission path, priority, queue deadline, image-provenance filters,
+capability filters, and pagination as the REST API. Worker
 inventory helpers include `ListWorkers` and `GetWorker`. Assignment control
 helpers include `CancelAssignment` and `RetryAssignment` for audited
 force-cancel and retry/replan operations. Worker
@@ -954,12 +955,14 @@ if err != nil {
 log.Printf("sandbox metered records=%d", sandboxMetering.Summary.Records)
 
 assignments, err := agentsandbox.ListAssignments(ctx, agentsandbox.AssignmentListOptions{
-	FleetURL:  "https://fleet.internal.example",
-	APIKey:    os.Getenv("COVE_API_KEY"),
-	Namespace: "team-a",
-	Status:    "running",
-	WorkerID:  "mini-1",
-	Limit:     20,
+	FleetURL:            "https://fleet.internal.example",
+	APIKey:              os.Getenv("COVE_API_KEY"),
+	Namespace:           "team-a",
+	Status:              "running",
+	WorkerID:            "mini-1",
+	ImageManifestDigest: "sha256:...",
+	RequiredCapability:  "ram-overlay",
+	Limit:               20,
 })
 if err != nil {
 	log.Fatal(err)
@@ -1301,9 +1304,11 @@ automatically clears the lease and requeues the assignment as `pending`; when
 `retry_delay` is set, workers skip the assignment until `retry_at`.
 `GET /v1/assignments` returns a paginated `assignments` response with `count`,
 `offset`, `limit`, and `next_offset`. It accepts `status`, `worker_id`,
-`leased_to`, `verb`, `image_ref`, `sandbox_id` or `sandbox`, `warm_pool`,
-`offset`, and `limit`; scoped service-account tokens are still limited to their
-namespace, and unscoped callers can use the existing `namespace` query.
+`leased_to`, `verb`, `image_ref`, `image_manifest_digest`, `image_digest_ref`,
+`image_platform`, `required_capability`, `sandbox_id` or `sandbox`,
+`warm_pool`, `offset`, and `limit`; scoped service-account tokens are still
+limited to their namespace, and unscoped callers can use the existing
+`namespace` query.
 `GET /v1/assignments/{id}/events` returns the assignment-scoped slice of the
 hash-chained controller audit feed. It includes create, lease, report, cancel,
 retry, evacuation, and reassignment events carrying the same `assignment_id`;

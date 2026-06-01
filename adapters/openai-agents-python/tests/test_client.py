@@ -1110,6 +1110,10 @@ def test_fleet_client_inventory() -> None:
             leased_to="worker-1",
             verb="cove",
             image_ref="base:v1",
+            image_manifest_digest="sha256:base",
+            image_digest_ref="ghcr.io/me/base@sha256:base",
+            image_platform="darwin/arm64",
+            required_capability="ram-overlay",
             sandbox_id="job-1",
             warm_pool="runner",
             offset=1,
@@ -1155,6 +1159,11 @@ def test_fleet_client_inventory() -> None:
         assert create_body["retry_delay"] == "30s"
         assert create_body["args"] == ["run", "-fork-from", "base:v1", "-ephemeral"]
         assert server.requests[-2]["query"]["namespace"] == ["team-a"]
+        assert server.requests[-2]["query"]["image_ref"] == ["base:v1"]
+        assert server.requests[-2]["query"]["image_manifest_digest"] == ["sha256:base"]
+        assert server.requests[-2]["query"]["image_digest_ref"] == ["ghcr.io/me/base@sha256:base"]
+        assert server.requests[-2]["query"]["image_platform"] == ["darwin/arm64"]
+        assert server.requests[-2]["query"]["required_capability"] == ["ram-overlay"]
         assert server.requests[-2]["query"]["sandbox_id"] == ["job-1"]
         assert server.requests[-2]["query"]["warm_pool"] == ["runner"]
     finally:

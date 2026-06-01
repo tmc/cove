@@ -364,16 +364,20 @@ type AssignmentRetryResult struct {
 }
 
 type AssignmentListFilter struct {
-	Namespace string `json:"namespace,omitempty"`
-	Status    string `json:"status,omitempty"`
-	WorkerID  string `json:"worker_id,omitempty"`
-	LeasedTo  string `json:"leased_to,omitempty"`
-	Verb      string `json:"verb,omitempty"`
-	ImageRef  string `json:"image_ref,omitempty"`
-	SandboxID string `json:"sandbox_id,omitempty"`
-	WarmPool  string `json:"warm_pool,omitempty"`
-	Offset    int    `json:"offset,omitempty"`
-	Limit     int    `json:"limit,omitempty"`
+	Namespace           string `json:"namespace,omitempty"`
+	Status              string `json:"status,omitempty"`
+	WorkerID            string `json:"worker_id,omitempty"`
+	LeasedTo            string `json:"leased_to,omitempty"`
+	Verb                string `json:"verb,omitempty"`
+	ImageRef            string `json:"image_ref,omitempty"`
+	ImageManifestDigest string `json:"image_manifest_digest,omitempty"`
+	ImageDigestRef      string `json:"image_digest_ref,omitempty"`
+	ImagePlatform       string `json:"image_platform,omitempty"`
+	RequiredCapability  string `json:"required_capability,omitempty"`
+	SandboxID           string `json:"sandbox_id,omitempty"`
+	WarmPool            string `json:"warm_pool,omitempty"`
+	Offset              int    `json:"offset,omitempty"`
+	Limit               int    `json:"limit,omitempty"`
 }
 
 type AssignmentListResult struct {
