@@ -1169,7 +1169,38 @@ type AssignmentRetryResult struct {
 	Replanned        bool       `json:"replanned,omitempty"`
 }
 
+type SandboxStartResult struct {
+	Namespace  string     `json:"namespace,omitempty"`
+	ID         string     `json:"id"`
+	VMName     string     `json:"vm_name"`
+	Status     string     `json:"status,omitempty"`
+	Started    bool       `json:"started,omitempty"`
+	Assignment Assignment `json:"assignment"`
+}
+
+type SandboxRestartResult struct {
+	Namespace           string      `json:"namespace,omitempty"`
+	ID                  string      `json:"id"`
+	VMName              string      `json:"vm_name"`
+	Status              string      `json:"status,omitempty"`
+	Restarting          bool        `json:"restarting,omitempty"`
+	Assignment          Assignment  `json:"assignment"`
+	Cleanup             *Assignment `json:"cleanup,omitempty"`
+	CanceledAssignments []string    `json:"canceled_assignments,omitempty"`
+}
+
 type SandboxStopResult struct {
+	Namespace           string      `json:"namespace,omitempty"`
+	ID                  string      `json:"id"`
+	VMName              string      `json:"vm_name"`
+	Status              string      `json:"status,omitempty"`
+	Canceled            bool        `json:"canceled,omitempty"`
+	Assignment          Assignment  `json:"assignment"`
+	Cleanup             *Assignment `json:"cleanup,omitempty"`
+	CanceledAssignments []string    `json:"canceled_assignments,omitempty"`
+}
+
+type SandboxDeleteResult struct {
 	Namespace           string      `json:"namespace,omitempty"`
 	ID                  string      `json:"id"`
 	VMName              string      `json:"vm_name"`
@@ -3591,15 +3622,42 @@ func (c *Client) WaitReady(ctx context.Context, timeout time.Duration) error {
 }
 
 func (c *Client) Start(ctx context.Context) error {
-	return c.sandboxAction(ctx, "start")
+	_, err := c.StartResult(ctx)
+	return err
+}
+
+func (c *Client) StartResult(ctx context.Context) (SandboxStartResult, error) {
+	var result SandboxStartResult
+	if err := c.sandboxAction(ctx, "start", &result); err != nil {
+		return SandboxStartResult{}, err
+	}
+	return result, nil
 }
 
 func (c *Client) Stop(ctx context.Context) error {
-	return c.sandboxAction(ctx, "stop")
+	_, err := c.StopResult(ctx)
+	return err
+}
+
+func (c *Client) StopResult(ctx context.Context) (SandboxStopResult, error) {
+	var result SandboxStopResult
+	if err := c.sandboxAction(ctx, "stop", &result); err != nil {
+		return SandboxStopResult{}, err
+	}
+	return result, nil
 }
 
 func (c *Client) Restart(ctx context.Context) error {
-	return c.sandboxAction(ctx, "restart")
+	_, err := c.RestartResult(ctx)
+	return err
+}
+
+func (c *Client) RestartResult(ctx context.Context) (SandboxRestartResult, error) {
+	var result SandboxRestartResult
+	if err := c.sandboxAction(ctx, "restart", &result); err != nil {
+		return SandboxRestartResult{}, err
+	}
+	return result, nil
 }
 
 func (c *Client) Lease(ctx context.Context, holder string, ttl time.Duration) (LeaseResult, error) {
@@ -3743,16 +3801,31 @@ func (c *Client) Delete(ctx context.Context) error {
 		return err
 	}
 	if c.provider == ProviderCloud {
-		path := c.sandboxPath("")
-		if c.leaseHolder != "" {
-			path = c.queryPath(path, map[string]string{"holder": c.leaseHolder})
-		}
-		return c.request(ctx, http.MethodDelete, path, nil, nil, maxDuration(c.timeout, 2*time.Minute))
+		_, err := c.DeleteResult(ctx)
+		return err
 	}
 	if c.vm == "" {
 		return errors.New("agentsandbox: local delete requires vm name")
 	}
 	return runCommand(ctx, c.coveBin, "vm", "delete", c.vm)
+}
+
+func (c *Client) DeleteResult(ctx context.Context) (SandboxDeleteResult, error) {
+	if err := c.ready(); err != nil {
+		return SandboxDeleteResult{}, err
+	}
+	if c.provider != ProviderCloud {
+		return SandboxDeleteResult{}, errors.New("agentsandbox: delete result is only supported for cloud sandboxes")
+	}
+	path := c.sandboxPath("")
+	if c.leaseHolder != "" {
+		path = c.queryPath(path, map[string]string{"holder": c.leaseHolder})
+	}
+	var result SandboxDeleteResult
+	if err := c.request(ctx, http.MethodDelete, path, nil, &result, maxDuration(c.timeout, 2*time.Minute)); err != nil {
+		return SandboxDeleteResult{}, err
+	}
+	return result, nil
 }
 
 func (c *Client) Exec(ctx context.Context, req ExecRequest) (ExecResult, error) {
@@ -4081,19 +4154,18 @@ func (c *Client) Click(ctx context.Context, x, y float64) error {
 	return c.Mouse(ctx, MouseEvent{X: x, Y: y, Action: "click", Absolute: true})
 }
 
-func (c *Client) sandboxAction(ctx context.Context, action string) error {
+func (c *Client) sandboxAction(ctx context.Context, action string, out any) error {
 	if err := c.ready(); err != nil {
 		return err
 	}
 	if c.provider != ProviderCloud {
 		return fmt.Errorf("agentsandbox: %s is only supported for cloud sandboxes", action)
 	}
-	var status SandboxStatus
 	body := map[string]any{}
 	if c.leaseHolder != "" {
 		body["holder"] = c.leaseHolder
 	}
-	return c.request(ctx, http.MethodPost, c.sandboxPath(action), body, &status, c.timeout)
+	return c.request(ctx, http.MethodPost, c.sandboxPath(action), body, out, c.timeout)
 }
 
 type controlResult struct {

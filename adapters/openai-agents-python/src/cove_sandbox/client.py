@@ -2419,16 +2419,19 @@ class CoveFleetClient:
             self.vm = str(sandbox.get("vm_name") or self.vm or "")
         return data
 
-    def start(self, *, gui: bool = False, extra_args: Sequence[str] = ()) -> None:
+    def start(self, *, gui: bool = False, extra_args: Sequence[str] = ()) -> dict[str, Any]:
         del gui, extra_args
-        self._request("POST", self._sandbox_path("start"), self._lease_body(), timeout=self.timeout)
+        data = self._request("POST", self._sandbox_path("start"), self._lease_body(), timeout=self.timeout)
+        return _normalize_sandbox_lifecycle(data, "POST /v1/sandboxes/{id}/start")
 
-    def stop(self, *, force: bool = False) -> None:
+    def stop(self, *, force: bool = False) -> dict[str, Any]:
         del force
-        self._request("POST", self._sandbox_path("stop"), self._lease_body(), timeout=self.timeout)
+        data = self._request("POST", self._sandbox_path("stop"), self._lease_body(), timeout=self.timeout)
+        return _normalize_sandbox_lifecycle(data, "POST /v1/sandboxes/{id}/stop")
 
-    def restart(self) -> None:
-        self._request("POST", self._sandbox_path("restart"), self._lease_body(), timeout=self.timeout)
+    def restart(self) -> dict[str, Any]:
+        data = self._request("POST", self._sandbox_path("restart"), self._lease_body(), timeout=self.timeout)
+        return _normalize_sandbox_lifecycle(data, "POST /v1/sandboxes/{id}/restart")
 
     def lease(self, *, holder: str = "", ttl: float | None = None) -> dict[str, Any]:
         if ttl is not None and ttl < 0:
@@ -2666,12 +2669,13 @@ class CoveFleetClient:
             raise CoveError(str(response.get("error") or "control request failed"))
         return data
 
-    def delete_vm(self, vm: str | None = None) -> None:
+    def delete_vm(self, vm: str | None = None) -> dict[str, Any]:
         del vm
         path = self._sandbox_path()
         if self._lease_holder:
             path = _query_path(path, {"holder": self._lease_holder})
-        self._request("DELETE", path, timeout=max(self.timeout, 120))
+        data = self._request("DELETE", path, timeout=max(self.timeout, 120))
+        return _normalize_sandbox_lifecycle(data, "DELETE /v1/sandboxes/{id}")
 
     def _lease_body(self) -> dict[str, object]:
         if not self._lease_holder:
@@ -2973,6 +2977,22 @@ def _normalize_assignment_control(data: dict[str, Any], endpoint: str) -> dict[s
     if not isinstance(assignment, dict):
         raise CoveError(f"{endpoint}: expected assignment object")
     result["assignment"] = dict(assignment)
+    return result
+
+
+def _normalize_sandbox_lifecycle(data: dict[str, Any], endpoint: str) -> dict[str, Any]:
+    result = dict(data)
+    assignment = result.get("assignment")
+    if assignment is not None:
+        if not isinstance(assignment, dict):
+            raise CoveError(f"{endpoint}: expected assignment object")
+        result["assignment"] = dict(assignment)
+    cleanup = result.get("cleanup")
+    if cleanup is not None:
+        if not isinstance(cleanup, dict):
+            raise CoveError(f"{endpoint}: expected cleanup object")
+        result["cleanup"] = dict(cleanup)
+    _normalize_string_list(result, "canceled_assignments", endpoint)
     return result
 
 

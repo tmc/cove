@@ -75,8 +75,12 @@ func TestCloudClientCreateExecControlDelete(t *testing.T) {
 	if err := client.WaitReady(ctx, time.Second); err != nil {
 		t.Fatalf("WaitReady: %v", err)
 	}
-	if err := client.Restart(ctx); err != nil {
+	restart, err := client.RestartResult(ctx)
+	if err != nil {
 		t.Fatalf("Restart: %v", err)
+	}
+	if restart.Status != "restarting" || !equalStringSlices(restart.CanceledAssignments, []string{"exec-1"}) {
+		t.Fatalf("RestartResult = %+v, want restarting with canceled exec-1", restart)
 	}
 	result, err := client.Exec(ctx, ExecRequest{
 		Command: []string{"/bin/echo", "ok"},
@@ -119,8 +123,12 @@ func TestCloudClientCreateExecControlDelete(t *testing.T) {
 	if allMetering.Summary.SandboxID != "job-1" {
 		t.Fatalf("ListMetering = %+v, want job-1 summary", allMetering)
 	}
-	if err := client.Delete(ctx); err != nil {
+	deleted, err := client.DeleteResult(ctx)
+	if err != nil {
 		t.Fatalf("Delete: %v", err)
+	}
+	if deleted.Status != "draining" || !equalStringSlices(deleted.CanceledAssignments, []string{"exec-1", "control-1"}) {
+		t.Fatalf("DeleteResult = %+v, want draining with canceled sandbox work", deleted)
 	}
 
 	paths := make([]string, 0, len(server.requests))
@@ -219,6 +227,40 @@ func TestCloudClientCreateExecControlDelete(t *testing.T) {
 	}
 	if control[4].body["mouse"].(map[string]any)["absolute"] != true {
 		t.Fatalf("mouse control = %+v", control[4].body)
+	}
+}
+
+func TestCloudClientLifecycleResultHelpers(t *testing.T) {
+	server := newSDKFleetServer(t)
+	ctx := context.Background()
+	client, err := NewClient(ClientOptions{
+		Provider:  ProviderCloud,
+		FleetURL:  server.URL,
+		SandboxID: "job-1",
+		Timeout:   time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	started, err := client.StartResult(ctx)
+	if err != nil {
+		t.Fatalf("StartResult: %v", err)
+	}
+	if !started.Started || started.Status != "pending" || started.ID != "job-1" {
+		t.Fatalf("StartResult = %+v, want pending started job-1", started)
+	}
+	stopped, err := client.StopResult(ctx)
+	if err != nil {
+		t.Fatalf("StopResult: %v", err)
+	}
+	if stopped.Status != "draining" || stopped.Cleanup == nil || !equalStringSlices(stopped.CanceledAssignments, []string{"exec-1", "control-1"}) {
+		t.Fatalf("StopResult = %+v, want draining cleanup with canceled work", stopped)
+	}
+	if err := client.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := client.Stop(ctx); err != nil {
+		t.Fatalf("Stop: %v", err)
 	}
 }
 
@@ -2301,8 +2343,38 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 			writeSDKJSON(t, w, LeaseResult{Sandbox: SandboxStatus{Namespace: "team-a", ID: "job-1", VMName: "cove-sandbox-job-1", Status: "ready"}})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/sandboxes/job-1":
 			writeSDKJSON(t, w, SandboxStatus{Namespace: "team-a", ID: "job-1", VMName: "cove-sandbox-job-1", RequiredCapabilities: []string{"ram-overlay"}, Status: "ready"})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes/job-1/start":
+			writeSDKJSON(t, w, SandboxStartResult{
+				Namespace:  "team-a",
+				ID:         "job-1",
+				VMName:     "cove-sandbox-job-1",
+				Status:     "pending",
+				Started:    true,
+				Assignment: sdkInventoryAssignment(),
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes/job-1/stop":
+			cleanup := sdkMaintenanceAssignment("cleanup-1", "ctl", "-vm", "cove-sandbox-job-1", "stop")
+			writeSDKJSON(t, w, SandboxStopResult{
+				Namespace:           "team-a",
+				ID:                  "job-1",
+				VMName:              "cove-sandbox-job-1",
+				Status:              "draining",
+				Assignment:          sdkInventoryAssignment(),
+				Cleanup:             &cleanup,
+				CanceledAssignments: []string{"exec-1", "control-1"},
+			})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes/job-1/restart":
-			writeSDKJSON(t, w, SandboxStatus{Namespace: "team-a", ID: "job-1", VMName: "cove-sandbox-job-1", Status: "restarting"})
+			cleanup := sdkMaintenanceAssignment("cleanup-1", "ctl", "-vm", "cove-sandbox-job-1", "stop")
+			writeSDKJSON(t, w, SandboxRestartResult{
+				Namespace:           "team-a",
+				ID:                  "job-1",
+				VMName:              "cove-sandbox-job-1",
+				Status:              "restarting",
+				Restarting:          true,
+				Assignment:          sdkInventoryAssignment(),
+				Cleanup:             &cleanup,
+				CanceledAssignments: []string{"exec-1"},
+			})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes/job-1/exec":
 			command, _ := req.body["command"].([]any)
 			if len(command) > 0 && command[0] == "/bin/echo" {
@@ -2353,7 +2425,16 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/metering/sandboxes":
 			writeSDKJSON(t, w, sdkMetering("job-1"))
 		case r.Method == http.MethodDelete && r.URL.Path == "/v1/sandboxes/job-1":
-			writeSDKJSON(t, w, SandboxStatus{Namespace: "team-a", ID: "job-1", Status: "draining"})
+			cleanup := sdkMaintenanceAssignment("cleanup-1", "ctl", "-vm", "cove-sandbox-job-1", "stop")
+			writeSDKJSON(t, w, SandboxDeleteResult{
+				Namespace:           "team-a",
+				ID:                  "job-1",
+				VMName:              "cove-sandbox-job-1",
+				Status:              "draining",
+				Assignment:          sdkInventoryAssignment(),
+				Cleanup:             &cleanup,
+				CanceledAssignments: []string{"exec-1", "control-1"},
+			})
 		default:
 			http.NotFound(w, r)
 		}

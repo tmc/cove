@@ -180,7 +180,9 @@ def test_fleet_client_create_wait_exec_and_delete() -> None:
         released = client.release_lease(holder="runner-42")
         assert released["sandbox"]["lease"] is None
         client.wait_ready(timeout=1)
-        client.restart()
+        restart = client.restart()
+        assert restart["status"] == "restarting"
+        assert restart["canceled_assignments"] == ["exec-1"]
         result = client.exec(["/bin/echo", "ok"], env={"A": "1"}, timeout=2.5)
         assert result.exit_code == 7
         assert result.stdout == "out"
@@ -189,7 +191,9 @@ def test_fleet_client_create_wait_exec_and_delete() -> None:
         assert metering["summary"]["records"] == 1
         all_metering = client.list_metering(sandbox_id="job-1")
         assert all_metering["summary"]["sandbox_id"] == "job-1"
-        client.delete_vm()
+        deleted = client.delete_vm()
+        assert deleted["status"] == "draining"
+        assert deleted["canceled_assignments"] == ["exec-1", "control-1"]
 
         paths = [req["path"] for req in server.requests]
         assert paths == [
@@ -234,6 +238,22 @@ def test_fleet_client_create_wait_exec_and_delete() -> None:
         assert exec_req["body"]["timeout"] == "2.5s"
         assert server.requests[11]["query"]["namespace"] == ["team-a"]
         assert server.requests[11]["query"]["sandbox_id"] == ["job-1"]
+    finally:
+        server.stop()
+
+
+def test_fleet_client_lifecycle_results() -> None:
+    server = _FleetHTTPServer()
+    server.start()
+    try:
+        client = CoveFleetClient(sandbox_id="job-1", fleet_url=server.url, api_key="secret", timeout=1)
+        started = client.start()
+        assert started["started"] is True
+        assert started["status"] == "pending"
+        stopped = client.stop()
+        assert stopped["status"] == "draining"
+        assert stopped["cleanup"]["id"] == "cleanup-1"
+        assert stopped["canceled_assignments"] == ["exec-1", "control-1"]
     finally:
         server.stop()
 
@@ -2784,8 +2804,41 @@ class _FleetHTTPServer:
                         }
                     )
                     return
+                if path == "/v1/sandboxes/job-1/start":
+                    self._write(
+                        {
+                            "id": "job-1",
+                            "vm_name": "cove-sandbox-job-1",
+                            "status": "pending",
+                            "started": True,
+                            "assignment": _inventory_assignment(),
+                        }
+                    )
+                    return
+                if path == "/v1/sandboxes/job-1/stop":
+                    self._write(
+                        {
+                            "id": "job-1",
+                            "vm_name": "cove-sandbox-job-1",
+                            "status": "draining",
+                            "assignment": _inventory_assignment(),
+                            "cleanup": {"id": "cleanup-1", "verb": "cove", "args": ["ctl", "stop"], "status": "pending"},
+                            "canceled_assignments": ["exec-1", "control-1"],
+                        }
+                    )
+                    return
                 if path == "/v1/sandboxes/job-1/restart":
-                    self._write({"id": "job-1", "vm_name": "cove-sandbox-job-1", "status": "restarting"})
+                    self._write(
+                        {
+                            "id": "job-1",
+                            "vm_name": "cove-sandbox-job-1",
+                            "status": "restarting",
+                            "restarting": True,
+                            "assignment": _inventory_assignment(),
+                            "cleanup": {"id": "cleanup-1", "verb": "cove", "args": ["ctl", "stop"], "status": "pending"},
+                            "canceled_assignments": ["exec-1"],
+                        }
+                    )
                     return
                 if path == "/v1/sandboxes/job-1/exec":
                     self._write({"done": True, "exit_code": 7, "stdout": "out", "stderr": "err"})
@@ -2819,7 +2872,16 @@ class _FleetHTTPServer:
                     self._write({"sandbox": {"id": "job-1", "vm_name": "cove-sandbox-job-1", "status": "ready", "lease": None}})
                     return
                 if path == "/v1/sandboxes/job-1":
-                    self._write({"id": "job-1", "status": "draining"})
+                    self._write(
+                        {
+                            "id": "job-1",
+                            "vm_name": "cove-sandbox-job-1",
+                            "status": "draining",
+                            "assignment": _inventory_assignment(),
+                            "cleanup": {"id": "cleanup-1", "verb": "cove", "args": ["ctl", "stop"], "status": "pending"},
+                            "canceled_assignments": ["exec-1", "control-1"],
+                        }
+                    )
                     return
                 if path == "/v1/warm-pools/runner":
                     self._write(
