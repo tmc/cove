@@ -111,6 +111,7 @@ type ReconcileResult struct {
 	StaleWorkers        []string `json:"stale_workers,omitempty"`
 	RequeuedAssignments []string `json:"requeued_assignments,omitempty"`
 	ReplacedAssignments []string `json:"replaced_assignments,omitempty"`
+	ExpiredAssignments  []string `json:"expired_assignments,omitempty"`
 	WarmPoolAssignments []string `json:"warm_pool_assignments,omitempty"`
 	WarmPoolCanceled    []string `json:"warm_pool_canceled,omitempty"`
 	WarmPoolCleanup     []string `json:"warm_pool_cleanup,omitempty"`
@@ -829,6 +830,8 @@ type SandboxRequest struct {
 	Args                 []string          `json:"args,omitempty"`
 	MaxActiveSandboxes   int               `json:"max_active_sandboxes,omitempty"`
 	Priority             int               `json:"priority,omitempty"`
+	QueueTTL             string            `json:"queue_ttl,omitempty"`
+	QueueExpires         time.Time         `json:"queue_expires,omitempty"`
 }
 
 type SandboxStatus struct {
@@ -1145,6 +1148,8 @@ type Assignment struct {
 	AntiAffinityKey      string            `json:"anti_affinity_key,omitempty"`
 	Resources            Capacity          `json:"resources,omitempty"`
 	Priority             int               `json:"priority,omitempty"`
+	QueueTTL             string            `json:"queue_ttl,omitempty"`
+	QueueExpires         time.Time         `json:"queue_expires,omitempty"`
 	Verb                 string            `json:"verb"`
 	Args                 []string          `json:"args,omitempty"`
 	Status               string            `json:"status,omitempty"`

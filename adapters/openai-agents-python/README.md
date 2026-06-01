@@ -155,6 +155,7 @@ run_config = RunConfig(
             required_capabilities=("ram-overlay",),
             max_active_sandboxes=20,
             priority=10,
+            queue_ttl="2m",
             name="eval-001",
             delete_on_close=True,
         ),
@@ -178,8 +179,10 @@ provenance. Pass `required_labels` for operator-defined selectors and
 runtime traits such as `ram-overlay`, and pass `max_active_sandboxes` to reject
 new hosted sandboxes once the namespace is already at its concurrency cap. Pass
 `priority` when urgent hosted sandboxes should lease ahead of older
-lower-priority pending work on the selected worker. The direct fleet client can
-also queue image preparation before placement or warm-pool replenishment, push image
+lower-priority pending work on the selected worker, and pass `queue_ttl` when
+queued work should expire before lease instead of occupying namespace caps
+indefinitely. The direct fleet client can also queue image preparation before
+placement or warm-pool replenishment, push image
 GC/lifecycle/storage maintenance work, read retained placement-plan history and
 the retained controller-run timeline, plan or apply controller reconciliation,
 inspect or verify the hash-chained audit feed, manage scoped service-account
@@ -286,7 +289,11 @@ reconciled = CoveFleetClient.reconcile(
     fleet_url="https://fleet.internal.example",
     api_key="cove_...",
 )
-print(len(reconcile_plan["requeued_assignments"]), len(reconciled["warm_pool_cleanup"]))
+print(
+    len(reconcile_plan["requeued_assignments"]),
+    len(reconcile_plan["expired_assignments"]),
+    len(reconciled["warm_pool_cleanup"]),
+)
 audit = CoveFleetClient.list_audit_events(
     fleet_url="https://fleet.internal.example",
     api_key="cove_...",
@@ -357,6 +364,7 @@ created = CoveFleetClient.create_assignment(
     required_capabilities=("ram-overlay",),
     resources={"vms": 1},
     priority=10,
+    queue_ttl="2m",
     verb="cove",
     args=("run", "-fork-from", "macos-base:latest", "-ephemeral"),
 )
@@ -432,6 +440,7 @@ client = CoveFleetClient.create_sandbox(
     required_capabilities=("ram-overlay",),
     max_active_sandboxes=20,
     priority=10,
+    queue_ttl="2m",
     sandbox_id="eval-001",
 )
 ready = client.list_page(status="ready", image_ref="macos-base:latest", offset=0, limit=10)

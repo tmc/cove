@@ -213,6 +213,10 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		assignment.AntiAffinityKey = strings.TrimSpace(assignment.AntiAffinityKey)
 		assignment.RequiredLabels = cloneLabels(assignment.RequiredLabels)
 		assignment.RequiredCapabilities = sortedUniqueStrings(assignment.RequiredCapabilities)
+		assignment.QueueTTL = ""
+		if !assignment.QueueExpires.IsZero() {
+			assignment.QueueExpires = assignment.QueueExpires.UTC()
+		}
 		if assignment.Status == "" {
 			assignment.Status = "pending"
 		}
@@ -391,6 +395,7 @@ func (s *Store) ReconcileActor(actor string) (ReconcileResult, error) {
 			"stale_workers":        strconv.Itoa(len(result.StaleWorkers)),
 			"requeued_assignments": strconv.Itoa(len(result.RequeuedAssignments)),
 			"replaced_assignments": strconv.Itoa(len(result.ReplacedAssignments)),
+			"expired_assignments":  strconv.Itoa(len(result.ExpiredAssignments)),
 			"warm_pool_created":    strconv.Itoa(len(result.WarmPoolAssignments)),
 			"warm_pool_canceled":   strconv.Itoa(len(result.WarmPoolCanceled)),
 			"warm_pool_cleanup":    strconv.Itoa(len(result.WarmPoolCleanup)),
@@ -1042,6 +1047,10 @@ func (s *Store) CreateAssignmentActor(actor string, a Assignment) (Assignment, e
 		return Assignment{}, err
 	}
 	now := s.now().UTC()
+	queueExpires, err := normalizeAssignmentQueueDeadline(now, a.QueueTTL, a.QueueExpires, "assignment")
+	if err != nil {
+		return Assignment{}, err
+	}
 	actor = normalizeActor(actor)
 
 	s.mu.Lock()
@@ -1089,6 +1098,8 @@ func (s *Store) CreateAssignmentActor(actor string, a Assignment) (Assignment, e
 	a.Resources = resources
 	a.Verb = verb
 	a.Args = cloneStrings(a.Args)
+	a.QueueTTL = ""
+	a.QueueExpires = queueExpires
 	a.Status = "pending"
 	a.Created = now
 	a.Updated = now
@@ -1103,6 +1114,9 @@ func (s *Store) CreateAssignmentActor(actor string, a Assignment) (Assignment, e
 	}
 	if a.Priority > 0 {
 		fields["priority"] = strconv.Itoa(a.Priority)
+	}
+	if !a.QueueExpires.IsZero() {
+		fields["queue_expires"] = a.QueueExpires.Format(time.RFC3339Nano)
 	}
 	s.appendAuditLocked(now, AuditEvent{
 		Actor:        actor,
@@ -1258,6 +1272,8 @@ func (s *Store) RetryAssignmentActor(actor, id string, req AssignmentRetryReques
 	assignment.Status = "pending"
 	assignment.LeasedTo = ""
 	assignment.LeaseExpires = time.Time{}
+	assignment.QueueTTL = ""
+	assignment.QueueExpires = time.Time{}
 	assignment.LastReport = nil
 	assignment.Updated = now
 	s.assignments[id] = assignment
@@ -1624,6 +1640,10 @@ func (s *Store) CreateSandboxActor(actor string, req SandboxRequest) (SandboxSta
 		policy = PolicyImageAffinity
 	}
 	now := s.now().UTC()
+	queueExpires, err := normalizeAssignmentQueueDeadline(now, req.QueueTTL, req.QueueExpires, "sandbox")
+	if err != nil {
+		return SandboxStatus{}, err
+	}
 	actor = normalizeActor(actor)
 
 	s.mu.Lock()
@@ -1672,6 +1692,7 @@ func (s *Store) CreateSandboxActor(actor string, req SandboxRequest) (SandboxSta
 		AntiAffinityKey:      antiAffinityKey,
 		Resources:            normalizeResources(resources),
 		Priority:             req.Priority,
+		QueueExpires:         queueExpires,
 		Verb:                 "cove",
 		Args:                 sandboxRunArgs(imageRef, vmName, args),
 		Status:               "pending",
@@ -1679,6 +1700,17 @@ func (s *Store) CreateSandboxActor(actor string, req SandboxRequest) (SandboxSta
 		Updated:              now,
 	}
 	s.assignments[id] = assignment
+	fields := map[string]string{
+		"image_ref": imageRef,
+		"vm_name":   vmName,
+		"policy":    policy,
+	}
+	if req.Priority > 0 {
+		fields["priority"] = strconv.Itoa(req.Priority)
+	}
+	if !queueExpires.IsZero() {
+		fields["queue_expires"] = queueExpires.Format(time.RFC3339Nano)
+	}
 	s.appendAuditLocked(now, AuditEvent{
 		Actor:        actor,
 		Namespace:    assignment.Namespace,
@@ -1687,11 +1719,7 @@ func (s *Store) CreateSandboxActor(actor string, req SandboxRequest) (SandboxSta
 		TargetID:     id,
 		WorkerID:     workerID,
 		AssignmentID: id,
-		Fields: map[string]string{
-			"image_ref": imageRef,
-			"vm_name":   vmName,
-			"policy":    policy,
-		},
+		Fields:       fields,
 	})
 	if err := s.persistLocked(); err != nil {
 		return SandboxStatus{}, err
@@ -3396,6 +3424,8 @@ func (s *Store) AwaitAssignment(id string) (*Assignment, error) {
 		assignment.Status = "leased"
 		assignment.LeasedTo = id
 		assignment.LeaseExpires = now.Add(s.assignmentTTL)
+		assignment.QueueTTL = ""
+		assignment.QueueExpires = time.Time{}
 		assignment.Updated = now
 		s.assignments[assignment.ID] = assignment
 		s.appendAuditLocked(now, AuditEvent{
@@ -4167,6 +4197,15 @@ func (s *Store) reconcileLocked(now time.Time) ReconcileResult {
 	}
 
 	for _, assignment := range s.sortedAssignmentsLocked() {
+		if assignment.Status == "pending" && assignment.LeasedTo == "" && !assignment.QueueExpires.IsZero() && now.After(assignment.QueueExpires) {
+			assignment.Status = "expired"
+			assignment.Updated = now
+			assignment.LeaseExpires = time.Time{}
+			assignment.LastReport = nil
+			s.assignments[assignment.ID] = assignment
+			result.ExpiredAssignments = append(result.ExpiredAssignments, assignment.ID)
+			continue
+		}
 		if !reconcileAssignmentStatus(assignment.Status) {
 			continue
 		}
@@ -4222,6 +4261,7 @@ func (s *Store) reconcileLocked(now time.Time) ReconcileResult {
 	sort.Strings(result.StaleWorkers)
 	sort.Strings(result.RequeuedAssignments)
 	sort.Strings(result.ReplacedAssignments)
+	sort.Strings(result.ExpiredAssignments)
 	sort.Strings(result.WarmPoolAssignments)
 	sort.Strings(result.WarmPoolCanceled)
 	sort.Strings(result.WarmPoolCleanup)
@@ -4260,7 +4300,7 @@ func workerStatus(now time.Time, record HostRecord) string {
 }
 
 func (r ReconcileResult) changed() bool {
-	return len(r.StaleWorkers) > 0 || len(r.RequeuedAssignments) > 0 || len(r.ReplacedAssignments) > 0 || len(r.WarmPoolAssignments) > 0 || len(r.WarmPoolCanceled) > 0 || len(r.WarmPoolCleanup) > 0
+	return len(r.StaleWorkers) > 0 || len(r.RequeuedAssignments) > 0 || len(r.ReplacedAssignments) > 0 || len(r.ExpiredAssignments) > 0 || len(r.WarmPoolAssignments) > 0 || len(r.WarmPoolCanceled) > 0 || len(r.WarmPoolCleanup) > 0
 }
 
 func activeAssignmentStatus(status string) bool {
@@ -6190,6 +6230,28 @@ func sandboxLeaseRequest(req SandboxLeaseRequest, actor string, now time.Time) (
 		ttl = parsed
 	}
 	return holder, now.Add(ttl), nil
+}
+
+func normalizeAssignmentQueueDeadline(now time.Time, rawTTL string, expires time.Time, name string) (time.Time, error) {
+	rawTTL = strings.TrimSpace(rawTTL)
+	if rawTTL != "" && !expires.IsZero() {
+		return time.Time{}, fmt.Errorf("%s queue_ttl and queue_expires are mutually exclusive", name)
+	}
+	if rawTTL != "" {
+		ttl, err := time.ParseDuration(rawTTL)
+		if err != nil || ttl <= 0 {
+			return time.Time{}, fmt.Errorf("%s queue_ttl must be a positive duration", name)
+		}
+		return now.Add(ttl).UTC(), nil
+	}
+	if expires.IsZero() {
+		return time.Time{}, nil
+	}
+	expires = expires.UTC()
+	if !expires.After(now) {
+		return time.Time{}, fmt.Errorf("%s queue_expires must be in the future", name)
+	}
+	return expires, nil
 }
 
 func sandboxMutationHolder(reqs []SandboxMutationRequest) string {

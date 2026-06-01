@@ -8,7 +8,8 @@ inventory, assignment leases, and the worker-facing protocol surface. `coved`
 can now dial out as a worker and execute leased `cove` assignments;
 controller-side placement can choose a ready worker by least-loaded,
 image-affinity, or bin-pack policy, including required worker capabilities, and
-the controller reconciles stale workers and expired assignment leases. Operators
+the controller reconciles stale workers, expired assignment leases, and missed
+queue deadlines. Operators
 can cordon, quarantine, evacuate, or drain workers for maintenance and incident
 response without dropping their heartbeat history, and can ask the controller
 for an operations summary across workers, assignments, sandboxes, warm pools,
@@ -113,8 +114,8 @@ curl -X POST http://127.0.0.1:9758/v1/reconcile
 ```
 
 `GET /v1/reconcile/plan` is the operator dry-run for the next reconcile pass.
-It returns the same stale-worker, requeued assignment, replacement,
-warm-pool-created, warm-pool-canceled, and warm-pool-cleanup fields as
+It returns the same stale-worker, requeued assignment, replacement, expired
+assignment, warm-pool-created, warm-pool-canceled, and warm-pool-cleanup fields as
 `POST /v1/reconcile`, but computes them against a cloned controller snapshot,
 so it does not persist changes or write audit events. Planned generated
 assignment IDs reflect the snapshot time and can change if state changes before
@@ -235,7 +236,7 @@ curl http://127.0.0.1:9758/v1/service-accounts
 curl -H 'authorization: Bearer local-secret' \
   -X POST http://127.0.0.1:9758/v1/assignments \
   -H 'content-type: application/json' \
-  -d '{"id":"probe-1","worker_id":"mini-1","priority":10,"verb":"noop"}'
+  -d '{"id":"probe-1","worker_id":"mini-1","priority":10,"queue_ttl":"2m","verb":"noop"}'
 curl -H 'authorization: Bearer local-secret' \
   http://127.0.0.1:9758/v1/assignments
 curl http://127.0.0.1:9758/v1/assignments?namespace=team-a
@@ -624,7 +625,7 @@ Sandbox endpoint:
 ```bash
 curl -X POST http://127.0.0.1:9758/v1/sandboxes \
   -H 'content-type: application/json' \
-  -d '{"id":"job-1","image_ref":"macos-runner:14.5","manifest_bundle":"manifests","image_platform":"darwin/arm64","required_labels":{"zone":"desk"},"required_capabilities":["ram-overlay"],"max_active_sandboxes":20,"priority":10,"args":["--net","nat"]}'
+  -d '{"id":"job-1","image_ref":"macos-runner:14.5","manifest_bundle":"manifests","image_platform":"darwin/arm64","required_labels":{"zone":"desk"},"required_capabilities":["ram-overlay"],"max_active_sandboxes":20,"priority":10,"queue_ttl":"2m","args":["--net","nat"]}'
 curl http://127.0.0.1:9758/v1/sandboxes
 curl 'http://127.0.0.1:9758/v1/sandboxes?status=ready&image_ref=macos-runner:14.5&offset=0&limit=20'
 curl http://127.0.0.1:9758/v1/sandboxes/job-1
@@ -666,7 +667,7 @@ without a separate scheduler. Extra `args` are appended to `cove run`, but
 fork/source/lifetime/headless flags are reserved by the controller.
 Create requests accept optional `manifest_bundle`, `image_manifest_digest`,
 `image_digest_ref`, `image_platform`, `required_capabilities`,
-`max_active_sandboxes`, and `priority` fields. The returned sandbox status and backing
+`max_active_sandboxes`, `priority`, `queue_ttl`, and `queue_expires` fields. The returned sandbox status and backing
 assignment keep the resolved digest and capability fields, exact-digest
 requests are admitted only onto workers that report the matching image
 provenance, and capability-constrained requests are admitted only onto workers
@@ -675,7 +676,10 @@ than zero, the controller reconciles current state and rejects the create
 before placement if the request namespace already has that many non-terminal
 sandbox run handles. `priority` is copied to the backing run assignment, so
 urgent hosted sandboxes lease before older lower-priority pending work on the
-selected worker.
+selected worker. `queue_ttl` is a positive Go duration such as `2m`, while
+`queue_expires` is an absolute timestamp; they are mutually exclusive. Pending
+hosted sandbox work that misses its queue deadline is reconciled to `expired`
+before worker lease and stops counting against namespace admission caps.
 
 `GET /v1/sandboxes` accepts `namespace`, `status`, `worker_id`, `image_ref`,
 `offset`, and `limit` query parameters. Namespace-scoped bearer tokens still
@@ -792,7 +796,7 @@ dashboard and timeline. Reconcile helpers include `PlanReconcile` and
 `Reconcile` for the same unscoped dry-run/apply repair path as
 `/v1/reconcile/plan` and `/v1/reconcile`. Assignment helpers include
 `CreateAssignment`, `ListAssignments`, and `GetAssignment`, with the same
-generic submission path, priority, filters, and pagination as the REST API. Worker
+generic submission path, priority, queue deadline, filters, and pagination as the REST API. Worker
 inventory helpers include `ListWorkers` and `GetWorker`. Assignment control
 helpers include `CancelAssignment` and `RetryAssignment` for audited
 force-cancel and retry/replan operations. Worker
@@ -867,7 +871,7 @@ reconcilePlan, err := agentsandbox.PlanReconcile(ctx, agentsandbox.ReconcileOpti
 if err != nil {
 	log.Fatal(err)
 }
-log.Printf("reconcile stale=%d requeue=%d", len(reconcilePlan.StaleWorkers), len(reconcilePlan.RequeuedAssignments))
+log.Printf("reconcile stale=%d requeue=%d expired=%d", len(reconcilePlan.StaleWorkers), len(reconcilePlan.RequeuedAssignments), len(reconcilePlan.ExpiredAssignments))
 
 reconciled, err := agentsandbox.Reconcile(ctx, agentsandbox.ReconcileOptions{
 	FleetURL: "https://fleet.internal.example",
@@ -876,7 +880,7 @@ reconciled, err := agentsandbox.Reconcile(ctx, agentsandbox.ReconcileOptions{
 if err != nil {
 	log.Fatal(err)
 }
-log.Printf("reconciled requeue=%d warm-cleanup=%d", len(reconciled.RequeuedAssignments), len(reconciled.WarmPoolCleanup))
+log.Printf("reconciled requeue=%d expired=%d warm-cleanup=%d", len(reconciled.RequeuedAssignments), len(reconciled.ExpiredAssignments), len(reconciled.WarmPoolCleanup))
 
 workers, err := agentsandbox.ListWorkers(ctx, agentsandbox.WorkerListOptions{
 	FleetURL:             "https://fleet.internal.example",
@@ -903,6 +907,7 @@ created, err := agentsandbox.CreateAssignment(ctx, agentsandbox.AssignmentCreate
 	RequiredCapabilities: []string{"ram-overlay"},
 	Resources:            agentsandbox.Capacity{VMs: 1},
 	Priority:             10,
+	QueueTTL:             2 * time.Minute,
 	Verb:                 "cove",
 	Args:                 []string{"run", "-fork-from", "macos-base:latest", "-ephemeral"},
 })
@@ -1155,6 +1160,7 @@ sb, err := agentsandbox.Create(ctx, agentsandbox.ClientOptions{
 	RequiredCapabilities: []string{"ram-overlay"},
 	MaxActiveSandboxes:   20,
 	Priority:             10,
+	QueueTTL:             2 * time.Minute,
 })
 if err != nil {
 	log.Fatal(err)
@@ -1205,7 +1211,7 @@ Assignment endpoints:
 ```bash
 curl -X POST http://127.0.0.1:9758/v1/assignments \
   -H 'content-type: application/json' \
-  -d '{"id":"probe-1","worker_id":"mini-1","priority":10,"verb":"noop"}'
+  -d '{"id":"probe-1","worker_id":"mini-1","priority":10,"queue_ttl":"2m","verb":"noop"}'
 curl -X POST http://127.0.0.1:9758/v1/assignments \
   -H 'content-type: application/json' \
   -d '{"id":"run-1","worker_id":"mini-1","verb":"cove","args":["run","-ephemeral","-headless"]}'
@@ -1241,6 +1247,10 @@ available warm slot. `coved` renews active `cove` assignments with `running` or
 after the guest command returns. `priority` is optional and non-negative; worker
 polls lease higher-priority pending assignments before older lower-priority
 assignments, with creation time and assignment id as stable tie-breakers.
+`queue_ttl` and `queue_expires` are optional, mutually exclusive queue
+deadlines. `queue_ttl` must be a positive Go duration, `queue_expires` must be
+a future timestamp, and pending assignments that miss the deadline are
+reconciled to `expired` before lease; worker lease clears the queue deadline.
 `GET /v1/assignments` returns a paginated `assignments` response with `count`,
 `offset`, `limit`, and `next_offset`. It accepts `status`, `worker_id`,
 `leased_to`, `verb`, `image_ref`, `sandbox_id` or `sandbox`, `warm_pool`,

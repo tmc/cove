@@ -698,6 +698,55 @@ func TestStoreSandboxMaxActiveSandboxes(t *testing.T) {
 	}
 }
 
+func TestStoreSandboxQueueTTLExpiresAndReleasesCap(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 4}}); err != nil {
+		t.Fatal(err)
+	}
+	first, err := store.CreateSandbox(SandboxRequest{Namespace: "team-a", ID: "job-1", ImageRef: "base:v1", MaxActiveSandboxes: 1, QueueTTL: "1s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !first.Assignment.QueueExpires.Equal(now.Add(time.Second)) {
+		t.Fatalf("sandbox queue expires = %v, want +1s", first.Assignment.QueueExpires)
+	}
+	if _, err := store.CreateSandbox(SandboxRequest{Namespace: "team-a", ID: "job-2", ImageRef: "base:v1", MaxActiveSandboxes: 1}); err == nil || !strings.Contains(err.Error(), "max_active_sandboxes") {
+		t.Fatalf("CreateSandbox over cap err = %v, want max_active_sandboxes", err)
+	}
+	now = now.Add(2 * time.Second)
+	result, err := store.Reconcile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.ExpiredAssignments) != 1 || result.ExpiredAssignments[0] != "job-1" {
+		t.Fatalf("reconcile result = %+v, want expired sandbox assignment", result)
+	}
+	expired, ok := store.GetSandbox("job-1")
+	if !ok || expired.Status != "expired" {
+		t.Fatalf("expired sandbox = %+v, ok %v", expired, ok)
+	}
+	if _, err := store.CreateSandbox(SandboxRequest{Namespace: "team-a", ID: "job-2", ImageRef: "base:v1", MaxActiveSandboxes: 1}); err != nil {
+		t.Fatalf("CreateSandbox after expiry: %v", err)
+	}
+	for _, tc := range []struct {
+		name string
+		req  SandboxRequest
+		want string
+	}{
+		{name: "bad ttl", req: SandboxRequest{ID: "bad-ttl", ImageRef: "base:v1", QueueTTL: "bad"}, want: "queue_ttl must be a positive duration"},
+		{name: "past expires", req: SandboxRequest{ID: "past", ImageRef: "base:v1", QueueExpires: now.Add(-time.Second)}, want: "queue_expires must be in the future"},
+		{name: "both", req: SandboxRequest{ID: "both", ImageRef: "base:v1", QueueTTL: "1s", QueueExpires: now.Add(time.Minute)}, want: "mutually exclusive"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := store.CreateSandbox(tc.req); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("CreateSandbox err = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
 func TestStoreDeleteRunningSandboxQueuesStop(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
 	store := NewMemoryStore(time.Minute)
@@ -2133,6 +2182,68 @@ func TestStoreAssignmentsLeaseByPriority(t *testing.T) {
 	}
 	if _, err := store.CreateAssignment(Assignment{ID: "bad", WorkerID: "worker-1", Verb: "noop", Priority: -1}); err == nil || !strings.Contains(err.Error(), "priority must be non-negative") {
 		t.Fatalf("negative priority err = %v, want validation", err)
+	}
+}
+
+func TestStoreAssignmentsExpireByQueueTTL(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1"}); err != nil {
+		t.Fatal(err)
+	}
+	created, err := store.CreateAssignment(Assignment{ID: "assignment-1", WorkerID: "worker-1", Verb: "noop", QueueTTL: "2s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created.QueueExpires.Equal(now.Add(2*time.Second)) || created.QueueTTL != "" {
+		t.Fatalf("created queue deadline = ttl %q expires %v, want cleared ttl and +2s", created.QueueTTL, created.QueueExpires)
+	}
+	if plan := store.ReconcilePlan(); len(plan.ExpiredAssignments) != 0 {
+		t.Fatalf("early reconcile plan = %+v, want no expired assignments", plan)
+	}
+	now = now.Add(3 * time.Second)
+	plan := store.ReconcilePlan()
+	if len(plan.ExpiredAssignments) != 1 || plan.ExpiredAssignments[0] != "assignment-1" {
+		t.Fatalf("reconcile plan = %+v, want expired assignment", plan)
+	}
+	if assignment, ok := store.GetAssignment("assignment-1"); !ok || assignment.Status != "pending" {
+		t.Fatalf("assignment after plan = %+v, want pending", assignment)
+	}
+	result, err := store.Reconcile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.ExpiredAssignments) != 1 || result.ExpiredAssignments[0] != "assignment-1" {
+		t.Fatalf("reconcile result = %+v, want expired assignment", result)
+	}
+	assignment, ok := store.GetAssignment("assignment-1")
+	if !ok || assignment.Status != "expired" || assignment.LeasedTo != "" || !assignment.LeaseExpires.IsZero() {
+		t.Fatalf("expired assignment = %+v", assignment)
+	}
+	got, err := store.AwaitAssignment("worker-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != nil {
+		t.Fatalf("AwaitAssignment after expiry = %+v, want nil", got)
+	}
+
+	for _, tc := range []struct {
+		name string
+		in   Assignment
+		want string
+	}{
+		{name: "bad ttl", in: Assignment{ID: "bad-ttl", Verb: "noop", QueueTTL: "bad"}, want: "queue_ttl must be a positive duration"},
+		{name: "zero ttl", in: Assignment{ID: "zero-ttl", Verb: "noop", QueueTTL: "0s"}, want: "queue_ttl must be a positive duration"},
+		{name: "past expires", in: Assignment{ID: "past", Verb: "noop", QueueExpires: now.Add(-time.Second)}, want: "queue_expires must be in the future"},
+		{name: "both", in: Assignment{ID: "both", Verb: "noop", QueueTTL: "1s", QueueExpires: now.Add(time.Minute)}, want: "mutually exclusive"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := store.CreateAssignment(tc.in); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("CreateAssignment err = %v, want %q", err, tc.want)
+			}
+		})
 	}
 }
 

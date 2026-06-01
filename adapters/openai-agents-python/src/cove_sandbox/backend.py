@@ -73,6 +73,7 @@ if _AGENTS_AVAILABLE:
         required_capabilities: tuple[str, ...] = ()
         max_active_sandboxes: int = 0
         priority: int = 0
+        queue_ttl: str = ""
         sandbox_id: str | None = None
         cove: str = "cove"
         token: str | None = None
@@ -104,6 +105,7 @@ if _AGENTS_AVAILABLE:
             required_capabilities: tuple[str, ...] = (),
             max_active_sandboxes: int = 0,
             priority: int = 0,
+            queue_ttl: str = "",
             sandbox_id: str | None = None,
             cove: str = "cove",
             token: str | None = None,
@@ -135,6 +137,7 @@ if _AGENTS_AVAILABLE:
                 required_capabilities=required_capabilities,
                 max_active_sandboxes=max_active_sandboxes,
                 priority=priority,
+                queue_ttl=queue_ttl,
                 sandbox_id=sandbox_id,
                 cove=cove,
                 token=token,
@@ -168,6 +171,7 @@ else:
         required_capabilities: tuple[str, ...] = ()
         max_active_sandboxes: int = 0
         priority: int = 0
+        queue_ttl: str = ""
         sandbox_id: str | None = None
         cove: str = "cove"
         token: str | None = None
@@ -548,6 +552,7 @@ class CoveSandboxClient(BaseSandboxClient):
                 required_capabilities=opts.required_capabilities,
                 max_active_sandboxes=opts.max_active_sandboxes,
                 priority=opts.priority,
+                queue_ttl=opts.queue_ttl,
                 sandbox_id=sandbox_id or f"sandbox-{session_id.hex[:8]}",
                 api_key=opts.api_key,
                 namespace=opts.namespace,

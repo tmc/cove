@@ -105,6 +105,7 @@ def test_backend_options_round_trip_without_agents() -> None:
         required_capabilities=("ram-overlay", "gui"),
         max_active_sandboxes=3,
         priority=5,
+        queue_ttl="45s",
         fleet_url="http://127.0.0.1:9758",
         workspace_root="/tmp/work",
         gui=True,
@@ -119,6 +120,7 @@ def test_backend_options_round_trip_without_agents() -> None:
     assert opts.model_dump()["required_capabilities"] == ("ram-overlay", "gui")
     assert opts.model_dump()["max_active_sandboxes"] == 3
     assert opts.model_dump()["priority"] == 5
+    assert opts.model_dump()["queue_ttl"] == "45s"
     assert opts.model_dump()["fleet_url"] == "http://127.0.0.1:9758"
     assert opts.model_dump()["extra_run_args"] == ("-disposable",)
 
@@ -152,6 +154,7 @@ def test_fleet_client_create_wait_exec_and_delete() -> None:
             namespace="team-a",
             max_active_sandboxes=3,
             priority=5,
+            queue_ttl="45s",
         )
         sandboxes = client.list()
         assert sandboxes[0]["id"] == "job-1"
@@ -206,6 +209,7 @@ def test_fleet_client_create_wait_exec_and_delete() -> None:
         assert create["body"]["required_capabilities"] == ["ram-overlay", "gui"]
         assert create["body"]["max_active_sandboxes"] == 3
         assert create["body"]["priority"] == 5
+        assert create["body"]["queue_ttl"] == "45s"
         assert create["body"]["namespace"] == "team-a"
         assert server.requests[1]["query"]["namespace"] == ["team-a"]
         assert server.requests[2]["query"]["namespace"] == ["team-a"]
@@ -545,12 +549,14 @@ def test_fleet_client_maintenance_runs() -> None:
             api_key="secret",
         )
         assert reconcile_plan["stale_workers"] == ["worker-2"]
+        assert reconcile_plan["expired_assignments"] == ["assignment-expired"]
         assert reconcile_plan["warm_pool_assignments"] == ["warm-slot-1"]
         reconciled = CoveFleetClient.reconcile(
             fleet_url=server.url,
             api_key="secret",
         )
         assert reconciled["requeued_assignments"] == ["assignment-1"]
+        assert reconciled["expired_assignments"] == ["assignment-expired"]
         assert reconciled["warm_pool_cleanup"] == ["cleanup-1"]
         summary = CoveFleetClient.get_operations_summary(
             fleet_url=server.url,
@@ -992,6 +998,7 @@ def test_fleet_client_inventory() -> None:
             anti_affinity_key="ci/buildkite",
             resources={"vms": 1, "cpus": 4},
             priority=8,
+            queue_ttl="2m",
             verb="cove",
             args=("run", "-fork-from", "base:v1", "-ephemeral"),
         )
@@ -1000,6 +1007,7 @@ def test_fleet_client_inventory() -> None:
         assert created["policy"] == "bin-pack"
         assert created["resources"]["cpus"] == 4
         assert created["priority"] == 8
+        assert created["queue_expires"]
 
         assignments = CoveFleetClient.list_assignments(
             fleet_url=server.url,
@@ -1049,6 +1057,7 @@ def test_fleet_client_inventory() -> None:
         assert create_body["anti_affinity_key"] == "ci/buildkite"
         assert create_body["resources"] == {"vms": 1, "cpus": 4}
         assert create_body["priority"] == 8
+        assert create_body["queue_ttl"] == "2m"
         assert create_body["args"] == ["run", "-fork-from", "base:v1", "-ephemeral"]
         assert server.requests[-2]["query"]["namespace"] == ["team-a"]
         assert server.requests[-2]["query"]["sandbox_id"] == ["job-1"]
@@ -1628,6 +1637,7 @@ def _reconcile_plan() -> dict[str, object]:
     return {
         "stale_workers": ["worker-2"],
         "requeued_assignments": ["assignment-1"],
+        "expired_assignments": ["assignment-expired"],
         "warm_pool_assignments": ["warm-slot-1"],
     }
 
@@ -1637,6 +1647,7 @@ def _reconcile_result() -> dict[str, object]:
         "stale_workers": ["worker-2"],
         "requeued_assignments": ["assignment-1"],
         "replaced_assignments": ["assignment-2"],
+        "expired_assignments": ["assignment-expired"],
         "warm_pool_assignments": ["warm-slot-1"],
         "warm_pool_canceled": ["warm-slot-2"],
         "warm_pool_cleanup": ["cleanup-1"],
@@ -2021,6 +2032,7 @@ def _created_assignment() -> dict[str, object]:
     assignment["anti_affinity_key"] = "ci/buildkite"
     assignment["resources"] = {"vms": 1, "cpus": 4}
     assignment["priority"] = 8
+    assignment["queue_expires"] = "2026-05-31T10:10:00Z"
     return assignment
 
 

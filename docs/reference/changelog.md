@@ -19,6 +19,11 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   work. Direct assignment creation, hosted sandbox creation, the Go
   `agentsandbox` package, the OpenAI Agents Python adapter, and
   `SandboxRunConfig` cloud options expose the same queue priority.
+- Controller assignments and hosted sandboxes now accept optional `queue_ttl`
+  or absolute `queue_expires` deadlines. Pending work that misses its queue
+  deadline is reconciled to `expired`, appears in reconcile plan/apply results,
+  and no longer counts against hosted sandbox namespace admission caps; the Go
+  `agentsandbox` package and OpenAI Agents Python adapter expose queue TTLs.
 - The public Go `agentsandbox` package and OpenAI Agents Python adapter now
   expose hosted sandbox metering list helpers for `/v1/metering/sandboxes`, so
   SDK operators can query namespace or sandbox usage without first constructing

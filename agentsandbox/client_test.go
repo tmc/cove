@@ -32,6 +32,7 @@ func TestCloudClientCreateExecControlDelete(t *testing.T) {
 		RequiredCapabilities: []string{"ram-overlay", "gui", "ram-overlay", ""},
 		MaxActiveSandboxes:   3,
 		Priority:             5,
+		QueueTTL:             45 * time.Second,
 		Timeout:              time.Second,
 	})
 	if err != nil {
@@ -172,6 +173,9 @@ func TestCloudClientCreateExecControlDelete(t *testing.T) {
 	if create["priority"] != float64(5) {
 		t.Fatalf("create priority = %+v, want 5", create["priority"])
 	}
+	if create["queue_ttl"] != "45s" {
+		t.Fatalf("create queue ttl = %+v, want 45s", create["queue_ttl"])
+	}
 	if server.requests[1].query.Get("namespace") != "team-a" {
 		t.Fatalf("list query = %q, want team-a", server.requests[1].query.Encode())
 	}
@@ -301,6 +305,15 @@ func TestCloudClientCreateAndPlanValidation(t *testing.T) {
 		Priority: -1,
 	}); err == nil || !strings.Contains(err.Error(), "priority must be non-negative") {
 		t.Fatalf("negative priority err = %v, want validation error", err)
+	}
+	if _, err := Create(ctx, ClientOptions{
+		Provider: ProviderCloud,
+		FleetURL: "https://fleet.example",
+		APIKey:   "secret",
+		ImageRef: "base:v1",
+		QueueTTL: -time.Second,
+	}); err == nil || !strings.Contains(err.Error(), "queue ttl must not be negative") {
+		t.Fatalf("negative queue ttl err = %v, want validation error", err)
 	}
 	_, err := Plan(ctx, ClientOptions{
 		Provider:       ProviderCloud,
@@ -594,15 +607,15 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PlanReconcile: %v", err)
 	}
-	if !equalStringSlices(reconcilePlan.StaleWorkers, []string{"worker-2"}) || !equalStringSlices(reconcilePlan.WarmPoolAssignments, []string{"warm-slot-1"}) {
-		t.Fatalf("PlanReconcile = %+v, want stale worker and warm slot", reconcilePlan)
+	if !equalStringSlices(reconcilePlan.StaleWorkers, []string{"worker-2"}) || !equalStringSlices(reconcilePlan.ExpiredAssignments, []string{"assignment-expired"}) || !equalStringSlices(reconcilePlan.WarmPoolAssignments, []string{"warm-slot-1"}) {
+		t.Fatalf("PlanReconcile = %+v, want stale worker, expired assignment, and warm slot", reconcilePlan)
 	}
 	reconciled, err := Reconcile(ctx, ReconcileOptions{FleetURL: server.URL, APIKey: "secret", Timeout: time.Second})
 	if err != nil {
 		t.Fatalf("Reconcile: %v", err)
 	}
-	if !equalStringSlices(reconciled.RequeuedAssignments, []string{"assignment-1"}) || !equalStringSlices(reconciled.WarmPoolCleanup, []string{"cleanup-1"}) {
-		t.Fatalf("Reconcile = %+v, want assignment requeue and warm cleanup", reconciled)
+	if !equalStringSlices(reconciled.RequeuedAssignments, []string{"assignment-1"}) || !equalStringSlices(reconciled.ExpiredAssignments, []string{"assignment-expired"}) || !equalStringSlices(reconciled.WarmPoolCleanup, []string{"cleanup-1"}) {
+		t.Fatalf("Reconcile = %+v, want assignment requeue, expiry, and warm cleanup", reconciled)
 	}
 	summary, err := GetOperationsSummary(ctx, OperationsSummaryOptions{FleetURL: server.URL, APIKey: "secret", Namespace: "team-a", Timeout: time.Second})
 	if err != nil {
@@ -1181,6 +1194,7 @@ func TestCloudClientInventory(t *testing.T) {
 		AntiAffinityKey:      "ci/buildkite",
 		Resources:            Capacity{VMs: 1, CPUs: 4},
 		Priority:             8,
+		QueueTTL:             2 * time.Minute,
 		Verb:                 "cove",
 		Args:                 []string{"run", "-fork-from", "base:v1", "-ephemeral"},
 		Timeout:              time.Second,
@@ -1188,7 +1202,7 @@ func TestCloudClientInventory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAssignment: %v", err)
 	}
-	if created.ID != "assignment-created" || created.WorkerID != "worker-1" || created.Policy != "bin-pack" || created.Resources.CPUs != 4 || created.Priority != 8 {
+	if created.ID != "assignment-created" || created.WorkerID != "worker-1" || created.Policy != "bin-pack" || created.Resources.CPUs != 4 || created.Priority != 8 || created.QueueExpires.IsZero() {
 		t.Fatalf("CreateAssignment = %+v, want scheduled assignment", created)
 	}
 
@@ -1261,6 +1275,9 @@ func TestCloudClientInventory(t *testing.T) {
 	if createBody["priority"] != float64(8) {
 		t.Fatalf("create assignment priority = %+v, want 8", createBody["priority"])
 	}
+	if createBody["queue_ttl"] != "120s" {
+		t.Fatalf("create assignment queue ttl = %+v, want 120s", createBody["queue_ttl"])
+	}
 	if !equalAnyStringSlice(createBody["args"], []string{"run", "-fork-from", "base:v1", "-ephemeral"}) {
 		t.Fatalf("create assignment args = %+v, want run args", createBody["args"])
 	}
@@ -1285,6 +1302,9 @@ func TestCloudClientInventoryValidation(t *testing.T) {
 	}
 	if _, err := CreateAssignment(ctx, AssignmentCreateOptions{FleetURL: "https://fleet.example", APIKey: "secret", Verb: "noop", Priority: -1}); err == nil || !strings.Contains(err.Error(), "priority must be non-negative") {
 		t.Fatalf("CreateAssignment negative priority err = %v, want validation error", err)
+	}
+	if _, err := CreateAssignment(ctx, AssignmentCreateOptions{FleetURL: "https://fleet.example", APIKey: "secret", Verb: "noop", QueueTTL: -time.Second}); err == nil || !strings.Contains(err.Error(), "queue ttl must not be negative") {
+		t.Fatalf("CreateAssignment negative queue ttl err = %v, want validation error", err)
 	}
 	if _, err := GetAssignment(ctx, AssignmentGetOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "id required") {
 		t.Fatalf("GetAssignment missing id err = %v, want validation error", err)
@@ -2344,6 +2364,7 @@ func sdkReconcilePlan() ReconcileResult {
 	return ReconcileResult{
 		StaleWorkers:        []string{"worker-2"},
 		RequeuedAssignments: []string{"assignment-1"},
+		ExpiredAssignments:  []string{"assignment-expired"},
 		WarmPoolAssignments: []string{"warm-slot-1"},
 	}
 }
@@ -2353,6 +2374,7 @@ func sdkReconcileResult() ReconcileResult {
 		StaleWorkers:        []string{"worker-2"},
 		RequeuedAssignments: []string{"assignment-1"},
 		ReplacedAssignments: []string{"assignment-2"},
+		ExpiredAssignments:  []string{"assignment-expired"},
 		WarmPoolAssignments: []string{"warm-slot-1"},
 		WarmPoolCanceled:    []string{"warm-slot-2"},
 		WarmPoolCleanup:     []string{"cleanup-1"},
@@ -2684,6 +2706,7 @@ func sdkCreatedAssignment() Assignment {
 	assignment.AntiAffinityKey = "ci/buildkite"
 	assignment.Resources = Capacity{VMs: 1, CPUs: 4}
 	assignment.Priority = 8
+	assignment.QueueExpires = time.Date(2026, 5, 31, 10, 10, 0, 0, time.UTC)
 	return assignment
 }
 
