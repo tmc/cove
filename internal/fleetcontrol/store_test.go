@@ -5011,6 +5011,24 @@ func TestHandlerWarmPools(t *testing.T) {
 	if claim.Assignment.WorkerID != "worker-1" || claim.Assignment.WarmPoolSlot != leased.ID || !equalStrings(claim.Assignment.Args, wantArgs) {
 		t.Fatalf("claim assignment = %+v, want args %+v", claim.Assignment, wantArgs)
 	}
+	var events AuditListResult
+	getJSON(t, server.URL+"/v1/warm-pools/runner/events?limit=1", &events)
+	if events.Count != 1 || events.NextOffset != 1 || len(events.Events) != 1 || events.Events[0].Action != "warm_pool.claim" || events.Events[0].AssignmentID != claim.Assignment.ID {
+		t.Fatalf("warm pool events = %+v, want latest claim event with next offset", events)
+	}
+	events = AuditListResult{}
+	getJSON(t, server.URL+"/v1/warm-pools/runner/events?offset=1&limit=1", &events)
+	if events.Count != 1 || events.Offset != 1 || len(events.Events) != 1 || events.Events[0].Action != "warm_pool.ensure" {
+		t.Fatalf("warm pool ensure events = %+v, want ensure event", events)
+	}
+	events = AuditListResult{}
+	getJSON(t, server.URL+"/v1/warm-pools/runner/events?action=warm_pool.ensure", &events)
+	if events.Count != 1 || len(events.Events) != 1 || events.Events[0].Action != "warm_pool.ensure" {
+		t.Fatalf("warm pool filtered events = %+v, want one ensure event", events)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/warm-pools/runner/events?limit=-1", ""); code != http.StatusBadRequest {
+		t.Fatalf("bad warm pool events limit status = %d, want %d", code, http.StatusBadRequest)
+	}
 }
 
 func TestHandlerWarmPoolFromManifestBundle(t *testing.T) {
@@ -6074,6 +6092,9 @@ func TestHandlerWarmPoolNamespaceScope(t *testing.T) {
 	}
 	if code := getJSONStatus(t, server.URL+"/v1/warm-pools/runner", "token-b"); code != http.StatusNotFound {
 		t.Fatalf("cross-namespace warm pool GET status = %d, want 404", code)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/warm-pools/runner/events", "token-b"); code != http.StatusNotFound {
+		t.Fatalf("cross-namespace warm pool events status = %d, want 404", code)
 	}
 }
 

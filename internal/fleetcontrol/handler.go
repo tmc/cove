@@ -1894,6 +1894,17 @@ func handleWarmPools(w http.ResponseWriter, r *http.Request, store *Store) {
 }
 
 func handleWarmPool(w http.ResponseWriter, r *http.Request, store *Store) {
+	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/v1/warm-pools/"), "/")
+	parts := strings.Split(path, "/")
+	if len(parts) == 2 && parts[1] == "events" {
+		name, err := warmPoolNameFromRaw(parts[0])
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		handleWarmPoolEvents(w, r, store, name)
+		return
+	}
 	name, err := warmPoolNameFromPath(r.URL.Path)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -1938,8 +1949,72 @@ func handleWarmPool(w http.ResponseWriter, r *http.Request, store *Store) {
 	}
 }
 
+func handleWarmPoolEvents(w http.ResponseWriter, r *http.Request, store *Store, name string) {
+	if name == "" || r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	if !reconcile(w, store) {
+		return
+	}
+	status, ok := store.GetWarmPool(name)
+	if !ok || !canAccessNamespace(identity, status.Namespace) {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("warm pool %q not found", name))
+		return
+	}
+	filter, err := warmPoolEventsFilterFromRequest(r, status.Namespace, name)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, store.ListAuditPage(filter))
+}
+
+func warmPoolEventsFilterFromRequest(r *http.Request, namespace, name string) (AuditListFilter, error) {
+	filter := AuditListFilter{
+		Namespace:    namespace,
+		Actor:        strings.TrimSpace(r.URL.Query().Get("actor")),
+		Action:       strings.TrimSpace(r.URL.Query().Get("action")),
+		TargetType:   "warm_pool",
+		TargetID:     name,
+		WorkerID:     strings.TrimSpace(r.URL.Query().Get("worker_id")),
+		AssignmentID: strings.TrimSpace(r.URL.Query().Get("assignment_id")),
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 0 {
+			return AuditListFilter{}, fmt.Errorf("warm pool events limit must be non-negative")
+		}
+		filter.Limit = limit
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		offset, err := strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			return AuditListFilter{}, fmt.Errorf("warm pool events offset must be non-negative")
+		}
+		filter.Offset = offset
+	}
+	return filter, nil
+}
+
 func warmPoolNameFromPath(path string) (string, error) {
 	return nameFromPath(path, "/v1/warm-pools/", "warm pool")
+}
+
+func warmPoolNameFromRaw(raw string) (string, error) {
+	name, err := url.PathUnescape(raw)
+	if err != nil {
+		return "", fmt.Errorf("decode warm pool name: %w", err)
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", fmt.Errorf("warm pool name required")
+	}
+	return name, nil
 }
 
 func nameFromPath(path, prefix, label string) (string, error) {

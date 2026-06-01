@@ -455,6 +455,7 @@ curl -X POST http://127.0.0.1:9758/v1/warm-pools/claim \
   -d '{"name":"runner-14","command":["/bin/sh","-lc","make test"],"env":{"CI":"1"}}'
 curl http://127.0.0.1:9758/v1/warm-pools
 curl http://127.0.0.1:9758/v1/warm-pools/runner-14
+curl 'http://127.0.0.1:9758/v1/warm-pools/runner-14/events?limit=20'
 curl -X DELETE http://127.0.0.1:9758/v1/warm-pools/runner-14
 ```
 
@@ -495,6 +496,12 @@ per-state counts (`pending`, `leased`, `running`, `ready`, `claimed`,
 Claimed and draining slots stay visible even after a replacement slot is
 queued, so operators can distinguish ready capacity from in-flight guest work
 and cleanup.
+
+`GET /v1/warm-pools/{name}/events` returns the warm-pool-scoped slice of the
+hash-chained controller audit feed. It includes ensure, claim, and delete
+events for the pool and accepts `actor`, `action`, `worker_id`, `assignment_id`,
+`offset`, and `limit`; scoped service-account tokens can only read warm-pool
+events in their namespace.
 
 Sandbox endpoint:
 
