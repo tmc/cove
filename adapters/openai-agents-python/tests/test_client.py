@@ -204,7 +204,7 @@ def test_fleet_client_create_wait_exec_and_delete() -> None:
             "/v1/sandboxes/job-1/wait",
             "/v1/sandboxes/job-1/lease",
             "/v1/sandboxes/job-1/lease",
-            "/v1/sandboxes/job-1",
+            "/v1/sandboxes/job-1/wait",
             "/v1/sandboxes/job-1/restart",
             "/v1/sandboxes/job-1/exec",
             "/v1/sandboxes/job-1/metering",
@@ -232,6 +232,8 @@ def test_fleet_client_create_wait_exec_and_delete() -> None:
         assert server.requests[4]["query"]["timeout"] == ["2.5s"]
         assert server.requests[5]["body"] == {"holder": "runner-42", "ttl": "30s"}
         assert server.requests[6]["query"]["holder"] == ["runner-42"]
+        assert server.requests[7]["query"]["timeout"] == ["1s"]
+        assert server.requests[7]["query"]["status"] == ["ready"]
         exec_req = server.requests[9]
         assert exec_req["body"]["command"] == ["/bin/echo", "ok"]
         assert exec_req["body"]["env"] == {"A": "1"}

@@ -1331,12 +1331,13 @@ func waitSandbox(r *http.Request, store *Store, id string, identity requestIdent
 		}
 		timeout = parsed
 	}
+	targetStatus := sandboxWaitTargetStatus(r)
 	deadline := time.NewTimer(timeout)
 	defer deadline.Stop()
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		result, err := store.WaitSandbox(id)
+		result, err := store.WaitSandboxStatus(id, targetStatus)
 		if err != nil || !canAccessNamespace(identity, result.Sandbox.Namespace) {
 			return SandboxWaitResult{}, false, nil
 		}
@@ -1351,6 +1352,14 @@ func waitSandbox(r *http.Request, store *Store, id string, identity requestIdent
 		case <-ticker.C:
 		}
 	}
+}
+
+func sandboxWaitTargetStatus(r *http.Request) string {
+	targetStatus := strings.TrimSpace(r.URL.Query().Get("target_status"))
+	if targetStatus == "" {
+		targetStatus = strings.TrimSpace(r.URL.Query().Get("status"))
+	}
+	return targetStatus
 }
 
 func sandboxExecTimeout(r *http.Request, req SandboxExecRequest) (time.Duration, error) {

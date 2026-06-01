@@ -2405,12 +2405,15 @@ class CoveFleetClient:
         self.vm = str(data.get("vm_name") or self.vm or "")
         return data
 
-    def wait(self, timeout: float = 30.0) -> dict[str, Any]:
+    def wait(self, timeout: float = 30.0, status: str = "") -> dict[str, Any]:
         if timeout < 0:
             raise ValueError("timeout must not be negative")
+        query = {"timeout": _format_seconds(timeout)}
+        if status.strip():
+            query["status"] = status.strip()
         data = self._request(
             "POST",
-            _query_path(self._sandbox_path("wait"), {"timeout": _format_seconds(timeout)}),
+            _query_path(self._sandbox_path("wait"), query),
             {},
             timeout=timeout + min(timeout, 30),
         )
@@ -2519,18 +2522,14 @@ class CoveFleetClient:
         return page
 
     def wait_ready(self, timeout: float = 120.0) -> None:
-        deadline = time.monotonic() + timeout
-        last_status = ""
-        while True:
-            data = self.status(timeout=min(max(timeout, 0.1), self.timeout))
-            last_status = str(data.get("status") or "")
-            if last_status == "ready":
-                return
-            if last_status in {"canceled", "complete", "failed", "stopped"}:
-                raise CoveError(f"sandbox {self.sandbox_id} is {last_status}")
-            if time.monotonic() >= deadline:
-                raise CoveError(f"timed out waiting for sandbox {self.sandbox_id} to become ready: {last_status}")
-            time.sleep(1)
+        data = self.wait(timeout=timeout, status="ready")
+        sandbox = data.get("sandbox") or {}
+        last_status = str(sandbox.get("status") or "")
+        if last_status == "ready":
+            return
+        if last_status in {"canceled", "complete", "failed", "stopped"}:
+            raise CoveError(f"sandbox {self.sandbox_id} is {last_status}")
+        raise CoveError(f"timed out waiting for sandbox {self.sandbox_id} to become ready: {last_status}")
 
     def exec(
         self,

@@ -2607,10 +2607,15 @@ func (s *Store) StopSandboxActor(actor, id string, reqs ...SandboxMutationReques
 }
 
 func (s *Store) WaitSandbox(id string) (SandboxWaitResult, error) {
+	return s.WaitSandboxStatus(id, "")
+}
+
+func (s *Store) WaitSandboxStatus(id, targetStatus string) (SandboxWaitResult, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return SandboxWaitResult{}, fmt.Errorf("sandbox id required")
 	}
+	targetStatus = strings.TrimSpace(targetStatus)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	assignment, ok := s.sandboxRunAssignmentLocked(id)
@@ -2619,8 +2624,9 @@ func (s *Store) WaitSandbox(id string) (SandboxWaitResult, error) {
 	}
 	sandbox := sandboxStatusFromAssignment(assignment, s.now().UTC())
 	return SandboxWaitResult{
-		Done:    sandboxTerminalStatus(sandbox.Status),
-		Sandbox: sandbox,
+		Done:         sandboxWaitDone(sandbox.Status, targetStatus),
+		TargetStatus: targetStatus,
+		Sandbox:      sandbox,
 	}, nil
 }
 
@@ -6570,6 +6576,15 @@ func sandboxStopArgs(vmName string) []string {
 
 func sandboxTerminalStatus(status string) bool {
 	return !activeAssignmentStatus(status) && !sandboxPendingStopStatus(status)
+}
+
+func sandboxWaitDone(status, targetStatus string) bool {
+	status = normalizeOperationStatus(status)
+	targetStatus = strings.TrimSpace(targetStatus)
+	if targetStatus != "" && status == targetStatus {
+		return true
+	}
+	return sandboxTerminalStatus(status)
 }
 
 func sandboxPendingStopStatus(status string) bool {

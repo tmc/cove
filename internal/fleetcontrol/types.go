@@ -1129,8 +1129,9 @@ type SandboxStopResult struct {
 }
 
 type SandboxWaitResult struct {
-	Done    bool          `json:"done"`
-	Sandbox SandboxStatus `json:"sandbox"`
+	Done         bool          `json:"done"`
+	TargetStatus string        `json:"target_status,omitempty"`
+	Sandbox      SandboxStatus `json:"sandbox"`
 }
 
 type Assignment struct {

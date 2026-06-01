@@ -144,7 +144,7 @@ func TestCloudClientCreateExecControlDelete(t *testing.T) {
 		"/v1/sandboxes/job-1/wait",
 		"/v1/sandboxes/job-1/lease",
 		"/v1/sandboxes/job-1/lease",
-		"/v1/sandboxes/job-1",
+		"/v1/sandboxes/job-1/wait",
 		"/v1/sandboxes/job-1/restart",
 		"/v1/sandboxes/job-1/exec",
 		"/v1/sandboxes/job-1/control",
@@ -207,6 +207,9 @@ func TestCloudClientCreateExecControlDelete(t *testing.T) {
 	}
 	if server.requests[4].query.Get("holder") != "runner-42" {
 		t.Fatalf("release query = %q, want holder=runner-42", server.requests[4].query.Encode())
+	}
+	if server.requests[5].query.Get("timeout") != "1s" || server.requests[5].query.Get("status") != "ready" {
+		t.Fatalf("wait ready query = %q, want status=ready timeout=1s", server.requests[5].query.Encode())
 	}
 	execReq := server.requests[7].body
 	if execReq["timeout"] != "2.5s" {

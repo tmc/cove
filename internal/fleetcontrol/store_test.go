@@ -820,6 +820,66 @@ func TestStoreSandboxAutoRetryKeepsAdmission(t *testing.T) {
 	}
 }
 
+func TestStoreWaitSandboxTargetStatus(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 4}}); err != nil {
+		t.Fatal(err)
+	}
+	sandbox, err := store.CreateSandbox(SandboxRequest{ID: "job-1", ImageRef: "base:v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wait, err := store.WaitSandboxStatus("job-1", "ready")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wait.Done || wait.TargetStatus != "ready" || wait.Sandbox.Status != "pending" {
+		t.Fatalf("WaitSandboxStatus pending = %+v, want target ready not done", wait)
+	}
+	leased, err := store.AwaitAssignment("worker-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leased == nil || leased.ID != sandbox.Assignment.ID {
+		t.Fatalf("lease = %+v, want %s", leased, sandbox.Assignment.ID)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: sandbox.Assignment.ID, Status: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+	wait, err = store.WaitSandboxStatus("job-1", "ready")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !wait.Done || wait.TargetStatus != "ready" || wait.Sandbox.Status != "ready" {
+		t.Fatalf("WaitSandboxStatus ready = %+v, want ready done", wait)
+	}
+	failed, err := store.CreateSandbox(SandboxRequest{ID: "job-2", ImageRef: "base:v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leased, err = store.AwaitAssignment("worker-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leased == nil || leased.ID != failed.Assignment.ID {
+		t.Fatalf("failed lease = %+v, want %s", leased, failed.Assignment.ID)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: failed.Assignment.ID, Status: "failed"}); err != nil {
+		t.Fatal(err)
+	}
+	wait, err = store.WaitSandboxStatus("job-2", "ready")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !wait.Done || wait.TargetStatus != "ready" || wait.Sandbox.Status != "failed" {
+		t.Fatalf("WaitSandboxStatus failed = %+v, want terminal done before ready", wait)
+	}
+}
+
 func TestStoreDeleteRunningSandboxQueuesStop(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
 	store := NewMemoryStore(time.Minute)
@@ -6658,6 +6718,38 @@ func TestHandlerSandboxMaxActiveSandboxes(t *testing.T) {
 	postJSON(t, server.URL+"/v1/sandboxes", SandboxRequest{Namespace: "team-b", ID: "job-b", ImageRef: "base:v1", MaxActiveSandboxes: 1}, &created)
 	if created.Namespace != "team-b" || created.ID != "job-b" {
 		t.Fatalf("other namespace sandbox = %+v, want team-b job-b", created)
+	}
+}
+
+func TestHandlerSandboxWaitTargetStatus(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 4}}, &record)
+	var created SandboxStatus
+	postJSON(t, server.URL+"/v1/sandboxes", SandboxRequest{ID: "job-1", ImageRef: "base:v1"}, &created)
+
+	var wait SandboxWaitResult
+	postJSON(t, server.URL+"/v1/sandboxes/job-1/wait?status=ready&timeout=0", map[string]string{}, &wait)
+	if wait.Done || wait.TargetStatus != "ready" || wait.Sandbox.Status != "pending" {
+		t.Fatalf("wait pending = %+v, want target ready not done", wait)
+	}
+	var leased Assignment
+	getJSON(t, server.URL+"/v1/workers/worker-1/assignments", &leased)
+	postJSON(t, server.URL+"/v1/workers/worker-1/reports", WorkerReport{AssignmentID: leased.ID, Status: "ready"}, &record)
+	postJSON(t, server.URL+"/v1/sandboxes/job-1/wait?target_status=ready&timeout=0", map[string]string{}, &wait)
+	if !wait.Done || wait.TargetStatus != "ready" || wait.Sandbox.Status != "ready" {
+		t.Fatalf("wait ready = %+v, want ready done", wait)
+	}
+
+	postJSON(t, server.URL+"/v1/sandboxes", SandboxRequest{ID: "job-2", ImageRef: "base:v1"}, &created)
+	getJSON(t, server.URL+"/v1/workers/worker-1/assignments", &leased)
+	postJSON(t, server.URL+"/v1/workers/worker-1/reports", WorkerReport{AssignmentID: leased.ID, Status: "failed"}, &record)
+	postJSON(t, server.URL+"/v1/sandboxes/job-2/wait?status=ready&timeout=0", map[string]string{}, &wait)
+	if !wait.Done || wait.TargetStatus != "ready" || wait.Sandbox.Status != "failed" {
+		t.Fatalf("wait failed = %+v, want terminal done before ready", wait)
 	}
 }
 

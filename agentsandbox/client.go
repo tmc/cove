@@ -1529,8 +1529,9 @@ type AssignmentReportListResult struct {
 }
 
 type WaitResult struct {
-	Done    bool          `json:"done"`
-	Sandbox SandboxStatus `json:"sandbox"`
+	Done         bool          `json:"done"`
+	TargetStatus string        `json:"target_status,omitempty"`
+	Sandbox      SandboxStatus `json:"sandbox"`
 }
 
 type ExecRequest struct {
@@ -3567,20 +3568,29 @@ func (o SandboxReportListOptions) query() (map[string]string, error) {
 }
 
 func (c *Client) Wait(ctx context.Context, timeout time.Duration) (WaitResult, error) {
+	return c.WaitStatus(ctx, "", timeout)
+}
+
+func (c *Client) WaitStatus(ctx context.Context, status string, timeout time.Duration) (WaitResult, error) {
 	if err := c.ready(); err != nil {
 		return WaitResult{}, err
 	}
+	status = strings.TrimSpace(status)
 	if c.provider != ProviderCloud {
-		status, err := c.Status(ctx)
+		current, err := c.Status(ctx)
 		if err != nil {
 			return WaitResult{}, err
 		}
-		return WaitResult{Done: terminalSandboxStatus(status.Status), Sandbox: status}, nil
+		return WaitResult{Done: waitResultDone(current.Status, status), TargetStatus: status, Sandbox: current}, nil
 	}
 	if timeout < 0 {
 		return WaitResult{}, errors.New("agentsandbox: wait timeout must not be negative")
 	}
-	path := c.queryPath(c.sandboxPath("wait"), map[string]string{"timeout": formatSeconds(timeout)})
+	query := map[string]string{"timeout": formatSeconds(timeout)}
+	if status != "" {
+		query["status"] = status
+	}
+	path := c.queryPath(c.sandboxPath("wait"), query)
 	requestTimeout := maxDuration(c.timeout, timeout+minDuration(timeout, 30*time.Second))
 	var result WaitResult
 	if err := c.request(ctx, http.MethodPost, path, map[string]any{}, &result, requestTimeout); err != nil {
@@ -3597,6 +3607,19 @@ func (c *Client) WaitReady(ctx context.Context, timeout time.Duration) error {
 	}
 	if timeout <= 0 {
 		timeout = 2 * time.Minute
+	}
+	if c.provider == ProviderCloud {
+		result, err := c.WaitStatus(ctx, "ready", timeout)
+		if err != nil {
+			return err
+		}
+		if result.Sandbox.Status == "ready" {
+			return nil
+		}
+		if terminalSandboxStatus(result.Sandbox.Status) {
+			return fmt.Errorf("agentsandbox: sandbox %s is %s", result.Sandbox.ID, result.Sandbox.Status)
+		}
+		return fmt.Errorf("agentsandbox: timed out waiting for sandbox %s to become ready: %s", c.sandboxID, result.Sandbox.Status)
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -4471,6 +4494,15 @@ func terminalSandboxStatus(status string) bool {
 	default:
 		return false
 	}
+}
+
+func waitResultDone(status, targetStatus string) bool {
+	status = strings.TrimSpace(status)
+	targetStatus = strings.TrimSpace(targetStatus)
+	if targetStatus != "" && status == targetStatus {
+		return true
+	}
+	return terminalSandboxStatus(status)
 }
 
 func firstNonEmpty(values ...string) string {
