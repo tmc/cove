@@ -624,7 +624,7 @@ Sandbox endpoint:
 ```bash
 curl -X POST http://127.0.0.1:9758/v1/sandboxes \
   -H 'content-type: application/json' \
-  -d '{"id":"job-1","image_ref":"macos-runner:14.5","manifest_bundle":"manifests","image_platform":"darwin/arm64","required_labels":{"zone":"desk"},"required_capabilities":["ram-overlay"],"args":["--net","nat"]}'
+  -d '{"id":"job-1","image_ref":"macos-runner:14.5","manifest_bundle":"manifests","image_platform":"darwin/arm64","required_labels":{"zone":"desk"},"required_capabilities":["ram-overlay"],"max_active_sandboxes":20,"args":["--net","nat"]}'
 curl http://127.0.0.1:9758/v1/sandboxes
 curl 'http://127.0.0.1:9758/v1/sandboxes?status=ready&image_ref=macos-runner:14.5&offset=0&limit=20'
 curl http://127.0.0.1:9758/v1/sandboxes/job-1
@@ -665,11 +665,15 @@ to `cove-sandbox-<id>`. The controller records the backing assignment with
 without a separate scheduler. Extra `args` are appended to `cove run`, but
 fork/source/lifetime/headless flags are reserved by the controller.
 Create requests accept optional `manifest_bundle`, `image_manifest_digest`,
-`image_digest_ref`, `image_platform`, and `required_capabilities` fields. The
-returned sandbox status and backing assignment keep the resolved digest and
-capability fields, exact-digest requests are admitted only onto workers that
-report the matching image provenance, and capability-constrained requests are
-admitted only onto workers that report every required capability.
+`image_digest_ref`, `image_platform`, `required_capabilities`, and
+`max_active_sandboxes` fields. The returned sandbox status and backing
+assignment keep the resolved digest and capability fields, exact-digest
+requests are admitted only onto workers that report the matching image
+provenance, and capability-constrained requests are admitted only onto workers
+that report every required capability. When `max_active_sandboxes` is greater
+than zero, the controller reconciles current state and rejects the create
+before placement if the request namespace already has that many non-terminal
+sandbox run handles.
 
 `GET /v1/sandboxes` accepts `namespace`, `status`, `worker_id`, `image_ref`,
 `offset`, and `limit` query parameters. Namespace-scoped bearer tokens still
@@ -1146,6 +1150,7 @@ sb, err := agentsandbox.Create(ctx, agentsandbox.ClientOptions{
 	ImagePlatform:  "darwin/arm64",
 	RequiredLabels: map[string]string{"zone": "desk"},
 	RequiredCapabilities: []string{"ram-overlay"},
+	MaxActiveSandboxes:   20,
 })
 if err != nil {
 	log.Fatal(err)

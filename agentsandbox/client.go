@@ -44,6 +44,7 @@ type ClientOptions struct {
 	RequiredLabels       map[string]string
 	RequiredCapabilities []string
 	PlacementLimit       int
+	MaxActiveSandboxes   int
 	VMName               string
 	Timeout              time.Duration
 	HTTP                 *http.Client
@@ -1597,6 +1598,9 @@ func Create(ctx context.Context, opts ClientOptions) (*Client, error) {
 	if imageRef == "" {
 		return nil, errors.New("agentsandbox: image ref required")
 	}
+	if opts.MaxActiveSandboxes < 0 {
+		return nil, errors.New("agentsandbox: max active sandboxes must be non-negative")
+	}
 	seed := opts
 	seed.SandboxID = "pending"
 	c, err := NewClient(seed)
@@ -1630,6 +1634,9 @@ func Create(ctx context.Context, opts ClientOptions) (*Client, error) {
 	}
 	if capabilities := cleanStrings(opts.RequiredCapabilities); len(capabilities) > 0 {
 		body["required_capabilities"] = capabilities
+	}
+	if opts.MaxActiveSandboxes > 0 {
+		body["max_active_sandboxes"] = opts.MaxActiveSandboxes
 	}
 	var status SandboxStatus
 	if err := c.request(ctx, http.MethodPost, "/v1/sandboxes", body, &status, c.timeout); err != nil {

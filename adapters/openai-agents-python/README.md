@@ -151,7 +151,9 @@ run_config = RunConfig(
             image_ref="macos-base:latest",
             manifest_bundle="manifests",
             image_platform="darwin/arm64",
+            required_labels={"zone": "desk"},
             required_capabilities=("ram-overlay",),
+            max_active_sandboxes=20,
             name="eval-001",
             delete_on_close=True,
         ),
@@ -172,8 +174,10 @@ handle on close when `delete_on_close=True`. Set
 offline bundle and admits the sandbox only on workers with matching image
 provenance. Pass `required_labels` for operator-defined selectors and
 `required_capabilities` to restrict hosted placement to workers that advertise
-runtime traits such as `ram-overlay`. The direct fleet client can also queue
-image preparation before placement or warm-pool replenishment, push image
+runtime traits such as `ram-overlay`, and pass `max_active_sandboxes` to reject
+new hosted sandboxes once the namespace is already at its concurrency cap. The
+direct fleet client can also queue image preparation before placement or
+warm-pool replenishment, push image
 GC/lifecycle/storage maintenance work, read retained placement-plan history and
 the retained controller-run timeline, plan or apply controller reconciliation,
 inspect or verify the hash-chained audit feed, manage scoped service-account
@@ -423,6 +427,7 @@ client = CoveFleetClient.create_sandbox(
     image_platform="darwin/arm64",
     required_labels={"zone": "desk"},
     required_capabilities=("ram-overlay",),
+    max_active_sandboxes=20,
     sandbox_id="eval-001",
 )
 ready = client.list_page(status="ready", image_ref="macos-base:latest", offset=0, limit=10)

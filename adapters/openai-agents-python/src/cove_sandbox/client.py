@@ -299,6 +299,7 @@ class CoveFleetClient:
         required_labels: Mapping[str, str] | None = None,
         required_capabilities: Sequence[str] | str | None = None,
         sandbox_id: str | None = None,
+        max_active_sandboxes: int = 0,
         api_key: str | None = None,
         namespace: str | None = None,
         vm_name: str | None = None,
@@ -307,6 +308,8 @@ class CoveFleetClient:
         image_ref = image_ref.strip()
         if not image_ref:
             raise ValueError("image_ref is required")
+        if max_active_sandboxes < 0:
+            raise ValueError("max_active_sandboxes must be non-negative")
         body: dict[str, object] = {"image_ref": image_ref}
         if sandbox_id:
             body["id"] = sandbox_id
@@ -328,6 +331,8 @@ class CoveFleetClient:
         capabilities = _clean_string_list(required_capabilities)
         if capabilities:
             body["required_capabilities"] = capabilities
+        if max_active_sandboxes:
+            body["max_active_sandboxes"] = max_active_sandboxes
         seed = cls(
             sandbox_id=sandbox_id or "pending",
             fleet_url=fleet_url,

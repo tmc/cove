@@ -666,6 +666,31 @@ func TestStoreCreatesSandboxWithRequiredCapabilities(t *testing.T) {
 	}
 }
 
+func TestStoreSandboxMaxActiveSandboxes(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 4}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateSandbox(SandboxRequest{Namespace: "team-a", ID: "job-1", ImageRef: "base:v1", MaxActiveSandboxes: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateSandbox(SandboxRequest{Namespace: "team-a", ID: "job-2", ImageRef: "base:v1", MaxActiveSandboxes: 1}); err == nil || !strings.Contains(err.Error(), "max_active_sandboxes") {
+		t.Fatalf("CreateSandbox over cap err = %v, want max_active_sandboxes", err)
+	}
+	if _, err := store.CreateSandbox(SandboxRequest{Namespace: "team-b", ID: "job-b", ImageRef: "base:v1", MaxActiveSandboxes: 1}); err != nil {
+		t.Fatalf("CreateSandbox other namespace: %v", err)
+	}
+	if _, err := store.DeleteSandbox("job-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateSandbox(SandboxRequest{Namespace: "team-a", ID: "job-3", ImageRef: "base:v1", MaxActiveSandboxes: 1}); err != nil {
+		t.Fatalf("CreateSandbox after terminal sandbox: %v", err)
+	}
+	if _, err := store.CreateSandbox(SandboxRequest{ID: "bad", ImageRef: "base:v1", MaxActiveSandboxes: -1}); err == nil || !strings.Contains(err.Error(), "non-negative") {
+		t.Fatalf("CreateSandbox negative cap err = %v, want non-negative", err)
+	}
+}
+
 func TestStoreDeleteRunningSandboxQueuesStop(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
 	store := NewMemoryStore(time.Minute)
@@ -6137,6 +6162,27 @@ func TestHandlerSandboxes(t *testing.T) {
 	postJSON(t, server.URL+"/v1/sandboxes/job-2/restart", map[string]string{}, &restart)
 	if restart.Restarting || restart.ID != "job-2" || restart.Status != "pending" {
 		t.Fatalf("restart pending sandbox = %+v, want pending no-op", restart)
+	}
+}
+
+func TestHandlerSandboxMaxActiveSandboxes(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 4}}, &record)
+	var created SandboxStatus
+	postJSON(t, server.URL+"/v1/sandboxes", SandboxRequest{Namespace: "team-a", ID: "job-1", ImageRef: "base:v1", MaxActiveSandboxes: 1}, &created)
+	if created.Namespace != "team-a" || created.ID != "job-1" {
+		t.Fatalf("created sandbox = %+v, want team-a job-1", created)
+	}
+	if code := postJSONStatus(t, server.URL+"/v1/sandboxes", "", SandboxRequest{Namespace: "team-a", ID: "job-2", ImageRef: "base:v1", MaxActiveSandboxes: 1}); code != http.StatusBadRequest {
+		t.Fatalf("over cap sandbox status = %d, want 400", code)
+	}
+	postJSON(t, server.URL+"/v1/sandboxes", SandboxRequest{Namespace: "team-b", ID: "job-b", ImageRef: "base:v1", MaxActiveSandboxes: 1}, &created)
+	if created.Namespace != "team-b" || created.ID != "job-b" {
+		t.Fatalf("other namespace sandbox = %+v, want team-b job-b", created)
 	}
 }
 

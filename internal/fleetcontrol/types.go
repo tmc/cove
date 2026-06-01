@@ -827,6 +827,7 @@ type SandboxRequest struct {
 	AntiAffinityKey      string            `json:"anti_affinity_key,omitempty"`
 	Resources            Capacity          `json:"resources,omitempty"`
 	Args                 []string          `json:"args,omitempty"`
+	MaxActiveSandboxes   int               `json:"max_active_sandboxes,omitempty"`
 }
 
 type SandboxStatus struct {

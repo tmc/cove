@@ -101,7 +101,9 @@ def test_backend_options_round_trip_without_agents() -> None:
         name="eval-001",
         manifest_bundle="manifests",
         image_platform="darwin/arm64",
+        required_labels={"zone": "desk"},
         required_capabilities=("ram-overlay", "gui"),
+        max_active_sandboxes=3,
         fleet_url="http://127.0.0.1:9758",
         workspace_root="/tmp/work",
         gui=True,
@@ -112,7 +114,9 @@ def test_backend_options_round_trip_without_agents() -> None:
     assert opts.model_dump()["parent"] == "base"
     assert opts.model_dump()["manifest_bundle"] == "manifests"
     assert opts.model_dump()["image_platform"] == "darwin/arm64"
+    assert opts.model_dump()["required_labels"] == {"zone": "desk"}
     assert opts.model_dump()["required_capabilities"] == ("ram-overlay", "gui")
+    assert opts.model_dump()["max_active_sandboxes"] == 3
     assert opts.model_dump()["fleet_url"] == "http://127.0.0.1:9758"
     assert opts.model_dump()["extra_run_args"] == ("-disposable",)
 
@@ -144,6 +148,7 @@ def test_fleet_client_create_wait_exec_and_delete() -> None:
             required_capabilities=("ram-overlay", "gui", "ram-overlay", ""),
             sandbox_id="job-1",
             namespace="team-a",
+            max_active_sandboxes=3,
         )
         sandboxes = client.list()
         assert sandboxes[0]["id"] == "job-1"
@@ -196,6 +201,7 @@ def test_fleet_client_create_wait_exec_and_delete() -> None:
         assert create["body"]["image_platform"] == "darwin/arm64"
         assert create["body"]["required_labels"] == {"zone": "desk"}
         assert create["body"]["required_capabilities"] == ["ram-overlay", "gui"]
+        assert create["body"]["max_active_sandboxes"] == 3
         assert create["body"]["namespace"] == "team-a"
         assert server.requests[1]["query"]["namespace"] == ["team-a"]
         assert server.requests[2]["query"]["namespace"] == ["team-a"]
@@ -210,6 +216,16 @@ def test_fleet_client_create_wait_exec_and_delete() -> None:
         assert server.requests[11]["query"]["sandbox_id"] == ["job-1"]
     finally:
         server.stop()
+
+
+def test_fleet_client_create_validation() -> None:
+    with pytest.raises(ValueError, match="max_active_sandboxes must be non-negative"):
+        CoveFleetClient.create_sandbox(
+            fleet_url="https://fleet.example",
+            api_key="secret",
+            image_ref="base:v1",
+            max_active_sandboxes=-1,
+        )
 
 
 def test_fleet_client_plan_sandbox() -> None:

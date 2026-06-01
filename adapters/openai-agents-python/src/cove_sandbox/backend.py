@@ -69,7 +69,9 @@ if _AGENTS_AVAILABLE:
         image_manifest_digest: str | None = None
         image_digest_ref: str | None = None
         image_platform: str | None = None
+        required_labels: dict[str, str] | None = None
         required_capabilities: tuple[str, ...] = ()
+        max_active_sandboxes: int = 0
         sandbox_id: str | None = None
         cove: str = "cove"
         token: str | None = None
@@ -97,7 +99,9 @@ if _AGENTS_AVAILABLE:
             image_manifest_digest: str | None = None,
             image_digest_ref: str | None = None,
             image_platform: str | None = None,
+            required_labels: dict[str, str] | None = None,
             required_capabilities: tuple[str, ...] = (),
+            max_active_sandboxes: int = 0,
             sandbox_id: str | None = None,
             cove: str = "cove",
             token: str | None = None,
@@ -125,7 +129,9 @@ if _AGENTS_AVAILABLE:
                 image_manifest_digest=image_manifest_digest,
                 image_digest_ref=image_digest_ref,
                 image_platform=image_platform,
+                required_labels=required_labels,
                 required_capabilities=required_capabilities,
+                max_active_sandboxes=max_active_sandboxes,
                 sandbox_id=sandbox_id,
                 cove=cove,
                 token=token,
@@ -155,7 +161,9 @@ else:
         image_manifest_digest: str | None = None
         image_digest_ref: str | None = None
         image_platform: str | None = None
+        required_labels: dict[str, str] | None = None
         required_capabilities: tuple[str, ...] = ()
+        max_active_sandboxes: int = 0
         sandbox_id: str | None = None
         cove: str = "cove"
         token: str | None = None
@@ -532,7 +540,9 @@ class CoveSandboxClient(BaseSandboxClient):
                 image_manifest_digest=opts.image_manifest_digest,
                 image_digest_ref=opts.image_digest_ref,
                 image_platform=opts.image_platform,
+                required_labels=opts.required_labels,
                 required_capabilities=opts.required_capabilities,
+                max_active_sandboxes=opts.max_active_sandboxes,
                 sandbox_id=sandbox_id or f"sandbox-{session_id.hex[:8]}",
                 api_key=opts.api_key,
                 namespace=opts.namespace,

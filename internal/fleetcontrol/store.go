@@ -1585,12 +1585,16 @@ func (s *Store) CreateSandboxActor(actor string, req SandboxRequest) (SandboxSta
 	if imageRef == "" {
 		return SandboxStatus{}, fmt.Errorf("sandbox image_ref required")
 	}
+	if req.MaxActiveSandboxes < 0 {
+		return SandboxStatus{}, fmt.Errorf("sandbox max_active_sandboxes must be non-negative")
+	}
 	args := cloneStrings(req.Args)
 	if err := validateForkRunArgs(args, "sandbox"); err != nil {
 		return SandboxStatus{}, err
 	}
+	namespace := normalizeNamespace(req.Namespace)
 	assignment := Assignment{
-		Namespace:            normalizeNamespace(req.Namespace),
+		Namespace:            namespace,
 		Policy:               strings.TrimSpace(req.Policy),
 		ImageRef:             imageRef,
 		ImageManifestDigest:  strings.TrimSpace(req.ImageManifestDigest),
@@ -1627,6 +1631,12 @@ func (s *Store) CreateSandboxActor(actor string, req SandboxRequest) (SandboxSta
 	if _, ok := s.assignments[id]; ok {
 		return SandboxStatus{}, fmt.Errorf("assignment %q already exists", id)
 	}
+	if req.MaxActiveSandboxes > 0 {
+		active := s.activeSandboxCountLocked(namespace)
+		if active >= req.MaxActiveSandboxes {
+			return SandboxStatus{}, fmt.Errorf("sandbox namespace %q has %d active sandboxes, max_active_sandboxes is %d", namespace, active, req.MaxActiveSandboxes)
+		}
+	}
 	workerID, err := s.selectWorkerLocked(policy, imageRef, imageManifestDigest, requiredLabels, requiredCapabilities, antiAffinityKey, resources)
 	if err != nil {
 		return SandboxStatus{}, err
@@ -1637,7 +1647,7 @@ func (s *Store) CreateSandboxActor(actor string, req SandboxRequest) (SandboxSta
 	}
 	assignment = Assignment{
 		ID:                   id,
-		Namespace:            normalizeNamespace(req.Namespace),
+		Namespace:            namespace,
 		WorkerID:             workerID,
 		SandboxID:            id,
 		SandboxRole:          sandboxRoleRun,
@@ -5782,6 +5792,23 @@ func (s *Store) sandboxRunAssignmentLocked(id string) (Assignment, bool) {
 		}
 	}
 	return Assignment{}, false
+}
+
+func (s *Store) activeSandboxCountLocked(namespace string) int {
+	namespace = normalizeNamespace(namespace)
+	count := 0
+	for _, assignment := range s.assignments {
+		if assignment.SandboxID == "" || assignment.SandboxRole != sandboxRoleRun {
+			continue
+		}
+		if normalizeNamespace(assignment.Namespace) != namespace {
+			continue
+		}
+		if !sandboxTerminalStatus(assignment.Status) {
+			count++
+		}
+	}
+	return count
 }
 
 func (s *Store) activeSandboxCleanupLocked(id string) (Assignment, bool) {

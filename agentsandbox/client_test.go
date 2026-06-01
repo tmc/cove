@@ -30,6 +30,7 @@ func TestCloudClientCreateExecControlDelete(t *testing.T) {
 		ImagePlatform:        "darwin/arm64",
 		RequiredLabels:       map[string]string{"zone": "desk"},
 		RequiredCapabilities: []string{"ram-overlay", "gui", "ram-overlay", ""},
+		MaxActiveSandboxes:   3,
 		Timeout:              time.Second,
 	})
 	if err != nil {
@@ -164,6 +165,9 @@ func TestCloudClientCreateExecControlDelete(t *testing.T) {
 	if !equalAnyStringSlice(create["required_capabilities"], []string{"ram-overlay", "gui"}) {
 		t.Fatalf("create required capabilities = %+v, want ram-overlay/gui", create["required_capabilities"])
 	}
+	if create["max_active_sandboxes"] != float64(3) {
+		t.Fatalf("create max active sandboxes = %+v, want 3", create["max_active_sandboxes"])
+	}
 	if server.requests[1].query.Get("namespace") != "team-a" {
 		t.Fatalf("list query = %q, want team-a", server.requests[1].query.Encode())
 	}
@@ -274,8 +278,17 @@ func TestCloudClientPlansSandboxPlacement(t *testing.T) {
 	}
 }
 
-func TestCloudClientRejectsNegativePlacementLimit(t *testing.T) {
+func TestCloudClientCreateAndPlanValidation(t *testing.T) {
 	ctx := context.Background()
+	if _, err := Create(ctx, ClientOptions{
+		Provider:           ProviderCloud,
+		FleetURL:           "https://fleet.example",
+		APIKey:             "secret",
+		ImageRef:           "base:v1",
+		MaxActiveSandboxes: -1,
+	}); err == nil || !strings.Contains(err.Error(), "max active sandboxes must be non-negative") {
+		t.Fatalf("negative max active sandboxes err = %v, want validation error", err)
+	}
 	_, err := Plan(ctx, ClientOptions{
 		Provider:       ProviderCloud,
 		FleetURL:       "https://fleet.example",

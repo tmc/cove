@@ -8,6 +8,12 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 ## Unreleased
 
 ### Added
+- `POST /v1/sandboxes` now accepts `max_active_sandboxes` and rejects new
+  hosted sandboxes once the request namespace already has that many
+  non-terminal sandbox run handles. The Go `agentsandbox` package, OpenAI
+  Agents Python adapter, and `SandboxRunConfig` cloud options expose the same
+  admission cap for per-namespace concurrency control; `SandboxRunConfig`
+  cloud options also forward `required_labels` to hosted sandbox placement.
 - The public Go `agentsandbox` package and OpenAI Agents Python adapter now
   expose hosted sandbox metering list helpers for `/v1/metering/sandboxes`, so
   SDK operators can query namespace or sandbox usage without first constructing
