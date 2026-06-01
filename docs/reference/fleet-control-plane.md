@@ -513,7 +513,7 @@ Warm-pool endpoint:
 ```bash
 curl -X POST http://127.0.0.1:9758/v1/warm-pools \
   -H 'content-type: application/json' \
-  -d '{"name":"runner-14","image_ref":"macos-runner:14.5","manifest_bundle":"manifests","image_platform":"darwin/arm64","size":3,"required_labels":{"zone":"desk"},"resources":{"vms":1}}'
+  -d '{"name":"runner-14","image_ref":"macos-runner:14.5","manifest_bundle":"manifests","image_platform":"darwin/arm64","size":3,"required_labels":{"zone":"desk"},"required_capabilities":["ram-overlay"],"resources":{"vms":1}}'
 curl -X POST http://127.0.0.1:9758/v1/warm-pools/claim \
   -H 'content-type: application/json' \
   -d '{"name":"runner-14","command":["/bin/sh","-lc","make test"],"env":{"CI":"1"}}'
@@ -532,10 +532,11 @@ cove run -fork-from <image_ref> -fork-name <generated> -ephemeral -keep -headles
 ```
 
 Warm pools accept the same optional `manifest_bundle`, `image_manifest_digest`,
-`image_digest_ref`, and `image_platform` fields as assignments. With a manifest
-digest or bundle, the controller only replenishes slots on workers that report
-the exact image provenance; use `/v1/images/prepare` first to refresh stale
-mutable refs.
+`image_digest_ref`, `image_platform`, and `required_capabilities` fields as
+assignments. With a manifest digest or bundle, the controller only replenishes
+slots on workers that report the exact image provenance; with required
+capabilities, replenishment only uses workers that report every requested
+capability. Use `/v1/images/prepare` first to refresh stale mutable refs.
 
 The first slice keeps those fork assignments active, probes the warmed VM with
 `cove shell <generated> -- /bin/sh -c true`, and replenishes completed or failed
@@ -572,7 +573,7 @@ Sandbox endpoint:
 ```bash
 curl -X POST http://127.0.0.1:9758/v1/sandboxes \
   -H 'content-type: application/json' \
-  -d '{"id":"job-1","image_ref":"macos-runner:14.5","manifest_bundle":"manifests","image_platform":"darwin/arm64","required_labels":{"zone":"desk"},"args":["--net","nat"]}'
+  -d '{"id":"job-1","image_ref":"macos-runner:14.5","manifest_bundle":"manifests","image_platform":"darwin/arm64","required_labels":{"zone":"desk"},"required_capabilities":["ram-overlay"],"args":["--net","nat"]}'
 curl http://127.0.0.1:9758/v1/sandboxes
 curl 'http://127.0.0.1:9758/v1/sandboxes?status=ready&image_ref=macos-runner:14.5&offset=0&limit=20'
 curl http://127.0.0.1:9758/v1/sandboxes/job-1
@@ -613,9 +614,11 @@ to `cove-sandbox-<id>`. The controller records the backing assignment with
 without a separate scheduler. Extra `args` are appended to `cove run`, but
 fork/source/lifetime/headless flags are reserved by the controller.
 Create requests accept optional `manifest_bundle`, `image_manifest_digest`,
-`image_digest_ref`, and `image_platform` fields. The returned sandbox status and
-backing assignment keep the resolved digest fields, and exact-digest requests
-are admitted only onto workers that report the matching image provenance.
+`image_digest_ref`, `image_platform`, and `required_capabilities` fields. The
+returned sandbox status and backing assignment keep the resolved digest and
+capability fields, exact-digest requests are admitted only onto workers that
+report the matching image provenance, and capability-constrained requests are
+admitted only onto workers that report every required capability.
 
 `GET /v1/sandboxes` accepts `namespace`, `status`, `worker_id`, `image_ref`,
 `offset`, and `limit` query parameters. Namespace-scoped bearer tokens still

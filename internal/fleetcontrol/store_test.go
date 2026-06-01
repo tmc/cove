@@ -634,6 +634,38 @@ func TestStoreListSandboxesFiltered(t *testing.T) {
 	}
 }
 
+func TestStoreCreatesSandboxWithRequiredCapabilities(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	for _, hb := range []WorkerHeartbeat{
+		{ID: "plain", Capabilities: nil, ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 4}},
+		{ID: "ram", Capabilities: []string{"ram-overlay"}, ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 4}},
+	} {
+		if _, err := store.UpsertHeartbeat(hb); err != nil {
+			t.Fatalf("UpsertHeartbeat(%q): %v", hb.ID, err)
+		}
+	}
+	sandbox, err := store.CreateSandbox(SandboxRequest{
+		ID:                   "job-1",
+		ImageRef:             "base:v1",
+		RequiredCapabilities: []string{"ram-overlay"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sandbox.WorkerID != "ram" {
+		t.Fatalf("sandbox worker = %q, want ram", sandbox.WorkerID)
+	}
+	if len(sandbox.RequiredCapabilities) != 1 || sandbox.RequiredCapabilities[0] != "ram-overlay" {
+		t.Fatalf("sandbox required capabilities = %+v, want ram-overlay", sandbox.RequiredCapabilities)
+	}
+	if len(sandbox.Assignment.RequiredCapabilities) != 1 || sandbox.Assignment.RequiredCapabilities[0] != "ram-overlay" {
+		t.Fatalf("sandbox assignment capabilities = %+v, want ram-overlay", sandbox.Assignment.RequiredCapabilities)
+	}
+	if _, err := store.CreateSandbox(SandboxRequest{ID: "job-2", ImageRef: "base:v1", RequiredCapabilities: []string{"gui"}}); err == nil {
+		t.Fatal("CreateSandbox missing capability error = nil")
+	}
+}
+
 func TestStoreDeleteRunningSandboxQueuesStop(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
 	store := NewMemoryStore(time.Minute)
@@ -3934,8 +3966,9 @@ func TestStoreEnsuresWarmPoolAssignments(t *testing.T) {
 	}
 	store.now = func() time.Time { return now }
 	for _, hb := range []WorkerHeartbeat{
-		{ID: "warm", Labels: map[string]string{"zone": "desk"}, ImageRefs: []string{"macos-runner:latest"}, Capacity: Capacity{VMs: 0, MaxVMs: 1}},
-		{ID: "cold", Labels: map[string]string{"zone": "desk"}, Capacity: Capacity{VMs: 0, MaxVMs: 2}},
+		{ID: "warm", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}, ImageRefs: []string{"macos-runner:latest"}, Capacity: Capacity{VMs: 0, MaxVMs: 1}},
+		{ID: "cold", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}, Capacity: Capacity{VMs: 0, MaxVMs: 2}},
+		{ID: "plain", Labels: map[string]string{"zone": "desk"}, Capacity: Capacity{VMs: 0, MaxVMs: 2}},
 		{ID: "rack", Labels: map[string]string{"zone": "rack"}, Capacity: Capacity{VMs: 0, MaxVMs: 2}},
 	} {
 		if _, err := store.UpsertHeartbeat(hb); err != nil {
@@ -3943,12 +3976,13 @@ func TestStoreEnsuresWarmPoolAssignments(t *testing.T) {
 		}
 	}
 	result, err := store.EnsureWarmPool(WarmPoolRequest{
-		Name:           "runner",
-		ImageRef:       "macos-runner:latest",
-		Size:           2,
-		RequiredLabels: map[string]string{"zone": "desk"},
-		Resources:      Capacity{VMs: 1},
-		Args:           []string{"--net", "nat"},
+		Name:                 "runner",
+		ImageRef:             "macos-runner:latest",
+		Size:                 2,
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay"},
+		Resources:            Capacity{VMs: 1},
+		Args:                 []string{"--net", "nat"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -3962,16 +3996,22 @@ func TestStoreEnsuresWarmPoolAssignments(t *testing.T) {
 	if result.Created[0].WorkerID != "warm" || result.Created[1].WorkerID != "cold" {
 		t.Fatalf("created workers = %q, %q; want warm, cold", result.Created[0].WorkerID, result.Created[1].WorkerID)
 	}
+	if len(result.Pool.RequiredCapabilities) != 1 || result.Pool.RequiredCapabilities[0] != "ram-overlay" {
+		t.Fatalf("pool required capabilities = %+v, want ram-overlay", result.Pool.RequiredCapabilities)
+	}
 	for _, assignment := range result.Created {
 		if assignment.WarmPool != "runner" || assignment.Verb != "cove" || assignment.ImageRef != "macos-runner:latest" {
 			t.Fatalf("assignment = %+v", assignment)
+		}
+		if len(assignment.RequiredCapabilities) != 1 || assignment.RequiredCapabilities[0] != "ram-overlay" {
+			t.Fatalf("assignment required capabilities = %+v, want ram-overlay", assignment.RequiredCapabilities)
 		}
 		wantArgs := []string{"run", "-fork-from", "macos-runner:latest", "-fork-name", warmPoolForkName("runner", assignment.ID), "-ephemeral", "-keep", "-headless", "--net", "nat"}
 		if !equalStrings(assignment.Args, wantArgs) {
 			t.Fatalf("args = %+v, want %+v", assignment.Args, wantArgs)
 		}
 	}
-	result, err = store.EnsureWarmPool(WarmPoolRequest{Name: "runner", ImageRef: "macos-runner:latest", Size: 2})
+	result, err = store.EnsureWarmPool(WarmPoolRequest{Name: "runner", ImageRef: "macos-runner:latest", Size: 2, RequiredCapabilities: []string{"ram-overlay"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3985,6 +4025,9 @@ func TestStoreEnsuresWarmPoolAssignments(t *testing.T) {
 	pools := reopened.ListWarmPools()
 	if len(pools) != 1 || pools[0].Name != "runner" || pools[0].Active != 2 || pools[0].Slots != 2 {
 		t.Fatalf("reopened pools = %+v", pools)
+	}
+	if len(pools[0].RequiredCapabilities) != 1 || pools[0].RequiredCapabilities[0] != "ram-overlay" {
+		t.Fatalf("reopened pool capabilities = %+v, want ram-overlay", pools[0].RequiredCapabilities)
 	}
 }
 
@@ -5219,8 +5262,9 @@ func TestHandlerPrepareImageFromManifestBundle(t *testing.T) {
 
 	var record HostRecord
 	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{
-		ID:        "exact",
-		ImageRefs: []string{"base:v1"},
+		ID:           "exact",
+		Capabilities: []string{"ram-overlay"},
+		ImageRefs:    []string{"base:v1"},
 		ImageDetails: []WorkerImage{{
 			Ref:                  "base:v1",
 			SourceManifestDigest: linuxDigest,
@@ -5474,15 +5518,20 @@ func TestHandlerWarmPools(t *testing.T) {
 	defer server.Close()
 
 	var record HostRecord
-	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 2}}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-0", ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 2}}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", Capabilities: []string{"ram-overlay"}, ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 2}}, &record)
 	var result WarmPoolResult
 	postJSON(t, server.URL+"/v1/warm-pools", WarmPoolRequest{
-		Name:     "runner",
-		ImageRef: "base:v1",
-		Size:     1,
+		Name:                 "runner",
+		ImageRef:             "base:v1",
+		Size:                 1,
+		RequiredCapabilities: []string{"ram-overlay"},
 	}, &result)
 	if result.Pool.Name != "runner" || result.Pool.Active != 1 || result.Pool.Slots != 1 || result.Pool.Pending != 1 || len(result.Created) != 1 {
 		t.Fatalf("warm pool result = %+v", result)
+	}
+	if len(result.Pool.RequiredCapabilities) != 1 || result.Pool.RequiredCapabilities[0] != "ram-overlay" {
+		t.Fatalf("warm pool capabilities = %+v, want ram-overlay", result.Pool.RequiredCapabilities)
 	}
 	if result.Created[0].WorkerID != "worker-1" || result.Created[0].WarmPool != "runner" {
 		t.Fatalf("created assignment = %+v", result.Created[0])
@@ -5492,7 +5541,7 @@ func TestHandlerWarmPools(t *testing.T) {
 		WarmPools []WarmPoolStatus `json:"warm_pools"`
 	}
 	getJSON(t, server.URL+"/v1/warm-pools", &list)
-	if len(list.WarmPools) != 1 || list.WarmPools[0].Name != "runner" || list.WarmPools[0].Active != 1 || list.WarmPools[0].Slots != 1 {
+	if len(list.WarmPools) != 1 || list.WarmPools[0].Name != "runner" || list.WarmPools[0].Active != 1 || list.WarmPools[0].Slots != 1 || len(list.WarmPools[0].RequiredCapabilities) != 1 {
 		t.Fatalf("warm pool list = %+v", list)
 	}
 
@@ -5546,8 +5595,9 @@ func TestHandlerWarmPoolFromManifestBundle(t *testing.T) {
 
 	var record HostRecord
 	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{
-		ID:        "exact",
-		ImageRefs: []string{"base:v1"},
+		ID:           "exact",
+		Capabilities: []string{"ram-overlay"},
+		ImageRefs:    []string{"base:v1"},
 		ImageDetails: []WorkerImage{{
 			Ref:                  "base:v1",
 			SourceManifestDigest: linuxDigest,
@@ -5766,8 +5816,9 @@ func TestHandlerSandboxFromManifestBundle(t *testing.T) {
 
 	var record HostRecord
 	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{
-		ID:        "exact",
-		ImageRefs: []string{"base:v1"},
+		ID:           "exact",
+		Capabilities: []string{"ram-overlay"},
+		ImageRefs:    []string{"base:v1"},
 		ImageDetails: []WorkerImage{{
 			Ref:                  "base:v1",
 			SourceManifestDigest: linuxDigest,
@@ -5778,13 +5829,17 @@ func TestHandlerSandboxFromManifestBundle(t *testing.T) {
 
 	var created SandboxStatus
 	postJSON(t, server.URL+"/v1/sandboxes", SandboxRequest{
-		ID:             "job-1",
-		ImageRef:       "base:v1",
-		ManifestBundle: bundleDir,
-		ImagePlatform:  "linux/arm64",
+		ID:                   "job-1",
+		ImageRef:             "base:v1",
+		ManifestBundle:       bundleDir,
+		ImagePlatform:        "linux/arm64",
+		RequiredCapabilities: []string{"ram-overlay"},
 	}, &created)
 	if created.WorkerID != "exact" || created.ImageManifestDigest != linuxDigest || created.ImageDigestRef != "ghcr.io/me/dev-vm@"+linuxDigest || created.ImagePlatform != "linux/arm64" {
 		t.Fatalf("sandbox = %+v, want exact bundle metadata", created)
+	}
+	if len(created.RequiredCapabilities) != 1 || created.RequiredCapabilities[0] != "ram-overlay" {
+		t.Fatalf("sandbox capabilities = %+v, want ram-overlay", created.RequiredCapabilities)
 	}
 	if created.Assignment.ImageManifestDigest != linuxDigest || created.Assignment.ManifestBundle != "" {
 		t.Fatalf("sandbox assignment = %+v, want resolved bundle metadata only", created.Assignment)

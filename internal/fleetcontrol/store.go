@@ -1534,15 +1534,16 @@ func (s *Store) ClaimWarmPoolActor(actor string, req WarmPoolClaimRequest) (Warm
 	s.assignments[slot.ID] = slot
 
 	assignment := Assignment{
-		ID:           s.nextAssignmentIDLocked(now),
-		Namespace:    pool.Namespace,
-		WorkerID:     slot.WorkerID,
-		WarmPoolSlot: slot.ID,
-		Verb:         "cove",
-		Args:         warmPoolClaimArgs(vmName, command, env),
-		Status:       "pending",
-		Created:      now,
-		Updated:      now,
+		ID:                   s.nextAssignmentIDLocked(now),
+		Namespace:            pool.Namespace,
+		WorkerID:             slot.WorkerID,
+		WarmPoolSlot:         slot.ID,
+		RequiredCapabilities: cloneStrings(slot.RequiredCapabilities),
+		Verb:                 "cove",
+		Args:                 warmPoolClaimArgs(vmName, command, env),
+		Status:               "pending",
+		Created:              now,
+		Updated:              now,
 	}
 	s.assignments[assignment.ID] = assignment
 	s.ensureWarmPoolLocked(now, pool)
@@ -1588,15 +1589,16 @@ func (s *Store) CreateSandboxActor(actor string, req SandboxRequest) (SandboxSta
 		return SandboxStatus{}, err
 	}
 	assignment := Assignment{
-		Namespace:           normalizeNamespace(req.Namespace),
-		Policy:              strings.TrimSpace(req.Policy),
-		ImageRef:            imageRef,
-		ImageManifestDigest: strings.TrimSpace(req.ImageManifestDigest),
-		ImageDigestRef:      strings.TrimSpace(req.ImageDigestRef),
-		ImagePlatform:       strings.TrimSpace(req.ImagePlatform),
-		RequiredLabels:      cloneLabels(req.RequiredLabels),
-		AntiAffinityKey:     strings.TrimSpace(req.AntiAffinityKey),
-		Resources:           req.Resources,
+		Namespace:            normalizeNamespace(req.Namespace),
+		Policy:               strings.TrimSpace(req.Policy),
+		ImageRef:             imageRef,
+		ImageManifestDigest:  strings.TrimSpace(req.ImageManifestDigest),
+		ImageDigestRef:       strings.TrimSpace(req.ImageDigestRef),
+		ImagePlatform:        strings.TrimSpace(req.ImagePlatform),
+		RequiredLabels:       cloneLabels(req.RequiredLabels),
+		RequiredCapabilities: sortedUniqueStrings(req.RequiredCapabilities),
+		AntiAffinityKey:      strings.TrimSpace(req.AntiAffinityKey),
+		Resources:            req.Resources,
 	}
 	policy, imageRef, imageManifestDigest, antiAffinityKey, requiredLabels, requiredCapabilities, resources, err := normalizePlacementFields(assignment)
 	if err != nil {
@@ -2066,7 +2068,7 @@ func (s *Store) ExecSandboxActor(actor, id string, req SandboxExecRequest) (Sand
 	if sandbox.Status != "ready" {
 		return SandboxExecResult{}, fmt.Errorf("sandbox %q is %s", id, sandbox.Status)
 	}
-	if err := s.requireSandboxWorkerReadyLocked(now, sandbox.WorkerID); err != nil {
+	if err := s.requireSandboxWorkerReadyLocked(now, sandbox.WorkerID, sandbox.RequiredCapabilities); err != nil {
 		return SandboxExecResult{}, err
 	}
 	vmName := SandboxAssignmentVMName(sandbox)
@@ -2131,7 +2133,7 @@ func (s *Store) ControlSandboxActor(actor, id string, req SandboxControlRequest)
 	if sandbox.Status != "ready" {
 		return SandboxControlResult{}, fmt.Errorf("sandbox %q is %s", id, sandbox.Status)
 	}
-	if err := s.requireSandboxWorkerReadyLocked(now, sandbox.WorkerID); err != nil {
+	if err := s.requireSandboxWorkerReadyLocked(now, sandbox.WorkerID, sandbox.RequiredCapabilities); err != nil {
 		return SandboxControlResult{}, err
 	}
 	vmName := SandboxAssignmentVMName(sandbox)
@@ -4890,6 +4892,7 @@ func cloneHostMap(in map[string]HostRecord) map[string]HostRecord {
 func cloneWarmPool(in WarmPool) WarmPool {
 	out := in
 	out.RequiredLabels = cloneLabels(in.RequiredLabels)
+	out.RequiredCapabilities = cloneStrings(in.RequiredCapabilities)
 	out.Args = cloneStrings(in.Args)
 	return out
 }
@@ -5276,29 +5279,30 @@ func (s *Store) ensureWarmPoolLocked(now time.Time, pool WarmPool) []Assignment 
 	}
 	var created []Assignment
 	for i := 0; i < need; i++ {
-		workerID, err := s.selectWorkerLocked(pool.Policy, pool.ImageRef, pool.ImageManifestDigest, pool.RequiredLabels, nil, warmPoolAntiAffinityKey(pool.Name), pool.Resources)
+		workerID, err := s.selectWorkerLocked(pool.Policy, pool.ImageRef, pool.ImageManifestDigest, pool.RequiredLabels, pool.RequiredCapabilities, warmPoolAntiAffinityKey(pool.Name), pool.Resources)
 		if err != nil {
 			return created
 		}
 		id := s.nextAssignmentIDLocked(now)
 		assignment := Assignment{
-			ID:                  id,
-			Namespace:           pool.Namespace,
-			WorkerID:            workerID,
-			WarmPool:            pool.Name,
-			Policy:              pool.Policy,
-			ImageRef:            pool.ImageRef,
-			ImageManifestDigest: pool.ImageManifestDigest,
-			ImageDigestRef:      pool.ImageDigestRef,
-			ImagePlatform:       pool.ImagePlatform,
-			RequiredLabels:      cloneLabels(pool.RequiredLabels),
-			AntiAffinityKey:     warmPoolAntiAffinityKey(pool.Name),
-			Resources:           pool.Resources,
-			Verb:                "cove",
-			Args:                warmPoolArgs(pool, id),
-			Status:              "pending",
-			Created:             now,
-			Updated:             now,
+			ID:                   id,
+			Namespace:            pool.Namespace,
+			WorkerID:             workerID,
+			WarmPool:             pool.Name,
+			Policy:               pool.Policy,
+			ImageRef:             pool.ImageRef,
+			ImageManifestDigest:  pool.ImageManifestDigest,
+			ImageDigestRef:       pool.ImageDigestRef,
+			ImagePlatform:        pool.ImagePlatform,
+			RequiredLabels:       cloneLabels(pool.RequiredLabels),
+			RequiredCapabilities: cloneStrings(pool.RequiredCapabilities),
+			AntiAffinityKey:      warmPoolAntiAffinityKey(pool.Name),
+			Resources:            pool.Resources,
+			Verb:                 "cove",
+			Args:                 warmPoolArgs(pool, id),
+			Status:               "pending",
+			Created:              now,
+			Updated:              now,
 		}
 		s.assignments[id] = assignment
 		created = append(created, cloneAssignment(assignment))
@@ -5538,7 +5542,7 @@ func (s *Store) startSandboxLocked(now time.Time, actor, id, action, holder stri
 		return result, nil
 	}
 	if assignment.Status == "stopped" || assignment.Status == "complete" || sandboxRunUsesExistingVM(assignment.Args) {
-		if err := s.requireSandboxWorkerReadyLocked(now, assignment.WorkerID); err != nil {
+		if err := s.requireSandboxWorkerReadyLocked(now, assignment.WorkerID, assignment.RequiredCapabilities); err != nil {
 			return SandboxStartResult{}, err
 		}
 		assignment.Args = sandboxStartArgs(assignment)
@@ -5548,7 +5552,7 @@ func (s *Store) startSandboxLocked(now time.Time, actor, id, action, holder stri
 			return SandboxStartResult{}, err
 		}
 		assignment.WorkerID = workerID
-	} else if err := s.requireSandboxWorkerReadyLocked(now, assignment.WorkerID); err != nil {
+	} else if err := s.requireSandboxWorkerReadyLocked(now, assignment.WorkerID, assignment.RequiredCapabilities); err != nil {
 		return SandboxStartResult{}, err
 	}
 	assignment.Status = "pending"
@@ -5576,7 +5580,7 @@ func (s *Store) startSandboxLocked(now time.Time, actor, id, action, holder stri
 	return result, nil
 }
 
-func (s *Store) requireSandboxWorkerReadyLocked(now time.Time, workerID string) error {
+func (s *Store) requireSandboxWorkerReadyLocked(now time.Time, workerID string, capabilities []string) error {
 	workerID = strings.TrimSpace(workerID)
 	if workerID == "" {
 		return fmt.Errorf("sandbox worker required")
@@ -5591,6 +5595,9 @@ func (s *Store) requireSandboxWorkerReadyLocked(now time.Time, workerID string) 
 	}
 	if now.After(status.Expires) {
 		return fmt.Errorf("sandbox worker %q is stale", workerID)
+	}
+	if !capabilitiesMatch(status.Capabilities, sortedUniqueStrings(capabilities)) {
+		return fmt.Errorf("sandbox worker %q missing required capabilities", workerID)
 	}
 	return nil
 }
@@ -5708,19 +5715,20 @@ func warmPoolFromRequest(req WarmPoolRequest, now time.Time) (WarmPool, error) {
 		return WarmPool{}, fmt.Errorf("warm pool manifest_bundle must be resolved before store admission")
 	}
 	pool := WarmPool{
-		Namespace:           normalizeNamespace(req.Namespace),
-		Name:                strings.TrimSpace(req.Name),
-		ImageRef:            strings.TrimSpace(req.ImageRef),
-		ImageManifestDigest: strings.TrimSpace(req.ImageManifestDigest),
-		ImageDigestRef:      strings.TrimSpace(req.ImageDigestRef),
-		ImagePlatform:       strings.TrimSpace(req.ImagePlatform),
-		Size:                req.Size,
-		Policy:              strings.TrimSpace(req.Policy),
-		RequiredLabels:      cloneLabels(req.RequiredLabels),
-		Resources:           req.Resources,
-		Args:                cloneStrings(req.Args),
-		Created:             now,
-		Updated:             now,
+		Namespace:            normalizeNamespace(req.Namespace),
+		Name:                 strings.TrimSpace(req.Name),
+		ImageRef:             strings.TrimSpace(req.ImageRef),
+		ImageManifestDigest:  strings.TrimSpace(req.ImageManifestDigest),
+		ImageDigestRef:       strings.TrimSpace(req.ImageDigestRef),
+		ImagePlatform:        strings.TrimSpace(req.ImagePlatform),
+		Size:                 req.Size,
+		Policy:               strings.TrimSpace(req.Policy),
+		RequiredLabels:       cloneLabels(req.RequiredLabels),
+		RequiredCapabilities: sortedUniqueStrings(req.RequiredCapabilities),
+		Resources:            req.Resources,
+		Args:                 cloneStrings(req.Args),
+		Created:              now,
+		Updated:              now,
 	}
 	if pool.Name == "" {
 		pool.Name = warmPoolDefaultName(pool.ImageRef)
@@ -5737,6 +5745,7 @@ func normalizeWarmPool(pool WarmPool, now time.Time) (WarmPool, error) {
 	pool.ImagePlatform = strings.TrimSpace(pool.ImagePlatform)
 	pool.Policy = strings.TrimSpace(pool.Policy)
 	pool.RequiredLabels = cloneLabels(pool.RequiredLabels)
+	pool.RequiredCapabilities = sortedUniqueStrings(pool.RequiredCapabilities)
 	pool.Args = cloneStrings(pool.Args)
 	if err := validateForkRunArgs(pool.Args, "warm pool"); err != nil {
 		return WarmPool{}, err
@@ -5816,18 +5825,19 @@ func sandboxStatusFromAssignment(assignment Assignment, now time.Time) SandboxSt
 	assignment = cloneAssignment(assignment)
 	clearExpiredSandboxLease(&assignment, now)
 	status := SandboxStatus{
-		Namespace:           assignment.Namespace,
-		ID:                  assignment.SandboxID,
-		VMName:              SandboxAssignmentVMName(assignment),
-		ImageRef:            assignment.ImageRef,
-		ImageManifestDigest: assignment.ImageManifestDigest,
-		ImageDigestRef:      assignment.ImageDigestRef,
-		ImagePlatform:       assignment.ImagePlatform,
-		WorkerID:            assignment.WorkerID,
-		Status:              assignment.Status,
-		Assignment:          assignment,
-		Created:             assignment.Created,
-		Updated:             assignment.Updated,
+		Namespace:            assignment.Namespace,
+		ID:                   assignment.SandboxID,
+		VMName:               SandboxAssignmentVMName(assignment),
+		ImageRef:             assignment.ImageRef,
+		ImageManifestDigest:  assignment.ImageManifestDigest,
+		ImageDigestRef:       assignment.ImageDigestRef,
+		ImagePlatform:        assignment.ImagePlatform,
+		RequiredCapabilities: cloneStrings(assignment.RequiredCapabilities),
+		WorkerID:             assignment.WorkerID,
+		Status:               assignment.Status,
+		Assignment:           assignment,
+		Created:              assignment.Created,
+		Updated:              assignment.Updated,
 	}
 	if assignment.SandboxLeaseHolder != "" && !assignment.SandboxLeaseExpires.IsZero() {
 		status.Lease = &SandboxLease{

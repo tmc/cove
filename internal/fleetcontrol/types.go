@@ -688,34 +688,36 @@ type PlacementCandidate struct {
 }
 
 type WarmPoolRequest struct {
-	Namespace           string            `json:"namespace,omitempty"`
-	Name                string            `json:"name,omitempty"`
-	ImageRef            string            `json:"image_ref"`
-	ManifestBundle      string            `json:"manifest_bundle,omitempty"`
-	ImageManifestDigest string            `json:"image_manifest_digest,omitempty"`
-	ImageDigestRef      string            `json:"image_digest_ref,omitempty"`
-	ImagePlatform       string            `json:"image_platform,omitempty"`
-	Size                int               `json:"size"`
-	Policy              string            `json:"policy,omitempty"`
-	RequiredLabels      map[string]string `json:"required_labels,omitempty"`
-	Resources           Capacity          `json:"resources,omitempty"`
-	Args                []string          `json:"args,omitempty"`
+	Namespace            string            `json:"namespace,omitempty"`
+	Name                 string            `json:"name,omitempty"`
+	ImageRef             string            `json:"image_ref"`
+	ManifestBundle       string            `json:"manifest_bundle,omitempty"`
+	ImageManifestDigest  string            `json:"image_manifest_digest,omitempty"`
+	ImageDigestRef       string            `json:"image_digest_ref,omitempty"`
+	ImagePlatform        string            `json:"image_platform,omitempty"`
+	Size                 int               `json:"size"`
+	Policy               string            `json:"policy,omitempty"`
+	RequiredLabels       map[string]string `json:"required_labels,omitempty"`
+	RequiredCapabilities []string          `json:"required_capabilities,omitempty"`
+	Resources            Capacity          `json:"resources,omitempty"`
+	Args                 []string          `json:"args,omitempty"`
 }
 
 type WarmPool struct {
-	Namespace           string            `json:"namespace,omitempty"`
-	Name                string            `json:"name"`
-	ImageRef            string            `json:"image_ref"`
-	ImageManifestDigest string            `json:"image_manifest_digest,omitempty"`
-	ImageDigestRef      string            `json:"image_digest_ref,omitempty"`
-	ImagePlatform       string            `json:"image_platform,omitempty"`
-	Size                int               `json:"size"`
-	Policy              string            `json:"policy,omitempty"`
-	RequiredLabels      map[string]string `json:"required_labels,omitempty"`
-	Resources           Capacity          `json:"resources,omitempty"`
-	Args                []string          `json:"args,omitempty"`
-	Created             time.Time         `json:"created,omitempty"`
-	Updated             time.Time         `json:"updated,omitempty"`
+	Namespace            string            `json:"namespace,omitempty"`
+	Name                 string            `json:"name"`
+	ImageRef             string            `json:"image_ref"`
+	ImageManifestDigest  string            `json:"image_manifest_digest,omitempty"`
+	ImageDigestRef       string            `json:"image_digest_ref,omitempty"`
+	ImagePlatform        string            `json:"image_platform,omitempty"`
+	Size                 int               `json:"size"`
+	Policy               string            `json:"policy,omitempty"`
+	RequiredLabels       map[string]string `json:"required_labels,omitempty"`
+	RequiredCapabilities []string          `json:"required_capabilities,omitempty"`
+	Resources            Capacity          `json:"resources,omitempty"`
+	Args                 []string          `json:"args,omitempty"`
+	Created              time.Time         `json:"created,omitempty"`
+	Updated              time.Time         `json:"updated,omitempty"`
 }
 
 type WarmPoolStatus struct {
@@ -764,35 +766,37 @@ type WarmPoolClaimResult struct {
 }
 
 type SandboxRequest struct {
-	Namespace           string            `json:"namespace,omitempty"`
-	ID                  string            `json:"id,omitempty"`
-	ImageRef            string            `json:"image_ref"`
-	ManifestBundle      string            `json:"manifest_bundle,omitempty"`
-	ImageManifestDigest string            `json:"image_manifest_digest,omitempty"`
-	ImageDigestRef      string            `json:"image_digest_ref,omitempty"`
-	ImagePlatform       string            `json:"image_platform,omitempty"`
-	VMName              string            `json:"vm_name,omitempty"`
-	Policy              string            `json:"policy,omitempty"`
-	RequiredLabels      map[string]string `json:"required_labels,omitempty"`
-	AntiAffinityKey     string            `json:"anti_affinity_key,omitempty"`
-	Resources           Capacity          `json:"resources,omitempty"`
-	Args                []string          `json:"args,omitempty"`
+	Namespace            string            `json:"namespace,omitempty"`
+	ID                   string            `json:"id,omitempty"`
+	ImageRef             string            `json:"image_ref"`
+	ManifestBundle       string            `json:"manifest_bundle,omitempty"`
+	ImageManifestDigest  string            `json:"image_manifest_digest,omitempty"`
+	ImageDigestRef       string            `json:"image_digest_ref,omitempty"`
+	ImagePlatform        string            `json:"image_platform,omitempty"`
+	VMName               string            `json:"vm_name,omitempty"`
+	Policy               string            `json:"policy,omitempty"`
+	RequiredLabels       map[string]string `json:"required_labels,omitempty"`
+	RequiredCapabilities []string          `json:"required_capabilities,omitempty"`
+	AntiAffinityKey      string            `json:"anti_affinity_key,omitempty"`
+	Resources            Capacity          `json:"resources,omitempty"`
+	Args                 []string          `json:"args,omitempty"`
 }
 
 type SandboxStatus struct {
-	Namespace           string        `json:"namespace,omitempty"`
-	ID                  string        `json:"id"`
-	VMName              string        `json:"vm_name"`
-	ImageRef            string        `json:"image_ref"`
-	ImageManifestDigest string        `json:"image_manifest_digest,omitempty"`
-	ImageDigestRef      string        `json:"image_digest_ref,omitempty"`
-	ImagePlatform       string        `json:"image_platform,omitempty"`
-	WorkerID            string        `json:"worker_id,omitempty"`
-	Status              string        `json:"status"`
-	Lease               *SandboxLease `json:"lease,omitempty"`
-	Assignment          Assignment    `json:"assignment"`
-	Created             time.Time     `json:"created,omitempty"`
-	Updated             time.Time     `json:"updated,omitempty"`
+	Namespace            string        `json:"namespace,omitempty"`
+	ID                   string        `json:"id"`
+	VMName               string        `json:"vm_name"`
+	ImageRef             string        `json:"image_ref"`
+	ImageManifestDigest  string        `json:"image_manifest_digest,omitempty"`
+	ImageDigestRef       string        `json:"image_digest_ref,omitempty"`
+	ImagePlatform        string        `json:"image_platform,omitempty"`
+	RequiredCapabilities []string      `json:"required_capabilities,omitempty"`
+	WorkerID             string        `json:"worker_id,omitempty"`
+	Status               string        `json:"status"`
+	Lease                *SandboxLease `json:"lease,omitempty"`
+	Assignment           Assignment    `json:"assignment"`
+	Created              time.Time     `json:"created,omitempty"`
+	Updated              time.Time     `json:"updated,omitempty"`
 }
 
 type SandboxListFilter struct {
