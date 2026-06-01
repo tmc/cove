@@ -2631,18 +2631,70 @@ func (s *Store) ListAssignments() []Assignment {
 }
 
 func (s *Store) ListAssignmentsNamespace(namespace string) []Assignment {
-	namespace = normalizeNamespace(namespace)
+	return s.ListAssignmentsFiltered(AssignmentListFilter{Namespace: namespace})
+}
+
+func (s *Store) ListAssignmentsFiltered(filter AssignmentListFilter) []Assignment {
+	return s.ListAssignmentsPage(filter).Assignments
+}
+
+func (s *Store) ListAssignmentsPage(filter AssignmentListFilter) AssignmentListResult {
+	filter.Namespace = normalizeNamespace(filter.Namespace)
+	filter.Status = strings.TrimSpace(filter.Status)
+	filter.WorkerID = strings.TrimSpace(filter.WorkerID)
+	filter.LeasedTo = strings.TrimSpace(filter.LeasedTo)
+	filter.Verb = strings.TrimSpace(filter.Verb)
+	filter.ImageRef = strings.TrimSpace(filter.ImageRef)
+	filter.SandboxID = strings.TrimSpace(filter.SandboxID)
+	filter.WarmPool = strings.TrimSpace(filter.WarmPool)
+	if filter.Offset < 0 {
+		filter.Offset = 0
+	}
+	if filter.Limit < 0 {
+		filter.Limit = 0
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	assignments := s.sortedAssignmentsLocked()
-	out := make([]Assignment, 0, len(assignments))
+	result := AssignmentListResult{Offset: filter.Offset, Limit: filter.Limit}
+	offset := 0
 	for _, assignment := range assignments {
-		if !namespaceMatches(assignment.Namespace, namespace) {
+		if !namespaceMatches(assignment.Namespace, filter.Namespace) {
 			continue
 		}
-		out = append(out, cloneAssignment(assignment))
+		if filter.Status != "" && normalizeOperationStatus(assignment.Status) != filter.Status {
+			continue
+		}
+		if filter.WorkerID != "" && assignment.WorkerID != filter.WorkerID {
+			continue
+		}
+		if filter.LeasedTo != "" && assignment.LeasedTo != filter.LeasedTo {
+			continue
+		}
+		if filter.Verb != "" && assignment.Verb != filter.Verb {
+			continue
+		}
+		if filter.ImageRef != "" && assignment.ImageRef != filter.ImageRef {
+			continue
+		}
+		if filter.SandboxID != "" && assignment.SandboxID != filter.SandboxID {
+			continue
+		}
+		if filter.WarmPool != "" && assignment.WarmPool != filter.WarmPool {
+			continue
+		}
+		if offset < filter.Offset {
+			offset++
+			continue
+		}
+		if filter.Limit > 0 && len(result.Assignments) >= filter.Limit {
+			result.NextOffset = filter.Offset + len(result.Assignments)
+			break
+		}
+		result.Assignments = append(result.Assignments, cloneAssignment(assignment))
 	}
-	return out
+	result.Count = len(result.Assignments)
+	return result
 }
 
 func (s *Store) ListWarmPools() []WarmPoolStatus {

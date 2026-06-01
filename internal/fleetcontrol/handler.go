@@ -1985,7 +1985,12 @@ func handleAssignments(w http.ResponseWriter, r *http.Request, store *Store) {
 		if !reconcile(w, store) {
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"assignments": store.ListAssignmentsNamespace(namespaceFilterFromRequest(r, identity))})
+		filter, err := assignmentListFilterFromRequest(r, namespaceFilterFromRequest(r, identity))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, store.ListAssignmentsPage(filter))
 	case http.MethodPost:
 		if !requireRole(w, identity, ServiceAccountRoleOperator) {
 			return
@@ -2011,6 +2016,37 @@ func handleAssignments(w http.ResponseWriter, r *http.Request, store *Store) {
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+func assignmentListFilterFromRequest(r *http.Request, namespace string) (AssignmentListFilter, error) {
+	filter := AssignmentListFilter{
+		Namespace: namespace,
+		Status:    strings.TrimSpace(r.URL.Query().Get("status")),
+		WorkerID:  strings.TrimSpace(r.URL.Query().Get("worker_id")),
+		LeasedTo:  strings.TrimSpace(r.URL.Query().Get("leased_to")),
+		Verb:      strings.TrimSpace(r.URL.Query().Get("verb")),
+		ImageRef:  strings.TrimSpace(r.URL.Query().Get("image_ref")),
+		SandboxID: strings.TrimSpace(r.URL.Query().Get("sandbox_id")),
+		WarmPool:  strings.TrimSpace(r.URL.Query().Get("warm_pool")),
+	}
+	if filter.SandboxID == "" {
+		filter.SandboxID = strings.TrimSpace(r.URL.Query().Get("sandbox"))
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 0 {
+			return AssignmentListFilter{}, fmt.Errorf("assignment limit must be non-negative")
+		}
+		filter.Limit = limit
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		offset, err := strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			return AssignmentListFilter{}, fmt.Errorf("assignment offset must be non-negative")
+		}
+		filter.Offset = offset
+	}
+	return filter, nil
 }
 
 func handleAssignment(w http.ResponseWriter, r *http.Request, store *Store) {

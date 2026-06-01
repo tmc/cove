@@ -338,6 +338,27 @@ type AssignmentRetryResult struct {
 	Replanned        bool       `json:"replanned,omitempty"`
 }
 
+type AssignmentListFilter struct {
+	Namespace string `json:"namespace,omitempty"`
+	Status    string `json:"status,omitempty"`
+	WorkerID  string `json:"worker_id,omitempty"`
+	LeasedTo  string `json:"leased_to,omitempty"`
+	Verb      string `json:"verb,omitempty"`
+	ImageRef  string `json:"image_ref,omitempty"`
+	SandboxID string `json:"sandbox_id,omitempty"`
+	WarmPool  string `json:"warm_pool,omitempty"`
+	Offset    int    `json:"offset,omitempty"`
+	Limit     int    `json:"limit,omitempty"`
+}
+
+type AssignmentListResult struct {
+	Assignments []Assignment `json:"assignments"`
+	Count       int          `json:"count"`
+	Offset      int          `json:"offset,omitempty"`
+	Limit       int          `json:"limit,omitempty"`
+	NextOffset  int          `json:"next_offset,omitempty"`
+}
+
 type WorkerDrainSkip struct {
 	SandboxID string `json:"sandbox_id"`
 	Status    string `json:"status,omitempty"`

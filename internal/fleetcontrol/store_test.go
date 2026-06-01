@@ -2041,6 +2041,65 @@ func TestStoreRetryAssignmentRejectsOpenAndOwned(t *testing.T) {
 	}
 }
 
+func TestStoreListAssignmentsPageFilters(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	for _, id := range []string{"worker-1", "worker-2"} {
+		if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: id}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.CreateAssignment(Assignment{ID: "a1", Namespace: "team-a", WorkerID: "worker-1", Verb: "noop"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AwaitAssignment("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: "a1", Status: "failed"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAssignment(Assignment{ID: "a2", Namespace: "team-a", WorkerID: "worker-2", Verb: "cove", ImageRef: "base:v1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAssignment(Assignment{ID: "a3", Namespace: "team-a", WorkerID: "worker-1", Verb: "noop"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AwaitAssignment("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAssignment(Assignment{ID: "warm-slot", Namespace: "team-a", WorkerID: "worker-2", WarmPool: "runner", Verb: "cove"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAssignment(Assignment{ID: "b1", Namespace: "team-b", WorkerID: "worker-1", Verb: "noop"}); err != nil {
+		t.Fatal(err)
+	}
+
+	page := store.ListAssignmentsPage(AssignmentListFilter{Namespace: "team-a", Limit: 2})
+	if page.Count != 2 || page.Limit != 2 || page.NextOffset != 2 || len(page.Assignments) != 2 || page.Assignments[0].ID != "a1" || page.Assignments[1].ID != "a2" {
+		t.Fatalf("first assignment page = %+v, want a1/a2 with next offset", page)
+	}
+	page = store.ListAssignmentsPage(AssignmentListFilter{Namespace: "team-a", Offset: 2, Limit: 2})
+	if page.Count != 2 || page.Offset != 2 || page.NextOffset != 0 || len(page.Assignments) != 2 || page.Assignments[0].ID != "a3" || page.Assignments[1].ID != "warm-slot" {
+		t.Fatalf("second assignment page = %+v, want a3/warm-slot", page)
+	}
+	if got := store.ListAssignmentsFiltered(AssignmentListFilter{Namespace: "team-a", Status: "failed"}); len(got) != 1 || got[0].ID != "a1" {
+		t.Fatalf("failed assignments = %+v, want a1", got)
+	}
+	if got := store.ListAssignmentsFiltered(AssignmentListFilter{Namespace: "team-a", Status: "leased", LeasedTo: "worker-1"}); len(got) != 1 || got[0].ID != "a3" {
+		t.Fatalf("leased assignments = %+v, want a3", got)
+	}
+	if got := store.ListAssignmentsFiltered(AssignmentListFilter{Namespace: "team-a", WorkerID: "worker-2", Verb: "cove", ImageRef: "base:v1"}); len(got) != 1 || got[0].ID != "a2" {
+		t.Fatalf("worker/image assignments = %+v, want a2", got)
+	}
+	if got := store.ListAssignmentsFiltered(AssignmentListFilter{Namespace: "team-a", WarmPool: "runner"}); len(got) != 1 || got[0].ID != "warm-slot" {
+		t.Fatalf("warm pool assignments = %+v, want warm-slot", got)
+	}
+	if got := store.ListAssignmentsFiltered(AssignmentListFilter{Namespace: "team-b"}); len(got) != 1 || got[0].ID != "b1" {
+		t.Fatalf("team-b assignments = %+v, want b1", got)
+	}
+}
+
 func TestStoreReportRenewsRunningAssignment(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
 	store := NewMemoryStore(time.Minute)
@@ -4055,6 +4114,53 @@ func TestHandlerAssignmentRetry(t *testing.T) {
 	}
 	if code := getJSONStatus(t, server.URL+"/v1/assignments/assignment-1/retry", "token-a"); code != http.StatusMethodNotAllowed {
 		t.Fatalf("GET retry status = %d, want %d", code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestHandlerAssignmentListFilters(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1"}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-2"}, &record)
+	var created Assignment
+	postJSON(t, server.URL+"/v1/assignments", Assignment{ID: "a1", Namespace: "team-a", WorkerID: "worker-1", Verb: "noop"}, &created)
+	var leased Assignment
+	getJSON(t, server.URL+"/v1/workers/worker-1/assignments", &leased)
+	if leased.ID != "a1" {
+		t.Fatalf("leased = %+v, want a1", leased)
+	}
+	postJSON(t, server.URL+"/v1/workers/worker-1/reports", WorkerReport{AssignmentID: "a1", Status: "failed"}, &record)
+	postJSON(t, server.URL+"/v1/assignments", Assignment{ID: "a2", Namespace: "team-a", WorkerID: "worker-2", Verb: "cove", ImageRef: "base:v1"}, &created)
+	postJSON(t, server.URL+"/v1/assignments", Assignment{ID: "b1", Namespace: "team-b", WorkerID: "worker-1", Verb: "noop"}, &created)
+
+	var list AssignmentListResult
+	getJSON(t, server.URL+"/v1/assignments?namespace=team-a&limit=1", &list)
+	if list.Count != 1 || list.Limit != 1 || list.NextOffset != 1 || len(list.Assignments) != 1 || list.Assignments[0].ID != "a1" {
+		t.Fatalf("limited assignments = %+v, want first team-a assignment", list)
+	}
+	list = AssignmentListResult{}
+	getJSON(t, server.URL+"/v1/assignments?namespace=team-a&offset=1&limit=1", &list)
+	if list.Count != 1 || list.Offset != 1 || list.NextOffset != 0 || len(list.Assignments) != 1 || list.Assignments[0].ID != "a2" {
+		t.Fatalf("offset assignments = %+v, want second team-a assignment", list)
+	}
+	list = AssignmentListResult{}
+	getJSON(t, server.URL+"/v1/assignments?status=failed&worker_id=worker-1", &list)
+	if list.Count != 1 || len(list.Assignments) != 1 || list.Assignments[0].ID != "a1" {
+		t.Fatalf("failed worker assignments = %+v, want a1", list)
+	}
+	list = AssignmentListResult{}
+	getJSON(t, server.URL+"/v1/assignments?verb=cove&image_ref=base:v1", &list)
+	if list.Count != 1 || len(list.Assignments) != 1 || list.Assignments[0].ID != "a2" {
+		t.Fatalf("cove image assignments = %+v, want a2", list)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/assignments?limit=-1", ""); code != http.StatusBadRequest {
+		t.Fatalf("bad assignment limit status = %d, want %d", code, http.StatusBadRequest)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/assignments?offset=bad", ""); code != http.StatusBadRequest {
+		t.Fatalf("bad assignment offset status = %d, want %d", code, http.StatusBadRequest)
 	}
 }
 

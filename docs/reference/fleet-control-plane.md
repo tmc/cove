@@ -667,6 +667,8 @@ curl -X POST http://127.0.0.1:9758/v1/assignments \
   -H 'content-type: application/json' \
   -d '{"id":"packed-1","policy":"bin-pack","anti_affinity_key":"ci/buildkite","resources":{"vms":1},"verb":"cove","args":["run","-ephemeral","-headless"]}'
 curl http://127.0.0.1:9758/v1/assignments
+curl 'http://127.0.0.1:9758/v1/assignments?status=failed&worker_id=mini-1&limit=50'
+curl 'http://127.0.0.1:9758/v1/assignments?verb=cove&image_ref=macos-runner:latest&offset=50&limit=50'
 curl http://127.0.0.1:9758/v1/assignments/probe-1
 curl -X POST http://127.0.0.1:9758/v1/assignments/probe-1/cancel \
   -H 'content-type: application/json' \
@@ -685,6 +687,11 @@ A claimed slot still consumes host capacity but is no longer counted as an
 available warm slot. `coved` renews active `cove` assignments with `running` or
 `ready` reports. Claimed warm-pool guest-exec assignments stop the claimed VM
 after the guest command returns.
+`GET /v1/assignments` returns a paginated `assignments` response with `count`,
+`offset`, `limit`, and `next_offset`. It accepts `status`, `worker_id`,
+`leased_to`, `verb`, `image_ref`, `sandbox_id` or `sandbox`, `warm_pool`,
+`offset`, and `limit`; scoped service-account tokens are still limited to their
+namespace, and unscoped callers can use the existing `namespace` query.
 Reconciliation marks expired workers stale, requeues expired assignment leases,
 rejects late reports for reclaimed leases, and can move a policy-placed
 assignment from a stale worker to another ready worker.
