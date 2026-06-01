@@ -217,6 +217,16 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		if !assignment.QueueExpires.IsZero() {
 			assignment.QueueExpires = assignment.QueueExpires.UTC()
 		}
+		if assignment.MaxAttempts < 0 {
+			assignment.MaxAttempts = 0
+		}
+		if assignment.Attempt < 0 {
+			assignment.Attempt = 0
+		}
+		assignment.RetryDelay = strings.TrimSpace(assignment.RetryDelay)
+		if !assignment.RetryAt.IsZero() {
+			assignment.RetryAt = assignment.RetryAt.UTC()
+		}
 		if assignment.Status == "" {
 			assignment.Status = "pending"
 		}
@@ -1021,6 +1031,43 @@ func (s *Store) Report(r WorkerReport) (HostRecord, error) {
 					Fields:       fields,
 				})
 			}
+			if shouldRetryAssignment(assignment, storedStatus) {
+				retryDelay := assignmentRetryDelay(assignment)
+				retryAt := time.Time{}
+				if retryDelay > 0 {
+					retryAt = received.Add(retryDelay)
+				}
+				fields := map[string]string{
+					"previous_status": storedStatus,
+					"attempt":         strconv.Itoa(assignment.Attempt),
+					"max_attempts":    strconv.Itoa(assignment.MaxAttempts),
+				}
+				if retryDelay > 0 {
+					fields["retry_delay"] = retryDelay.String()
+					fields["retry_at"] = retryAt.Format(time.RFC3339Nano)
+				}
+				if assignment.SandboxID != "" {
+					fields["sandbox_id"] = assignment.SandboxID
+					fields["sandbox_role"] = assignment.SandboxRole
+				}
+				assignment.Status = "pending"
+				assignment.LeasedTo = ""
+				assignment.LeaseExpires = time.Time{}
+				assignment.RetryAt = retryAt
+				assignment.Updated = received
+				s.assignments[assignment.ID] = assignment
+				s.appendAuditLocked(received, AuditEvent{
+					Actor:        "controller",
+					Namespace:    assignment.Namespace,
+					Action:       "assignment.auto_retry",
+					TargetType:   "assignment",
+					TargetID:     assignment.ID,
+					WorkerID:     id,
+					AssignmentID: assignment.ID,
+					Status:       assignment.Status,
+					Fields:       fields,
+				})
+			}
 		}
 	}
 	if err := s.persistLocked(); err != nil {
@@ -1040,6 +1087,10 @@ func (s *Store) CreateAssignmentActor(actor string, a Assignment) (Assignment, e
 	}
 	if a.Priority < 0 {
 		return Assignment{}, fmt.Errorf("assignment priority must be non-negative")
+	}
+	retryDelay, err := normalizeAssignmentRetryPolicy(a.MaxAttempts, a.RetryDelay, "assignment")
+	if err != nil {
+		return Assignment{}, err
 	}
 	workerID := strings.TrimSpace(a.WorkerID)
 	policy, imageRef, imageManifestDigest, antiAffinityKey, requiredLabels, requiredCapabilities, resources, err := normalizePlacementFields(a)
@@ -1100,6 +1151,9 @@ func (s *Store) CreateAssignmentActor(actor string, a Assignment) (Assignment, e
 	a.Args = cloneStrings(a.Args)
 	a.QueueTTL = ""
 	a.QueueExpires = queueExpires
+	a.Attempt = 0
+	a.RetryDelay = retryDelay
+	a.RetryAt = time.Time{}
 	a.Status = "pending"
 	a.Created = now
 	a.Updated = now
@@ -1117,6 +1171,12 @@ func (s *Store) CreateAssignmentActor(actor string, a Assignment) (Assignment, e
 	}
 	if !a.QueueExpires.IsZero() {
 		fields["queue_expires"] = a.QueueExpires.Format(time.RFC3339Nano)
+	}
+	if a.MaxAttempts > 0 {
+		fields["max_attempts"] = strconv.Itoa(a.MaxAttempts)
+	}
+	if a.RetryDelay != "" {
+		fields["retry_delay"] = a.RetryDelay
 	}
 	s.appendAuditLocked(now, AuditEvent{
 		Actor:        actor,
@@ -1274,6 +1334,7 @@ func (s *Store) RetryAssignmentActor(actor, id string, req AssignmentRetryReques
 	assignment.LeaseExpires = time.Time{}
 	assignment.QueueTTL = ""
 	assignment.QueueExpires = time.Time{}
+	assignment.RetryAt = time.Time{}
 	assignment.LastReport = nil
 	assignment.Updated = now
 	s.assignments[id] = assignment
@@ -1614,6 +1675,10 @@ func (s *Store) CreateSandboxActor(actor string, req SandboxRequest) (SandboxSta
 	if req.Priority < 0 {
 		return SandboxStatus{}, fmt.Errorf("sandbox priority must be non-negative")
 	}
+	retryDelay, err := normalizeAssignmentRetryPolicy(req.MaxAttempts, req.RetryDelay, "sandbox")
+	if err != nil {
+		return SandboxStatus{}, err
+	}
 	args := cloneStrings(req.Args)
 	if err := validateForkRunArgs(args, "sandbox"); err != nil {
 		return SandboxStatus{}, err
@@ -1631,6 +1696,8 @@ func (s *Store) CreateSandboxActor(actor string, req SandboxRequest) (SandboxSta
 		AntiAffinityKey:      strings.TrimSpace(req.AntiAffinityKey),
 		Resources:            req.Resources,
 		Priority:             req.Priority,
+		MaxAttempts:          req.MaxAttempts,
+		RetryDelay:           retryDelay,
 	}
 	policy, imageRef, imageManifestDigest, antiAffinityKey, requiredLabels, requiredCapabilities, resources, err := normalizePlacementFields(assignment)
 	if err != nil {
@@ -1693,6 +1760,8 @@ func (s *Store) CreateSandboxActor(actor string, req SandboxRequest) (SandboxSta
 		Resources:            normalizeResources(resources),
 		Priority:             req.Priority,
 		QueueExpires:         queueExpires,
+		MaxAttempts:          req.MaxAttempts,
+		RetryDelay:           retryDelay,
 		Verb:                 "cove",
 		Args:                 sandboxRunArgs(imageRef, vmName, args),
 		Status:               "pending",
@@ -1710,6 +1779,12 @@ func (s *Store) CreateSandboxActor(actor string, req SandboxRequest) (SandboxSta
 	}
 	if !queueExpires.IsZero() {
 		fields["queue_expires"] = queueExpires.Format(time.RFC3339Nano)
+	}
+	if req.MaxAttempts > 0 {
+		fields["max_attempts"] = strconv.Itoa(req.MaxAttempts)
+	}
+	if retryDelay != "" {
+		fields["retry_delay"] = retryDelay
 	}
 	s.appendAuditLocked(now, AuditEvent{
 		Actor:        actor,
@@ -3421,11 +3496,16 @@ func (s *Store) AwaitAssignment(id string) (*Assignment, error) {
 		if assignment.Status != "pending" {
 			continue
 		}
+		if !assignment.RetryAt.IsZero() && now.Before(assignment.RetryAt) {
+			continue
+		}
 		assignment.Status = "leased"
 		assignment.LeasedTo = id
 		assignment.LeaseExpires = now.Add(s.assignmentTTL)
 		assignment.QueueTTL = ""
 		assignment.QueueExpires = time.Time{}
+		assignment.RetryAt = time.Time{}
+		assignment.Attempt++
 		assignment.Updated = now
 		s.assignments[assignment.ID] = assignment
 		s.appendAuditLocked(now, AuditEvent{
@@ -5928,6 +6008,7 @@ func (s *Store) startSandboxLocked(now time.Time, actor, id, action, holder stri
 	assignment.Status = "pending"
 	assignment.LeasedTo = ""
 	assignment.LeaseExpires = time.Time{}
+	assignment.RetryAt = time.Time{}
 	assignment.LastReport = nil
 	assignment.Updated = now
 	s.assignments[assignment.ID] = assignment
@@ -6057,6 +6138,7 @@ func (s *Store) finishSandboxStopLocked(now time.Time, id, stopStatus string) {
 			run.Status = "pending"
 			run.LeasedTo = ""
 			run.LeaseExpires = time.Time{}
+			run.RetryAt = time.Time{}
 			run.LastReport = nil
 		} else {
 			run.Status = "stopped"
@@ -6252,6 +6334,40 @@ func normalizeAssignmentQueueDeadline(now time.Time, rawTTL string, expires time
 		return time.Time{}, fmt.Errorf("%s queue_expires must be in the future", name)
 	}
 	return expires, nil
+}
+
+func normalizeAssignmentRetryPolicy(maxAttempts int, rawDelay string, name string) (string, error) {
+	if maxAttempts < 0 {
+		return "", fmt.Errorf("%s max_attempts must be non-negative", name)
+	}
+	rawDelay = strings.TrimSpace(rawDelay)
+	if rawDelay == "" {
+		return "", nil
+	}
+	delay, err := time.ParseDuration(rawDelay)
+	if err != nil || delay <= 0 {
+		return "", fmt.Errorf("%s retry_delay must be a positive duration", name)
+	}
+	return rawDelay, nil
+}
+
+func shouldRetryAssignment(assignment Assignment, status string) bool {
+	return retryableAssignmentStatus(status) && assignment.MaxAttempts > 0 && assignment.Attempt < assignment.MaxAttempts
+}
+
+func retryableAssignmentStatus(status string) bool {
+	return normalizeOperationStatus(status) == "failed"
+}
+
+func assignmentRetryDelay(assignment Assignment) time.Duration {
+	if strings.TrimSpace(assignment.RetryDelay) == "" {
+		return 0
+	}
+	delay, err := time.ParseDuration(assignment.RetryDelay)
+	if err != nil || delay <= 0 {
+		return 0
+	}
+	return delay
 }
 
 func sandboxMutationHolder(reqs []SandboxMutationRequest) string {

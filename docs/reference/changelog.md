@@ -24,6 +24,12 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   deadline is reconciled to `expired`, appears in reconcile plan/apply results,
   and no longer counts against hosted sandbox namespace admission caps; the Go
   `agentsandbox` package and OpenAI Agents Python adapter expose queue TTLs.
+- Controller assignments and hosted sandbox run assignments now accept
+  `max_attempts` plus optional `retry_delay` for bounded automatic retry after
+  worker-reported `failed` reports. Workers increment `attempt` on lease, the
+  controller records `retry_at` for delayed retries, and the Go
+  `agentsandbox` package, OpenAI Agents Python adapter, and `SandboxRunConfig`
+  cloud options expose the retry policy.
 - The public Go `agentsandbox` package and OpenAI Agents Python adapter now
   expose hosted sandbox metering list helpers for `/v1/metering/sandboxes`, so
   SDK operators can query namespace or sandbox usage without first constructing

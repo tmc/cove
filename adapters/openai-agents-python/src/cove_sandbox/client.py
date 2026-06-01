@@ -302,6 +302,8 @@ class CoveFleetClient:
         max_active_sandboxes: int = 0,
         priority: int = 0,
         queue_ttl: str | None = "",
+        max_attempts: int = 0,
+        retry_delay: str | None = "",
         api_key: str | None = None,
         namespace: str | None = None,
         vm_name: str | None = None,
@@ -314,7 +316,10 @@ class CoveFleetClient:
             raise ValueError("max_active_sandboxes must be non-negative")
         if priority < 0:
             raise ValueError("priority must be non-negative")
+        if max_attempts < 0:
+            raise ValueError("max_attempts must be non-negative")
         queue_ttl = (queue_ttl or "").strip()
+        retry_delay = (retry_delay or "").strip()
         body: dict[str, object] = {"image_ref": image_ref}
         if sandbox_id:
             body["id"] = sandbox_id
@@ -342,6 +347,10 @@ class CoveFleetClient:
             body["priority"] = priority
         if queue_ttl:
             body["queue_ttl"] = queue_ttl
+        if max_attempts:
+            body["max_attempts"] = max_attempts
+        if retry_delay:
+            body["retry_delay"] = retry_delay
         seed = cls(
             sandbox_id=sandbox_id or "pending",
             fleet_url=fleet_url,
@@ -1830,6 +1839,8 @@ class CoveFleetClient:
         resources: Mapping[str, object] | None = None,
         priority: int = 0,
         queue_ttl: str | None = "",
+        max_attempts: int = 0,
+        retry_delay: str | None = "",
         args: Sequence[str] = (),
         timeout: float = 30.0,
     ) -> dict[str, Any]:
@@ -1838,7 +1849,10 @@ class CoveFleetClient:
             raise ValueError("assignment verb is required")
         if priority < 0:
             raise ValueError("assignment priority must be non-negative")
+        if max_attempts < 0:
+            raise ValueError("assignment max_attempts must be non-negative")
         queue_ttl = (queue_ttl or "").strip()
+        retry_delay = (retry_delay or "").strip()
         seed = cls(
             sandbox_id="assignment-create",
             fleet_url=fleet_url,
@@ -1887,6 +1901,10 @@ class CoveFleetClient:
             body["priority"] = priority
         if queue_ttl:
             body["queue_ttl"] = queue_ttl
+        if max_attempts:
+            body["max_attempts"] = max_attempts
+        if retry_delay:
+            body["retry_delay"] = retry_delay
         if args:
             body["args"] = list(args)
         return dict(seed._request("POST", "/v1/assignments", body, timeout=timeout))

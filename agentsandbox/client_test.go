@@ -33,6 +33,8 @@ func TestCloudClientCreateExecControlDelete(t *testing.T) {
 		MaxActiveSandboxes:   3,
 		Priority:             5,
 		QueueTTL:             45 * time.Second,
+		MaxAttempts:          3,
+		RetryDelay:           20 * time.Second,
 		Timeout:              time.Second,
 	})
 	if err != nil {
@@ -176,6 +178,12 @@ func TestCloudClientCreateExecControlDelete(t *testing.T) {
 	if create["queue_ttl"] != "45s" {
 		t.Fatalf("create queue ttl = %+v, want 45s", create["queue_ttl"])
 	}
+	if create["max_attempts"] != float64(3) {
+		t.Fatalf("create max attempts = %+v, want 3", create["max_attempts"])
+	}
+	if create["retry_delay"] != "20s" {
+		t.Fatalf("create retry delay = %+v, want 20s", create["retry_delay"])
+	}
 	if server.requests[1].query.Get("namespace") != "team-a" {
 		t.Fatalf("list query = %q, want team-a", server.requests[1].query.Encode())
 	}
@@ -314,6 +322,24 @@ func TestCloudClientCreateAndPlanValidation(t *testing.T) {
 		QueueTTL: -time.Second,
 	}); err == nil || !strings.Contains(err.Error(), "queue ttl must not be negative") {
 		t.Fatalf("negative queue ttl err = %v, want validation error", err)
+	}
+	if _, err := Create(ctx, ClientOptions{
+		Provider:    ProviderCloud,
+		FleetURL:    "https://fleet.example",
+		APIKey:      "secret",
+		ImageRef:    "base:v1",
+		MaxAttempts: -1,
+	}); err == nil || !strings.Contains(err.Error(), "max attempts must be non-negative") {
+		t.Fatalf("negative max attempts err = %v, want validation error", err)
+	}
+	if _, err := Create(ctx, ClientOptions{
+		Provider:   ProviderCloud,
+		FleetURL:   "https://fleet.example",
+		APIKey:     "secret",
+		ImageRef:   "base:v1",
+		RetryDelay: -time.Second,
+	}); err == nil || !strings.Contains(err.Error(), "retry delay must not be negative") {
+		t.Fatalf("negative retry delay err = %v, want validation error", err)
 	}
 	_, err := Plan(ctx, ClientOptions{
 		Provider:       ProviderCloud,
@@ -1195,6 +1221,8 @@ func TestCloudClientInventory(t *testing.T) {
 		Resources:            Capacity{VMs: 1, CPUs: 4},
 		Priority:             8,
 		QueueTTL:             2 * time.Minute,
+		MaxAttempts:          4,
+		RetryDelay:           30 * time.Second,
 		Verb:                 "cove",
 		Args:                 []string{"run", "-fork-from", "base:v1", "-ephemeral"},
 		Timeout:              time.Second,
@@ -1202,7 +1230,7 @@ func TestCloudClientInventory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAssignment: %v", err)
 	}
-	if created.ID != "assignment-created" || created.WorkerID != "worker-1" || created.Policy != "bin-pack" || created.Resources.CPUs != 4 || created.Priority != 8 || created.QueueExpires.IsZero() {
+	if created.ID != "assignment-created" || created.WorkerID != "worker-1" || created.Policy != "bin-pack" || created.Resources.CPUs != 4 || created.Priority != 8 || created.QueueExpires.IsZero() || created.MaxAttempts != 4 || created.RetryDelay != "30s" {
 		t.Fatalf("CreateAssignment = %+v, want scheduled assignment", created)
 	}
 
@@ -1278,6 +1306,12 @@ func TestCloudClientInventory(t *testing.T) {
 	if createBody["queue_ttl"] != "120s" {
 		t.Fatalf("create assignment queue ttl = %+v, want 120s", createBody["queue_ttl"])
 	}
+	if createBody["max_attempts"] != float64(4) {
+		t.Fatalf("create assignment max attempts = %+v, want 4", createBody["max_attempts"])
+	}
+	if createBody["retry_delay"] != "30s" {
+		t.Fatalf("create assignment retry delay = %+v, want 30s", createBody["retry_delay"])
+	}
 	if !equalAnyStringSlice(createBody["args"], []string{"run", "-fork-from", "base:v1", "-ephemeral"}) {
 		t.Fatalf("create assignment args = %+v, want run args", createBody["args"])
 	}
@@ -1305,6 +1339,12 @@ func TestCloudClientInventoryValidation(t *testing.T) {
 	}
 	if _, err := CreateAssignment(ctx, AssignmentCreateOptions{FleetURL: "https://fleet.example", APIKey: "secret", Verb: "noop", QueueTTL: -time.Second}); err == nil || !strings.Contains(err.Error(), "queue ttl must not be negative") {
 		t.Fatalf("CreateAssignment negative queue ttl err = %v, want validation error", err)
+	}
+	if _, err := CreateAssignment(ctx, AssignmentCreateOptions{FleetURL: "https://fleet.example", APIKey: "secret", Verb: "noop", MaxAttempts: -1}); err == nil || !strings.Contains(err.Error(), "max attempts must be non-negative") {
+		t.Fatalf("CreateAssignment negative max attempts err = %v, want validation error", err)
+	}
+	if _, err := CreateAssignment(ctx, AssignmentCreateOptions{FleetURL: "https://fleet.example", APIKey: "secret", Verb: "noop", RetryDelay: -time.Second}); err == nil || !strings.Contains(err.Error(), "retry delay must not be negative") {
+		t.Fatalf("CreateAssignment negative retry delay err = %v, want validation error", err)
 	}
 	if _, err := GetAssignment(ctx, AssignmentGetOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "id required") {
 		t.Fatalf("GetAssignment missing id err = %v, want validation error", err)
@@ -2707,6 +2747,8 @@ func sdkCreatedAssignment() Assignment {
 	assignment.Resources = Capacity{VMs: 1, CPUs: 4}
 	assignment.Priority = 8
 	assignment.QueueExpires = time.Date(2026, 5, 31, 10, 10, 0, 0, time.UTC)
+	assignment.MaxAttempts = 4
+	assignment.RetryDelay = "30s"
 	return assignment
 }
 

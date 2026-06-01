@@ -47,6 +47,8 @@ type ClientOptions struct {
 	MaxActiveSandboxes   int
 	Priority             int
 	QueueTTL             time.Duration
+	MaxAttempts          int
+	RetryDelay           time.Duration
 	VMName               string
 	Timeout              time.Duration
 	HTTP                 *http.Client
@@ -197,6 +199,10 @@ type Assignment struct {
 	Resources            Capacity          `json:"resources,omitempty"`
 	Priority             int               `json:"priority,omitempty"`
 	QueueExpires         time.Time         `json:"queue_expires,omitempty"`
+	MaxAttempts          int               `json:"max_attempts,omitempty"`
+	Attempt              int               `json:"attempt,omitempty"`
+	RetryDelay           string            `json:"retry_delay,omitempty"`
+	RetryAt              time.Time         `json:"retry_at,omitempty"`
 	Verb                 string            `json:"verb"`
 	Args                 []string          `json:"args,omitempty"`
 	Status               string            `json:"status,omitempty"`
@@ -1045,6 +1051,8 @@ type AssignmentCreateOptions struct {
 	Resources            Capacity
 	Priority             int
 	QueueTTL             time.Duration
+	MaxAttempts          int
+	RetryDelay           time.Duration
 	Verb                 string
 	Args                 []string
 	Timeout              time.Duration
@@ -1614,6 +1622,12 @@ func Create(ctx context.Context, opts ClientOptions) (*Client, error) {
 	if opts.QueueTTL < 0 {
 		return nil, errors.New("agentsandbox: queue ttl must not be negative")
 	}
+	if opts.MaxAttempts < 0 {
+		return nil, errors.New("agentsandbox: max attempts must be non-negative")
+	}
+	if opts.RetryDelay < 0 {
+		return nil, errors.New("agentsandbox: retry delay must not be negative")
+	}
 	seed := opts
 	seed.SandboxID = "pending"
 	c, err := NewClient(seed)
@@ -1656,6 +1670,12 @@ func Create(ctx context.Context, opts ClientOptions) (*Client, error) {
 	}
 	if opts.QueueTTL > 0 {
 		body["queue_ttl"] = formatSeconds(opts.QueueTTL)
+	}
+	if opts.MaxAttempts > 0 {
+		body["max_attempts"] = opts.MaxAttempts
+	}
+	if opts.RetryDelay > 0 {
+		body["retry_delay"] = formatSeconds(opts.RetryDelay)
 	}
 	var status SandboxStatus
 	if err := c.request(ctx, http.MethodPost, "/v1/sandboxes", body, &status, c.timeout); err != nil {
@@ -2886,6 +2906,12 @@ func CreateAssignment(ctx context.Context, opts AssignmentCreateOptions) (Assign
 	if opts.QueueTTL < 0 {
 		return Assignment{}, errors.New("agentsandbox: assignment queue ttl must not be negative")
 	}
+	if opts.MaxAttempts < 0 {
+		return Assignment{}, errors.New("agentsandbox: assignment max attempts must be non-negative")
+	}
+	if opts.RetryDelay < 0 {
+		return Assignment{}, errors.New("agentsandbox: assignment retry delay must not be negative")
+	}
 	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "assignment-create")
 	if err != nil {
 		return Assignment{}, err
@@ -2935,6 +2961,12 @@ func CreateAssignment(ctx context.Context, opts AssignmentCreateOptions) (Assign
 	}
 	if opts.QueueTTL > 0 {
 		body["queue_ttl"] = formatSeconds(opts.QueueTTL)
+	}
+	if opts.MaxAttempts > 0 {
+		body["max_attempts"] = opts.MaxAttempts
+	}
+	if opts.RetryDelay > 0 {
+		body["retry_delay"] = formatSeconds(opts.RetryDelay)
 	}
 	if len(opts.Args) > 0 {
 		body["args"] = cloneStrings(opts.Args)

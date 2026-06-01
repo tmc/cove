@@ -156,6 +156,8 @@ run_config = RunConfig(
             max_active_sandboxes=20,
             priority=10,
             queue_ttl="2m",
+            max_attempts=3,
+            retry_delay="20s",
             name="eval-001",
             delete_on_close=True,
         ),
@@ -181,8 +183,10 @@ new hosted sandboxes once the namespace is already at its concurrency cap. Pass
 `priority` when urgent hosted sandboxes should lease ahead of older
 lower-priority pending work on the selected worker, and pass `queue_ttl` when
 queued work should expire before lease instead of occupying namespace caps
-indefinitely. The direct fleet client can also queue image preparation before
-placement or warm-pool replenishment, push image
+indefinitely. Pass `max_attempts` with optional `retry_delay` when transient
+worker-reported failures should be requeued automatically before surfacing as
+terminal failures. The direct fleet client can also queue image preparation
+before placement or warm-pool replenishment, push image
 GC/lifecycle/storage maintenance work, read retained placement-plan history and
 the retained controller-run timeline, plan or apply controller reconciliation,
 inspect or verify the hash-chained audit feed, manage scoped service-account
@@ -365,6 +369,8 @@ created = CoveFleetClient.create_assignment(
     resources={"vms": 1},
     priority=10,
     queue_ttl="2m",
+    max_attempts=3,
+    retry_delay="20s",
     verb="cove",
     args=("run", "-fork-from", "macos-base:latest", "-ephemeral"),
 )
@@ -441,6 +447,8 @@ client = CoveFleetClient.create_sandbox(
     max_active_sandboxes=20,
     priority=10,
     queue_ttl="2m",
+    max_attempts=3,
+    retry_delay="20s",
     sandbox_id="eval-001",
 )
 ready = client.list_page(status="ready", image_ref="macos-base:latest", offset=0, limit=10)

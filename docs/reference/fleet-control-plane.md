@@ -625,7 +625,7 @@ Sandbox endpoint:
 ```bash
 curl -X POST http://127.0.0.1:9758/v1/sandboxes \
   -H 'content-type: application/json' \
-  -d '{"id":"job-1","image_ref":"macos-runner:14.5","manifest_bundle":"manifests","image_platform":"darwin/arm64","required_labels":{"zone":"desk"},"required_capabilities":["ram-overlay"],"max_active_sandboxes":20,"priority":10,"queue_ttl":"2m","args":["--net","nat"]}'
+  -d '{"id":"job-1","image_ref":"macos-runner:14.5","manifest_bundle":"manifests","image_platform":"darwin/arm64","required_labels":{"zone":"desk"},"required_capabilities":["ram-overlay"],"max_active_sandboxes":20,"priority":10,"queue_ttl":"2m","max_attempts":3,"retry_delay":"20s","args":["--net","nat"]}'
 curl http://127.0.0.1:9758/v1/sandboxes
 curl 'http://127.0.0.1:9758/v1/sandboxes?status=ready&image_ref=macos-runner:14.5&offset=0&limit=20'
 curl http://127.0.0.1:9758/v1/sandboxes/job-1
@@ -667,7 +667,8 @@ without a separate scheduler. Extra `args` are appended to `cove run`, but
 fork/source/lifetime/headless flags are reserved by the controller.
 Create requests accept optional `manifest_bundle`, `image_manifest_digest`,
 `image_digest_ref`, `image_platform`, `required_capabilities`,
-`max_active_sandboxes`, `priority`, `queue_ttl`, and `queue_expires` fields. The returned sandbox status and backing
+`max_active_sandboxes`, `priority`, `queue_ttl`, `queue_expires`,
+`max_attempts`, and `retry_delay` fields. The returned sandbox status and backing
 assignment keep the resolved digest and capability fields, exact-digest
 requests are admitted only onto workers that report the matching image
 provenance, and capability-constrained requests are admitted only onto workers
@@ -680,6 +681,11 @@ selected worker. `queue_ttl` is a positive Go duration such as `2m`, while
 `queue_expires` is an absolute timestamp; they are mutually exclusive. Pending
 hosted sandbox work that misses its queue deadline is reconciled to `expired`
 before worker lease and stops counting against namespace admission caps.
+`max_attempts` is the total number of worker leases allowed for the backing run
+assignment, including the first attempt; worker-reported `failed` reports are
+automatically requeued while `attempt < max_attempts`. `retry_delay` is an
+optional positive Go duration that delays the next lease and is surfaced as
+`retry_at` on the assignment.
 
 `GET /v1/sandboxes` accepts `namespace`, `status`, `worker_id`, `image_ref`,
 `offset`, and `limit` query parameters. Namespace-scoped bearer tokens still
@@ -908,6 +914,8 @@ created, err := agentsandbox.CreateAssignment(ctx, agentsandbox.AssignmentCreate
 	Resources:            agentsandbox.Capacity{VMs: 1},
 	Priority:             10,
 	QueueTTL:             2 * time.Minute,
+	MaxAttempts:          3,
+	RetryDelay:           20 * time.Second,
 	Verb:                 "cove",
 	Args:                 []string{"run", "-fork-from", "macos-base:latest", "-ephemeral"},
 })
@@ -1161,6 +1169,8 @@ sb, err := agentsandbox.Create(ctx, agentsandbox.ClientOptions{
 	MaxActiveSandboxes:   20,
 	Priority:             10,
 	QueueTTL:             2 * time.Minute,
+	MaxAttempts:          3,
+	RetryDelay:           20 * time.Second,
 })
 if err != nil {
 	log.Fatal(err)
@@ -1211,7 +1221,7 @@ Assignment endpoints:
 ```bash
 curl -X POST http://127.0.0.1:9758/v1/assignments \
   -H 'content-type: application/json' \
-  -d '{"id":"probe-1","worker_id":"mini-1","priority":10,"queue_ttl":"2m","verb":"noop"}'
+  -d '{"id":"probe-1","worker_id":"mini-1","priority":10,"queue_ttl":"2m","max_attempts":3,"retry_delay":"20s","verb":"noop"}'
 curl -X POST http://127.0.0.1:9758/v1/assignments \
   -H 'content-type: application/json' \
   -d '{"id":"run-1","worker_id":"mini-1","verb":"cove","args":["run","-ephemeral","-headless"]}'
@@ -1251,6 +1261,10 @@ assignments, with creation time and assignment id as stable tie-breakers.
 deadlines. `queue_ttl` must be a positive Go duration, `queue_expires` must be
 a future timestamp, and pending assignments that miss the deadline are
 reconciled to `expired` before lease; worker lease clears the queue deadline.
+`attempt` increments on every worker lease. If `max_attempts` is greater than
+one and a worker reports `failed` before the limit is reached, the controller
+automatically clears the lease and requeues the assignment as `pending`; when
+`retry_delay` is set, workers skip the assignment until `retry_at`.
 `GET /v1/assignments` returns a paginated `assignments` response with `count`,
 `offset`, `limit`, and `next_offset`. It accepts `status`, `worker_id`,
 `leased_to`, `verb`, `image_ref`, `sandbox_id` or `sandbox`, `warm_pool`,

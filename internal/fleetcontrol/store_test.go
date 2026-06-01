@@ -747,6 +747,73 @@ func TestStoreSandboxQueueTTLExpiresAndReleasesCap(t *testing.T) {
 	}
 }
 
+func TestStoreSandboxAutoRetryKeepsAdmission(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 4}}); err != nil {
+		t.Fatal(err)
+	}
+	sandbox, err := store.CreateSandbox(SandboxRequest{Namespace: "team-a", ID: "job-1", ImageRef: "base:v1", MaxActiveSandboxes: 1, MaxAttempts: 2, RetryDelay: "1s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leased, err := store.AwaitAssignment("worker-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leased == nil || leased.ID != sandbox.Assignment.ID || leased.Attempt != 1 {
+		t.Fatalf("sandbox first lease = %+v", leased)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: sandbox.Assignment.ID, Status: "failed"}); err != nil {
+		t.Fatal(err)
+	}
+	retrying, ok := store.GetSandbox("job-1")
+	if !ok || retrying.Status != "pending" || retrying.Assignment.Attempt != 1 || retrying.Assignment.RetryAt.IsZero() {
+		t.Fatalf("retrying sandbox = %+v, ok %v", retrying, ok)
+	}
+	wait, err := store.WaitSandbox("job-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wait.Done || wait.Sandbox.Status != "pending" {
+		t.Fatalf("WaitSandbox retrying = %+v, want pending not done", wait)
+	}
+	if _, err := store.CreateSandbox(SandboxRequest{Namespace: "team-a", ID: "job-2", ImageRef: "base:v1", MaxActiveSandboxes: 1}); err == nil || !strings.Contains(err.Error(), "max_active_sandboxes") {
+		t.Fatalf("CreateSandbox during retry err = %v, want max_active_sandboxes", err)
+	}
+	got, err := store.AwaitAssignment("worker-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != nil {
+		t.Fatalf("early sandbox retry lease = %+v, want nil", got)
+	}
+	now = now.Add(2 * time.Second)
+	got, err = store.AwaitAssignment("worker-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.ID != sandbox.Assignment.ID || got.Attempt != 2 {
+		t.Fatalf("sandbox retry lease = %+v, want attempt 2", got)
+	}
+	for _, tc := range []struct {
+		name string
+		req  SandboxRequest
+		want string
+	}{
+		{name: "negative max", req: SandboxRequest{ID: "bad-max", ImageRef: "base:v1", MaxAttempts: -1}, want: "max_attempts must be non-negative"},
+		{name: "bad delay", req: SandboxRequest{ID: "bad-delay", ImageRef: "base:v1", MaxAttempts: 2, RetryDelay: "bad"}, want: "retry_delay must be a positive duration"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := store.CreateSandbox(tc.req); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("CreateSandbox err = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
 func TestStoreDeleteRunningSandboxQueuesStop(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
 	store := NewMemoryStore(time.Minute)
@@ -2238,6 +2305,75 @@ func TestStoreAssignmentsExpireByQueueTTL(t *testing.T) {
 		{name: "zero ttl", in: Assignment{ID: "zero-ttl", Verb: "noop", QueueTTL: "0s"}, want: "queue_ttl must be a positive duration"},
 		{name: "past expires", in: Assignment{ID: "past", Verb: "noop", QueueExpires: now.Add(-time.Second)}, want: "queue_expires must be in the future"},
 		{name: "both", in: Assignment{ID: "both", Verb: "noop", QueueTTL: "1s", QueueExpires: now.Add(time.Minute)}, want: "mutually exclusive"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := store.CreateAssignment(tc.in); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("CreateAssignment err = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestStoreAssignmentsAutoRetryByPolicy(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAssignment(Assignment{ID: "assignment-1", WorkerID: "worker-1", Verb: "noop", MaxAttempts: 2, RetryDelay: "2s"}); err != nil {
+		t.Fatal(err)
+	}
+	first, err := store.AwaitAssignment("worker-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == nil || first.ID != "assignment-1" || first.Attempt != 1 {
+		t.Fatalf("first lease = %+v, want attempt 1", first)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: "assignment-1", Status: "failed", ExitCode: 7}); err != nil {
+		t.Fatal(err)
+	}
+	assignment, ok := store.GetAssignment("assignment-1")
+	if !ok || assignment.Status != "pending" || assignment.LeasedTo != "" || assignment.Attempt != 1 || !assignment.RetryAt.Equal(now.Add(2*time.Second)) || assignment.LastReport == nil || assignment.LastReport.Status != "failed" {
+		t.Fatalf("assignment after retryable failure = %+v", assignment)
+	}
+	got, err := store.AwaitAssignment("worker-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != nil {
+		t.Fatalf("early retry lease = %+v, want nil", got)
+	}
+	now = now.Add(3 * time.Second)
+	second, err := store.AwaitAssignment("worker-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second == nil || second.ID != "assignment-1" || second.Attempt != 2 || !second.RetryAt.IsZero() {
+		t.Fatalf("second lease = %+v, want attempt 2", second)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: "assignment-1", Status: "failed", ExitCode: 9}); err != nil {
+		t.Fatal(err)
+	}
+	assignment, ok = store.GetAssignment("assignment-1")
+	if !ok || assignment.Status != "failed" || assignment.Attempt != 2 || assignment.LeasedTo != "worker-1" || assignment.LastReport == nil || assignment.LastReport.ExitCode != 9 {
+		t.Fatalf("assignment after max attempts = %+v", assignment)
+	}
+	if event := auditAction(store.ListAudit(0), "assignment.auto_retry"); event == nil || event.AssignmentID != "assignment-1" || event.Fields["attempt"] != "1" || event.Fields["max_attempts"] != "2" {
+		t.Fatalf("auto retry audit = %+v", event)
+	}
+
+	for _, tc := range []struct {
+		name string
+		in   Assignment
+		want string
+	}{
+		{name: "negative max", in: Assignment{ID: "bad-max", Verb: "noop", MaxAttempts: -1}, want: "max_attempts must be non-negative"},
+		{name: "bad delay", in: Assignment{ID: "bad-delay", Verb: "noop", MaxAttempts: 2, RetryDelay: "bad"}, want: "retry_delay must be a positive duration"},
+		{name: "zero delay", in: Assignment{ID: "zero-delay", Verb: "noop", MaxAttempts: 2, RetryDelay: "0s"}, want: "retry_delay must be a positive duration"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, err := store.CreateAssignment(tc.in); err == nil || !strings.Contains(err.Error(), tc.want) {
