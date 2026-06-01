@@ -302,10 +302,16 @@ var cliDocSpecs = []cliDocSpec{
 	}, Flags: []cliFlagDoc{
 		{Name: "--as", Argument: "<name>", Summary: "Destination VM name."},
 		{Name: "--dry-run", Summary: "Validate inputs without writing a disk."},
+		{Name: "--json", Summary: "Print dry-run plan as JSON."},
+		{Name: "--fetch-manifest", Summary: "Fetch registry manifest during dry-run."},
+		{Name: "--verify-blobs", Summary: "HEAD registry blobs during dry-run."},
+		{Name: "--all-platforms", Summary: "Inspect every image-index child during dry-run."},
 		{Name: "--resume", Summary: "Continue an interrupted pull from disk.img.partial."},
 		{Name: "--manifest", Argument: "<path>", Summary: "Local OCI manifest JSON instead of fetching the registry."},
+		{Name: "--platform", Argument: "<os/arch[/variant]>", Summary: "Select an image-index platform."},
 	}, Examples: []string{
 		"cove pull ghcr.io/me/dev-vm:v1 --dry-run",
+		"cove pull ghcr.io/me/dev-vm:v1 --dry-run --fetch-manifest --all-platforms --verify-blobs --json",
 		"cove pull ghcr.io/me/dev-vm:v1 --resume",
 		"cove pull ghcr.io/me/dev-vm:v1 --as restored-vm",
 	}},

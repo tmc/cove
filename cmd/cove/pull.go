@@ -32,6 +32,7 @@ type pullOptions struct {
 	JSON             bool
 	FetchManifest    bool
 	VerifyBlobs      bool
+	AllPlatforms     bool
 	Resume           bool
 	ManifestPath     string
 	Platform         string
@@ -68,6 +69,7 @@ type pullPlan struct {
 	BlobBytes            int64
 	MissingBlobs         []string
 	FetchBlobDescriptors []pullBlobDescriptor
+	IndexManifests       []ImageRemoteIndexManifest
 }
 
 type pullBlobDescriptor struct {
@@ -153,6 +155,12 @@ func handlePull(env commandEnv, args []string) error {
 	if opts.VerifyBlobs && !opts.FetchManifest && opts.ManifestPath == "" {
 		return fmt.Errorf("cove pull: --verify-blobs requires --fetch-manifest or --manifest")
 	}
+	if opts.AllPlatforms && !opts.DryRun {
+		return fmt.Errorf("cove pull: --all-platforms requires --dry-run")
+	}
+	if opts.AllPlatforms && !opts.FetchManifest {
+		return fmt.Errorf("cove pull: --all-platforms requires --fetch-manifest")
+	}
 	if err := preparePullOptions(&opts); err != nil {
 		return err
 	}
@@ -194,6 +202,7 @@ func parsePullArgs(args []string, w io.Writer) (pullOptions, []string, error) {
 	fs.BoolVar(&opts.JSON, "json", false, "print dry-run plan as JSON")
 	fs.BoolVar(&opts.FetchManifest, "fetch-manifest", false, "fetch registry manifest during dry-run")
 	fs.BoolVar(&opts.VerifyBlobs, "verify-blobs", false, "HEAD registry blobs during dry-run")
+	fs.BoolVar(&opts.AllPlatforms, "all-platforms", false, "inspect every image-index child during dry-run")
 	fs.BoolVar(&opts.Resume, "resume", false, "continue an interrupted pull from disk.img.partial")
 	fs.StringVar(&opts.ManifestPath, "manifest", "", "local OCI manifest JSON instead of fetching the registry")
 	fs.StringVar(&opts.Platform, "platform", "", "select image-index platform (os/arch[/variant])")
@@ -214,6 +223,7 @@ func movePullFlagsFirst(args []string) []string {
 		"json":           false,
 		"fetch-manifest": false,
 		"verify-blobs":   false,
+		"all-platforms":  false,
 		"resume":         false,
 		"manifest":       true,
 		"platform":       true,
@@ -285,6 +295,7 @@ func buildPullPlan(refText string, opts pullOptions) (*pullPlan, error) {
 		if err := planPullDryRunBlobAudit(context.Background(), plan, opts); err != nil {
 			return nil, err
 		}
+		planPullDryRunIndexManifests(context.Background(), plan, opts)
 	}
 	return plan, nil
 }
@@ -413,6 +424,22 @@ func planPullDryRunBlobAudit(ctx context.Context, plan *pullPlan, opts pullOptio
 	plan.BlobBytes = audit.Bytes
 	plan.MissingBlobs = audit.Missing
 	return nil
+}
+
+func planPullDryRunIndexManifests(ctx context.Context, plan *pullPlan, opts pullOptions) {
+	if plan == nil || !opts.AllPlatforms || len(plan.ManifestResolution.IndexManifests) == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, pullManifestFetchTimeout)
+	defer cancel()
+	out := ImageRemoteInspectOutput{
+		IndexManifests: remoteIndexManifestOutputs(plan.ManifestResolution),
+	}
+	out = maybeInspectRemoteIndexManifests(ctx, pullRegistryClient(plan.Ref, opts), plan.Ref, out, remoteInspectOptions{
+		VerifyBlobs:           opts.VerifyBlobs,
+		InspectIndexManifests: true,
+	})
+	plan.IndexManifests = out.IndexManifests
 }
 
 func auditPullDryRunBlobs(ctx context.Context, client ociimage.RegistryClient, ref ociimage.Reference, descriptors []pullBlobDescriptor) (remoteBlobAudit, error) {
@@ -796,7 +823,7 @@ func printPullManifestResolution(w io.Writer, plan *pullPlan) {
 	if platform := remotePlatformString(plan.ManifestResolution.SelectedPlatform); platform != "" {
 		fmt.Fprintf(w, "  platform: %s\n", platform)
 	}
-	candidates := remoteIndexManifestOutputs(plan.ManifestResolution)
+	candidates := pullIndexManifestOutputs(plan)
 	if len(candidates) == 0 {
 		return
 	}
@@ -816,8 +843,79 @@ func printPullManifestResolution(w io.Writer, plan *pullPlan) {
 		if manifest.MediaType != "" {
 			fmt.Fprintf(w, " media=%s", manifest.MediaType)
 		}
+		if manifest.Format != "" {
+			fmt.Fprintf(w, " format=%s", manifest.Format)
+		}
+		if manifest.DiskFormat != "" {
+			fmt.Fprintf(w, " disk_format=%s", manifest.DiskFormat)
+		}
+		if manifest.DiskSize > 0 {
+			fmt.Fprintf(w, " disk_size=%s", bytefmt.Size(manifest.DiskSize))
+		}
+		if manifest.CompressedDiskBytes > 0 {
+			fmt.Fprintf(w, " transport=%s", bytefmt.Size(manifest.CompressedDiskBytes))
+		}
+		if manifest.ChunkCount > 0 {
+			fmt.Fprintf(w, " chunks=%d", manifest.ChunkCount)
+		}
+		if manifest.DiskPartCount > 0 {
+			fmt.Fprintf(w, " parts=%d", manifest.DiskPartCount)
+		}
+		if manifest.BaseChainAudit != "" {
+			fmt.Fprintf(w, " base_audit=%s", manifest.BaseChainAudit)
+			if manifest.BaseChainDepth > 0 {
+				fmt.Fprintf(w, " base_depth=%d", manifest.BaseChainDepth)
+			}
+		}
+		if manifest.BlobAudit != "" {
+			fmt.Fprintf(w, " blob_audit=%s", manifest.BlobAudit)
+			if manifest.BlobDescriptors > 0 {
+				fmt.Fprintf(w, " blobs=%d", manifest.BlobDescriptors)
+			}
+			if manifest.BlobBytes > 0 {
+				fmt.Fprintf(w, " blob_bytes=%s", bytefmt.Size(manifest.BlobBytes))
+			}
+			if len(manifest.MissingBlobs) > 0 {
+				fmt.Fprintf(w, " missing=%d", len(manifest.MissingBlobs))
+			}
+		}
+		if manifest.Error != "" {
+			fmt.Fprintf(w, " error=%q", manifest.Error)
+		}
 		fmt.Fprintln(w)
+		for _, entry := range manifest.BaseChain {
+			fmt.Fprintf(w, "      base: %s %s", entry.Digest, entry.Status)
+			if entry.Format != "" {
+				fmt.Fprintf(w, " format=%s", entry.Format)
+			}
+			if entry.DiskFormat != "" {
+				fmt.Fprintf(w, " disk_format=%s", entry.DiskFormat)
+			}
+			if entry.MatchingChunks > 0 {
+				fmt.Fprintf(w, " matching_chunks=%d", entry.MatchingChunks)
+			}
+			if entry.MatchingBytes > 0 {
+				fmt.Fprintf(w, " matching_bytes=%s", bytefmt.Size(entry.MatchingBytes))
+			}
+			if entry.Error != "" {
+				fmt.Fprintf(w, " error=%s", entry.Error)
+			}
+			fmt.Fprintln(w)
+		}
+		for _, missing := range manifest.MissingBlobs {
+			fmt.Fprintf(w, "      missing: %s\n", missing)
+		}
 	}
+}
+
+func pullIndexManifestOutputs(plan *pullPlan) []ImageRemoteIndexManifest {
+	if plan == nil {
+		return nil
+	}
+	if len(plan.IndexManifests) > 0 {
+		return plan.IndexManifests
+	}
+	return remoteIndexManifestOutputs(plan.ManifestResolution)
 }
 
 func printPullDryRunJSON(w io.Writer, plan *pullPlan) error {
@@ -845,7 +943,7 @@ func pullDryRunOutputFromPlan(plan *pullPlan) pullDryRunOutput {
 		out.IndexMediaType = plan.ManifestResolution.IndexMediaType
 		out.SelectedDigest = plan.ManifestResolution.SelectedDigest
 		out.SelectedPlatform = remotePlatformString(plan.ManifestResolution.SelectedPlatform)
-		out.IndexManifests = remoteIndexManifestOutputs(plan.ManifestResolution)
+		out.IndexManifests = pullIndexManifestOutputs(plan)
 	}
 	if !out.ManifestProvided {
 		return out
@@ -995,6 +1093,7 @@ Flags:
   --json               Print dry-run plan as JSON
   --fetch-manifest     Fetch registry manifest during dry-run
   --verify-blobs       HEAD registry blobs during dry-run
+  --all-platforms      Inspect every image-index child during dry-run
   --resume             Continue an interrupted pull from disk.img.partial
   --manifest <path>    Local OCI manifest JSON instead of fetching the registry
   --platform <os/arch[/variant]>

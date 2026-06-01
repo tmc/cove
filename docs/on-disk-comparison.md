@@ -86,8 +86,9 @@ delegates the disk/runtime work to `tart` or `vetu`.
    including zero chunks and metadata blobs; the same pull plan is available as
    JSON for CI or fleet placement automation. Manifest-backed dry-runs report
    OCI index/list child candidates and selection, can force
-   `--platform os/arch[/variant]`, then HEAD-audit the registry blobs this host
-   would need for cove-native, Tart, or Lume pulls without downloading them.
+   `--platform os/arch[/variant]`, can fetch and classify every index child with
+   `--all-platforms`, then HEAD-audit the registry blobs this host would need
+   for cove-native, Tart, or Lume pulls without downloading them.
    Remote inspect can apply the same base-chain compatibility and HEAD-only blob
    audits to every child of a mixed-platform index before choosing which disk to
    pull.

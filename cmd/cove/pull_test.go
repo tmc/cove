@@ -353,6 +353,96 @@ func TestBuildPullPlanDryRunFetchManifestPlatform(t *testing.T) {
 	}
 }
 
+func TestBuildPullPlanDryRunFetchManifestAllPlatforms(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	darwinBase, _, _ := pullCompressedChunkedTestManifest(t, []byte("darwin"), 3)
+	setRemoteInspectTestConfig(&darwinBase, []byte("darwin-base-config"))
+	darwinBaseData, darwinBaseDigest := pullTestManifestData(t, darwinBase)
+	darwinManifest := darwinBase
+	darwinManifest.Annotations = cloneStringMap(darwinManifest.Annotations)
+	darwinManifest.Annotations[ociimage.CoveBaseManifest] = darwinBaseDigest
+	linuxManifest, _, _ := pullCompressedChunkedTestManifest(t, []byte("linux-child"), 5)
+	setRemoteInspectTestConfig(&linuxManifest, []byte("linux-config"))
+	missingBaseDigest := "sha256:" + strings.Repeat("f", 64)
+	linuxManifest.Annotations = cloneStringMap(linuxManifest.Annotations)
+	linuxManifest.Annotations[ociimage.CoveBaseManifest] = missingBaseDigest
+	darwinData, darwinDigest := pullTestManifestData(t, darwinManifest)
+	linuxData, linuxDigest := pullTestManifestData(t, linuxManifest)
+	index := ociimage.Index{
+		SchemaVersion: 2,
+		MediaType:     ociimage.MediaTypeImageIndex,
+		Manifests: []ociimage.IndexDescriptor{
+			{
+				Descriptor: ociimage.Descriptor{MediaType: ociimage.MediaTypeImageManifest, Size: int64(len(darwinData)), Digest: darwinDigest},
+				Platform:   &ociimage.Platform{OS: "darwin", Architecture: "arm64"},
+			},
+			{
+				Descriptor: ociimage.Descriptor{MediaType: ociimage.MediaTypeImageManifest, Size: int64(len(linuxData)), Digest: linuxDigest},
+				Platform:   &ociimage.Platform{OS: "linux", Architecture: "arm64"},
+			},
+		},
+	}
+	blobs := remoteInspectExistingBlobs(darwinManifest, darwinBase, linuxManifest)
+	srv := newRemoteInspectMultiIndexBlobRegistry(t, index, map[string][]byte{
+		darwinDigest:     darwinData,
+		darwinBaseDigest: darwinBaseData,
+		linuxDigest:      linuxData,
+	}, blobs)
+	t.Cleanup(srv.Close)
+
+	plan, err := buildPullPlan("ghcr.io/me/dev-vm:v1", pullOptions{
+		DryRun:          true,
+		FetchManifest:   true,
+		VerifyBlobs:     true,
+		AllPlatforms:    true,
+		Platform:        "linux/arm64",
+		RegistryBaseURL: srv.URL,
+	})
+	if err != nil {
+		t.Fatalf("buildPullPlan(): %v", err)
+	}
+	if plan.ManifestDigest != linuxDigest || plan.ManifestResolution.SelectedDigest != linuxDigest {
+		t.Fatalf("digest = manifest:%q selected:%q, want linux %q", plan.ManifestDigest, plan.ManifestResolution.SelectedDigest, linuxDigest)
+	}
+	if len(plan.IndexManifests) != 2 {
+		t.Fatalf("index manifests = %d, want 2", len(plan.IndexManifests))
+	}
+	children := map[string]ImageRemoteIndexManifest{}
+	for _, child := range plan.IndexManifests {
+		children[child.Platform] = child
+	}
+	if darwin := children["darwin/arm64"]; darwin.Format != "cove" || darwin.BaseChainAudit != "ok" || darwin.BlobAudit != "ok" || darwin.BaseChainDepth != 1 {
+		t.Fatalf("darwin child = %+v, want cove ok base/blob audits", darwin)
+	}
+	if linux := children["linux/arm64"]; linux.Format != "cove" || linux.BaseChainAudit != "missing" || linux.BlobAudit != "ok" || !linux.Selected {
+		t.Fatalf("linux child = %+v, want selected cove missing-base ok-blob audit", linux)
+	}
+	if got := srv.blobGets.Load(); got != 0 {
+		t.Fatalf("blob GETs = %d, want 0", got)
+	}
+
+	var out strings.Builder
+	printPullDryRun(&out, plan)
+	for _, want := range []string{"index manifests: 2", "format=cove", "base_audit=ok", "base_audit=missing", "blob_audit=ok", "disk_size=11 B"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("dry-run output %q missing %q", out.String(), want)
+		}
+	}
+
+	var jsonOut strings.Builder
+	if err := printPullDryRunJSON(&jsonOut, plan); err != nil {
+		t.Fatalf("printPullDryRunJSON(): %v", err)
+	}
+	var got pullDryRunOutput
+	if err := json.Unmarshal([]byte(jsonOut.String()), &got); err != nil {
+		t.Fatalf("Unmarshal(JSON): %v\n%s", err, jsonOut.String())
+	}
+	if len(got.IndexManifests) != 2 || got.IndexManifests[0].Format != "cove" || got.IndexManifests[0].BaseChainAudit != "ok" || got.IndexManifests[1].BlobAudit != "ok" {
+		t.Fatalf("JSON index manifests = %+v, want detailed child audits", got.IndexManifests)
+	}
+}
+
 func TestRecordPullDryRunImportBlobs(t *testing.T) {
 	tests := []struct {
 		name string
@@ -1012,6 +1102,13 @@ func TestHandlePullVerifyBlobsRequiresManifest(t *testing.T) {
 	}
 }
 
+func TestHandlePullAllPlatformsRequiresFetchManifest(t *testing.T) {
+	err := handlePull(commandTestEnv(), []string{"--dry-run", "--all-platforms", "ghcr.io/me/dev-vm:v1"})
+	if err == nil || !strings.Contains(err.Error(), "--all-platforms requires --fetch-manifest") {
+		t.Fatalf("handlePull() error = %v, want --all-platforms requires fetch-manifest", err)
+	}
+}
+
 func TestHandlePullRejectsFetchManifestWithManifest(t *testing.T) {
 	err := handlePull(commandTestEnv(), []string{
 		"--dry-run",
@@ -1059,7 +1156,7 @@ func TestParsePullArgsHelpReturnsNoError(t *testing.T) {
 	if pos != nil {
 		t.Fatalf("parsePullArgs(-h) pos = %#v, want nil", pos)
 	}
-	if opts.DryRun || opts.JSON || opts.FetchManifest || opts.VerifyBlobs || opts.Resume || opts.As != "" || opts.ManifestPath != "" || opts.Platform != "" {
+	if opts.DryRun || opts.JSON || opts.FetchManifest || opts.VerifyBlobs || opts.AllPlatforms || opts.Resume || opts.As != "" || opts.ManifestPath != "" || opts.Platform != "" {
 		t.Fatalf("parsePullArgs(-h) opts = %#v, want zero", opts)
 	}
 }
@@ -1088,14 +1185,15 @@ func TestParsePullArgsFetchManifest(t *testing.T) {
 		"--dry-run",
 		"--fetch-manifest",
 		"--verify-blobs",
+		"--all-platforms",
 		"--json",
 		"--platform", "linux/arm64",
 	}, ioDiscard{})
 	if err != nil {
 		t.Fatalf("parsePullArgs fetch manifest: %v", err)
 	}
-	if !opts.DryRun || !opts.FetchManifest || !opts.VerifyBlobs || !opts.JSON || opts.Platform != "linux/arm64" {
-		t.Fatalf("opts = %#v, want dry-run/fetch-manifest/verify-blobs/json/platform", opts)
+	if !opts.DryRun || !opts.FetchManifest || !opts.VerifyBlobs || !opts.AllPlatforms || !opts.JSON || opts.Platform != "linux/arm64" {
+		t.Fatalf("opts = %#v, want dry-run/fetch-manifest/verify-blobs/all-platforms/json/platform", opts)
 	}
 	if strings.Join(pos, ",") != "registry.example/cove/vm:latest" {
 		t.Fatalf("pos = %#v", pos)

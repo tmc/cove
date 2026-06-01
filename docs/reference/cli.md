@@ -1416,7 +1416,10 @@ reusable chunks, bytes, disk format, and source base path. Manifest-backed
 dry-runs that resolve an OCI image index or Docker manifest list also print the
 index digest, selected manifest digest, selected platform, and selectable child
 manifest candidates; use `--platform os/arch[/variant]` to force the child
-manifest for mixed macOS/Linux catalogs.
+manifest for mixed macOS/Linux catalogs. Add `--all-platforms` with
+`--fetch-manifest` to fetch every index child manifest during dry-run and include
+per-child format, disk size/format, transport bytes, cove base-chain audit, and
+optional `--verify-blobs` descriptor audit in the same pull preflight.
 
 Cove-native dry-runs also report disk chunks already covered by the local
 content store, disk chunks still requiring registry fetches, sparse zero
@@ -1439,6 +1442,7 @@ cove pull <ref> [flags]
 | `--fetch-manifest` | false | Fetch registry manifest during dry-run |
 | `--json` | false | Print dry-run plan as JSON |
 | `--verify-blobs` | false | HEAD registry blobs during dry-run |
+| `--all-platforms` | false | Inspect every OCI image-index or Docker manifest-list child during dry-run |
 | `--resume` | false | Continue an interrupted pull from `disk.img.partial` |
 | `--manifest <path>` | | Local OCI manifest JSON instead of fetching the registry |
 | `--platform os/arch[/variant]` | auto | Select an OCI image-index or Docker manifest-list child |
@@ -1447,6 +1451,7 @@ cove pull <ref> [flags]
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run --fetch-manifest
 cove pull ghcr.io/example/runner:latest --dry-run --fetch-manifest --platform linux/arm64
+cove pull ghcr.io/example/runner:latest --dry-run --fetch-manifest --all-platforms --verify-blobs --json
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run --fetch-manifest --json
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run --fetch-manifest --verify-blobs --json
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run --json --manifest manifest.json

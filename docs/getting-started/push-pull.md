@@ -26,6 +26,7 @@ cove pull <ref> --dry-run --fetch-manifest --platform linux/arm64 # pick an inde
 cove pull <ref> --dry-run --json --manifest manifest.json # machine-readable pull plan
 cove pull <ref> --dry-run --fetch-manifest --json # machine-readable registry pull plan
 cove pull <ref> --dry-run --fetch-manifest --verify-blobs # HEAD referenced blobs
+cove pull <ref> --dry-run --fetch-manifest --all-platforms --verify-blobs --json # audit every index child
 cove image inspect -remote <ref> -json            # inspect registry metadata only
 cove image inspect -remote <ref> -platform linux/arm64 -json # inspect one platform
 cove image inspect -remote <ref> -all-platforms -json # classify and audit every index child
@@ -62,7 +63,10 @@ downloading disk blobs. When a cove-native manifest is available during
 disk can be reused and prints the reusable chunks, bytes, disk format, and
 source path. Manifest-backed dry-runs that resolve an index also print the
 index digest, selected manifest digest, selected platform, and selectable child
-manifest candidates. The same dry-run also reports cove-native transfer
+manifest candidates. Add `--all-platforms` with `--fetch-manifest` to fetch each
+child manifest and include per-child format, disk size/format, transport bytes,
+cove base-chain audit, and optional `--verify-blobs` descriptor audit in the
+same pull preflight. The same dry-run also reports cove-native transfer
 coverage: disk
 chunks already in the local content store, disk chunks that still need registry
 fetches, sparse zero chunks, and metadata blobs already present or still needed.
