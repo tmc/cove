@@ -79,6 +79,9 @@ func TestCloudClientCreateExecControlDelete(t *testing.T) {
 	if list[0].QueueExpires.IsZero() || list[0].QueueAgeMillis != 1500 || list[0].QueueRemainingMillis != 8500 {
 		t.Fatalf("List queue diagnostics = %+v, want expires with 1500/8500ms", list[0])
 	}
+	if list[0].MaxAttempts != 3 || list[0].Attempt != 1 || list[0].RetryDelay != "20s" || list[0].RetryAt.IsZero() || list[0].RetryRemainingMillis != 12000 {
+		t.Fatalf("List retry diagnostics = %+v, want attempt 1/3 with 12000ms remaining", list[0])
+	}
 	wait, err := client.Wait(ctx, 2500*time.Millisecond)
 	if err != nil {
 		t.Fatalf("Wait: %v", err)
@@ -2360,8 +2363,9 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 			writeSDKJSON(t, w, SandboxStatus{Namespace: "team-a", ID: "job-1", VMName: "cove-sandbox-job-1", RequiredCapabilities: []string{"ram-overlay"}, Status: "pending"})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/sandboxes":
 			queueExpires := time.Date(2026, 5, 31, 10, 10, 0, 0, time.UTC)
+			retryAt := time.Date(2026, 5, 31, 10, 0, 12, 0, time.UTC)
 			writeSDKJSON(t, w, map[string]any{
-				"sandboxes": []SandboxStatus{{Namespace: "team-a", ID: "job-1", VMName: "cove-sandbox-job-1", ImageRef: "base:v1", ImageManifestDigest: "sha256:1111111111111111111111111111111111111111111111111111111111111111", ImageDigestRef: "ghcr.io/me/dev-vm@sha256:1111111111111111111111111111111111111111111111111111111111111111", ImagePlatform: "darwin/arm64", RequiredCapabilities: []string{"ram-overlay"}, Status: "pending", QueueExpires: queueExpires, QueueAgeMillis: 1500, QueueRemainingMillis: 8500}},
+				"sandboxes": []SandboxStatus{{Namespace: "team-a", ID: "job-1", VMName: "cove-sandbox-job-1", ImageRef: "base:v1", ImageManifestDigest: "sha256:1111111111111111111111111111111111111111111111111111111111111111", ImageDigestRef: "ghcr.io/me/dev-vm@sha256:1111111111111111111111111111111111111111111111111111111111111111", ImagePlatform: "darwin/arm64", RequiredCapabilities: []string{"ram-overlay"}, Status: "pending", QueueExpires: queueExpires, QueueAgeMillis: 1500, QueueRemainingMillis: 8500, MaxAttempts: 3, Attempt: 1, RetryDelay: "20s", RetryAt: retryAt, RetryRemainingMillis: 12000}},
 				"count":     1,
 				"offset":    atoiDefault(r.URL.Query().Get("offset"), 0),
 				"limit":     atoiDefault(r.URL.Query().Get("limit"), 0),

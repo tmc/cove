@@ -190,6 +190,11 @@ def test_fleet_client_create_wait_exec_and_delete() -> None:
         assert sandboxes[0]["queue_age_millis"] == 1500
         assert sandboxes[0]["queue_remaining_millis"] == 8500
         assert sandboxes[0]["queue_expires"] == "2026-05-31T10:10:00Z"
+        assert sandboxes[0]["max_attempts"] == 3
+        assert sandboxes[0]["attempt"] == 1
+        assert sandboxes[0]["retry_delay"] == "20s"
+        assert sandboxes[0]["retry_at"] == "2026-05-31T10:00:12Z"
+        assert sandboxes[0]["retry_remaining_millis"] == 12000
         listed = CoveFleetClient.list_sandboxes(fleet_url=server.url, api_key="secret", namespace="team-a")
         assert listed[0]["id"] == "job-1"
         status = client.status()
@@ -2595,6 +2600,11 @@ class _FleetHTTPServer:
                                     "queue_expires": "2026-05-31T10:10:00Z",
                                     "queue_age_millis": 1500,
                                     "queue_remaining_millis": 8500,
+                                    "max_attempts": 3,
+                                    "attempt": 1,
+                                    "retry_delay": "20s",
+                                    "retry_at": "2026-05-31T10:00:12Z",
+                                    "retry_remaining_millis": 12000,
                                 }
                             ],
                             "count": 1,

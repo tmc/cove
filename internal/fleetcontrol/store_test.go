@@ -790,6 +790,9 @@ func TestStoreSandboxAutoRetryKeepsAdmission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if sandbox.MaxAttempts != 2 || sandbox.RetryDelay != "1s" || sandbox.Attempt != 0 || !sandbox.RetryAt.IsZero() || sandbox.RetryRemainingMillis != 0 {
+		t.Fatalf("created retry diagnostics = %+v, want policy without active retry", sandbox)
+	}
 	leased, err := store.AwaitAssignment("worker-1")
 	if err != nil {
 		t.Fatal(err)
@@ -805,12 +808,18 @@ func TestStoreSandboxAutoRetryKeepsAdmission(t *testing.T) {
 	if !ok || retrying.Status != "pending" || retrying.Assignment.Attempt != 1 || retrying.Assignment.RetryAt.IsZero() {
 		t.Fatalf("retrying sandbox = %+v, ok %v", retrying, ok)
 	}
+	if retrying.Attempt != 1 || retrying.MaxAttempts != 2 || retrying.RetryDelay != "1s" || !retrying.RetryAt.Equal(now.Add(time.Second)) || retrying.RetryRemainingMillis != 1000 {
+		t.Fatalf("retrying diagnostics = %+v, want attempt 1/2 retry at +1s with 1000ms remaining", retrying)
+	}
 	wait, err := store.WaitSandbox("job-1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if wait.Done || wait.Sandbox.Status != "pending" {
 		t.Fatalf("WaitSandbox retrying = %+v, want pending not done", wait)
+	}
+	if wait.Sandbox.Attempt != 1 || wait.Sandbox.MaxAttempts != 2 || wait.Sandbox.RetryDelay != "1s" || wait.Sandbox.RetryRemainingMillis != 1000 {
+		t.Fatalf("WaitSandbox retry diagnostics = %+v, want attempt 1/2 with 1000ms remaining", wait.Sandbox)
 	}
 	if _, err := store.CreateSandbox(SandboxRequest{Namespace: "team-a", ID: "job-2", ImageRef: "base:v1", MaxActiveSandboxes: 1}); err == nil || !strings.Contains(err.Error(), "max_active_sandboxes") {
 		t.Fatalf("CreateSandbox during retry err = %v, want max_active_sandboxes", err)
@@ -6845,6 +6854,50 @@ func TestHandlerSandboxQueueDiagnostics(t *testing.T) {
 	for _, tc := range cases {
 		if !tc.got.QueueExpires.Equal(now.Add(1500*time.Millisecond)) || tc.got.QueueAgeMillis != 500 || tc.got.QueueRemainingMillis != 1500 {
 			t.Fatalf("%s queue diagnostics = %+v, want +1500ms 500/1500", tc.name, tc.got)
+		}
+	}
+}
+
+func TestHandlerSandboxRetryDiagnostics(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 4}}, &record)
+	var created SandboxStatus
+	postJSON(t, server.URL+"/v1/sandboxes", SandboxRequest{ID: "job-1", ImageRef: "base:v1", MaxAttempts: 2, RetryDelay: "1s"}, &created)
+	if created.MaxAttempts != 2 || created.RetryDelay != "1s" || created.Attempt != 0 || !created.RetryAt.IsZero() || created.RetryRemainingMillis != 0 {
+		t.Fatalf("created retry diagnostics = %+v, want policy without active retry", created)
+	}
+
+	var leased Assignment
+	getJSON(t, server.URL+"/v1/workers/worker-1/assignments", &leased)
+	now = now.Add(time.Second)
+	postJSON(t, server.URL+"/v1/workers/worker-1/reports", WorkerReport{AssignmentID: leased.ID, Status: "failed"}, &record)
+
+	var got SandboxStatus
+	getJSON(t, server.URL+"/v1/sandboxes/job-1", &got)
+	var list SandboxListResult
+	getJSON(t, server.URL+"/v1/sandboxes?status=pending", &list)
+	var wait SandboxWaitResult
+	postJSON(t, server.URL+"/v1/sandboxes/job-1/wait?status=ready&timeout=0", map[string]string{}, &wait)
+	if len(list.Sandboxes) != 1 {
+		t.Fatalf("sandbox list = %+v, want one pending retry", list)
+	}
+	cases := []struct {
+		name string
+		got  SandboxStatus
+	}{
+		{name: "get", got: got},
+		{name: "list", got: list.Sandboxes[0]},
+		{name: "wait", got: wait.Sandbox},
+	}
+	for _, tc := range cases {
+		if tc.got.Status != "pending" || tc.got.Attempt != 1 || tc.got.MaxAttempts != 2 || tc.got.RetryDelay != "1s" || !tc.got.RetryAt.Equal(now.Add(time.Second)) || tc.got.RetryRemainingMillis != 1000 {
+			t.Fatalf("%s retry diagnostics = %+v, want pending attempt 1/2 retry at +1s with 1000ms remaining", tc.name, tc.got)
 		}
 	}
 }

@@ -6406,6 +6406,10 @@ func sandboxStatusFromAssignment(assignment Assignment, now time.Time) SandboxSt
 		WorkerID:             assignment.WorkerID,
 		Status:               assignment.Status,
 		QueueExpires:         assignment.QueueExpires,
+		MaxAttempts:          assignment.MaxAttempts,
+		Attempt:              assignment.Attempt,
+		RetryDelay:           assignment.RetryDelay,
+		RetryAt:              assignment.RetryAt,
 		Assignment:           assignment,
 		Created:              assignment.Created,
 		Updated:              assignment.Updated,
@@ -6416,6 +6420,9 @@ func sandboxStatusFromAssignment(assignment Assignment, now time.Time) SandboxSt
 		}
 		if !assignment.QueueExpires.IsZero() {
 			status.QueueRemainingMillis = positiveDurationMillis(assignment.QueueExpires.Sub(now))
+		}
+		if !assignment.RetryAt.IsZero() {
+			status.RetryRemainingMillis = positiveDurationMillis(assignment.RetryAt.Sub(now))
 		}
 	}
 	if assignment.SandboxLeaseHolder != "" && !assignment.SandboxLeaseExpires.IsZero() {
