@@ -1943,11 +1943,13 @@ func (s *Store) OperationsSummary(namespace string) OperationsSummary {
 			ByStatus: make(map[string]int),
 		},
 	}
+	capabilityCoverage := make(map[string]*WorkerCapabilitySummary)
 
 	for _, host := range s.sortedHostsLocked() {
 		host = s.statusLocked(host)
 		summary.Workers.Total++
 		addStatusCount(summary.Workers.ByStatus, host.Status)
+		addCapabilityCoverage(capabilityCoverage, host)
 		switch host.Status {
 		case "ready":
 			summary.Workers.Ready++
@@ -1964,6 +1966,7 @@ func (s *Store) OperationsSummary(namespace string) OperationsSummary {
 			summary.Workers.Attention = append(summary.Workers.Attention, host)
 		}
 	}
+	summary.Workers.Capabilities = sortedCapabilityCoverage(capabilityCoverage)
 
 	for _, pool := range s.sortedWarmPoolsLocked() {
 		if !namespaceMatches(pool.Namespace, namespace) {
@@ -4148,6 +4151,50 @@ func normalizeOperationStatus(status string) string {
 func addStatusCount(counts map[string]int, status string) {
 	status = normalizeOperationStatus(status)
 	counts[status]++
+}
+
+func addCapabilityCoverage(coverage map[string]*WorkerCapabilitySummary, host HostRecord) {
+	for _, name := range sortedUniqueStrings(host.Capabilities) {
+		summary := coverage[name]
+		if summary == nil {
+			summary = &WorkerCapabilitySummary{
+				Name:     name,
+				ByStatus: make(map[string]int),
+			}
+			coverage[name] = summary
+		}
+		summary.Total++
+		addStatusCount(summary.ByStatus, host.Status)
+		summary.Workers = append(summary.Workers, host.ID)
+		switch host.Status {
+		case "ready":
+			summary.Ready++
+		case "cordoned":
+			summary.Cordoned++
+		case "quarantined":
+			summary.Quarantined++
+		case "stale":
+			summary.Stale++
+		}
+	}
+}
+
+func sortedCapabilityCoverage(coverage map[string]*WorkerCapabilitySummary) []WorkerCapabilitySummary {
+	if len(coverage) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(coverage))
+	for name := range coverage {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make([]WorkerCapabilitySummary, 0, len(names))
+	for _, name := range names {
+		summary := *coverage[name]
+		sort.Strings(summary.Workers)
+		out = append(out, summary)
+	}
+	return out
 }
 
 func reconcileAssignmentStatus(status string) bool {

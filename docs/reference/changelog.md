@@ -8,6 +8,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 ## Unreleased
 
 ### Added
+- `GET /v1/operations/summary` now includes per-worker-capability coverage:
+  total, ready, cordoned, quarantined, stale, status breakdown, and worker ids
+  for traits such as `ram-overlay`.
 - `cove-fleetd` now exposes `GET /v1/workers/{id}/events` for worker-scoped
   audit history, and global audit queries now accept `worker_id`.
 - `cove-fleetd` now exposes `GET /v1/workers/{id}/reports` for worker-scoped

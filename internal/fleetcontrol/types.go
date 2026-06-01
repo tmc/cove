@@ -966,13 +966,25 @@ type OperationsSummary struct {
 }
 
 type WorkerOperationsSummary struct {
+	Total        int                       `json:"total"`
+	Ready        int                       `json:"ready"`
+	Cordoned     int                       `json:"cordoned"`
+	Quarantined  int                       `json:"quarantined"`
+	Stale        int                       `json:"stale"`
+	ByStatus     map[string]int            `json:"by_status,omitempty"`
+	Capabilities []WorkerCapabilitySummary `json:"capabilities,omitempty"`
+	Attention    []HostRecord              `json:"attention,omitempty"`
+}
+
+type WorkerCapabilitySummary struct {
+	Name        string         `json:"name"`
 	Total       int            `json:"total"`
 	Ready       int            `json:"ready"`
 	Cordoned    int            `json:"cordoned"`
 	Quarantined int            `json:"quarantined"`
 	Stale       int            `json:"stale"`
 	ByStatus    map[string]int `json:"by_status,omitempty"`
-	Attention   []HostRecord   `json:"attention,omitempty"`
+	Workers     []string       `json:"workers,omitempty"`
 }
 
 type AssignmentOperationsSummary struct {

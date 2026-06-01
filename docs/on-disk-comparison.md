@@ -132,8 +132,10 @@ delegates the disk/runtime work to `tart` or `vetu`.
    heartbeats now auto-report standard capabilities such as Darwin
    `ram-overlay` plus image source manifest digests, and assignment,
    placement-plan, warm-pool, sandbox, image-preparation, image-GC,
-   lifecycle-policy, and storage maintenance requests can require capabilities
-   while assignment, placement-plan, warm-pool, sandbox, and image-preparation
+   lifecycle-policy, and storage maintenance requests can require
+   capabilities; the operations summary reports per-capability coverage by
+   worker status, so operators can see whether RAM-overlay capacity is ready,
+   and assignment, placement-plan, warm-pool, sandbox, and image-preparation
    requests can carry or resolve the selected digest from an offline
    `manifest_bundle`, so stale mutable refs are rejected or force-refreshed
    before hosted work lands.

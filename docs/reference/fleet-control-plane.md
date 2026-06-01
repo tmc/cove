@@ -204,12 +204,16 @@ identity.
 
 `GET /v1/operations/summary` is the dashboard entry point for operators. It
 reconciles first, then returns worker readiness/cordon/quarantine/stale counts
-with attention workers, assignment status counts with active assignments,
-hosted sandbox status counts with active and draining handles, warm-pool
-desired/slot counts, and aggregate sandbox metering. The optional `namespace`
-query filters assignment, sandbox, warm-pool, and metering counts; worker
-inventory stays fleet-global. Because the response includes fleet-global
-worker state, scoped service-account tokens cannot read it.
+with attention workers and per-capability coverage, assignment status counts
+with active assignments, hosted sandbox status counts with active and draining
+handles, warm-pool desired/slot counts, and aggregate sandbox metering. The
+capability coverage section shows each reported worker capability, status
+counts, and the workers carrying it, so operators can see whether traits such
+as `ram-overlay` are actually available before admitting capability-constrained
+work. The optional `namespace` query filters assignment, sandbox, warm-pool,
+and metering counts; worker inventory stays fleet-global. Because the response
+includes fleet-global worker state, scoped service-account tokens cannot read
+it.
 `GET /v1/operations/runs` is the retained controller-run feed. It merges
 placement plans, image preparations, image-GC runs, lifecycle-policy pushes,
 and storage budget/prune runs into one paginated timeline with `kind`,

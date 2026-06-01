@@ -925,10 +925,10 @@ func TestStoreOperationsSummary(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
 	store.now = func() time.Time { return now }
-	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 4}}); err != nil {
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", Capabilities: []string{"ram-overlay", "asif"}, ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 4}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-2"}); err != nil {
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-2", Capabilities: []string{"ram-overlay"}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.CordonWorker("worker-2", "maintenance"); err != nil {
@@ -971,6 +971,16 @@ func TestStoreOperationsSummary(t *testing.T) {
 	}
 	if len(summary.Workers.Attention) != 1 || summary.Workers.Attention[0].ID != "worker-2" {
 		t.Fatalf("worker attention = %+v, want worker-2", summary.Workers.Attention)
+	}
+	capabilities := map[string]WorkerCapabilitySummary{}
+	for _, capability := range summary.Workers.Capabilities {
+		capabilities[capability.Name] = capability
+	}
+	if got := capabilities["asif"]; got.Total != 1 || got.Ready != 1 || !equalStrings(got.Workers, []string{"worker-1"}) {
+		t.Fatalf("asif capability summary = %+v, want ready worker-1", got)
+	}
+	if got := capabilities["ram-overlay"]; got.Total != 2 || got.Ready != 1 || got.Cordoned != 1 || got.ByStatus["ready"] != 1 || got.ByStatus["cordoned"] != 1 || !equalStrings(got.Workers, []string{"worker-1", "worker-2"}) {
+		t.Fatalf("ram-overlay capability summary = %+v, want ready worker-1 and cordoned worker-2", got)
 	}
 	if summary.Assignments.Total != 3 || summary.Assignments.Active != 3 || summary.Assignments.ByStatus["draining"] != 1 || summary.Assignments.ByStatus["pending"] != 2 {
 		t.Fatalf("assignment summary = %+v, want 3 active team-a assignments", summary.Assignments)
@@ -2825,8 +2835,8 @@ func TestStoreQuarantinePersistsBlocksPlacementAndLeasing(t *testing.T) {
 	}
 	store.now = func() time.Time { return now }
 	for _, hb := range []WorkerHeartbeat{
-		{ID: "bad", Capacity: Capacity{VMs: 0}},
-		{ID: "ready", Capacity: Capacity{VMs: 5}},
+		{ID: "bad", Capabilities: []string{"gui"}, Capacity: Capacity{VMs: 0}},
+		{ID: "ready", Capabilities: []string{"ram-overlay"}, Capacity: Capacity{VMs: 5}},
 	} {
 		if _, err := store.UpsertHeartbeat(hb); err != nil {
 			t.Fatal(err)
@@ -2840,7 +2850,7 @@ func TestStoreQuarantinePersistsBlocksPlacementAndLeasing(t *testing.T) {
 		t.Fatalf("quarantined record = %+v", record)
 	}
 	now = now.Add(10 * time.Second)
-	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "bad", Capacity: Capacity{VMs: 0}}); err != nil {
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "bad", Capabilities: []string{"gui"}, Capacity: Capacity{VMs: 0}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.Report(WorkerReport{ID: "bad", Status: "ready"}); err != nil {
@@ -2890,6 +2900,13 @@ func TestStoreQuarantinePersistsBlocksPlacementAndLeasing(t *testing.T) {
 	summary := store.OperationsSummary("")
 	if summary.Workers.Quarantined != 1 || len(summary.Workers.Attention) != 1 || summary.Workers.Attention[0].ID != "bad" {
 		t.Fatalf("workers summary = %+v, want bad quarantined attention", summary.Workers)
+	}
+	quarantineCapabilities := map[string]WorkerCapabilitySummary{}
+	for _, capability := range summary.Workers.Capabilities {
+		quarantineCapabilities[capability.Name] = capability
+	}
+	if got := quarantineCapabilities["gui"]; got.Total != 1 || got.Quarantined != 1 || got.ByStatus["quarantined"] != 1 || !equalStrings(got.Workers, []string{"bad"}) {
+		t.Fatalf("gui capability summary = %+v, want quarantined bad", got)
 	}
 	record, err = store.UnquarantineWorker("bad")
 	if err != nil {
@@ -5215,7 +5232,7 @@ func TestHandlerOperationsSummary(t *testing.T) {
 	var account ServiceAccountResult
 	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-a", Namespace: "team-a", Role: ServiceAccountRoleViewer, Token: "token-a"}, &account)
 	var record HostRecord
-	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 2}}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", Capabilities: []string{"ram-overlay"}, ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 2}}, &record)
 	var sandbox SandboxStatus
 	postJSON(t, server.URL+"/v1/sandboxes", SandboxRequest{Namespace: "team-a", ID: "job-1", ImageRef: "base:v1"}, &sandbox)
 	var assignment Assignment
@@ -5225,6 +5242,9 @@ func TestHandlerOperationsSummary(t *testing.T) {
 	getJSON(t, server.URL+"/v1/operations/summary?namespace=team-a", &summary)
 	if summary.Namespace != "team-a" || summary.Workers.Total != 1 || summary.Assignments.Total != 1 || summary.Sandboxes.Total != 1 {
 		t.Fatalf("operations summary = %+v, want team-a counts only with global workers", summary)
+	}
+	if len(summary.Workers.Capabilities) != 1 || summary.Workers.Capabilities[0].Name != "ram-overlay" || summary.Workers.Capabilities[0].Ready != 1 {
+		t.Fatalf("operations capability summary = %+v, want ready ram-overlay", summary.Workers.Capabilities)
 	}
 	if code := getJSONStatus(t, server.URL+"/v1/operations/summary", "token-a"); code != http.StatusForbidden {
 		t.Fatalf("scoped operations summary status = %d, want %d", code, http.StatusForbidden)
