@@ -995,6 +995,8 @@ class CoveFleetClient:
         worker_id: str = "",
         candidate_worker_id: str = "",
         skipped_worker_id: str = "",
+        skip_reason: str = "",
+        has_skips: bool | None = None,
         offset: int = 0,
         limit: int = 0,
         timeout: float = 30.0,
@@ -1027,6 +1029,8 @@ class CoveFleetClient:
             "worker_id": worker_id,
             "candidate_worker_id": candidate_worker_id,
             "skipped_worker_id": skipped_worker_id,
+            "skip_reason": skip_reason,
+            "has_skips": _bool_query(has_skips),
             "offset": str(offset) if offset else "",
             "limit": str(limit) if limit else "",
         }

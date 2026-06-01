@@ -584,6 +584,8 @@ type ControllerRunListOptions struct {
 	WorkerID             string
 	CandidateWorkerID    string
 	SkippedWorkerID      string
+	SkipReason           string
+	HasSkips             *bool
 	Offset               int
 	Limit                int
 	Timeout              time.Duration
@@ -2399,9 +2401,13 @@ func ListControllerRuns(ctx context.Context, opts ControllerRunListOptions) (Con
 		"worker_id":             opts.WorkerID,
 		"candidate_worker_id":   opts.CandidateWorkerID,
 		"skipped_worker_id":     opts.SkippedWorkerID,
+		"skip_reason":           opts.SkipReason,
 	}
 	if opts.HasActiveAssignments != nil {
 		query["has_active_assignments"] = strconv.FormatBool(*opts.HasActiveAssignments)
+	}
+	if opts.HasSkips != nil {
+		query["has_skips"] = strconv.FormatBool(*opts.HasSkips)
 	}
 	if opts.Offset > 0 {
 		query["offset"] = strconv.Itoa(opts.Offset)

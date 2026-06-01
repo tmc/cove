@@ -1584,6 +1584,21 @@ func TestStoreOperationsSummaryControllerRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	skipReasonFilter := store.ListControllerRunsPage(ControllerRunListFilter{Namespace: "team-a", SkipReason: "capability"})
+	if skipReasonFilter.Count != 2 || len(skipReasonFilter.Runs) != 2 {
+		t.Fatalf("skip reason controller runs = %+v, want prepare and prune", skipReasonFilter)
+	}
+	hasSkips := true
+	hasSkipsFilter := store.ListControllerRunsPage(ControllerRunListFilter{Namespace: "team-a", HasSkips: &hasSkips})
+	if hasSkipsFilter.Count != 2 || len(hasSkipsFilter.Runs) != 2 {
+		t.Fatalf("has skips controller runs = %+v, want prepare and prune", hasSkipsFilter)
+	}
+	hasSkips = false
+	noSkipsFilter := store.ListControllerRunsPage(ControllerRunListFilter{Namespace: "team-a", HasSkips: &hasSkips})
+	if noSkipsFilter.Count != 0 || len(noSkipsFilter.Runs) != 0 {
+		t.Fatalf("no skips controller runs = %+v, want none", noSkipsFilter)
+	}
+
 	summary := store.OperationsSummary("team-a")
 	runs := summary.ControllerRuns
 	if runs.Total != 2 || runs.AssignmentBacked != 2 || runs.Active != 1 || runs.Attention != 1 {
@@ -6589,6 +6604,16 @@ func TestHandlerControllerRuns(t *testing.T) {
 	if page.Count != 1 || len(page.Runs) != 1 || page.Runs[0].ID != prep.ID {
 		t.Fatalf("skipped worker controller runs = %+v, want image prepare %s", page, prep.ID)
 	}
+	page = ControllerRunListResult{}
+	getJSONAuth(t, server.URL+"/v1/operations/runs?skip_reason=capability&limit=10", "token-a", &page)
+	if page.Count != 2 || len(page.Runs) != 2 {
+		t.Fatalf("skip reason controller runs = %+v, want prune and prepare", page)
+	}
+	page = ControllerRunListResult{}
+	getJSONAuth(t, server.URL+"/v1/operations/runs?has_skips=true&limit=10", "token-a", &page)
+	if page.Count != 2 || len(page.Runs) != 2 {
+		t.Fatalf("has skips controller runs = %+v, want prune and prepare", page)
+	}
 	var detail ControllerRunDetail
 	getJSONAuth(t, server.URL+"/v1/operations/runs/"+prep.ID, "token-a", &detail)
 	if detail.Summary.ID != prep.ID || detail.Summary.Kind != ControllerRunKindImagePrepare || detail.ImagePreparation == nil || detail.ImagePreparation.ImagePlatform != "darwin/arm64" {
@@ -6616,6 +6641,9 @@ func TestHandlerControllerRuns(t *testing.T) {
 	}
 	if code := getJSONStatus(t, server.URL+"/v1/operations/runs?has_active_assignments=maybe", "token-a"); code != http.StatusBadRequest {
 		t.Fatalf("bad active assignment filter status = %d, want %d", code, http.StatusBadRequest)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/operations/runs?has_skips=maybe", "token-a"); code != http.StatusBadRequest {
+		t.Fatalf("bad has skips filter status = %d, want %d", code, http.StatusBadRequest)
 	}
 }
 

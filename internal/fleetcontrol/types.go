@@ -667,6 +667,8 @@ type ControllerRunListFilter struct {
 	WorkerID             string `json:"worker_id,omitempty"`
 	CandidateWorkerID    string `json:"candidate_worker_id,omitempty"`
 	SkippedWorkerID      string `json:"skipped_worker_id,omitempty"`
+	SkipReason           string `json:"skip_reason,omitempty"`
+	HasSkips             *bool  `json:"has_skips,omitempty"`
 	Offset               int    `json:"offset,omitempty"`
 	Limit                int    `json:"limit,omitempty"`
 }

@@ -3588,6 +3588,11 @@ func (s *Store) ListControllerRunsPage(filter ControllerRunListFilter) Controlle
 	filter.WorkerID = strings.TrimSpace(filter.WorkerID)
 	filter.CandidateWorkerID = strings.TrimSpace(filter.CandidateWorkerID)
 	filter.SkippedWorkerID = strings.TrimSpace(filter.SkippedWorkerID)
+	if raw := strings.TrimSpace(filter.SkipReason); raw != "" {
+		filter.SkipReason = controllerRunSkipReason(raw)
+	} else {
+		filter.SkipReason = ""
+	}
 	if filter.Offset < 0 {
 		filter.Offset = 0
 	}
@@ -3783,7 +3788,7 @@ func (s *Store) controllerRunAssignmentsLocked(assignments []Assignment) []Assig
 }
 
 func controllerRunNeedsDetailFilter(filter ControllerRunListFilter) bool {
-	return filter.AssignmentID != "" || filter.AssignmentStatus != "" || filter.HasActiveAssignments != nil || filter.WorkerID != "" || filter.CandidateWorkerID != "" || filter.SkippedWorkerID != ""
+	return filter.AssignmentID != "" || filter.AssignmentStatus != "" || filter.HasActiveAssignments != nil || filter.WorkerID != "" || filter.CandidateWorkerID != "" || filter.SkippedWorkerID != "" || filter.SkipReason != "" || filter.HasSkips != nil
 }
 
 func controllerRunDetailMatchesFilter(detail ControllerRunDetail, filter ControllerRunListFilter) bool {
@@ -3805,11 +3810,27 @@ func controllerRunDetailMatchesFilter(detail ControllerRunDetail, filter Control
 	if filter.SkippedWorkerID != "" && !containsString(detail.SkippedWorkerIDs, filter.SkippedWorkerID) {
 		return false
 	}
+	if filter.SkipReason != "" && !controllerRunHasSkipReason(detail, filter.SkipReason) {
+		return false
+	}
+	if filter.HasSkips != nil && (len(controllerRunSkips(detail)) > 0) != *filter.HasSkips {
+		return false
+	}
 	return true
 }
 
 func controllerRunDetailHasWorker(detail ControllerRunDetail, workerID string) bool {
 	return containsString(detail.WorkerIDs, workerID) || containsString(detail.CandidateWorkerIDs, workerID) || containsString(detail.SkippedWorkerIDs, workerID)
+}
+
+func controllerRunHasSkipReason(detail ControllerRunDetail, reason string) bool {
+	reason = controllerRunSkipReason(reason)
+	for _, skip := range controllerRunSkips(detail) {
+		if controllerRunSkipReason(skip.reason) == reason {
+			return true
+		}
+	}
+	return false
 }
 
 type controllerRunSkip struct {

@@ -641,6 +641,8 @@ def test_fleet_client_maintenance_runs() -> None:
             worker_id="worker-1",
             candidate_worker_id="worker-1",
             skipped_worker_id="worker-2",
+            skip_reason="capability",
+            has_skips=True,
             offset=1,
             limit=2,
         )
@@ -741,6 +743,8 @@ def test_fleet_client_maintenance_runs() -> None:
         assert server.requests[-5]["query"]["worker_id"] == ["worker-1"]
         assert server.requests[-5]["query"]["candidate_worker_id"] == ["worker-1"]
         assert server.requests[-5]["query"]["skipped_worker_id"] == ["worker-2"]
+        assert server.requests[-5]["query"]["skip_reason"] == ["capability"]
+        assert server.requests[-5]["query"]["has_skips"] == ["true"]
         assert server.requests[-2]["body"] == {}
         assert server.requests[-1]["query"]["namespace"] == ["team-a"]
     finally:

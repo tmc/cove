@@ -357,12 +357,18 @@ func controllerRunListFilterFromRequest(r *http.Request, namespace string) (Cont
 		WorkerID:            strings.TrimSpace(r.URL.Query().Get("worker_id")),
 		CandidateWorkerID:   strings.TrimSpace(r.URL.Query().Get("candidate_worker_id")),
 		SkippedWorkerID:     strings.TrimSpace(r.URL.Query().Get("skipped_worker_id")),
+		SkipReason:          strings.TrimSpace(r.URL.Query().Get("skip_reason")),
 	}
 	hasActiveAssignments, err := boolFilterFromRequest(r, "controller runs", "has_active_assignments")
 	if err != nil {
 		return ControllerRunListFilter{}, err
 	}
 	filter.HasActiveAssignments = hasActiveAssignments
+	hasSkips, err := boolFilterFromRequest(r, "controller runs", "has_skips")
+	if err != nil {
+		return ControllerRunListFilter{}, err
+	}
+	filter.HasSkips = hasSkips
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		limit, err := strconv.Atoi(raw)
 		if err != nil || limit < 0 {

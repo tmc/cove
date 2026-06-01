@@ -151,11 +151,12 @@ delegates the disk/runtime work to `tart` or `vetu`.
    capability, so operators can find exactly which queued or leased work, live
    handles, ready capacity, pre-staging runs, placement plans, and maintenance
    pushes depend on an immutable image or RAM-overlay-class worker capability,
-   assignment, or affected worker;
-   the aggregate timeline also filters by live assignment status or active-work
-   presence and has a single drill-down endpoint that returns current normalized
-   assignments, assignment status summaries, affected workers, skipped workers,
-   and the retained source object for dashboards and incident review.
+   assignment, affected worker, skip reason, or skipped-worker diagnostics;
+   the aggregate timeline also filters by live assignment status, active-work
+   presence, and skip presence, and has a single drill-down endpoint that
+   returns current normalized assignments, assignment status summaries, affected
+   workers, skipped workers, and the retained source object for dashboards and
+   incident review.
 
 ## Where competitors still lead
 

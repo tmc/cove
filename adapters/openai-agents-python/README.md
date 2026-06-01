@@ -237,6 +237,8 @@ runs = CoveFleetClient.list_controller_runs(
     required_capability="ram-overlay",
     assignment_status="running",
     has_active_assignments=True,
+    skip_reason="capability",
+    has_skips=True,
     worker_id="mini-1",
     limit=20,
 )
