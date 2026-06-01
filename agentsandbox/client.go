@@ -1012,6 +1012,28 @@ type WorkerEvacuationAssignment struct {
 	Candidates     []PlacementCandidate `json:"candidates,omitempty"`
 }
 
+type AssignmentCreateOptions struct {
+	FleetURL             string
+	APIKey               string
+	Namespace            string
+	ID                   string
+	WorkerID             string
+	Policy               string
+	ImageRef             string
+	ManifestBundle       string
+	ImageManifestDigest  string
+	ImageDigestRef       string
+	ImagePlatform        string
+	RequiredLabels       map[string]string
+	RequiredCapabilities []string
+	AntiAffinityKey      string
+	Resources            Capacity
+	Verb                 string
+	Args                 []string
+	Timeout              time.Duration
+	HTTP                 *http.Client
+}
+
 type AssignmentListOptions struct {
 	FleetURL  string
 	APIKey    string
@@ -2800,6 +2822,65 @@ func DecommissionWorker(ctx context.Context, opts WorkerLifecycleOptions) (Worke
 		return WorkerDecommissionResult{}, err
 	}
 	return result, nil
+}
+
+func CreateAssignment(ctx context.Context, opts AssignmentCreateOptions) (Assignment, error) {
+	verb := strings.TrimSpace(opts.Verb)
+	if verb == "" {
+		return Assignment{}, errors.New("agentsandbox: assignment verb required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "assignment-create")
+	if err != nil {
+		return Assignment{}, err
+	}
+	body := map[string]any{"verb": verb}
+	if id := strings.TrimSpace(opts.ID); id != "" {
+		body["id"] = id
+	}
+	if ns := strings.TrimSpace(opts.Namespace); ns != "" {
+		body["namespace"] = ns
+	}
+	if workerID := strings.TrimSpace(opts.WorkerID); workerID != "" {
+		body["worker_id"] = workerID
+	}
+	if policy := strings.TrimSpace(opts.Policy); policy != "" {
+		body["policy"] = policy
+	}
+	if imageRef := strings.TrimSpace(opts.ImageRef); imageRef != "" {
+		body["image_ref"] = imageRef
+	}
+	if bundle := strings.TrimSpace(opts.ManifestBundle); bundle != "" {
+		body["manifest_bundle"] = bundle
+	}
+	if digest := strings.TrimSpace(opts.ImageManifestDigest); digest != "" {
+		body["image_manifest_digest"] = digest
+	}
+	if digestRef := strings.TrimSpace(opts.ImageDigestRef); digestRef != "" {
+		body["image_digest_ref"] = digestRef
+	}
+	if platform := strings.TrimSpace(opts.ImagePlatform); platform != "" {
+		body["image_platform"] = platform
+	}
+	if labels := cleanStringMap(opts.RequiredLabels); len(labels) > 0 {
+		body["required_labels"] = labels
+	}
+	if capabilities := cleanStrings(opts.RequiredCapabilities); len(capabilities) > 0 {
+		body["required_capabilities"] = capabilities
+	}
+	if antiAffinityKey := strings.TrimSpace(opts.AntiAffinityKey); antiAffinityKey != "" {
+		body["anti_affinity_key"] = antiAffinityKey
+	}
+	if nonzeroCapacity(opts.Resources) {
+		body["resources"] = opts.Resources
+	}
+	if len(opts.Args) > 0 {
+		body["args"] = cloneStrings(opts.Args)
+	}
+	var assignment Assignment
+	if err := c.request(ctx, http.MethodPost, "/v1/assignments", body, &assignment, c.timeout); err != nil {
+		return Assignment{}, err
+	}
+	return assignment, nil
 }
 
 func ListAssignments(ctx context.Context, opts AssignmentListOptions) (AssignmentListResult, error) {

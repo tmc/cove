@@ -1772,6 +1772,80 @@ class CoveFleetClient:
         return _normalize_inventory_page(result, "assignments", "GET /v1/assignments")
 
     @classmethod
+    def create_assignment(
+        cls,
+        *,
+        verb: str,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        assignment_id: str = "",
+        worker_id: str = "",
+        policy: str = "",
+        image_ref: str = "",
+        manifest_bundle: str | None = None,
+        image_manifest_digest: str = "",
+        image_digest_ref: str = "",
+        image_platform: str = "",
+        required_labels: Mapping[str, str] | None = None,
+        required_capabilities: Sequence[str] | str | None = None,
+        anti_affinity_key: str = "",
+        resources: Mapping[str, object] | None = None,
+        args: Sequence[str] = (),
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        verb = verb.strip()
+        if not verb:
+            raise ValueError("assignment verb is required")
+        seed = cls(
+            sandbox_id="assignment-create",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        body: dict[str, object] = {"verb": verb}
+        assignment_id = assignment_id.strip()
+        if assignment_id:
+            body["id"] = assignment_id
+        if namespace:
+            body["namespace"] = namespace
+        worker_id = worker_id.strip()
+        if worker_id:
+            body["worker_id"] = worker_id
+        policy = policy.strip()
+        if policy:
+            body["policy"] = policy
+        image_ref = image_ref.strip()
+        if image_ref:
+            body["image_ref"] = image_ref
+        if manifest_bundle:
+            body["manifest_bundle"] = manifest_bundle
+        image_manifest_digest = image_manifest_digest.strip()
+        if image_manifest_digest:
+            body["image_manifest_digest"] = image_manifest_digest
+        image_digest_ref = image_digest_ref.strip()
+        if image_digest_ref:
+            body["image_digest_ref"] = image_digest_ref
+        image_platform = image_platform.strip()
+        if image_platform:
+            body["image_platform"] = image_platform
+        labels = _clean_string_map(required_labels)
+        if labels:
+            body["required_labels"] = labels
+        capabilities = _clean_string_list(required_capabilities)
+        if capabilities:
+            body["required_capabilities"] = capabilities
+        anti_affinity_key = anti_affinity_key.strip()
+        if anti_affinity_key:
+            body["anti_affinity_key"] = anti_affinity_key
+        if resources:
+            body["resources"] = dict(resources)
+        if args:
+            body["args"] = list(args)
+        return dict(seed._request("POST", "/v1/assignments", body, timeout=timeout))
+
+    @classmethod
     def get_assignment(
         cls,
         *,

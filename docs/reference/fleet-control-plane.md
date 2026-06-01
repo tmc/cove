@@ -765,13 +765,14 @@ same SDKs can dry-run hosted placement before creating a sandbox:
 `agentsandbox.Plan` in Go and `CoveFleetClient.plan_sandbox` in Python return
 the controller's feasible candidates and skipped-worker reasons. They also
 expose retained placement-plan history, image-preparation, maintenance fan-out,
-the operations dashboard summary, reconcile plan/apply controls, worker/assignment inventory, scoped
+the operations dashboard summary, reconcile plan/apply controls, generic
+assignment submission, worker/assignment inventory, scoped
 worker/assignment observability, retained controller-run history, service-account
 management, and fork warm-pool lifecycle controls, so
 hosted agent clients can pre-stage exact images, push image GC/lifecycle/storage
 policy work, inspect fleet pressure, preview and apply controller repairs,
-enumerate current work, drill into per-worker and per-assignment timelines,
-verify audit-chain continuity, rotate
+queue one-off controller work, enumerate current work, drill into per-worker and
+per-assignment timelines, verify audit-chain continuity, rotate
 scoped controller credentials, inspect operations history, prewarm RAM-overlay
 slots, claim a ready slot for a guest command, read pool events, and delete the
 pool through the same fleet credentials.
@@ -783,10 +784,12 @@ Maintenance helpers include `PushImageGC`, `PushLifecyclePolicy`,
 `GetOperationsSummary` plus `ListControllerRuns` for the aggregate operations
 dashboard and timeline. Reconcile helpers include `PlanReconcile` and
 `Reconcile` for the same unscoped dry-run/apply repair path as
-`/v1/reconcile/plan` and `/v1/reconcile`. Inventory helpers include `ListWorkers`, `GetWorker`,
-`ListAssignments`, and `GetAssignment`, with the same filters and pagination as
-the REST API. Assignment control helpers include `CancelAssignment` and
-`RetryAssignment` for audited force-cancel and retry/replan operations. Worker
+`/v1/reconcile/plan` and `/v1/reconcile`. Assignment helpers include
+`CreateAssignment`, `ListAssignments`, and `GetAssignment`, with the same
+generic submission path, filters, and pagination as the REST API. Worker
+inventory helpers include `ListWorkers` and `GetWorker`. Assignment control
+helpers include `CancelAssignment` and `RetryAssignment` for audited
+force-cancel and retry/replan operations. Worker
 lifecycle helpers include `CordonWorker`,
 `UncordonWorker`, `QuarantineWorker`, `UnquarantineWorker`, `EvacuateWorker`,
 `DrainWorker`, and `DecommissionWorker`, so hosted operators can plan or apply
@@ -883,6 +886,23 @@ if err != nil {
 	log.Fatal(err)
 }
 log.Printf("matching workers=%d", workers.Count)
+
+created, err := agentsandbox.CreateAssignment(ctx, agentsandbox.AssignmentCreateOptions{
+	FleetURL:             "https://fleet.internal.example",
+	APIKey:               os.Getenv("COVE_API_KEY"),
+	Namespace:            "team-a",
+	Policy:               "bin-pack",
+	ImageRef:             "macos-base:latest",
+	ManifestBundle:       "manifests",
+	RequiredCapabilities: []string{"ram-overlay"},
+	Resources:            agentsandbox.Capacity{VMs: 1},
+	Verb:                 "cove",
+	Args:                 []string{"run", "-fork-from", "macos-base:latest", "-ephemeral"},
+})
+if err != nil {
+	log.Fatal(err)
+}
+log.Printf("queued assignment=%s worker=%s", created.ID, created.WorkerID)
 
 assignments, err := agentsandbox.ListAssignments(ctx, agentsandbox.AssignmentListOptions{
 	FleetURL:  "https://fleet.internal.example",

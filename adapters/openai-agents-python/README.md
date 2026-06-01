@@ -341,6 +341,19 @@ workers = CoveFleetClient.list_workers(
     limit=20,
 )
 print(workers["count"])
+created = CoveFleetClient.create_assignment(
+    fleet_url="https://fleet.internal.example",
+    api_key="cove_...",
+    namespace="team-a",
+    policy="bin-pack",
+    image_ref="macos-base:latest",
+    manifest_bundle="manifests",
+    required_capabilities=("ram-overlay",),
+    resources={"vms": 1},
+    verb="cove",
+    args=("run", "-fork-from", "macos-base:latest", "-ephemeral"),
+)
+print(created["id"], created.get("worker_id"))
 assignments = CoveFleetClient.list_assignments(
     fleet_url="https://fleet.internal.example",
     api_key="cove_...",
@@ -422,7 +435,7 @@ Maintenance helpers include `push_image_gc`, `push_lifecycle_policy`,
 `get_*_run` methods, `plan_sandbox`, `list_placement_plans`,
 `get_placement_plan`, `get_operations_summary`, `plan_reconcile`, `reconcile`,
 `list_workers`, `get_worker`,
-`list_assignments`, `get_assignment`, `cancel_assignment`, `retry_assignment`,
+`create_assignment`, `list_assignments`, `get_assignment`, `cancel_assignment`, `retry_assignment`,
 worker lifecycle helpers such as `cordon_worker`, `evacuate_worker`,
 `drain_worker`, and `decommission_worker`, `list_audit_events`,
 `verify_audit_log`, `list_service_accounts`, `upsert_service_account`,

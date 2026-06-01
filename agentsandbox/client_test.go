@@ -1122,6 +1122,32 @@ func TestCloudClientInventory(t *testing.T) {
 		t.Fatalf("GetWorker = %+v, want worker-1", worker)
 	}
 
+	created, err := CreateAssignment(ctx, AssignmentCreateOptions{
+		FleetURL:             server.URL,
+		APIKey:               "secret",
+		Namespace:            "team-a",
+		ID:                   "assignment-created",
+		Policy:               "bin-pack",
+		ImageRef:             "base:v1",
+		ManifestBundle:       "manifests",
+		ImageManifestDigest:  "sha256:base",
+		ImageDigestRef:       "ghcr.io/me/base@sha256:base",
+		ImagePlatform:        "darwin/arm64",
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay", "asif", ""},
+		AntiAffinityKey:      "ci/buildkite",
+		Resources:            Capacity{VMs: 1, CPUs: 4},
+		Verb:                 "cove",
+		Args:                 []string{"run", "-fork-from", "base:v1", "-ephemeral"},
+		Timeout:              time.Second,
+	})
+	if err != nil {
+		t.Fatalf("CreateAssignment: %v", err)
+	}
+	if created.ID != "assignment-created" || created.WorkerID != "worker-1" || created.Policy != "bin-pack" || created.Resources.CPUs != 4 {
+		t.Fatalf("CreateAssignment = %+v, want scheduled assignment", created)
+	}
+
 	assignments, err := ListAssignments(ctx, AssignmentListOptions{
 		FleetURL:  server.URL,
 		APIKey:    "secret",
@@ -1162,6 +1188,7 @@ func TestCloudClientInventory(t *testing.T) {
 		"/v1/workers",
 		"/v1/workers/worker-1",
 		"/v1/assignments",
+		"/v1/assignments",
 		"/v1/assignments/assignment-1",
 	}
 	if !equalStringSlices(paths, wantPaths) {
@@ -1176,7 +1203,21 @@ func TestCloudClientInventory(t *testing.T) {
 	if capabilities := server.requests[0].query["capability"]; !equalStringSlices(capabilities, []string{"ram-overlay", "asif"}) {
 		t.Fatalf("worker capability query = %+v, want deduped capabilities", capabilities)
 	}
-	if query := server.requests[2].query; query.Get("namespace") != "team-a" || query.Get("status") != "running" || query.Get("worker_id") != "worker-1" || query.Get("leased_to") != "worker-1" || query.Get("verb") != "cove" || query.Get("image_ref") != "base:v1" || query.Get("sandbox_id") != "job-1" || query.Get("warm_pool") != "runner" || query.Get("offset") != "1" || query.Get("limit") != "2" {
+	createBody := server.requests[2].body
+	if createBody["id"] != "assignment-created" || createBody["namespace"] != "team-a" || createBody["policy"] != "bin-pack" || createBody["image_ref"] != "base:v1" || createBody["manifest_bundle"] != "manifests" || createBody["image_manifest_digest"] != "sha256:base" || createBody["image_digest_ref"] != "ghcr.io/me/base@sha256:base" || createBody["image_platform"] != "darwin/arm64" || createBody["anti_affinity_key"] != "ci/buildkite" || createBody["verb"] != "cove" {
+		t.Fatalf("create assignment body = %+v, want placement identity", createBody)
+	}
+	if !equalAnyStringSlice(createBody["required_capabilities"], []string{"ram-overlay", "asif"}) {
+		t.Fatalf("create assignment capabilities = %+v, want ram-overlay/asif", createBody["required_capabilities"])
+	}
+	resources, ok := createBody["resources"].(map[string]any)
+	if !ok || resources["vms"] != float64(1) || resources["cpus"] != float64(4) {
+		t.Fatalf("create assignment resources = %+v, want vms/cpus", createBody["resources"])
+	}
+	if !equalAnyStringSlice(createBody["args"], []string{"run", "-fork-from", "base:v1", "-ephemeral"}) {
+		t.Fatalf("create assignment args = %+v, want run args", createBody["args"])
+	}
+	if query := server.requests[3].query; query.Get("namespace") != "team-a" || query.Get("status") != "running" || query.Get("worker_id") != "worker-1" || query.Get("leased_to") != "worker-1" || query.Get("verb") != "cove" || query.Get("image_ref") != "base:v1" || query.Get("sandbox_id") != "job-1" || query.Get("warm_pool") != "runner" || query.Get("offset") != "1" || query.Get("limit") != "2" {
 		t.Fatalf("assignment query = %q", query.Encode())
 	}
 }
@@ -1191,6 +1232,9 @@ func TestCloudClientInventoryValidation(t *testing.T) {
 	}
 	if _, err := ListAssignments(ctx, AssignmentListOptions{FleetURL: "https://fleet.example", APIKey: "secret", Offset: -1}); err == nil || !strings.Contains(err.Error(), "offset must be non-negative") {
 		t.Fatalf("ListAssignments negative offset err = %v, want validation error", err)
+	}
+	if _, err := CreateAssignment(ctx, AssignmentCreateOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "verb required") {
+		t.Fatalf("CreateAssignment missing verb err = %v, want validation error", err)
 	}
 	if _, err := GetAssignment(ctx, AssignmentGetOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "id required") {
 		t.Fatalf("GetAssignment missing id err = %v, want validation error", err)
@@ -1943,6 +1987,8 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 				Offset:      atoiDefault(r.URL.Query().Get("offset"), 0),
 				Limit:       atoiDefault(r.URL.Query().Get("limit"), 0),
 			})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/assignments":
+			writeSDKJSON(t, w, sdkCreatedAssignment())
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/assignments/assignment-1":
 			writeSDKJSON(t, w, sdkInventoryAssignment())
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/assignments/assignment-1/events":
@@ -2573,6 +2619,20 @@ func sdkInventoryAssignment() Assignment {
 	assignment.Status = "running"
 	assignment.LeasedTo = "worker-1"
 	assignment.LeaseExpires = time.Date(2026, 5, 31, 10, 6, 0, 0, time.UTC)
+	return assignment
+}
+
+func sdkCreatedAssignment() Assignment {
+	assignment := sdkMaintenanceAssignment("assignment-created", "run", "-fork-from", "base:v1", "-ephemeral")
+	assignment.Policy = "bin-pack"
+	assignment.ImageRef = "base:v1"
+	assignment.ManifestBundle = "manifests"
+	assignment.ImageManifestDigest = "sha256:base"
+	assignment.ImageDigestRef = "ghcr.io/me/base@sha256:base"
+	assignment.ImagePlatform = "darwin/arm64"
+	assignment.RequiredCapabilities = []string{"ram-overlay", "asif"}
+	assignment.AntiAffinityKey = "ci/buildkite"
+	assignment.Resources = Capacity{VMs: 1, CPUs: 4}
 	return assignment
 }
 

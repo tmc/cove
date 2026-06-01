@@ -939,6 +939,29 @@ def test_fleet_client_inventory() -> None:
         )
         assert worker["capacity"]["max_vms"] == 4
 
+        created = CoveFleetClient.create_assignment(
+            fleet_url=server.url,
+            api_key="secret",
+            namespace="team-a",
+            assignment_id="assignment-created",
+            policy="bin-pack",
+            image_ref="base:v1",
+            manifest_bundle="manifests",
+            image_manifest_digest="sha256:base",
+            image_digest_ref="ghcr.io/me/base@sha256:base",
+            image_platform="darwin/arm64",
+            required_labels={"zone": "desk"},
+            required_capabilities=("ram-overlay", "asif", ""),
+            anti_affinity_key="ci/buildkite",
+            resources={"vms": 1, "cpus": 4},
+            verb="cove",
+            args=("run", "-fork-from", "base:v1", "-ephemeral"),
+        )
+        assert created["id"] == "assignment-created"
+        assert created["worker_id"] == "worker-1"
+        assert created["policy"] == "bin-pack"
+        assert created["resources"]["cpus"] == 4
+
         assignments = CoveFleetClient.list_assignments(
             fleet_url=server.url,
             api_key="secret",
@@ -963,16 +986,30 @@ def test_fleet_client_inventory() -> None:
         assert assignment["sandbox_id"] == "job-1"
         assert assignment["warm_pool"] == "runner"
 
-        paths = [request["path"] for request in server.requests[-4:]]
+        paths = [request["path"] for request in server.requests[-5:]]
         assert paths == [
             "/v1/workers",
             "/v1/workers/worker-1",
             "/v1/assignments",
+            "/v1/assignments",
             "/v1/assignments/assignment-1",
         ]
-        assert server.requests[-4]["query"]["label"] == ["role=runner", "zone=desk"]
-        assert server.requests[-4]["query"]["capability"] == ["ram-overlay", "asif"]
-        assert server.requests[-4]["query"]["source_manifest_digest"] == ["sha256:base"]
+        assert server.requests[-5]["query"]["label"] == ["role=runner", "zone=desk"]
+        assert server.requests[-5]["query"]["capability"] == ["ram-overlay", "asif"]
+        assert server.requests[-5]["query"]["source_manifest_digest"] == ["sha256:base"]
+        create_body = server.requests[-3]["body"]
+        assert create_body["id"] == "assignment-created"
+        assert create_body["namespace"] == "team-a"
+        assert create_body["policy"] == "bin-pack"
+        assert create_body["image_ref"] == "base:v1"
+        assert create_body["manifest_bundle"] == "manifests"
+        assert create_body["image_manifest_digest"] == "sha256:base"
+        assert create_body["image_digest_ref"] == "ghcr.io/me/base@sha256:base"
+        assert create_body["image_platform"] == "darwin/arm64"
+        assert create_body["required_capabilities"] == ["ram-overlay", "asif"]
+        assert create_body["anti_affinity_key"] == "ci/buildkite"
+        assert create_body["resources"] == {"vms": 1, "cpus": 4}
+        assert create_body["args"] == ["run", "-fork-from", "base:v1", "-ephemeral"]
         assert server.requests[-2]["query"]["namespace"] == ["team-a"]
         assert server.requests[-2]["query"]["sandbox_id"] == ["job-1"]
         assert server.requests[-2]["query"]["warm_pool"] == ["runner"]
@@ -987,6 +1024,8 @@ def test_fleet_client_inventory_validation() -> None:
         CoveFleetClient.get_worker(fleet_url="https://fleet.example", api_key="secret", worker_id="")
     with pytest.raises(ValueError, match="assignment offset must be non-negative"):
         CoveFleetClient.list_assignments(fleet_url="https://fleet.example", api_key="secret", offset=-1)
+    with pytest.raises(ValueError, match="assignment verb is required"):
+        CoveFleetClient.create_assignment(fleet_url="https://fleet.example", api_key="secret", verb="")
     with pytest.raises(ValueError, match="assignment id is required"):
         CoveFleetClient.get_assignment(fleet_url="https://fleet.example", api_key="secret", assignment_id="")
 
@@ -1920,6 +1959,23 @@ def _inventory_assignment() -> dict[str, object]:
     return assignment
 
 
+def _created_assignment() -> dict[str, object]:
+    assignment = _maintenance_assignment(
+        "assignment-created",
+        ["run", "-fork-from", "base:v1", "-ephemeral"],
+    )
+    assignment["policy"] = "bin-pack"
+    assignment["image_ref"] = "base:v1"
+    assignment["manifest_bundle"] = "manifests"
+    assignment["image_manifest_digest"] = "sha256:base"
+    assignment["image_digest_ref"] = "ghcr.io/me/base@sha256:base"
+    assignment["image_platform"] = "darwin/arm64"
+    assignment["required_capabilities"] = ["ram-overlay", "asif"]
+    assignment["anti_affinity_key"] = "ci/buildkite"
+    assignment["resources"] = {"vms": 1, "cpus": 4}
+    return assignment
+
+
 def _assignment_cancel(body: dict[str, object]) -> dict[str, object]:
     assignment = _inventory_assignment()
     assignment["status"] = "canceled"
@@ -2527,6 +2583,9 @@ class _FleetHTTPServer:
                     return
                 if path == "/v1/reconcile":
                     self._write(_reconcile_result())
+                    return
+                if path == "/v1/assignments":
+                    self._write(_created_assignment())
                     return
                 if path == "/v1/assignments/assignment-1/cancel":
                     self._write(_assignment_cancel(body))
