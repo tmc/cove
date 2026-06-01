@@ -1304,7 +1304,7 @@ func (s *Store) PlanAssignment(a Assignment, limit int) (PlacementPlan, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.reconcileLocked(now)
-	candidates := s.placementCandidatesLocked(policy, imageRef, imageManifestDigest, requiredLabels, requiredCapabilities, antiAffinityKey, resources)
+	candidates, skipped := s.placementEvaluationLocked(policy, imageRef, imageManifestDigest, requiredLabels, requiredCapabilities, antiAffinityKey, resources)
 	if len(candidates) > limit {
 		candidates = candidates[:limit]
 	}
@@ -1323,6 +1323,7 @@ func (s *Store) PlanAssignment(a Assignment, limit int) (PlacementPlan, error) {
 		Resources:            normalizeResources(resources),
 		Limit:                limit,
 		Candidates:           clonePlacementCandidates(candidates),
+		Skipped:              clonePlacementSkips(skipped),
 	}
 	s.plans = append(s.plans, clonePlacementPlan(plan))
 	if err := s.persistLocked(); err != nil {
@@ -4746,6 +4747,7 @@ func clonePlacementPlan(in PlacementPlan) PlacementPlan {
 	out.RequiredLabels = cloneLabels(in.RequiredLabels)
 	out.RequiredCapabilities = cloneStrings(in.RequiredCapabilities)
 	out.Candidates = clonePlacementCandidates(in.Candidates)
+	out.Skipped = clonePlacementSkips(in.Skipped)
 	if !out.Created.IsZero() {
 		out.Created = out.Created.UTC()
 	}
@@ -5182,6 +5184,40 @@ func clonePlacementCandidates(in []PlacementCandidate) []PlacementCandidate {
 	return out
 }
 
+func clonePlacementSkips(in []PlacementSkip) []PlacementSkip {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]PlacementSkip, len(in))
+	for i := range in {
+		out[i] = in[i]
+		out[i].MissingLabels = cloneLabels(in[i].MissingLabels)
+		out[i].MissingCapabilities = cloneStrings(in[i].MissingCapabilities)
+	}
+	return out
+}
+
+func normalizePlacementSkips(in []PlacementSkip) []PlacementSkip {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]PlacementSkip, 0, len(in))
+	for _, skip := range in {
+		skip.WorkerID = strings.TrimSpace(skip.WorkerID)
+		skip.Reason = strings.TrimSpace(skip.Reason)
+		skip.Status = strings.TrimSpace(skip.Status)
+		skip.MissingLabels = cloneLabels(skip.MissingLabels)
+		skip.MissingCapabilities = sortedUniqueStrings(skip.MissingCapabilities)
+		skip.ImageRef = strings.TrimSpace(skip.ImageRef)
+		skip.ImageManifestDigest = strings.TrimSpace(skip.ImageManifestDigest)
+		if skip.WorkerID == "" || skip.Reason == "" {
+			continue
+		}
+		out = append(out, skip)
+	}
+	return out
+}
+
 func cloneWorkerImages(in []WorkerImage) []WorkerImage {
 	if len(in) == 0 {
 		return nil
@@ -5256,6 +5292,11 @@ func (s *Store) selectWorkerLocked(policy, imageRef, imageManifestDigest string,
 }
 
 func (s *Store) placementCandidatesLocked(policy, imageRef, imageManifestDigest string, labels map[string]string, capabilities []string, antiAffinityKey string, resources Capacity) []PlacementCandidate {
+	candidates, _ := s.placementEvaluationLocked(policy, imageRef, imageManifestDigest, labels, capabilities, antiAffinityKey, resources)
+	return candidates
+}
+
+func (s *Store) placementEvaluationLocked(policy, imageRef, imageManifestDigest string, labels map[string]string, capabilities []string, antiAffinityKey string, resources Capacity) ([]PlacementCandidate, []PlacementSkip) {
 	if policy == "" {
 		policy = PolicyLeastLoaded
 	}
@@ -5263,23 +5304,52 @@ func (s *Store) placementCandidatesLocked(policy, imageRef, imageManifestDigest 
 	capabilities = sortedUniqueStrings(capabilities)
 	resources = normalizeResources(resources)
 	var candidates []PlacementCandidate
+	var skipped []PlacementSkip
 	for _, host := range s.sortedHostsLocked() {
 		host = s.statusLocked(host)
 		if host.Status != "ready" {
+			skipped = append(skipped, PlacementSkip{
+				WorkerID: host.ID,
+				Reason:   "status",
+				Status:   host.Status,
+			})
 			continue
 		}
-		if !labelsMatch(host.Labels, labels) {
+		if missing := missingLabels(host.Labels, labels); len(missing) > 0 {
+			skipped = append(skipped, PlacementSkip{
+				WorkerID:      host.ID,
+				Reason:        "label",
+				MissingLabels: missing,
+			})
 			continue
 		}
-		if !capabilitiesMatch(host.Capabilities, capabilities) {
+		if missing := missingCapabilities(host.Capabilities, capabilities); len(missing) > 0 {
+			skipped = append(skipped, PlacementSkip{
+				WorkerID:            host.ID,
+				Reason:              "capability",
+				MissingCapabilities: missing,
+			})
 			continue
 		}
 		load := host.Capacity.VMs + s.pendingAssignmentsLocked(host.ID)
 		if host.Capacity.MaxVMs > 0 && load+resources.VMs > host.Capacity.MaxVMs {
+			skipped = append(skipped, PlacementSkip{
+				WorkerID:     host.ID,
+				Reason:       "capacity",
+				Load:         load,
+				MaxVMs:       host.Capacity.MaxVMs,
+				RequestedVMs: resources.VMs,
+			})
 			continue
 		}
 		hasImage := workerHasImage(host, imageRef, imageManifestDigest)
 		if imageManifestDigest != "" && !hasImage {
+			skipped = append(skipped, PlacementSkip{
+				WorkerID:            host.ID,
+				Reason:              "image",
+				ImageRef:            imageRef,
+				ImageManifestDigest: imageManifestDigest,
+			})
 			continue
 		}
 		antiAffinityLoad := s.antiAffinityLoadLocked(host.ID, antiAffinityKey)
@@ -5298,7 +5368,7 @@ func (s *Store) placementCandidatesLocked(policy, imageRef, imageManifestDigest 
 	for i := range candidates {
 		candidates[i].Rank = i + 1
 	}
-	return candidates
+	return candidates, normalizePlacementSkips(skipped)
 }
 
 func (s *Store) evacuationCandidatesLocked(workerID string, assignment Assignment) []PlacementCandidate {
@@ -6443,6 +6513,7 @@ func normalizePlacementPlan(plan PlacementPlan) PlacementPlan {
 		plan.Limit = 0
 	}
 	plan.Candidates = clonePlacementCandidates(plan.Candidates)
+	plan.Skipped = normalizePlacementSkips(plan.Skipped)
 	return plan
 }
 
@@ -6590,6 +6661,7 @@ func controllerRunFromPlacementPlan(plan PlacementPlan) ControllerRunSummary {
 		TargetType:     targetType,
 		TargetID:       targetID,
 		CandidateCount: len(plan.Candidates),
+		SkipCount:      len(plan.Skipped),
 		Fields:         fields,
 	}
 }
@@ -7858,6 +7930,22 @@ func labelsMatch(have, want map[string]string) bool {
 	return true
 }
 
+func missingLabels(have, want map[string]string) map[string]string {
+	if len(want) == 0 {
+		return nil
+	}
+	missing := make(map[string]string)
+	for key, value := range want {
+		if have[key] != value {
+			missing[key] = value
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return missing
+}
+
 func capabilitiesMatch(have, want []string) bool {
 	for _, capability := range want {
 		if !containsString(have, capability) {
@@ -7865,6 +7953,19 @@ func capabilitiesMatch(have, want []string) bool {
 		}
 	}
 	return true
+}
+
+func missingCapabilities(have, want []string) []string {
+	if len(want) == 0 {
+		return nil
+	}
+	var missing []string
+	for _, capability := range sortedUniqueStrings(want) {
+		if !containsString(have, capability) {
+			missing = append(missing, capability)
+		}
+	}
+	return missing
 }
 
 func containsString(values []string, want string) bool {

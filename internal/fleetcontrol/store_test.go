@@ -2628,14 +2628,19 @@ func TestStorePlansPlacementCandidates(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, hb := range []WorkerHeartbeat{
+		{ID: "cordoned", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}, Capacity: Capacity{VMs: 0, MaxVMs: 5}},
 		{ID: "dense", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay", "asif"}, ImageRefs: []string{"macos-runner:latest"}, Capacity: Capacity{VMs: 3, MaxVMs: 5}},
 		{ID: "open", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}, Capacity: Capacity{VMs: 2, MaxVMs: 5}},
 		{ID: "full", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}, Capacity: Capacity{VMs: 5, MaxVMs: 5}},
+		{ID: "plain", Labels: map[string]string{"zone": "desk"}, Capacity: Capacity{VMs: 0, MaxVMs: 5}},
 		{ID: "rack", Labels: map[string]string{"zone": "rack"}, Capabilities: []string{"ram-overlay"}, Capacity: Capacity{VMs: 0, MaxVMs: 5}},
 	} {
 		if _, err := store.UpsertHeartbeat(hb); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if _, err := store.CordonWorker("cordoned", "maintenance"); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := store.CreateAssignment(Assignment{
 		ID:              "existing",
@@ -2677,6 +2682,22 @@ func TestStorePlansPlacementCandidates(t *testing.T) {
 	if got := plan.Candidates[1]; got.Rank != 2 || got.WorkerID != "dense" || got.Load != 4 || got.RequestedVMs != 1 || got.AntiAffinityLoad != 1 || !got.HasImage {
 		t.Fatalf("second candidate = %+v, want dense", got)
 	}
+	skipped := map[string]PlacementSkip{}
+	for _, skip := range plan.Skipped {
+		skipped[skip.WorkerID] = skip
+	}
+	if got := skipped["cordoned"]; got.Reason != "status" || got.Status != "cordoned" {
+		t.Fatalf("cordoned skip = %+v, want status cordoned", got)
+	}
+	if got := skipped["full"]; got.Reason != "capacity" || got.Load != 5 || got.MaxVMs != 5 || got.RequestedVMs != 1 {
+		t.Fatalf("full skip = %+v, want capacity 5/5 + 1", got)
+	}
+	if got := skipped["plain"]; got.Reason != "capability" || !equalStrings(got.MissingCapabilities, []string{"ram-overlay"}) {
+		t.Fatalf("plain skip = %+v, want missing ram-overlay", got)
+	}
+	if got := skipped["rack"]; got.Reason != "label" || got.MissingLabels["zone"] != "desk" {
+		t.Fatalf("rack skip = %+v, want missing zone=desk", got)
+	}
 	page := store.ListPlacementPlansPage(PlacementPlanListFilter{Policy: PolicyBinPack, ImageRef: "macos-runner:latest", Limit: 1})
 	if page.Count != 1 || len(page.Plans) != 1 || page.Plans[0].ID != plan.ID {
 		t.Fatalf("placement plan page = %+v, want persisted plan %s", page, plan.ID)
@@ -2686,7 +2707,7 @@ func TestStorePlansPlacementCandidates(t *testing.T) {
 		t.Fatal(err)
 	}
 	persisted, ok := reopened.GetPlacementPlan(plan.ID)
-	if !ok || persisted.ID != plan.ID || len(persisted.Candidates) != 2 {
+	if !ok || persisted.ID != plan.ID || len(persisted.Candidates) != 2 || len(persisted.Skipped) != 4 {
 		t.Fatalf("reopened placement plan = %+v ok=%v, want %s", persisted, ok, plan.ID)
 	}
 	created, err := store.CreateAssignment(request)
@@ -4983,8 +5004,9 @@ func TestHandlerPlansPlacementFromManifestBundle(t *testing.T) {
 
 	var record HostRecord
 	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{
-		ID:        "stale",
-		ImageRefs: []string{"base:v1"},
+		ID:           "stale",
+		Capabilities: []string{"ram-overlay"},
+		ImageRefs:    []string{"base:v1"},
 		ImageDetails: []WorkerImage{{
 			Ref:                  "base:v1",
 			SourceManifestDigest: "sha256:old",
@@ -5023,6 +5045,16 @@ func TestHandlerPlansPlacementFromManifestBundle(t *testing.T) {
 	}
 	if len(plan.Candidates) != 1 || plan.Candidates[0].WorkerID != "exact" || !plan.Candidates[0].HasImage {
 		t.Fatalf("plan candidates = %+v, want exact worker only", plan.Candidates)
+	}
+	skipped := map[string]PlacementSkip{}
+	for _, skip := range plan.Skipped {
+		skipped[skip.WorkerID] = skip
+	}
+	if got := skipped["stale"]; got.Reason != "image" || got.ImageRef != "base:v1" || got.ImageManifestDigest != linuxDigest {
+		t.Fatalf("stale skip = %+v, want image digest mismatch", got)
+	}
+	if got := skipped["cold"]; got.Reason != "capability" || !equalStrings(got.MissingCapabilities, []string{"ram-overlay"}) {
+		t.Fatalf("cold skip = %+v, want missing ram-overlay", got)
 	}
 }
 

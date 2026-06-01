@@ -8,6 +8,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 ## Unreleased
 
 ### Added
+- `POST /v1/placements/plan` now returns skipped workers with structured
+  reasons for status, label, capability, capacity, or exact-image mismatch,
+  making capability-constrained placement dry-runs useful as admission
+  diagnostics before creating assignments.
 - `GET /v1/operations/summary` now includes per-worker-capability coverage:
   total, ready, cordoned, quarantined, stale, status breakdown, and worker ids
   for traits such as `ram-overlay`.

@@ -670,6 +670,7 @@ type PlacementPlan struct {
 	Resources            Capacity             `json:"resources,omitempty"`
 	Limit                int                  `json:"limit,omitempty"`
 	Candidates           []PlacementCandidate `json:"candidates,omitempty"`
+	Skipped              []PlacementSkip      `json:"skipped,omitempty"`
 }
 
 type PlacementPlanListFilter struct {
@@ -696,6 +697,19 @@ type PlacementCandidate struct {
 	RequestedVMs     int    `json:"requested_vms"`
 	AntiAffinityLoad int    `json:"anti_affinity_load,omitempty"`
 	HasImage         bool   `json:"has_image,omitempty"`
+}
+
+type PlacementSkip struct {
+	WorkerID            string            `json:"worker_id"`
+	Reason              string            `json:"reason"`
+	Status              string            `json:"status,omitempty"`
+	MissingLabels       map[string]string `json:"missing_labels,omitempty"`
+	MissingCapabilities []string          `json:"missing_capabilities,omitempty"`
+	Load                int               `json:"load,omitempty"`
+	MaxVMs              int               `json:"max_vms,omitempty"`
+	RequestedVMs        int               `json:"requested_vms,omitempty"`
+	ImageRef            string            `json:"image_ref,omitempty"`
+	ImageManifestDigest string            `json:"image_manifest_digest,omitempty"`
 }
 
 type WarmPoolRequest struct {

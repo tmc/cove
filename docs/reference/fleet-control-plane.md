@@ -222,7 +222,8 @@ and storage budget/prune runs into one paginated timeline with `kind`,
 `target_type`, `target_id`, `offset`, and `limit` filters. Scoped
 service-account tokens see only runs in their namespace. Run summaries include
 the source run `id`, `kind`, creation time, assignment/skip/candidate counts,
-common target fields, and kind-specific metadata in `fields`.
+common target fields, and kind-specific metadata in `fields`; placement-plan
+run summaries count both feasible candidates and skipped workers.
 
 Service-account and audit endpoints:
 
@@ -511,7 +512,10 @@ curl http://127.0.0.1:9758/v1/placements/plans/placement-plan-...
 Placement planning returns the retained ranked feasible workers without storing
 an assignment. It uses the same policy, required-label, required-capability,
 image-affinity, anti-affinity, and slot-cap logic as assignment creation.
-`limit` defaults to five candidates.
+`limit` defaults to five candidates. The response also includes skipped
+workers with structured reasons for status, label, capability, capacity, or
+exact-image mismatch, so a dry-run can explain why a `ram-overlay`, `asif`, or
+`apfs-quota` request would not land before work is admitted.
 If `image_manifest_digest` is set, the plan only includes workers whose
 heartbeat reports that exact source manifest digest for the requested
 `image_ref`; stale or unknown mutable refs are not warm candidates.
