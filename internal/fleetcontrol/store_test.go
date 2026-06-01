@@ -2167,6 +2167,104 @@ func TestStoreCordonPersistsAcrossHeartbeatAndSkipsPlacement(t *testing.T) {
 	}
 }
 
+func TestStoreQuarantinePersistsBlocksPlacementAndLeasing(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	path := filepath.Join(t.TempDir(), "fleet.json")
+	store, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.now = func() time.Time { return now }
+	for _, hb := range []WorkerHeartbeat{
+		{ID: "bad", Capacity: Capacity{VMs: 0}},
+		{ID: "ready", Capacity: Capacity{VMs: 5}},
+	} {
+		if _, err := store.UpsertHeartbeat(hb); err != nil {
+			t.Fatal(err)
+		}
+	}
+	record, err := store.QuarantineWorker("bad", "bad disk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !record.Quarantined || record.Status != "quarantined" || record.QuarantineReason != "bad disk" || record.QuarantinedAt.IsZero() {
+		t.Fatalf("quarantined record = %+v", record)
+	}
+	now = now.Add(10 * time.Second)
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "bad", Capacity: Capacity{VMs: 0}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Report(WorkerReport{ID: "bad", Status: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+	record, ok := store.Get("bad")
+	if !ok {
+		t.Fatal("worker missing")
+	}
+	if !record.Quarantined || record.Status != "quarantined" || record.QuarantineReason != "bad disk" || record.Report == nil {
+		t.Fatalf("heartbeat/report cleared quarantine: %+v", record)
+	}
+	reopened, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened.now = func() time.Time { return now }
+	reopenedRecord, ok := reopened.Get("bad")
+	if !ok || !reopenedRecord.Quarantined || reopenedRecord.Status != "quarantined" || reopenedRecord.QuarantineReason != "bad disk" {
+		t.Fatalf("reopened worker = %+v, %v; want quarantined", reopenedRecord, ok)
+	}
+	placed, err := store.CreateAssignment(Assignment{
+		ID:     "assignment-1",
+		Policy: PolicyLeastLoaded,
+		Verb:   "noop",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if placed.WorkerID != "ready" {
+		t.Fatalf("WorkerID = %q, want ready", placed.WorkerID)
+	}
+	if _, err := store.CreateAssignment(Assignment{
+		ID:       "assignment-2",
+		WorkerID: "bad",
+		Verb:     "noop",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	leased, err := store.AwaitAssignment("bad")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leased != nil {
+		t.Fatalf("AwaitAssignment(bad) = %+v, want nil while quarantined", leased)
+	}
+	summary := store.OperationsSummary("")
+	if summary.Workers.Quarantined != 1 || len(summary.Workers.Attention) != 1 || summary.Workers.Attention[0].ID != "bad" {
+		t.Fatalf("workers summary = %+v, want bad quarantined attention", summary.Workers)
+	}
+	record, err = store.UnquarantineWorker("bad")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Quarantined || record.Status != "ready" || record.QuarantineReason != "" || !record.QuarantinedAt.IsZero() {
+		t.Fatalf("unquarantined record = %+v", record)
+	}
+	leased, err = store.AwaitAssignment("bad")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leased == nil || leased.ID != "assignment-2" {
+		t.Fatalf("AwaitAssignment(bad) after unquarantine = %+v, want assignment-2", leased)
+	}
+	events := store.ListAudit(0)
+	if event := auditAction(events, "worker.quarantine"); event == nil || event.WorkerID != "bad" || event.Fields["reason"] != "bad disk" {
+		t.Fatalf("quarantine audit = %+v", event)
+	}
+	if event := auditAction(events, "worker.unquarantine"); event == nil || event.WorkerID != "bad" {
+		t.Fatalf("unquarantine audit = %+v", event)
+	}
+}
+
 func TestStoreDrainWorkerCordonsAndStopsSandboxes(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
 	store := NewMemoryStore(time.Minute)
@@ -3506,6 +3604,36 @@ func TestHandlerWorkerCordonLifecycle(t *testing.T) {
 	postJSON(t, server.URL+"/v1/workers/drain/uncordon", map[string]string{}, &record)
 	if record.Cordoned || record.Status != "ready" {
 		t.Fatalf("uncordon response = %+v", record)
+	}
+}
+
+func TestHandlerWorkerQuarantineLifecycle(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	if code := postJSONStatus(t, server.URL+"/v1/workers/bad/quarantine", "", WorkerLifecycle{Reason: "bad disk"}); code != http.StatusBadRequest {
+		t.Fatalf("quarantine unregistered status = %d, want 400", code)
+	}
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "bad"}, &record)
+	postJSON(t, server.URL+"/v1/workers/bad/quarantine", WorkerLifecycle{Reason: "bad disk"}, &record)
+	if !record.Quarantined || record.Status != "quarantined" || record.QuarantineReason != "bad disk" {
+		t.Fatalf("quarantine response = %+v", record)
+	}
+	var created Assignment
+	postJSON(t, server.URL+"/v1/assignments", Assignment{ID: "direct", WorkerID: "bad", Verb: "noop"}, &created)
+	if code := getJSONStatus(t, server.URL+"/v1/workers/bad/assignments", ""); code != http.StatusNoContent {
+		t.Fatalf("quarantined assignment status = %d, want 204", code)
+	}
+	postJSON(t, server.URL+"/v1/workers/bad/unquarantine", map[string]string{}, &record)
+	if record.Quarantined || record.Status != "ready" {
+		t.Fatalf("unquarantine response = %+v", record)
+	}
+	var leased Assignment
+	getJSON(t, server.URL+"/v1/workers/bad/assignments", &leased)
+	if leased.ID != "direct" || leased.Status != "leased" {
+		t.Fatalf("leased assignment = %+v, want direct", leased)
 	}
 }
 

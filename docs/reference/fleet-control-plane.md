@@ -8,12 +8,12 @@ inventory, assignment leases, and the worker-facing protocol surface. `coved`
 can now dial out as a worker and execute leased `cove` assignments;
 controller-side placement can choose a ready worker by least-loaded or
 image-affinity or bin-pack policy, and the controller reconciles stale workers
-and expired assignment leases. Operators can cordon or drain workers for
-maintenance without dropping their heartbeat history, and can ask the controller
-for an operations summary across workers, assignments, sandboxes, warm pools,
-and metering. They can also prepare a base image across the fleet before job
-placement, push VM lifecycle policy updates, fan out storage budget/prune
-policy, or keep a fork warm-pool quota active.
+and expired assignment leases. Operators can cordon, quarantine, or drain
+workers for maintenance and incident response without dropping their heartbeat
+history, and can ask the controller for an operations summary across workers,
+assignments, sandboxes, warm pools, and metering. They can also prepare a base
+image across the fleet before job placement, push VM lifecycle policy updates,
+fan out storage budget/prune policy, or keep a fork warm-pool quota active.
 
 Start a private controller:
 
@@ -70,6 +70,9 @@ curl http://127.0.0.1:9758/v1/workers/mini-1
 curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/cordon \
   -H 'content-type: application/json' \
   -d '{"reason":"maintenance"}'
+curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/quarantine \
+  -H 'content-type: application/json' \
+  -d '{"reason":"bad disk"}'
 curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/drain \
   -H 'content-type: application/json' \
   -d '{"reason":"maintenance"}'
@@ -80,6 +83,7 @@ curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/decommission \
   -H 'content-type: application/json' \
   -d '{"reason":"retired","force":true}'
 curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/uncordon
+curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/unquarantine
 curl -X POST http://127.0.0.1:9758/v1/reconcile
 ```
 
@@ -96,6 +100,16 @@ records both `worker.drain` and per-sandbox `sandbox.drain` audit events for
 stopped handles. Like cordon/uncordon, drain is a fleet-global operator action
 and requires an unscoped operator/admin identity.
 
+`POST /v1/workers/{id}/quarantine` isolates a suspected bad worker without
+deleting its inventory. Quarantined workers keep heartbeat and report history,
+but the controller excludes them from placement and returns `204 No Content`
+from worker assignment polling even when a pending assignment names that worker
+directly. `POST /v1/workers/{id}/unquarantine` clears the isolation state; if
+the worker is still cordoned it remains unavailable for placement, but direct
+assignments can be leased again. Quarantine and unquarantine record
+`worker.quarantine` and `worker.unquarantine` audit events and require an
+unscoped operator/admin identity.
+
 `POST /v1/workers/{id}/decommission` removes an idle or already-drained worker
 from controller inventory and records `worker.decommission`. By default it
 refuses removal while any pending, leased, running, ready, claimed, draining,
@@ -111,13 +125,13 @@ record. Decommission is fleet-global and requires an unscoped operator/admin
 identity.
 
 `GET /v1/operations/summary` is the dashboard entry point for operators. It
-reconciles first, then returns worker readiness/cordon/stale counts with
-attention workers, assignment status counts with active assignments, hosted
-sandbox status counts with active and draining handles, warm-pool desired/slot
-counts, and aggregate sandbox metering. The optional `namespace` query filters
-assignment, sandbox, warm-pool, and metering counts; worker inventory stays
-fleet-global. Because the response includes fleet-global worker state, scoped
-service-account tokens cannot read it.
+reconciles first, then returns worker readiness/cordon/quarantine/stale counts
+with attention workers, assignment status counts with active assignments,
+hosted sandbox status counts with active and draining handles, warm-pool
+desired/slot counts, and aggregate sandbox metering. The optional `namespace`
+query filters assignment, sandbox, warm-pool, and metering counts; worker
+inventory stays fleet-global. Because the response includes fleet-global
+worker state, scoped service-account tokens cannot read it.
 
 Service-account and audit endpoints:
 
@@ -167,11 +181,11 @@ curl -X DELETE http://127.0.0.1:9758/v1/service-accounts/ci
 ```
 
 The controller persists audit events in the fleet store for high-value state
-changes: worker registration, cordon lifecycle, assignment creation, assignment
-leases, assignment cancellation from forced decommission, terminal assignment
-reports, fleet reconcile changes, image/policy/storage fan-out, and warm-pool
-ensure/claim/delete operations. Each new event carries `prev_hash` and `hash`
-fields that chain the global audit log;
+changes: worker registration, cordon/quarantine lifecycle, assignment
+creation, assignment leases, assignment cancellation from forced decommission,
+terminal assignment reports, fleet reconcile changes, image/policy/storage
+fan-out, and warm-pool ensure/claim/delete operations. Each new event carries
+`prev_hash` and `hash` fields that chain the global audit log;
 `GET /v1/audit/verify` recomputes the chain and returns `ok`, `events`,
 `head_hash`, and any chain issues. `GET /v1/audit` returns `events`, `count`,
 `offset`, `limit`, and `next_offset`; query filters include `namespace`,
@@ -606,16 +620,18 @@ assignment from a stale worker to another ready worker.
 
 Cordoned workers keep heartbeating and reporting, but controller placement
 skips them for unbound and policy-placed assignments. Explicit `worker_id`
-assignments can still target a cordoned worker.
+assignments can still target a cordoned worker. Quarantined workers also keep
+heartbeating and reporting, but they do not receive new assignment leases until
+unquarantined, including explicit `worker_id` assignments.
 
 When `worker_id` is empty and `policy` is set, the controller places the
 assignment before storing it:
 
 | Policy | Placement |
 |--------|-----------|
-| `least-loaded` | Choose the non-cordoned ready worker with the lowest VM count plus pending assignment count. |
-| `image-affinity` | Prefer a non-cordoned ready worker that already reports `image_ref`; fall back to least-loaded. If `image_manifest_digest` is set, only workers that report the matching source manifest digest for that ref are feasible. |
-| `bin-pack` | Choose the densest non-cordoned ready worker that still fits the assignment's `resources.vms` under the worker's `max_vms` slot cap. |
+| `least-loaded` | Choose the non-cordoned, non-quarantined ready worker with the lowest VM count plus pending assignment count. |
+| `image-affinity` | Prefer a non-cordoned, non-quarantined ready worker that already reports `image_ref`; fall back to least-loaded. If `image_manifest_digest` is set, only workers that report the matching source manifest digest for that ref are feasible. |
+| `bin-pack` | Choose the densest non-cordoned, non-quarantined ready worker that still fits the assignment's `resources.vms` under the worker's `max_vms` slot cap. |
 
 `required_labels` can restrict placement to workers with exact matching labels.
 Workers report current VM count as `vms`; `coved` defaults `max_vms` to host CPU

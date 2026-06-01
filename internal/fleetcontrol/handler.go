@@ -1149,6 +1149,15 @@ func handleWorker(w http.ResponseWriter, r *http.Request, store *Store) {
 			return
 		}
 		handleWorkerDrain(w, r, store, id)
+	case "quarantine":
+		identity := identityFromRequest(r, store)
+		if !requireRole(w, identity, ServiceAccountRoleOperator) {
+			return
+		}
+		if !requireUnscoped(w, r, store) {
+			return
+		}
+		handleWorkerQuarantine(w, r, store, id)
 	case "reports":
 		handleWorkerReports(w, r, store, id)
 	case "uncordon":
@@ -1160,6 +1169,15 @@ func handleWorker(w http.ResponseWriter, r *http.Request, store *Store) {
 			return
 		}
 		handleWorkerUncordon(w, r, store, id)
+	case "unquarantine":
+		identity := identityFromRequest(r, store)
+		if !requireRole(w, identity, ServiceAccountRoleOperator) {
+			return
+		}
+		if !requireUnscoped(w, r, store) {
+			return
+		}
+		handleWorkerUnquarantine(w, r, store, id)
 	default:
 		writeError(w, http.StatusNotFound, "worker route not found")
 	}
@@ -1682,12 +1700,43 @@ func handleWorkerDecommission(w http.ResponseWriter, r *http.Request, store *Sto
 	writeJSON(w, http.StatusOK, result)
 }
 
+func handleWorkerQuarantine(w http.ResponseWriter, r *http.Request, store *Store, id string) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var lifecycle WorkerLifecycle
+	if err := json.NewDecoder(r.Body).Decode(&lifecycle); err != nil && err != io.EOF {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode worker lifecycle: %v", err))
+		return
+	}
+	record, err := store.QuarantineWorkerActor(actorFromRequest(r, store), id, lifecycle.Reason)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, record)
+}
+
 func handleWorkerUncordon(w http.ResponseWriter, r *http.Request, store *Store, id string) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	record, err := store.UncordonWorkerActor(actorFromRequest(r, store), id)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, record)
+}
+
+func handleWorkerUnquarantine(w http.ResponseWriter, r *http.Request, store *Store, id string) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	record, err := store.UnquarantineWorkerActor(actorFromRequest(r, store), id)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

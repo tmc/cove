@@ -310,9 +310,10 @@ func (s *Store) UpsertHeartbeat(h WorkerHeartbeat) (HostRecord, error) {
 		record.Cordoned = old.Cordoned
 		record.CordonReason = old.CordonReason
 		record.CordonedAt = old.CordonedAt
-		if record.Cordoned {
-			record.Status = "cordoned"
-		}
+		record.Quarantined = old.Quarantined
+		record.QuarantineReason = old.QuarantineReason
+		record.QuarantinedAt = old.QuarantinedAt
+		record.Status = workerStatus(now, record)
 	}
 	s.hosts[id] = record
 	if !existed {
@@ -350,11 +351,7 @@ func (s *Store) CordonWorkerActor(actor, id, reason string) (HostRecord, error) 
 	record.Cordoned = true
 	record.CordonReason = strings.TrimSpace(reason)
 	record.CordonedAt = now
-	if now.After(record.Expires) {
-		record.Status = "stale"
-	} else {
-		record.Status = "cordoned"
-	}
+	record.Status = workerStatus(now, record)
 	s.hosts[id] = record
 	s.appendAuditLocked(now, AuditEvent{
 		Actor:      actor,
@@ -392,11 +389,7 @@ func (s *Store) DrainWorkerActor(actor, id, reason string) (WorkerDrainResult, e
 	record.Cordoned = true
 	record.CordonReason = reason
 	record.CordonedAt = now
-	if now.After(record.Expires) {
-		record.Status = "stale"
-	} else {
-		record.Status = "cordoned"
-	}
+	record.Status = workerStatus(now, record)
 	s.hosts[id] = record
 
 	result := WorkerDrainResult{Worker: s.statusLocked(record)}
@@ -439,6 +432,77 @@ func (s *Store) DrainWorkerActor(actor, id, reason string) (WorkerDrainResult, e
 		return WorkerDrainResult{}, err
 	}
 	return result, nil
+}
+
+func (s *Store) QuarantineWorker(id, reason string) (HostRecord, error) {
+	return s.QuarantineWorkerActor("controller", id, reason)
+}
+
+func (s *Store) QuarantineWorkerActor(actor, id, reason string) (HostRecord, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return HostRecord{}, fmt.Errorf("worker id required")
+	}
+	now := s.now().UTC()
+	actor = normalizeActor(actor)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, ok := s.hosts[id]
+	if !ok {
+		return HostRecord{}, fmt.Errorf("worker %q not registered", id)
+	}
+	record.Quarantined = true
+	record.QuarantineReason = strings.TrimSpace(reason)
+	record.QuarantinedAt = now
+	record.Status = workerStatus(now, record)
+	s.hosts[id] = record
+	s.appendAuditLocked(now, AuditEvent{
+		Actor:      actor,
+		Action:     "worker.quarantine",
+		TargetType: "worker",
+		TargetID:   id,
+		WorkerID:   id,
+		Fields:     map[string]string{"reason": record.QuarantineReason},
+	})
+	if err := s.persistLocked(); err != nil {
+		return HostRecord{}, err
+	}
+	return s.statusLocked(record), nil
+}
+
+func (s *Store) UnquarantineWorker(id string) (HostRecord, error) {
+	return s.UnquarantineWorkerActor("controller", id)
+}
+
+func (s *Store) UnquarantineWorkerActor(actor, id string) (HostRecord, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return HostRecord{}, fmt.Errorf("worker id required")
+	}
+	now := s.now().UTC()
+	actor = normalizeActor(actor)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, ok := s.hosts[id]
+	if !ok {
+		return HostRecord{}, fmt.Errorf("worker %q not registered", id)
+	}
+	record.Quarantined = false
+	record.QuarantineReason = ""
+	record.QuarantinedAt = time.Time{}
+	record.Status = workerStatus(now, record)
+	s.hosts[id] = record
+	s.appendAuditLocked(now, AuditEvent{
+		Actor:      actor,
+		Action:     "worker.unquarantine",
+		TargetType: "worker",
+		TargetID:   id,
+		WorkerID:   id,
+	})
+	if err := s.persistLocked(); err != nil {
+		return HostRecord{}, err
+	}
+	return s.statusLocked(record), nil
 }
 
 func (s *Store) DecommissionWorker(id, reason string) (WorkerDecommissionResult, error) {
@@ -551,11 +615,7 @@ func (s *Store) UncordonWorkerActor(actor, id string) (HostRecord, error) {
 	record.Cordoned = false
 	record.CordonReason = ""
 	record.CordonedAt = time.Time{}
-	if now.After(record.Expires) {
-		record.Status = "stale"
-	} else {
-		record.Status = "ready"
-	}
+	record.Status = workerStatus(now, record)
 	s.hosts[id] = record
 	s.appendAuditLocked(now, AuditEvent{
 		Actor:      actor,
@@ -606,13 +666,9 @@ func (s *Store) Report(r WorkerReport) (HostRecord, error) {
 		}
 	}
 	record.Report = &r
-	if record.Cordoned {
-		record.Status = "cordoned"
-	} else {
-		record.Status = "ready"
-	}
 	record.LastSeen = received
 	record.Expires = received.Add(s.ttl)
+	record.Status = workerStatus(received, record)
 	s.hosts[id] = record
 	if r.AssignmentID != "" {
 		assignment, ok := s.assignments[r.AssignmentID]
@@ -1255,6 +1311,9 @@ func (s *Store) OperationsSummary(namespace string) OperationsSummary {
 			summary.Workers.Ready++
 		case "cordoned":
 			summary.Workers.Cordoned++
+			summary.Workers.Attention = append(summary.Workers.Attention, host)
+		case "quarantined":
+			summary.Workers.Quarantined++
 			summary.Workers.Attention = append(summary.Workers.Attention, host)
 		case "stale":
 			summary.Workers.Stale++
@@ -2130,6 +2189,14 @@ func (s *Store) AwaitAssignment(id string) (*Assignment, error) {
 	}
 	worker := s.statusLocked(s.hosts[id])
 	reconciled := s.reconcileLocked(now)
+	if worker.Quarantined {
+		if reconciled.changed() {
+			if err := s.persistLocked(); err != nil {
+				return nil, err
+			}
+		}
+		return nil, nil
+	}
 	assignments := s.sortedAssignmentsLocked()
 	for _, assignment := range assignments {
 		direct := assignment.WorkerID == id
@@ -2750,13 +2817,7 @@ func (s *Store) reconcileLocked(now time.Time) ReconcileResult {
 }
 
 func (s *Store) statusLocked(record HostRecord) HostRecord {
-	if s.now().After(record.Expires) {
-		record.Status = "stale"
-	} else if record.Cordoned {
-		record.Status = "cordoned"
-	} else if record.Status == "" || record.Status == "stale" || record.Status == "cordoned" {
-		record.Status = "ready"
-	}
+	record.Status = workerStatus(s.now().UTC(), record)
 	record.Labels = cloneLabels(record.Labels)
 	record.ImageRefs = cloneStrings(record.ImageRefs)
 	record.ImageDetails = cloneWorkerImages(record.ImageDetails)
@@ -2765,6 +2826,24 @@ func (s *Store) statusLocked(record HostRecord) HostRecord {
 		record.Report = &report
 	}
 	return record
+}
+
+func workerStatus(now time.Time, record HostRecord) string {
+	if now.After(record.Expires) {
+		return "stale"
+	}
+	if record.Quarantined {
+		return "quarantined"
+	}
+	if record.Cordoned {
+		return "cordoned"
+	}
+	switch record.Status {
+	case "", "stale", "cordoned", "quarantined":
+		return "ready"
+	default:
+		return record.Status
+	}
 }
 
 func (r ReconcileResult) changed() bool {

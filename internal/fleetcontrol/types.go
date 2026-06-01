@@ -54,21 +54,24 @@ type WorkerImage struct {
 }
 
 type HostRecord struct {
-	ID           string            `json:"id"`
-	Host         string            `json:"host,omitempty"`
-	Address      string            `json:"address,omitempty"`
-	Version      string            `json:"version,omitempty"`
-	Labels       map[string]string `json:"labels,omitempty"`
-	ImageRefs    []string          `json:"image_refs,omitempty"`
-	ImageDetails []WorkerImage     `json:"image_details,omitempty"`
-	Capacity     Capacity          `json:"capacity,omitempty"`
-	Status       string            `json:"status"`
-	Cordoned     bool              `json:"cordoned"`
-	CordonReason string            `json:"cordon_reason,omitempty"`
-	CordonedAt   time.Time         `json:"cordoned_at,omitempty"`
-	LastSeen     time.Time         `json:"last_seen"`
-	Expires      time.Time         `json:"expires"`
-	Report       *WorkerReport     `json:"last_report,omitempty"`
+	ID               string            `json:"id"`
+	Host             string            `json:"host,omitempty"`
+	Address          string            `json:"address,omitempty"`
+	Version          string            `json:"version,omitempty"`
+	Labels           map[string]string `json:"labels,omitempty"`
+	ImageRefs        []string          `json:"image_refs,omitempty"`
+	ImageDetails     []WorkerImage     `json:"image_details,omitempty"`
+	Capacity         Capacity          `json:"capacity,omitempty"`
+	Status           string            `json:"status"`
+	Cordoned         bool              `json:"cordoned"`
+	CordonReason     string            `json:"cordon_reason,omitempty"`
+	CordonedAt       time.Time         `json:"cordoned_at,omitempty"`
+	Quarantined      bool              `json:"quarantined"`
+	QuarantineReason string            `json:"quarantine_reason,omitempty"`
+	QuarantinedAt    time.Time         `json:"quarantined_at,omitempty"`
+	LastSeen         time.Time         `json:"last_seen"`
+	Expires          time.Time         `json:"expires"`
+	Report           *WorkerReport     `json:"last_report,omitempty"`
 }
 
 type WorkerReport struct {
@@ -618,12 +621,13 @@ type OperationsSummary struct {
 }
 
 type WorkerOperationsSummary struct {
-	Total     int            `json:"total"`
-	Ready     int            `json:"ready"`
-	Cordoned  int            `json:"cordoned"`
-	Stale     int            `json:"stale"`
-	ByStatus  map[string]int `json:"by_status,omitempty"`
-	Attention []HostRecord   `json:"attention,omitempty"`
+	Total       int            `json:"total"`
+	Ready       int            `json:"ready"`
+	Cordoned    int            `json:"cordoned"`
+	Quarantined int            `json:"quarantined"`
+	Stale       int            `json:"stale"`
+	ByStatus    map[string]int `json:"by_status,omitempty"`
+	Attention   []HostRecord   `json:"attention,omitempty"`
 }
 
 type AssignmentOperationsSummary struct {

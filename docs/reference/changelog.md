@@ -8,6 +8,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 ## Unreleased
 
 ### Added
+- Fleet operators can now quarantine and unquarantine workers. Quarantined
+  workers keep heartbeat/report history for diagnostics, are excluded from
+  placement, receive no new assignment leases, appear in operations-summary
+  attention counts, and record audit events.
 - Fleet worker decommission now accepts `{"force":true}` to atomically cancel
   pending unleased assignments on a retiring worker; leased or running work
   returns a structured blocked response, and the controller records
