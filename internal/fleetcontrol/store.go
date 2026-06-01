@@ -3616,8 +3616,10 @@ func (s *Store) GetControllerRun(id string) (ControllerRunDetail, bool) {
 		}
 		plan = clonePlacementPlan(plan)
 		return ControllerRunDetail{
-			Summary:       controllerRunFromPlacementPlan(plan),
-			PlacementPlan: &plan,
+			Summary:            controllerRunFromPlacementPlan(plan),
+			CandidateWorkerIDs: controllerRunCandidateWorkerIDs(plan.Candidates),
+			SkippedWorkerIDs:   controllerRunPlacementSkipWorkerIDs(plan.Skipped),
+			PlacementPlan:      &plan,
 		}, true
 	}
 	for _, prep := range s.preparations {
@@ -3627,6 +3629,10 @@ func (s *Store) GetControllerRun(id string) (ControllerRunDetail, bool) {
 		prep = cloneImagePrepareResult(prep)
 		return ControllerRunDetail{
 			Summary:          controllerRunFromImagePrepare(prep),
+			AssignmentIDs:    controllerRunAssignmentIDs(prep.Assignments),
+			Assignments:      cloneAssignments(prep.Assignments),
+			WorkerIDs:        controllerRunAssignmentWorkerIDs(prep.Assignments),
+			SkippedWorkerIDs: controllerRunImagePrepareSkipWorkerIDs(prep.Skipped),
 			ImagePreparation: &prep,
 		}, true
 	}
@@ -3636,8 +3642,12 @@ func (s *Store) GetControllerRun(id string) (ControllerRunDetail, bool) {
 		}
 		run = cloneImageGCResult(run)
 		return ControllerRunDetail{
-			Summary: controllerRunFromImageGC(run),
-			ImageGC: &run,
+			Summary:          controllerRunFromImageGC(run),
+			AssignmentIDs:    controllerRunAssignmentIDs(run.Assignments),
+			Assignments:      cloneAssignments(run.Assignments),
+			WorkerIDs:        controllerRunAssignmentWorkerIDs(run.Assignments),
+			SkippedWorkerIDs: controllerRunImageGCSkipWorkerIDs(run.Skipped),
+			ImageGC:          &run,
 		}, true
 	}
 	for _, run := range s.lifecycleRuns {
@@ -3646,8 +3656,12 @@ func (s *Store) GetControllerRun(id string) (ControllerRunDetail, bool) {
 		}
 		run = cloneLifecyclePolicyResult(run)
 		return ControllerRunDetail{
-			Summary:         controllerRunFromLifecyclePolicy(run),
-			LifecyclePolicy: &run,
+			Summary:          controllerRunFromLifecyclePolicy(run),
+			AssignmentIDs:    controllerRunAssignmentIDs(run.Assignments),
+			Assignments:      cloneAssignments(run.Assignments),
+			WorkerIDs:        controllerRunAssignmentWorkerIDs(run.Assignments),
+			SkippedWorkerIDs: controllerRunLifecyclePolicySkipWorkerIDs(run.Skipped),
+			LifecyclePolicy:  &run,
 		}, true
 	}
 	for _, run := range s.storageBudgetRuns {
@@ -3656,8 +3670,12 @@ func (s *Store) GetControllerRun(id string) (ControllerRunDetail, bool) {
 		}
 		run = cloneStorageBudgetResult(run)
 		return ControllerRunDetail{
-			Summary:       controllerRunFromStorageBudget(run),
-			StorageBudget: &run,
+			Summary:          controllerRunFromStorageBudget(run),
+			AssignmentIDs:    controllerRunAssignmentIDs(run.Assignments),
+			Assignments:      cloneAssignments(run.Assignments),
+			WorkerIDs:        controllerRunAssignmentWorkerIDs(run.Assignments),
+			SkippedWorkerIDs: controllerRunStoragePolicySkipWorkerIDs(run.Skipped),
+			StorageBudget:    &run,
 		}, true
 	}
 	for _, run := range s.storagePruneRuns {
@@ -3666,11 +3684,96 @@ func (s *Store) GetControllerRun(id string) (ControllerRunDetail, bool) {
 		}
 		run = cloneStoragePruneResult(run)
 		return ControllerRunDetail{
-			Summary:      controllerRunFromStoragePrune(run),
-			StoragePrune: &run,
+			Summary:          controllerRunFromStoragePrune(run),
+			AssignmentIDs:    controllerRunAssignmentIDs(run.Assignments),
+			Assignments:      cloneAssignments(run.Assignments),
+			WorkerIDs:        controllerRunAssignmentWorkerIDs(run.Assignments),
+			SkippedWorkerIDs: controllerRunStoragePolicySkipWorkerIDs(run.Skipped),
+			StoragePrune:     &run,
 		}, true
 	}
 	return ControllerRunDetail{}, false
+}
+
+func controllerRunAssignmentIDs(assignments []Assignment) []string {
+	ids := make([]string, 0, len(assignments))
+	for _, assignment := range assignments {
+		ids = append(ids, assignment.ID)
+	}
+	return controllerRunUniqueStrings(ids)
+}
+
+func controllerRunAssignmentWorkerIDs(assignments []Assignment) []string {
+	ids := make([]string, 0, len(assignments))
+	for _, assignment := range assignments {
+		ids = append(ids, assignment.WorkerID)
+	}
+	return controllerRunUniqueStrings(ids)
+}
+
+func controllerRunCandidateWorkerIDs(candidates []PlacementCandidate) []string {
+	ids := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		ids = append(ids, candidate.WorkerID)
+	}
+	return controllerRunUniqueStrings(ids)
+}
+
+func controllerRunPlacementSkipWorkerIDs(skipped []PlacementSkip) []string {
+	ids := make([]string, 0, len(skipped))
+	for _, skip := range skipped {
+		ids = append(ids, skip.WorkerID)
+	}
+	return controllerRunUniqueStrings(ids)
+}
+
+func controllerRunImagePrepareSkipWorkerIDs(skipped []ImagePrepareSkip) []string {
+	ids := make([]string, 0, len(skipped))
+	for _, skip := range skipped {
+		ids = append(ids, skip.WorkerID)
+	}
+	return controllerRunUniqueStrings(ids)
+}
+
+func controllerRunImageGCSkipWorkerIDs(skipped []ImageGCSkip) []string {
+	ids := make([]string, 0, len(skipped))
+	for _, skip := range skipped {
+		ids = append(ids, skip.WorkerID)
+	}
+	return controllerRunUniqueStrings(ids)
+}
+
+func controllerRunLifecyclePolicySkipWorkerIDs(skipped []LifecyclePolicySkip) []string {
+	ids := make([]string, 0, len(skipped))
+	for _, skip := range skipped {
+		ids = append(ids, skip.WorkerID)
+	}
+	return controllerRunUniqueStrings(ids)
+}
+
+func controllerRunStoragePolicySkipWorkerIDs(skipped []StoragePolicySkip) []string {
+	ids := make([]string, 0, len(skipped))
+	for _, skip := range skipped {
+		ids = append(ids, skip.WorkerID)
+	}
+	return controllerRunUniqueStrings(ids)
+}
+
+func controllerRunUniqueStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
 }
 
 func controllerRunFieldMatches(fields map[string]string, key, want string) bool {

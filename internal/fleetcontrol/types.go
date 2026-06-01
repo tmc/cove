@@ -674,13 +674,18 @@ type ControllerRunListResult struct {
 }
 
 type ControllerRunDetail struct {
-	Summary          ControllerRunSummary   `json:"summary"`
-	PlacementPlan    *PlacementPlan         `json:"placement_plan,omitempty"`
-	ImagePreparation *ImagePrepareResult    `json:"image_preparation,omitempty"`
-	ImageGC          *ImageGCResult         `json:"image_gc,omitempty"`
-	LifecyclePolicy  *LifecyclePolicyResult `json:"lifecycle_policy,omitempty"`
-	StorageBudget    *StorageBudgetResult   `json:"storage_budget,omitempty"`
-	StoragePrune     *StoragePruneResult    `json:"storage_prune,omitempty"`
+	Summary            ControllerRunSummary   `json:"summary"`
+	AssignmentIDs      []string               `json:"assignment_ids,omitempty"`
+	Assignments        []Assignment           `json:"assignments,omitempty"`
+	WorkerIDs          []string               `json:"worker_ids,omitempty"`
+	CandidateWorkerIDs []string               `json:"candidate_worker_ids,omitempty"`
+	SkippedWorkerIDs   []string               `json:"skipped_worker_ids,omitempty"`
+	PlacementPlan      *PlacementPlan         `json:"placement_plan,omitempty"`
+	ImagePreparation   *ImagePrepareResult    `json:"image_preparation,omitempty"`
+	ImageGC            *ImageGCResult         `json:"image_gc,omitempty"`
+	LifecyclePolicy    *LifecyclePolicyResult `json:"lifecycle_policy,omitempty"`
+	StorageBudget      *StorageBudgetResult   `json:"storage_budget,omitempty"`
+	StoragePrune       *StoragePruneResult    `json:"storage_prune,omitempty"`
 }
 
 type ControllerRunSummary struct {

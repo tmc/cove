@@ -235,7 +235,10 @@ specific immutable image or worker trait. `GET /v1/operations/runs/{id}`
 returns the same summary plus the retained source object under one of
 `placement_plan`, `image_preparation`, `image_gc`, `lifecycle_policy`,
 `storage_budget`, or `storage_prune`, giving dashboards a single drill-down
-path from the aggregate timeline.
+path from the aggregate timeline. The detail response also normalizes common
+operator fields as `assignment_ids`, `assignments`, `worker_ids`,
+`candidate_worker_ids`, and `skipped_worker_ids`, so dashboards can render the
+run's affected work and workers without first switching on the source kind.
 
 Service-account and audit endpoints:
 

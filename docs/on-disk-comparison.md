@@ -149,7 +149,8 @@ delegates the disk/runtime work to `tart` or `vetu`.
    handles, ready capacity, pre-staging runs, placement plans, and maintenance
    pushes depend on an immutable image or RAM-overlay-class worker capability;
    the aggregate timeline also has a single drill-down endpoint that returns
-   the retained source object for dashboards and incident review.
+   normalized assignments, affected workers, skipped workers, and the retained
+   source object for dashboards and incident review.
 
 ## Where competitors still lead
 

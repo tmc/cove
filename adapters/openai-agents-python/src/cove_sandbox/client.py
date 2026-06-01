@@ -3033,6 +3033,7 @@ def _normalize_controller_run_detail(data: dict[str, Any], endpoint: str) -> dic
     if not isinstance(summary, dict):
         raise CoveError(f"{endpoint}: expected summary object")
     detail["summary"] = dict(summary)
+    _normalize_dict_list(detail, "assignments", endpoint)
     if isinstance(detail.get("placement_plan"), dict):
         detail["placement_plan"] = _normalize_placement_plan(detail["placement_plan"], endpoint)
     for key in (

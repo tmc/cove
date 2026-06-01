@@ -742,6 +742,9 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 	if runDetail.Summary.ID != "storage-prune-1" || runDetail.Summary.Kind != "storage.prune" || runDetail.StoragePrune == nil || runDetail.StoragePrune.OlderThan != "48h" {
 		t.Fatalf("GetControllerRun = %+v, want storage prune detail", runDetail)
 	}
+	if !equalStringSlices(runDetail.AssignmentIDs, []string{"assignment-storage-prune-1"}) || len(runDetail.Assignments) != 1 || !equalStringSlices(runDetail.WorkerIDs, []string{"worker-1"}) || !equalStringSlices(runDetail.SkippedWorkerIDs, []string{"worker-2", "worker-3", "worker-4"}) {
+		t.Fatalf("GetControllerRun normalized fields = ids %+v assignments %d workers %+v skipped %+v", runDetail.AssignmentIDs, len(runDetail.Assignments), runDetail.WorkerIDs, runDetail.SkippedWorkerIDs)
+	}
 	reconcilePlan, err := PlanReconcile(ctx, ReconcileOptions{FleetURL: server.URL, APIKey: "secret", Timeout: time.Second})
 	if err != nil {
 		t.Fatalf("PlanReconcile: %v", err)
@@ -2225,7 +2228,11 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 					SkipCount:       1,
 					Fields:          map[string]string{"older_than": "48h", "apply": "true"},
 				},
-				StoragePrune: &run,
+				AssignmentIDs:    []string{"assignment-storage-prune-1"},
+				Assignments:      run.Assignments,
+				WorkerIDs:        []string{"worker-1"},
+				SkippedWorkerIDs: []string{"worker-2", "worker-3", "worker-4"},
+				StoragePrune:     &run,
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/reconcile/plan":
 			writeSDKJSON(t, w, sdkReconcilePlan())

@@ -245,6 +245,7 @@ if runs["runs"]:
         run_id=runs["runs"][0]["id"],
     )
     print(detail["summary"]["kind"])
+    print(detail.get("assignment_ids", []))
 
 plan = CoveFleetClient.plan_sandbox(
     fleet_url="https://fleet.internal.example",

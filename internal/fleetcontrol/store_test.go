@@ -5037,9 +5037,15 @@ func TestStoreListControllerRunsPage(t *testing.T) {
 	if !ok || detail.Summary.ID != prep.ID || detail.Summary.Kind != ControllerRunKindImagePrepare || detail.ImagePreparation == nil || detail.ImagePreparation.ImageDigestRef != "registry.example/tool@sha256:tool" {
 		t.Fatalf("controller run detail = %+v, %v, want image preparation %s", detail, ok, prep.ID)
 	}
+	if !equalStrings(detail.AssignmentIDs, []string{prep.Assignments[0].ID}) || len(detail.Assignments) != 1 || !equalStrings(detail.WorkerIDs, []string{"desk"}) || len(detail.SkippedWorkerIDs) != 0 {
+		t.Fatalf("controller run normalized fields = ids %+v assignments %d workers %+v skipped %+v, want image prepare assignment on desk", detail.AssignmentIDs, len(detail.Assignments), detail.WorkerIDs, detail.SkippedWorkerIDs)
+	}
 	planDetail, ok := store.GetControllerRun(plan.ID)
 	if !ok || planDetail.Summary.ID != plan.ID || planDetail.Summary.Kind != ControllerRunKindPlacementPlan || planDetail.PlacementPlan == nil || planDetail.PlacementPlan.ImageManifestDigest != "sha256:base" {
 		t.Fatalf("placement controller run detail = %+v, %v, want placement plan %s", planDetail, ok, plan.ID)
+	}
+	if !equalStrings(planDetail.CandidateWorkerIDs, []string{"desk"}) || len(planDetail.AssignmentIDs) != 0 || len(planDetail.WorkerIDs) != 0 {
+		t.Fatalf("placement normalized fields = candidates %+v assignments %+v workers %+v, want candidate desk only", planDetail.CandidateWorkerIDs, planDetail.AssignmentIDs, planDetail.WorkerIDs)
 	}
 	if _, ok := store.GetControllerRun("missing"); ok {
 		t.Fatalf("missing controller run found")
@@ -6422,6 +6428,9 @@ func TestHandlerControllerRuns(t *testing.T) {
 	getJSONAuth(t, server.URL+"/v1/operations/runs/"+prep.ID, "token-a", &detail)
 	if detail.Summary.ID != prep.ID || detail.Summary.Kind != ControllerRunKindImagePrepare || detail.ImagePreparation == nil || detail.ImagePreparation.ImagePlatform != "darwin/arm64" {
 		t.Fatalf("controller run detail = %+v, want image prepare %s", detail, prep.ID)
+	}
+	if !equalStrings(detail.AssignmentIDs, []string{prep.Assignments[0].ID}) || len(detail.Assignments) != 1 || !equalStrings(detail.WorkerIDs, []string{"worker-1"}) {
+		t.Fatalf("controller run detail normalized fields = ids %+v assignments %d workers %+v, want image prepare assignment on worker-1", detail.AssignmentIDs, len(detail.Assignments), detail.WorkerIDs)
 	}
 	if code := getJSONStatus(t, server.URL+"/v1/operations/runs/"+prep.ID, "token-b"); code != http.StatusNotFound {
 		t.Fatalf("team-b controller run detail status = %d, want %d", code, http.StatusNotFound)

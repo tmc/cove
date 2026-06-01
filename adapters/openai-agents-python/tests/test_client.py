@@ -648,6 +648,10 @@ def test_fleet_client_maintenance_runs() -> None:
         assert run_detail["summary"]["id"] == "storage-prune-1"
         assert run_detail["summary"]["kind"] == "storage.prune"
         assert run_detail["storage_prune"]["older_than"] == "48h"
+        assert run_detail["assignment_ids"] == ["assignment-storage-prune-1"]
+        assert run_detail["assignments"][0]["worker_id"] == "worker-1"
+        assert run_detail["worker_ids"] == ["worker-1"]
+        assert run_detail["skipped_worker_ids"] == ["worker-2", "worker-3", "worker-4"]
         reconcile_plan = CoveFleetClient.plan_reconcile(
             fleet_url=server.url,
             api_key="secret",
@@ -2592,6 +2596,10 @@ class _FleetHTTPServer:
                                 "skip_count": 1,
                                 "fields": {"older_than": "48h", "apply": "true"},
                             },
+                            "assignment_ids": ["assignment-storage-prune-1"],
+                            "assignments": _storage_prune_result()["assignments"],
+                            "worker_ids": ["worker-1"],
+                            "skipped_worker_ids": ["worker-2", "worker-3", "worker-4"],
                             "storage_prune": _storage_prune_result(),
                         }
                     )
