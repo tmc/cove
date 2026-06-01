@@ -70,6 +70,7 @@ curl http://127.0.0.1:9758/v1/workers
 curl 'http://127.0.0.1:9758/v1/workers?status=ready&label=zone=desk&image_ref=macos-runner:latest&limit=50'
 curl http://127.0.0.1:9758/v1/workers/mini-1
 curl 'http://127.0.0.1:9758/v1/workers/mini-1/events?limit=50'
+curl 'http://127.0.0.1:9758/v1/workers/mini-1/reports?limit=50'
 curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/cordon \
   -H 'content-type: application/json' \
   -d '{"reason":"maintenance"}'
@@ -118,6 +119,12 @@ assignment, sandbox, and report events that carry the same `worker_id`;
 `actor`, `action`, `target_type`, `target_id`, `sandbox_id`, `offset`, and
 `limit` query filters match the global audit-list semantics. Worker event
 history is fleet-global and requires an unscoped viewer/operator/admin
+identity.
+
+`GET /v1/workers/{id}/reports` returns persisted assignment worker reports for
+that worker, including active renewals and terminal stdout/stderr/error/exit
+details. It accepts `assignment_id`, `status`, `offset`, and `limit`. Worker
+report history is fleet-global and requires an unscoped viewer/operator/admin
 identity.
 
 `POST /v1/workers/{id}/drain` is the controller maintenance path for hosted

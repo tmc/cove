@@ -4230,6 +4230,43 @@ func TestHandlerWorkerEvents(t *testing.T) {
 	}
 }
 
+func TestHandlerWorkerReports(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1"}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-2"}, &record)
+	var other Assignment
+	postJSON(t, server.URL+"/v1/assignments", Assignment{ID: "assignment-2", WorkerID: "worker-2", Verb: "noop"}, &other)
+	var created Assignment
+	postJSON(t, server.URL+"/v1/assignments", Assignment{ID: "assignment-1", WorkerID: "worker-1", Verb: "noop"}, &created)
+	var leased Assignment
+	getJSON(t, server.URL+"/v1/workers/worker-1/assignments", &leased)
+	postJSON(t, server.URL+"/v1/workers/worker-1/reports", WorkerReport{AssignmentID: leased.ID, Status: "running", Stdout: "started"}, &record)
+	postJSON(t, server.URL+"/v1/workers/worker-1/reports", WorkerReport{AssignmentID: leased.ID, Status: "complete", ExitCode: 7, Stdout: "done"}, &record)
+	getJSON(t, server.URL+"/v1/workers/worker-2/assignments", &leased)
+	postJSON(t, server.URL+"/v1/workers/worker-2/reports", WorkerReport{AssignmentID: leased.ID, Status: "failed", Stderr: "bad"}, &record)
+
+	var reports AssignmentReportListResult
+	getJSON(t, server.URL+"/v1/workers/worker-1/reports?assignment_id=assignment-1&limit=1", &reports)
+	if reports.Count != 1 || reports.NextOffset != 1 || len(reports.Reports) != 1 || reports.Reports[0].WorkerID != "worker-1" || reports.Reports[0].AssignmentID != created.ID || reports.Reports[0].Status != "complete" {
+		t.Fatalf("worker reports = %+v, want latest worker-1 complete report", reports)
+	}
+	reports = AssignmentReportListResult{}
+	getJSON(t, server.URL+"/v1/workers/worker-1/reports?status=running", &reports)
+	if reports.Count != 1 || len(reports.Reports) != 1 || reports.Reports[0].Report.Stdout != "started" {
+		t.Fatalf("worker running reports = %+v, want started report", reports)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/workers/missing/reports", ""); code != http.StatusNotFound {
+		t.Fatalf("missing worker reports status = %d, want %d", code, http.StatusNotFound)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/workers/worker-1/reports?offset=-1", ""); code != http.StatusBadRequest {
+		t.Fatalf("bad worker reports offset status = %d, want %d", code, http.StatusBadRequest)
+	}
+}
+
 func TestHandlerAssignmentProtocol(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	server := httptest.NewServer(Handler(store))

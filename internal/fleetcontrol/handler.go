@@ -1538,10 +1538,17 @@ func handleWorkerAssignments(w http.ResponseWriter, r *http.Request, store *Stor
 }
 
 func handleWorkerReports(w http.ResponseWriter, r *http.Request, store *Store, id string) {
-	if r.Method != http.MethodPost {
+	switch r.Method {
+	case http.MethodGet:
+		handleWorkerReportHistory(w, r, store, id)
+	case http.MethodPost:
+		handleWorkerReportStatus(w, r, store, id)
+	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
 	}
+}
+
+func handleWorkerReportStatus(w http.ResponseWriter, r *http.Request, store *Store, id string) {
 	var report WorkerReport
 	if err := json.NewDecoder(r.Body).Decode(&report); err != nil {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode report-status: %v", err))
@@ -1559,6 +1566,52 @@ func handleWorkerReports(w http.ResponseWriter, r *http.Request, store *Store, i
 		return
 	}
 	writeJSON(w, http.StatusOK, record)
+}
+
+func handleWorkerReportHistory(w http.ResponseWriter, r *http.Request, store *Store, id string) {
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	if !requireUnscoped(w, r, store) {
+		return
+	}
+	if !reconcile(w, store) {
+		return
+	}
+	if _, ok := store.Get(id); !ok {
+		writeError(w, http.StatusNotFound, "worker not found")
+		return
+	}
+	filter, err := workerReportsFilterFromRequest(r, id)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, store.ListAssignmentReportsPage(filter))
+}
+
+func workerReportsFilterFromRequest(r *http.Request, id string) (AssignmentReportFilter, error) {
+	filter := AssignmentReportFilter{
+		WorkerID:     id,
+		AssignmentID: strings.TrimSpace(r.URL.Query().Get("assignment_id")),
+		Status:       strings.TrimSpace(r.URL.Query().Get("status")),
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 0 {
+			return AssignmentReportFilter{}, fmt.Errorf("worker reports limit must be non-negative")
+		}
+		filter.Limit = limit
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		offset, err := strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			return AssignmentReportFilter{}, fmt.Errorf("worker reports offset must be non-negative")
+		}
+		filter.Offset = offset
+	}
+	return filter, nil
 }
 
 func handleImagePrepare(w http.ResponseWriter, r *http.Request, store *Store) {
