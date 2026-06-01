@@ -1410,16 +1410,19 @@ concurrently, then stream them in manifest order with descriptor size/digest
 checks before extraction. Use `--dry-run` to validate the target without writing
 a disk. Plain dry-runs are network-free; add `--manifest` to validate local
 manifest JSON or `--fetch-manifest` to fetch only registry manifest metadata
-without downloading disk blobs. Cove-native dry-runs also print the manifest's
-disk format and, when a compatible local or cached base disk is available, the
-reusable chunks, bytes, disk format, and source base path. Manifest-backed
-dry-runs that resolve an OCI image index or Docker manifest list also print the
-index digest, selected manifest digest, selected platform, and selectable child
-manifest candidates; use `--platform os/arch[/variant]` to force the child
-manifest for mixed macOS/Linux catalogs. Add `--all-platforms` with
-`--fetch-manifest` to fetch every index child manifest during dry-run and include
-per-child format, disk size/format, transport bytes, cove base-chain audit, and
-optional `--verify-blobs` descriptor audit in the same pull preflight.
+without downloading disk blobs. Add `--manifest-out <path>` with
+`--fetch-manifest` to write the exact selected registry manifest bytes after
+index resolution for later network-free `--manifest <path>` validation.
+Cove-native dry-runs also print the manifest's disk format and, when a
+compatible local or cached base disk is available, the reusable chunks, bytes,
+disk format, and source base path. Manifest-backed dry-runs that resolve an OCI
+image index or Docker manifest list also print the index digest, selected
+manifest digest, selected platform, and selectable child manifest candidates;
+use `--platform os/arch[/variant]` to force the child manifest for mixed
+macOS/Linux catalogs. Add `--all-platforms` with `--fetch-manifest` to fetch
+every index child manifest during dry-run and include per-child format, disk
+size/format, transport bytes, cove base-chain audit, and optional
+`--verify-blobs` descriptor audit in the same pull preflight.
 
 Cove-native dry-runs also report disk chunks already covered by the local
 content store, disk chunks still requiring registry fetches, sparse zero
@@ -1445,6 +1448,7 @@ cove pull <ref> [flags]
 | `--all-platforms` | false | Inspect every OCI image-index or Docker manifest-list child during dry-run |
 | `--resume` | false | Continue an interrupted pull from `disk.img.partial` |
 | `--manifest <path>` | | Local OCI manifest JSON instead of fetching the registry |
+| `--manifest-out <path>` | | Write fetched selected manifest JSON during dry-run |
 | `--platform os/arch[/variant]` | auto | Select an OCI image-index or Docker manifest-list child |
 
 ```bash
@@ -1452,6 +1456,7 @@ cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run --fetch-manifest
 cove pull ghcr.io/example/runner:latest --dry-run --fetch-manifest --platform linux/arm64
 cove pull ghcr.io/example/runner:latest --dry-run --fetch-manifest --all-platforms --verify-blobs --json
+cove pull ghcr.io/example/runner:latest --dry-run --fetch-manifest --manifest-out selected-manifest.json
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run --fetch-manifest --json
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run --fetch-manifest --verify-blobs --json
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run --json --manifest manifest.json

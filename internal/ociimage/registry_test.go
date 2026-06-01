@@ -129,6 +129,9 @@ func TestRegistryClientFetchManifestResolvesIndex(t *testing.T) {
 	if resolution.Digest != manifestDigest {
 		t.Fatalf("digest = %q, want %q", resolution.Digest, manifestDigest)
 	}
+	if string(resolution.ManifestData) != string(manifestData) {
+		t.Fatalf("manifest data = %q, want registry child bytes %q", string(resolution.ManifestData), string(manifestData))
+	}
 	if resolution.IndexDigest != "sha256:index" || resolution.IndexMediaType != MediaTypeImageIndex {
 		t.Fatalf("index resolution = %+v, want digest/media type", resolution)
 	}

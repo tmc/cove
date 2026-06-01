@@ -33,6 +33,7 @@ type RegistryTokenCache struct {
 type ManifestResolution struct {
 	Digest           string
 	MediaType        string
+	ManifestData     []byte
 	IndexDigest      string
 	IndexMediaType   string
 	SelectedDigest   string
@@ -124,8 +125,9 @@ func (c RegistryClient) fetchManifestTarget(ctx context.Context, ref Reference, 
 		return manifest, ManifestResolution{}, fmt.Errorf("fetch manifest: decode: %w", err)
 	}
 	return manifest, ManifestResolution{
-		Digest:    digest,
-		MediaType: manifest.MediaType,
+		Digest:       digest,
+		MediaType:    manifest.MediaType,
+		ManifestData: data,
 	}, nil
 }
 

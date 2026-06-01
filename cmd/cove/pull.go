@@ -35,6 +35,7 @@ type pullOptions struct {
 	AllPlatforms     bool
 	Resume           bool
 	ManifestPath     string
+	ManifestOut      string
 	Platform         string
 	RegistryBaseURL  string
 	RegistryToken    string
@@ -49,6 +50,7 @@ type pullPlan struct {
 	Manifest             ociimage.ParsedManifest
 	ManifestRaw          []byte
 	ManifestDigest       string
+	ManifestOut          string
 	ManifestResolution   ociimage.ManifestResolution
 	BaseReusePath        string
 	BaseReuseDiskFormat  string
@@ -83,6 +85,7 @@ type pullDryRunOutput struct {
 	Target            string                     `json:"target"`
 	ManifestProvided  bool                       `json:"manifest_provided"`
 	ManifestDigest    string                     `json:"manifest_digest,omitempty"`
+	ManifestOut       string                     `json:"manifest_out,omitempty"`
 	ResolvedFromIndex bool                       `json:"resolved_from_index,omitempty"`
 	IndexDigest       string                     `json:"index_digest,omitempty"`
 	IndexMediaType    string                     `json:"index_media_type,omitempty"`
@@ -161,6 +164,12 @@ func handlePull(env commandEnv, args []string) error {
 	if opts.AllPlatforms && !opts.FetchManifest {
 		return fmt.Errorf("cove pull: --all-platforms requires --fetch-manifest")
 	}
+	if opts.ManifestOut != "" && !opts.DryRun {
+		return fmt.Errorf("cove pull: --manifest-out requires --dry-run")
+	}
+	if opts.ManifestOut != "" && !opts.FetchManifest {
+		return fmt.Errorf("cove pull: --manifest-out requires --fetch-manifest")
+	}
 	if err := preparePullOptions(&opts); err != nil {
 		return err
 	}
@@ -169,6 +178,9 @@ func handlePull(env commandEnv, args []string) error {
 		return err
 	}
 	if opts.DryRun {
+		if err := writePullManifestOut(plan); err != nil {
+			return err
+		}
 		if opts.JSON {
 			return printPullDryRunJSON(env.Stdout, plan)
 		}
@@ -205,6 +217,7 @@ func parsePullArgs(args []string, w io.Writer) (pullOptions, []string, error) {
 	fs.BoolVar(&opts.AllPlatforms, "all-platforms", false, "inspect every image-index child during dry-run")
 	fs.BoolVar(&opts.Resume, "resume", false, "continue an interrupted pull from disk.img.partial")
 	fs.StringVar(&opts.ManifestPath, "manifest", "", "local OCI manifest JSON instead of fetching the registry")
+	fs.StringVar(&opts.ManifestOut, "manifest-out", "", "write fetched selected manifest JSON during dry-run")
 	fs.StringVar(&opts.Platform, "platform", "", "select image-index platform (os/arch[/variant])")
 	fs.Usage = func() { printPullUsage(w) }
 	if err := fs.Parse(movePullFlagsFirst(args)); err != nil {
@@ -226,6 +239,7 @@ func movePullFlagsFirst(args []string) []string {
 		"all-platforms":  false,
 		"resume":         false,
 		"manifest":       true,
+		"manifest-out":   true,
 		"platform":       true,
 	})
 }
@@ -285,6 +299,7 @@ func buildPullPlan(refText string, opts pullOptions) (*pullPlan, error) {
 		Manifest:           parsed,
 		ManifestRaw:        manifestRaw,
 		ManifestDigest:     manifestDigest,
+		ManifestOut:        opts.ManifestOut,
 		ManifestResolution: manifestResolution,
 	}
 	if opts.DryRun {
@@ -298,6 +313,23 @@ func buildPullPlan(refText string, opts pullOptions) (*pullPlan, error) {
 		planPullDryRunIndexManifests(context.Background(), plan, opts)
 	}
 	return plan, nil
+}
+
+func writePullManifestOut(plan *pullPlan) error {
+	if plan == nil || strings.TrimSpace(plan.ManifestOut) == "" {
+		return nil
+	}
+	if len(plan.ManifestRaw) == 0 {
+		return fmt.Errorf("cove pull: --manifest-out requires a fetched manifest")
+	}
+	tmp, err := atomicWriteFile(plan.ManifestOut, plan.ManifestRaw, 0644)
+	if err != nil {
+		if tmp != "" {
+			_ = os.Remove(tmp)
+		}
+		return fmt.Errorf("cove pull: write manifest-out: %w", err)
+	}
+	return nil
 }
 
 func preparePullOptions(opts *pullOptions) error {
@@ -353,9 +385,13 @@ func fetchPullManifest(ctx context.Context, ref ociimage.Reference, opts pullOpt
 	if err != nil {
 		return out, ociimage.ManifestResolution{}, nil, fmt.Errorf("parse registry manifest: %w", err)
 	}
-	data, err := json.Marshal(manifest)
-	if err != nil {
-		return out, ociimage.ManifestResolution{}, nil, fmt.Errorf("encode registry manifest: %w", err)
+	data := append([]byte(nil), resolution.ManifestData...)
+	if len(data) == 0 {
+		var err error
+		data, err = json.Marshal(manifest)
+		if err != nil {
+			return out, ociimage.ManifestResolution{}, nil, fmt.Errorf("encode registry manifest: %w", err)
+		}
 	}
 	return out, resolution, data, nil
 }
@@ -758,6 +794,9 @@ func printPullDryRun(w io.Writer, plan *pullPlan) {
 	if plan.ManifestDigest != "" {
 		fmt.Fprintf(w, "  manifest digest: %s\n", plan.ManifestDigest)
 	}
+	if plan.ManifestOut != "" {
+		fmt.Fprintf(w, "  manifest out: %s\n", plan.ManifestOut)
+	}
 	printPullManifestResolution(w, plan)
 	switch plan.Manifest.Format {
 	case ociimage.FormatLume:
@@ -936,6 +975,7 @@ func pullDryRunOutputFromPlan(plan *pullPlan) pullDryRunOutput {
 		Target:           plan.VMDir,
 		ManifestProvided: pullPlanHasManifest(plan),
 		ManifestDigest:   plan.ManifestDigest,
+		ManifestOut:      plan.ManifestOut,
 	}
 	if plan.ManifestResolution.IndexDigest != "" {
 		out.ResolvedFromIndex = true
@@ -1096,6 +1136,8 @@ Flags:
   --all-platforms      Inspect every image-index child during dry-run
   --resume             Continue an interrupted pull from disk.img.partial
   --manifest <path>    Local OCI manifest JSON instead of fetching the registry
+  --manifest-out <path>
+                       Write fetched selected manifest JSON during dry-run
   --platform <os/arch[/variant]>
                        Select an image-index platform`)
 }

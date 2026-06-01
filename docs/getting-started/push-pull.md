@@ -25,6 +25,7 @@ cove pull <ref> --dry-run --fetch-manifest        # fetch registry metadata only
 cove pull <ref> --dry-run --fetch-manifest --platform linux/arm64 # pick an index child
 cove pull <ref> --dry-run --json --manifest manifest.json # machine-readable pull plan
 cove pull <ref> --dry-run --fetch-manifest --json # machine-readable registry pull plan
+cove pull <ref> --dry-run --fetch-manifest --manifest-out manifest.json # save selected manifest
 cove pull <ref> --dry-run --fetch-manifest --verify-blobs # HEAD referenced blobs
 cove pull <ref> --dry-run --fetch-manifest --all-platforms --verify-blobs --json # audit every index child
 cove image inspect -remote <ref> -json            # inspect registry metadata only
@@ -58,16 +59,18 @@ Add `-verify-blobs` to send HEAD requests for every config and layer descriptor
 so a private catalog audit can catch missing registry blobs without downloading
 VM disks. Plain `--dry-run` is network-free. Use `--manifest` to validate local
 manifest JSON, or `--fetch-manifest` to fetch only the registry manifest without
-downloading disk blobs. When a cove-native manifest is available during
-`--dry-run`, cove also checks whether a compatible local or registry-cache base
-disk can be reused and prints the reusable chunks, bytes, disk format, and
-source path. Manifest-backed dry-runs that resolve an index also print the
-index digest, selected manifest digest, selected platform, and selectable child
-manifest candidates. Add `--all-platforms` with `--fetch-manifest` to fetch each
-child manifest and include per-child format, disk size/format, transport bytes,
-cove base-chain audit, and optional `--verify-blobs` descriptor audit in the
-same pull preflight. The same dry-run also reports cove-native transfer
-coverage: disk
+downloading disk blobs. Add `--manifest-out <path>` with `--fetch-manifest` to
+write the exact selected registry manifest bytes after index resolution, which
+can later be fed to network-free `--manifest <path>` validation. When a
+cove-native manifest is available during `--dry-run`, cove also checks whether a
+compatible local or registry-cache base disk can be reused and prints the
+reusable chunks, bytes, disk format, and source path. Manifest-backed dry-runs
+that resolve an index also print the index digest, selected manifest digest,
+selected platform, and selectable child manifest candidates. Add
+`--all-platforms` with `--fetch-manifest` to fetch each child manifest and
+include per-child format, disk size/format, transport bytes, cove base-chain
+audit, and optional `--verify-blobs` descriptor audit in the same pull preflight.
+The same dry-run also reports cove-native transfer coverage: disk
 chunks already in the local content store, disk chunks that still need registry
 fetches, sparse zero chunks, and metadata blobs already present or still needed.
 Add `--json` to emit that dry-run as structured data for CI jobs or fleet

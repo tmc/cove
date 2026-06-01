@@ -118,6 +118,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   transfer preflight, and base-reuse summary as structured data for automation.
 - `cove pull --dry-run --fetch-manifest` now fetches only the registry manifest
   for text or JSON pull preflight, preserving the network-free default dry-run.
+- `cove pull --dry-run --fetch-manifest --manifest-out <path>` now writes the
+  exact selected registry manifest bytes after index resolution, so a registry
+  preflight can produce a digest-stable artifact for later network-free
+  `--manifest <path>` validation.
 - `cove pull --platform <os/arch[/variant]>` and
   `cove image inspect -remote -platform <os/arch[/variant]>` now select an OCI
   image-index or Docker manifest-list child explicitly, and pull dry-runs report
