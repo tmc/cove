@@ -92,7 +92,8 @@ delegates the disk/runtime work to `tart` or `vetu`.
    target; both pull dry-runs and remote inspect can also persist exact
    top-level index/list bytes for tag-resolution audits or complete offline
    manifest bundles containing a deterministic summary, the index, selected
-   manifest, and every fetched platform child.
+   manifest, and every fetched platform child; `cove image bundle verify` checks
+   those saved bundles later without registry access.
    Manifest-backed dry-runs report OCI index/list child candidates and selection, can force
    `--platform os/arch[/variant]`, can fetch and classify every index child with
    `--all-platforms`, then HEAD-audit the registry blobs this host would need

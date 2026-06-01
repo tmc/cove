@@ -31,6 +31,8 @@ func handleImageCommand(env commandEnv, args []string) error {
 		return runImageInspect(env, rest)
 	case "verify":
 		return runImageVerify(env, rest)
+	case "bundle":
+		return runImageBundle(env, rest)
 	case "gc":
 		return runImageGC(env, rest)
 	case "prune":
@@ -66,6 +68,7 @@ Subcommands:
                                        Show remote registry manifest metadata
   verify <name[:tag]> [-strict] [-json]
                                        Check freshness, provenance, and layout
+  bundle verify <dir> [-json]          Verify an offline remote manifest bundle
   gc   [-dry-run] [-yes] [-older-than D]  Sweep images with zero live forks
   prune [-older-than D] [-filter GLOB] [-force] [-dry-run]
                                        Remove local images by age or tag glob

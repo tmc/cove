@@ -34,6 +34,7 @@ cove image inspect -remote <ref> -json            # inspect registry metadata on
 cove image inspect -remote <ref> -manifest-out manifest.json # save selected manifest
 cove image inspect -remote <ref> -index-out index.json # save index/list manifest
 cove image inspect -remote <ref> -all-platforms -manifest-dir manifests # save full manifest bundle
+cove image bundle verify manifests -json         # verify saved bundle offline
 cove image inspect -remote <ref> -platform linux/arm64 -json # inspect one platform
 cove image inspect -remote <ref> -all-platforms -json # classify and audit every index child
 cove image inspect -remote -verify-blobs <ref>    # HEAD every referenced blob
@@ -64,7 +65,8 @@ tag-resolution object. Add `-manifest-dir <dir>` with `-all-platforms` to write
 `summary.json`, `index.json`, `selected.json`, and every fetched child manifest
 under `manifests/<digest>.json`. `summary.json` records the selected digest,
 index digest, platform, format, disk size/format, and per-child audit summaries
-for offline CI or fleet policy checks. Add `-all-platforms` to fetch each child manifest,
+for offline CI or fleet policy checks. Run `cove image bundle verify <dir>` to
+check those saved files later without registry access. Add `-all-platforms` to fetch each child manifest,
 classify every platform, and audit cove base chains for each cove-native child
 without downloading disk blobs. Combine
 `-all-platforms` with `-verify-blobs` to HEAD-audit every child manifest's
@@ -83,7 +85,8 @@ the same tag-resolution audit. Add `--manifest-dir <dir>` with
 every fetched child manifest under `manifests/<digest>.json`. `summary.json`
 records the pull target, selected digest, index digest, platform, format, disk
 size/format, base reuse, blob audit, and per-child audit summaries for offline
-CI or fleet policy checks. When a cove-native manifest is available during
+CI or fleet policy checks. Run `cove image bundle verify <dir>` to validate the
+bundle later without registry access. When a cove-native manifest is available during
 `--dry-run`, cove also checks whether a compatible local or registry-cache base
 disk can be reused and prints the reusable chunks, bytes, disk format, and
 source path. Manifest-backed dry-runs that resolve an index also print the index

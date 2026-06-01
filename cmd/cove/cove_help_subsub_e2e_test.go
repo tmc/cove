@@ -44,6 +44,7 @@ var subSubHelp = []subSubHelpCase{
 	{"image", "list"},
 	{"image", "inspect"},
 	{"image", "verify"},
+	{"image", "bundle"},
 	{"image", "gc"},
 	{"image", "prune"},
 	{"image", "tag"},

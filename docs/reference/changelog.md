@@ -139,6 +139,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   The summary records selected/index digests, platform, format, disk
   size/format, blob and base-chain audit posture, and per-child audit summaries
   for offline CI or fleet policy checks.
+- `cove image bundle verify <dir> [-json]` now verifies saved manifest bundles
+  without registry access, checking summary schema, file digests, index coverage,
+  selected-child consistency, and parsed child manifest metadata.
 - `cove pull --platform <os/arch[/variant]>` and
   `cove image inspect -remote -platform <os/arch[/variant]>` now select an OCI
   image-index or Docker manifest-list child explicitly, and pull dry-runs report
