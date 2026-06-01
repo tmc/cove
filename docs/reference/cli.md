@@ -1415,7 +1415,7 @@ content store, disk chunks still requiring registry fetches, sparse zero
 chunks, and metadata blob store/fetch counts. Add `--json` to emit the dry-run
 plan as structured data for CI or fleet placement decisions. Add
 `--verify-blobs` to HEAD-audit the registry blobs this host would need to fetch
-without downloading blob bodies. Use
+for cove-native, Tart, or Lume pulls without downloading blob bodies. Use
 `cove image inspect -remote <ref>...` to fetch only registry metadata before a
 pull or private catalog audit. When a cove pull actually reuses a cloned base
 disk, completion output includes the same base-reuse summary.

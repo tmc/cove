@@ -119,7 +119,8 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `cove pull --dry-run --fetch-manifest` now fetches only the registry manifest
   for text or JSON pull preflight, preserving the network-free default dry-run.
 - `cove pull --dry-run --verify-blobs` now HEAD-audits registry blobs this host
-  would need to fetch without downloading blob bodies.
+  would need to fetch for cove-native, Tart, or Lume pulls without downloading
+  blob bodies.
 - `cove image inspect -remote -verify-blobs` now audits every remote config and
   layer descriptor with HEAD requests, reporting missing registry blobs without
   downloading VM disk content.

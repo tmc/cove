@@ -261,6 +261,7 @@ func buildPullPlan(refText string, opts pullOptions) (*pullPlan, error) {
 		if err := planPullDryRunReuse(plan, opts); err != nil {
 			return nil, err
 		}
+		recordPullDryRunImportBlobs(plan)
 		if err := planPullDryRunBlobAudit(context.Background(), plan, opts); err != nil {
 			return nil, err
 		}
@@ -314,6 +315,52 @@ func fetchPullManifest(ctx context.Context, ref ociimage.Reference, opts pullOpt
 		return out, "", nil, fmt.Errorf("encode registry manifest: %w", err)
 	}
 	return out, digest, data, nil
+}
+
+func recordPullDryRunImportBlobs(plan *pullPlan) {
+	if plan == nil || len(plan.FetchBlobDescriptors) > 0 {
+		return
+	}
+	switch plan.Manifest.Format {
+	case ociimage.FormatLume:
+		for _, part := range plan.Manifest.Lume.DiskParts {
+			name := part.Title
+			if name == "" {
+				name = fmt.Sprintf("disk-part[%d]", part.PartNumber)
+			}
+			plan.FetchBlobDescriptors = append(plan.FetchBlobDescriptors, pullBlobDescriptor{
+				Name:       name,
+				Descriptor: part.Descriptor,
+			})
+		}
+		if plan.Manifest.Lume.NvramLayer != nil {
+			plan.FetchBlobDescriptors = append(plan.FetchBlobDescriptors, pullBlobDescriptor{
+				Name:       "nvram.bin",
+				Descriptor: *plan.Manifest.Lume.NvramLayer,
+			})
+		}
+		if plan.Manifest.Lume.ConfigLayer != nil {
+			plan.FetchBlobDescriptors = append(plan.FetchBlobDescriptors, pullBlobDescriptor{
+				Name:       "config.json",
+				Descriptor: *plan.Manifest.Lume.ConfigLayer,
+			})
+		}
+	case ociimage.FormatTart:
+		plan.FetchBlobDescriptors = append(plan.FetchBlobDescriptors, pullBlobDescriptor{
+			Name:       "nvram",
+			Descriptor: plan.Manifest.Tart.NVRAMLayer,
+		})
+		plan.FetchBlobDescriptors = append(plan.FetchBlobDescriptors, pullBlobDescriptor{
+			Name:       "config",
+			Descriptor: plan.Manifest.Tart.ConfigLayer,
+		})
+		for i, layer := range plan.Manifest.Tart.DiskLayers {
+			plan.FetchBlobDescriptors = append(plan.FetchBlobDescriptors, pullBlobDescriptor{
+				Name:       fmt.Sprintf("disk[%d]", i),
+				Descriptor: layer.Descriptor,
+			})
+		}
+	}
 }
 
 func planPullDryRunBlobAudit(ctx context.Context, plan *pullPlan, opts pullOptions) error {
@@ -666,6 +713,7 @@ func printPullDryRun(w io.Writer, plan *pullPlan) {
 		if plan.Manifest.Lume.ConfigLayer != nil {
 			fmt.Fprintf(w, "  config.json: %s\n", bytefmt.Size(plan.Manifest.Lume.ConfigLayer.Size))
 		}
+		printPullBlobAudit(w, plan)
 		return
 	case ociimage.FormatTart:
 		fmt.Fprintf(w, "  format: tart (apple-lz4)\n")
@@ -681,6 +729,7 @@ func printPullDryRun(w io.Writer, plan *pullPlan) {
 		if plan.Manifest.Tart.UploadTime != "" {
 			fmt.Fprintf(w, "  upload time: %s\n", plan.Manifest.Tart.UploadTime)
 		}
+		printPullBlobAudit(w, plan)
 		return
 	}
 	if len(plan.Manifest.Chunks) == 0 && plan.Manifest.Annotations.UncompressedDiskSize == 0 {

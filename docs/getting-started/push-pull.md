@@ -54,7 +54,7 @@ fetches, sparse zero chunks, and metadata blobs already present or still needed.
 Add `--json` to emit that dry-run as structured data for CI jobs or fleet
 controllers deciding which host should pull the image. Add `--verify-blobs` to
 HEAD-audit the registry blobs this host would need to fetch without downloading
-blob bodies.
+blob bodies; this works for cove-native, Tart, and Lume pull plans.
 
 What happens:
 

@@ -283,6 +283,62 @@ func TestBuildPullPlanDryRunFetchManifest(t *testing.T) {
 	}
 }
 
+func TestRecordPullDryRunImportBlobs(t *testing.T) {
+	tests := []struct {
+		name string
+		plan *pullPlan
+		want []string
+	}{
+		{
+			name: "lume",
+			plan: &pullPlan{
+				Manifest: ociimage.ParsedManifest{
+					Format: ociimage.FormatLume,
+					Lume: ociimage.LumeManifest{
+						DiskParts: []ociimage.LumeLayer{
+							{Descriptor: ociimage.Descriptor{Digest: "sha256:part-a", Size: 1}, PartNumber: 1, Title: "disk.img.part.aa"},
+							{Descriptor: ociimage.Descriptor{Digest: "sha256:part-b", Size: 2}, PartNumber: 2},
+						},
+						NvramLayer:  &ociimage.Descriptor{Digest: "sha256:nvram", Size: 3},
+						ConfigLayer: &ociimage.Descriptor{Digest: "sha256:config", Size: 4},
+					},
+				},
+			},
+			want: []string{"disk.img.part.aa", "disk-part[2]", "nvram.bin", "config.json"},
+		},
+		{
+			name: "tart",
+			plan: &pullPlan{
+				Manifest: ociimage.ParsedManifest{
+					Format: ociimage.FormatTart,
+					Tart: ociimage.TartManifest{
+						NVRAMLayer:  ociimage.Descriptor{Digest: "sha256:nvram", Size: 1},
+						ConfigLayer: ociimage.Descriptor{Digest: "sha256:config", Size: 2},
+						DiskLayers: []ociimage.TartDiskLayer{
+							{Descriptor: ociimage.Descriptor{Digest: "sha256:disk-a", Size: 3}},
+							{Descriptor: ociimage.Descriptor{Digest: "sha256:disk-b", Size: 4}},
+						},
+					},
+				},
+			},
+			want: []string{"nvram", "config", "disk[0]", "disk[1]"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recordPullDryRunImportBlobs(tt.plan)
+			if got := len(tt.plan.FetchBlobDescriptors); got != len(tt.want) {
+				t.Fatalf("FetchBlobDescriptors = %d, want %d", got, len(tt.want))
+			}
+			for i, want := range tt.want {
+				if got := tt.plan.FetchBlobDescriptors[i].Name; got != want {
+					t.Fatalf("FetchBlobDescriptors[%d].Name = %q, want %q", i, got, want)
+				}
+			}
+		})
+	}
+}
+
 func TestPullDiskDownloadsRegistryChunks(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
