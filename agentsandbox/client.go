@@ -1170,13 +1170,14 @@ type AssignmentRetryResult struct {
 }
 
 type SandboxStopResult struct {
-	Namespace  string      `json:"namespace,omitempty"`
-	ID         string      `json:"id"`
-	VMName     string      `json:"vm_name"`
-	Status     string      `json:"status,omitempty"`
-	Canceled   bool        `json:"canceled,omitempty"`
-	Assignment Assignment  `json:"assignment"`
-	Cleanup    *Assignment `json:"cleanup,omitempty"`
+	Namespace           string      `json:"namespace,omitempty"`
+	ID                  string      `json:"id"`
+	VMName              string      `json:"vm_name"`
+	Status              string      `json:"status,omitempty"`
+	Canceled            bool        `json:"canceled,omitempty"`
+	Assignment          Assignment  `json:"assignment"`
+	Cleanup             *Assignment `json:"cleanup,omitempty"`
+	CanceledAssignments []string    `json:"canceled_assignments,omitempty"`
 }
 
 type OperationsSummary struct {

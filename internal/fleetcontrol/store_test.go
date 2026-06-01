@@ -903,6 +903,89 @@ func TestStoreDeleteRunningSandboxQueuesStop(t *testing.T) {
 	}
 }
 
+func TestStoreStopSandboxCancelsSandboxWork(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 4}}); err != nil {
+		t.Fatal(err)
+	}
+	sandbox, err := store.CreateSandbox(SandboxRequest{ID: "job-1", ImageRef: "base:v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AwaitAssignment("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: sandbox.Assignment.ID, Status: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	execResult, err := store.ExecSandbox("job-1", SandboxExecRequest{Command: []string{"sleep", "60"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	execLease, err := store.AwaitAssignment("worker-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if execLease == nil || execLease.ID != execResult.Assignment.ID {
+		t.Fatalf("exec lease = %+v, want %s", execLease, execResult.Assignment.ID)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: execResult.Assignment.ID, Status: "running"}); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	controlResult, err := store.ControlSandbox("job-1", SandboxControlRequest{
+		Type: "text",
+		Text: map[string]any{"text": "hi"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	controlLease, err := store.AwaitAssignment("worker-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if controlLease == nil || controlLease.ID != controlResult.Assignment.ID {
+		t.Fatalf("control lease = %+v, want %s", controlLease, controlResult.Assignment.ID)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: controlResult.Assignment.ID, Status: "running"}); err != nil {
+		t.Fatal(err)
+	}
+
+	stopped, err := store.StopSandbox("job-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantCanceled := []string{execResult.Assignment.ID, controlResult.Assignment.ID}
+	if stopped.Status != "draining" || stopped.Cleanup == nil || !equalStrings(stopped.CanceledAssignments, wantCanceled) {
+		t.Fatalf("StopSandbox = %+v, want draining cleanup and canceled %+v", stopped, wantCanceled)
+	}
+	for _, id := range wantCanceled {
+		assignment, ok := store.GetAssignment(id)
+		if !ok || assignment.Status != "canceled" || assignment.LeasedTo != "" || !assignment.LeaseExpires.IsZero() {
+			t.Fatalf("assignment %s after stop = %+v, %v, want canceled and unleased", id, assignment, ok)
+		}
+	}
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: execResult.Assignment.ID, Status: "canceled", Error: "assignment canceled"}); err != nil {
+		t.Fatalf("canceled exec report: %v", err)
+	}
+	cleanup, err := store.AwaitAssignment("worker-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleanup == nil || cleanup.ID != stopped.Cleanup.ID {
+		t.Fatalf("cleanup lease = %+v, want %s", cleanup, stopped.Cleanup.ID)
+	}
+	if event := auditAction(store.ListAudit(0), "sandbox.stop"); event == nil || event.Fields["canceled_assignments"] != strings.Join(wantCanceled, ",") {
+		t.Fatalf("sandbox stop audit = %+v, want canceled assignments", event)
+	}
+}
+
 func TestStoreStopSandboxPendingCancels(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}}); err != nil {
@@ -1009,6 +1092,53 @@ func TestStoreRestartRunningSandboxQueuesStopThenStart(t *testing.T) {
 	}
 	if event := auditAction(store.ListAudit(0), "sandbox.restart"); event == nil || event.TargetID != "job-1" || event.Fields["restarting"] != "true" {
 		t.Fatalf("sandbox restart audit = %+v", event)
+	}
+}
+
+func TestStoreRestartSandboxCancelsSandboxWork(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 4}}); err != nil {
+		t.Fatal(err)
+	}
+	sandbox, err := store.CreateSandbox(SandboxRequest{ID: "job-1", ImageRef: "base:v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AwaitAssignment("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: sandbox.Assignment.ID, Status: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	execResult, err := store.ExecSandbox("job-1", SandboxExecRequest{Command: []string{"sleep", "60"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AwaitAssignment("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: execResult.Assignment.ID, Status: "running"}); err != nil {
+		t.Fatal(err)
+	}
+
+	restart, err := store.RestartSandbox("job-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !restart.Restarting || restart.Cleanup == nil || !equalStrings(restart.CanceledAssignments, []string{execResult.Assignment.ID}) {
+		t.Fatalf("RestartSandbox = %+v, want cleanup and canceled exec", restart)
+	}
+	assignment, ok := store.GetAssignment(execResult.Assignment.ID)
+	if !ok || assignment.Status != "canceled" || assignment.LeasedTo != "" {
+		t.Fatalf("exec assignment after restart = %+v, %v, want canceled", assignment, ok)
+	}
+	if event := auditAction(store.ListAudit(0), "sandbox.restart"); event == nil || event.Fields["canceled_assignments"] != execResult.Assignment.ID {
+		t.Fatalf("sandbox restart audit = %+v, want canceled exec", event)
 	}
 }
 

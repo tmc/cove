@@ -900,13 +900,14 @@ type SandboxStartResult struct {
 }
 
 type SandboxRestartResult struct {
-	Namespace  string      `json:"namespace,omitempty"`
-	ID         string      `json:"id"`
-	VMName     string      `json:"vm_name"`
-	Status     string      `json:"status,omitempty"`
-	Restarting bool        `json:"restarting,omitempty"`
-	Assignment Assignment  `json:"assignment"`
-	Cleanup    *Assignment `json:"cleanup,omitempty"`
+	Namespace           string      `json:"namespace,omitempty"`
+	ID                  string      `json:"id"`
+	VMName              string      `json:"vm_name"`
+	Status              string      `json:"status,omitempty"`
+	Restarting          bool        `json:"restarting,omitempty"`
+	Assignment          Assignment  `json:"assignment"`
+	Cleanup             *Assignment `json:"cleanup,omitempty"`
+	CanceledAssignments []string    `json:"canceled_assignments,omitempty"`
 }
 
 type SandboxMeteringRecord struct {
@@ -1106,23 +1107,25 @@ type SandboxControlResult struct {
 }
 
 type SandboxDeleteResult struct {
-	Namespace  string      `json:"namespace,omitempty"`
-	ID         string      `json:"id"`
-	VMName     string      `json:"vm_name"`
-	Status     string      `json:"status,omitempty"`
-	Canceled   bool        `json:"canceled,omitempty"`
-	Assignment Assignment  `json:"assignment"`
-	Cleanup    *Assignment `json:"cleanup,omitempty"`
+	Namespace           string      `json:"namespace,omitempty"`
+	ID                  string      `json:"id"`
+	VMName              string      `json:"vm_name"`
+	Status              string      `json:"status,omitempty"`
+	Canceled            bool        `json:"canceled,omitempty"`
+	Assignment          Assignment  `json:"assignment"`
+	Cleanup             *Assignment `json:"cleanup,omitempty"`
+	CanceledAssignments []string    `json:"canceled_assignments,omitempty"`
 }
 
 type SandboxStopResult struct {
-	Namespace  string      `json:"namespace,omitempty"`
-	ID         string      `json:"id"`
-	VMName     string      `json:"vm_name"`
-	Status     string      `json:"status,omitempty"`
-	Canceled   bool        `json:"canceled,omitempty"`
-	Assignment Assignment  `json:"assignment"`
-	Cleanup    *Assignment `json:"cleanup,omitempty"`
+	Namespace           string      `json:"namespace,omitempty"`
+	ID                  string      `json:"id"`
+	VMName              string      `json:"vm_name"`
+	Status              string      `json:"status,omitempty"`
+	Canceled            bool        `json:"canceled,omitempty"`
+	Assignment          Assignment  `json:"assignment"`
+	Cleanup             *Assignment `json:"cleanup,omitempty"`
+	CanceledAssignments []string    `json:"canceled_assignments,omitempty"`
 }
 
 type SandboxWaitResult struct {

@@ -2499,6 +2499,7 @@ func (s *Store) RestartSandboxActor(actor, id string, reqs ...SandboxMutationReq
 	case "pending":
 		return result, nil
 	case "leased", "running", "ready", "draining", "restarting":
+		result.CanceledAssignments = s.cancelSandboxWorkLocked(now, actor, id, "sandbox.restart")
 		cleanup, ok := s.activeSandboxCleanupLocked(id)
 		if !ok {
 			cleanup = Assignment{
@@ -2526,6 +2527,15 @@ func (s *Store) RestartSandboxActor(actor, id string, reqs ...SandboxMutationReq
 		cleanup = cloneAssignment(cleanup)
 		result.Cleanup = &cleanup
 	}
+	fields := map[string]string{
+		"vm_name":    vmName,
+		"status":     result.Status,
+		"restarting": strconv.FormatBool(result.Restarting),
+		"cleanup":    strconv.FormatBool(result.Cleanup != nil),
+	}
+	if len(result.CanceledAssignments) > 0 {
+		fields["canceled_assignments"] = strings.Join(result.CanceledAssignments, ",")
+	}
 	s.appendAuditLocked(now, AuditEvent{
 		Actor:        actor,
 		Namespace:    assignment.Namespace,
@@ -2534,12 +2544,7 @@ func (s *Store) RestartSandboxActor(actor, id string, reqs ...SandboxMutationReq
 		TargetID:     id,
 		WorkerID:     assignment.WorkerID,
 		AssignmentID: assignment.ID,
-		Fields: map[string]string{
-			"vm_name":    vmName,
-			"status":     result.Status,
-			"restarting": strconv.FormatBool(result.Restarting),
-			"cleanup":    strconv.FormatBool(result.Cleanup != nil),
-		},
+		Fields:       fields,
 	})
 	if err := s.persistLocked(); err != nil {
 		return SandboxRestartResult{}, err
@@ -5996,6 +6001,60 @@ func (s *Store) activeSandboxCleanupLocked(id string) (Assignment, bool) {
 	return Assignment{}, false
 }
 
+func (s *Store) cancelSandboxWorkLocked(now time.Time, actor, id, action string) []string {
+	id = strings.TrimSpace(id)
+	var canceled []string
+	for _, assignment := range s.sortedAssignmentsLocked() {
+		if assignment.SandboxID != id {
+			continue
+		}
+		if assignment.SandboxRole != sandboxRoleExec && assignment.SandboxRole != sandboxRoleControl {
+			continue
+		}
+		status := normalizeOperationStatus(assignment.Status)
+		if !openAssignmentStatus(status) {
+			continue
+		}
+		workerID := assignment.WorkerID
+		if workerID == "" {
+			workerID = assignment.LeasedTo
+		}
+		if assignment.WorkerID == "" {
+			assignment.WorkerID = workerID
+		}
+		assignment.Status = "canceled"
+		assignment.LeasedTo = ""
+		assignment.LeaseExpires = time.Time{}
+		assignment.Updated = now
+		s.assignments[assignment.ID] = assignment
+		canceled = append(canceled, assignment.ID)
+		fields := map[string]string{
+			"reason":          action,
+			"force":           "true",
+			"previous_status": status,
+			"operation":       "assignment.cancel",
+			"sandbox_action":  action,
+			"sandbox_id":      id,
+			"sandbox_role":    assignment.SandboxRole,
+		}
+		if workerID != "" {
+			fields["worker_id"] = workerID
+		}
+		s.appendAuditLocked(now, AuditEvent{
+			Actor:        actor,
+			Namespace:    assignment.Namespace,
+			Action:       "assignment.cancel",
+			TargetType:   "assignment",
+			TargetID:     assignment.ID,
+			WorkerID:     workerID,
+			AssignmentID: assignment.ID,
+			Status:       assignment.Status,
+			Fields:       fields,
+		})
+	}
+	return canceled
+}
+
 func (s *Store) startSandboxLocked(now time.Time, actor, id, action, holder string) (SandboxStartResult, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -6103,6 +6162,7 @@ func (s *Store) stopSandboxLocked(now time.Time, actor, id, action, holder strin
 		Status:     assignment.Status,
 		Assignment: cloneAssignment(assignment),
 	}
+	result.CanceledAssignments = s.cancelSandboxWorkLocked(now, actor, id, action)
 	switch assignment.Status {
 	case "pending":
 		assignment.Status = "canceled"
@@ -6138,6 +6198,15 @@ func (s *Store) stopSandboxLocked(now time.Time, actor, id, action, holder strin
 		cleanup = cloneAssignment(cleanup)
 		result.Cleanup = &cleanup
 	}
+	fields := map[string]string{
+		"vm_name":  vmName,
+		"status":   result.Status,
+		"canceled": strconv.FormatBool(result.Canceled),
+		"cleanup":  strconv.FormatBool(result.Cleanup != nil),
+	}
+	if len(result.CanceledAssignments) > 0 {
+		fields["canceled_assignments"] = strings.Join(result.CanceledAssignments, ",")
+	}
 	s.appendAuditLocked(now, AuditEvent{
 		Actor:        actor,
 		Namespace:    assignment.Namespace,
@@ -6146,12 +6215,7 @@ func (s *Store) stopSandboxLocked(now time.Time, actor, id, action, holder strin
 		TargetID:     id,
 		WorkerID:     assignment.WorkerID,
 		AssignmentID: assignment.ID,
-		Fields: map[string]string{
-			"vm_name":  vmName,
-			"status":   result.Status,
-			"canceled": strconv.FormatBool(result.Canceled),
-			"cleanup":  strconv.FormatBool(result.Cleanup != nil),
-		},
+		Fields:       fields,
 	})
 	return result, nil
 }
