@@ -231,6 +231,12 @@ type WorkerDrainResult struct {
 	Skipped   []WorkerDrainSkip   `json:"skipped,omitempty"`
 }
 
+type WorkerDecommissionResult struct {
+	Worker  HostRecord `json:"worker"`
+	Reason  string     `json:"reason,omitempty"`
+	Removed bool       `json:"removed"`
+}
+
 type WorkerDrainSkip struct {
 	SandboxID string `json:"sandbox_id"`
 	Status    string `json:"status,omitempty"`

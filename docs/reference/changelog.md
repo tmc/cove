@@ -263,6 +263,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   validity window expires, rejects replayed assertions across controller
   restarts, and caches resolved request identity so one-use assertions survive
   middleware plus handler authorization.
+- `cove-fleetd` now exposes `POST /v1/workers/{id}/decommission` to remove
+  idle or drained workers from controller inventory with an audit event while
+  refusing workers that still have nonterminal assignments.
 - `cove-fleetd` now reconciles stale workers and expired assignment leases,
   exposes `POST /v1/reconcile`, and `coved` renews active `cove` assignments
   with `running` reports so long jobs do not get reclaimed while still alive.

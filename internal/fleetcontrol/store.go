@@ -441,6 +441,52 @@ func (s *Store) DrainWorkerActor(actor, id, reason string) (WorkerDrainResult, e
 	return result, nil
 }
 
+func (s *Store) DecommissionWorker(id, reason string) (WorkerDecommissionResult, error) {
+	return s.DecommissionWorkerActor("controller", id, reason)
+}
+
+func (s *Store) DecommissionWorkerActor(actor, id, reason string) (WorkerDecommissionResult, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return WorkerDecommissionResult{}, fmt.Errorf("worker id required")
+	}
+	now := s.now().UTC()
+	actor = normalizeActor(actor)
+	reason = strings.TrimSpace(reason)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, ok := s.hosts[id]
+	if !ok {
+		return WorkerDecommissionResult{}, fmt.Errorf("worker %q not registered", id)
+	}
+	var blockers []string
+	for _, assignment := range s.sortedAssignmentsLocked() {
+		if assignment.WorkerID != id && assignment.LeasedTo != id {
+			continue
+		}
+		if decommissionBlocksWorker(assignment.Status) {
+			blockers = append(blockers, assignment.ID)
+		}
+	}
+	if len(blockers) > 0 {
+		return WorkerDecommissionResult{}, fmt.Errorf("worker %q has active assignments: %s", id, strings.Join(blockers, ", "))
+	}
+	delete(s.hosts, id)
+	s.appendAuditLocked(now, AuditEvent{
+		Actor:      actor,
+		Action:     "worker.decommission",
+		TargetType: "worker",
+		TargetID:   id,
+		WorkerID:   id,
+		Fields:     map[string]string{"reason": reason},
+	})
+	if err := s.persistLocked(); err != nil {
+		return WorkerDecommissionResult{}, err
+	}
+	return WorkerDecommissionResult{Worker: s.statusLocked(record), Reason: reason, Removed: true}, nil
+}
+
 func (s *Store) UncordonWorker(id string) (HostRecord, error) {
 	return s.UncordonWorkerActor("controller", id)
 }
@@ -2718,6 +2764,15 @@ func loadAssignmentStatus(status string) bool {
 func assignmentLeaseStatus(status string) bool {
 	switch status {
 	case "leased", "running", "ready", "claimed", "draining":
+		return true
+	default:
+		return false
+	}
+}
+
+func decommissionBlocksWorker(status string) bool {
+	switch status {
+	case "pending", "leased", "running", "ready", "claimed", "draining", "restarting":
 		return true
 	default:
 		return false

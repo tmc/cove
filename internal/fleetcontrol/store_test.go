@@ -2289,6 +2289,48 @@ func TestStoreUncordonRestoresPlacement(t *testing.T) {
 	}
 }
 
+func TestStoreDecommissionWorkerRemovesIdleInventory(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	path := filepath.Join(t.TempDir(), "fleet.json")
+	store, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "old", Capacity: Capacity{VMs: 0}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "busy", Capacity: Capacity{VMs: 1}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAssignment(Assignment{ID: "active", WorkerID: "busy", Verb: "noop"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DecommissionWorker("busy", "retire"); err == nil || !strings.Contains(err.Error(), "active") {
+		t.Fatalf("DecommissionWorker(busy) err = %v, want active assignment block", err)
+	}
+	result, err := store.DecommissionWorker("old", "retire")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Removed || result.Worker.ID != "old" || result.Reason != "retire" {
+		t.Fatalf("decommission result = %+v, want removed old", result)
+	}
+	if _, ok := store.Get("old"); ok {
+		t.Fatal("Get(old) = true after decommission")
+	}
+	if event := auditAction(store.ListAudit(0), "worker.decommission"); event == nil || event.WorkerID != "old" || event.Fields["reason"] != "retire" {
+		t.Fatalf("decommission audit = %+v", event)
+	}
+	reopened, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := reopened.Get("old"); ok {
+		t.Fatal("reopened Get(old) = true after decommission")
+	}
+}
+
 func TestStorePrepareImageCreatesMissingWorkerAssignments(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	for _, hb := range []WorkerHeartbeat{
@@ -3408,6 +3450,30 @@ func TestHandlerWorkerDrainStopsHostedSandboxes(t *testing.T) {
 	getJSON(t, server.URL+"/v1/sandboxes/job-1", &sandbox)
 	if sandbox.Status != "draining" {
 		t.Fatalf("sandbox after drain = %+v, want draining", sandbox)
+	}
+}
+
+func TestHandlerWorkerDecommissionRemovesIdleWorker(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "old"}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "busy"}, &record)
+	var created Assignment
+	postJSON(t, server.URL+"/v1/assignments", Assignment{ID: "active", WorkerID: "busy", Verb: "noop"}, &created)
+	if code := postJSONStatus(t, server.URL+"/v1/workers/busy/decommission", "", WorkerLifecycle{Reason: "retire"}); code != http.StatusBadRequest {
+		t.Fatalf("busy decommission status = %d, want 400", code)
+	}
+
+	var result WorkerDecommissionResult
+	postJSON(t, server.URL+"/v1/workers/old/decommission", WorkerLifecycle{Reason: "retire"}, &result)
+	if !result.Removed || result.Worker.ID != "old" || result.Reason != "retire" {
+		t.Fatalf("decommission result = %+v, want removed old", result)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/workers/old", ""); code != http.StatusNotFound {
+		t.Fatalf("GET old status = %d, want 404", code)
 	}
 }
 

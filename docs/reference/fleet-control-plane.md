@@ -73,6 +73,9 @@ curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/cordon \
 curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/drain \
   -H 'content-type: application/json' \
   -d '{"reason":"maintenance"}'
+curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/decommission \
+  -H 'content-type: application/json' \
+  -d '{"reason":"retired"}'
 curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/uncordon
 curl -X POST http://127.0.0.1:9758/v1/reconcile
 ```
@@ -89,6 +92,14 @@ directly with the holder before a later drain can stop it. The operation
 records both `worker.drain` and per-sandbox `sandbox.drain` audit events for
 stopped handles. Like cordon/uncordon, drain is a fleet-global operator action
 and requires an unscoped operator/admin identity.
+
+`POST /v1/workers/{id}/decommission` removes an idle or already-drained worker
+from controller inventory and records `worker.decommission`. It refuses removal
+while any pending, leased, running, ready, claimed, draining, or restarting
+assignment is still bound or leased to that worker; drain or let those
+assignments finish first. A later heartbeat with the same worker id registers a
+fresh worker record. Decommission is fleet-global and requires an unscoped
+operator/admin identity.
 
 `GET /v1/operations/summary` is the dashboard entry point for operators. It
 reconciles first, then returns worker readiness/cordon/stale counts with
@@ -619,8 +630,9 @@ curl -X POST http://127.0.0.1:9758/v1/workers/register \
 ```
 
 This surface is intentionally private and local-first. It now has basic
-controller reconciliation, worker cordon lifecycle, fleet image preparation,
-fleet image-GC push, lifecycle-policy push, storage budget/prune push, retained
+controller reconciliation, worker cordon/drain/decommission lifecycle, fleet
+image preparation, fleet image-GC push, lifecycle-policy push, storage
+budget/prune push, retained
 placement plans, and a first fork warm-pool quota reconciler with agent-ready
 slot claim and guest `Exec` handoff through the `cove shell` path plus
 claimed-slot stop and downsize cleanup, plus a persistent fleet audit feed.

@@ -155,8 +155,8 @@ delegates the disk/runtime work to `tart` or `vetu`.
   namespace-scoped controller resources, basic service-account roles, RS256 OIDC
   bearer bindings with issuer discovery/JWKS refresh, signed SAML bearer
   assertion bindings with X.509 XML signature verification and persisted
-  replay rejection, and worker drain for hosted sandbox maintenance and a
-  reconciled operations summary; orchard still owns broader production
+  replay rejection, worker drain for hosted sandbox maintenance, idle/drained
+  worker decommission, and a reconciled operations summary; orchard still owns broader production
   controller operations and SAML SP-initiated flow/metadata management.
 - **tart has the mature public image lane.** cove now speaks tart format, but
   tart still has the established image catalog and local layer-cache machinery.
@@ -177,8 +177,8 @@ manifest-bundle and controller-side source-manifest exactness checks for mutable
 multi-host run fan-out with cold-target image staging and reused SSH transports.
 The first `cove-fleetd` plus `coved -fleet-url` control-plane
 boundary is present with host inventory, assignment leases, stale-worker and
-expired-lease reconciliation, controller-side worker cordon, operations
-summary, manifest-bundle-backed digest-aware fleet image preparation, hosted sandbox worker drain, fleet image-GC push, lifecycle-policy push, storage budget/prune
+expired-lease reconciliation, controller-side worker cordon/drain/decommission,
+operations summary, manifest-bundle-backed digest-aware fleet image preparation, fleet image-GC push, lifecycle-policy push, storage budget/prune
 push, and worker-side `cove` assignment execution plus
 least-loaded/digest-exact image-affinity/bin-pack placement with anti-affinity hints and
 retained placement plans, warm-pool quota replenishment, and agent-ready slot
