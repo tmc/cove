@@ -175,10 +175,10 @@ provenance. Pass `required_labels` for operator-defined selectors and
 runtime traits such as `ram-overlay`. The direct fleet client can also queue
 image preparation before placement or warm-pool replenishment, push image
 GC/lifecycle/storage maintenance work, read retained placement-plan history and
-the retained controller-run timeline, inspect or verify the hash-chained audit
-feed, manage scoped service-account tokens and OIDC/SAML identity bindings, and drill into
-worker- or assignment-scoped events, reports, metering, and hosted sandbox
-lists.
+the retained controller-run timeline, plan or apply controller reconciliation,
+inspect or verify the hash-chained audit feed, manage scoped service-account
+tokens and OIDC/SAML identity bindings, and drill into worker- or
+assignment-scoped events, reports, metering, and hosted sandbox lists.
 
 For direct fleet-client code, `CoveFleetClient` covers hosted sandbox and
 warm-pool lifecycles plus maintenance controls:
@@ -272,6 +272,15 @@ summary = CoveFleetClient.get_operations_summary(
     namespace="team-a",
 )
 print(summary["workers"]["ready"], summary["sandboxes"]["active"])
+reconcile_plan = CoveFleetClient.plan_reconcile(
+    fleet_url="https://fleet.internal.example",
+    api_key="cove_...",
+)
+reconciled = CoveFleetClient.reconcile(
+    fleet_url="https://fleet.internal.example",
+    api_key="cove_...",
+)
+print(len(reconcile_plan["requeued_assignments"]), len(reconciled["warm_pool_cleanup"]))
 audit = CoveFleetClient.list_audit_events(
     fleet_url="https://fleet.internal.example",
     api_key="cove_...",
@@ -411,7 +420,8 @@ client.delete_vm()
 Maintenance helpers include `push_image_gc`, `push_lifecycle_policy`,
 `push_storage_budget`, `push_storage_prune`, the matching `list_*_runs` /
 `get_*_run` methods, `plan_sandbox`, `list_placement_plans`,
-`get_placement_plan`, `get_operations_summary`, `list_workers`, `get_worker`,
+`get_placement_plan`, `get_operations_summary`, `plan_reconcile`, `reconcile`,
+`list_workers`, `get_worker`,
 `list_assignments`, `get_assignment`, `cancel_assignment`, `retry_assignment`,
 worker lifecycle helpers such as `cordon_worker`, `evacuate_worker`,
 `drain_worker`, and `decommission_worker`, `list_audit_events`,

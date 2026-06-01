@@ -560,6 +560,22 @@ type ControllerRunSummary struct {
 	Fields          map[string]string `json:"fields,omitempty"`
 }
 
+type ReconcileOptions struct {
+	FleetURL string
+	APIKey   string
+	Timeout  time.Duration
+	HTTP     *http.Client
+}
+
+type ReconcileResult struct {
+	StaleWorkers        []string `json:"stale_workers,omitempty"`
+	RequeuedAssignments []string `json:"requeued_assignments,omitempty"`
+	ReplacedAssignments []string `json:"replaced_assignments,omitempty"`
+	WarmPoolAssignments []string `json:"warm_pool_assignments,omitempty"`
+	WarmPoolCanceled    []string `json:"warm_pool_canceled,omitempty"`
+	WarmPoolCleanup     []string `json:"warm_pool_cleanup,omitempty"`
+}
+
 type OperationsSummaryOptions struct {
 	FleetURL  string
 	APIKey    string
@@ -2150,6 +2166,30 @@ func ListControllerRuns(ctx context.Context, opts ControllerRunListOptions) (Con
 	}
 	if result.Count == 0 && len(result.Runs) > 0 {
 		result.Count = len(result.Runs)
+	}
+	return result, nil
+}
+
+func PlanReconcile(ctx context.Context, opts ReconcileOptions) (ReconcileResult, error) {
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "reconcile-plan")
+	if err != nil {
+		return ReconcileResult{}, err
+	}
+	var result ReconcileResult
+	if err := c.request(ctx, http.MethodGet, "/v1/reconcile/plan", nil, &result, c.timeout); err != nil {
+		return ReconcileResult{}, err
+	}
+	return result, nil
+}
+
+func Reconcile(ctx context.Context, opts ReconcileOptions) (ReconcileResult, error) {
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "reconcile")
+	if err != nil {
+		return ReconcileResult{}, err
+	}
+	var result ReconcileResult
+	if err := c.request(ctx, http.MethodPost, "/v1/reconcile", map[string]any{}, &result, c.timeout); err != nil {
+		return ReconcileResult{}, err
 	}
 	return result, nil
 }

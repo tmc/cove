@@ -513,6 +513,18 @@ def test_fleet_client_maintenance_runs() -> None:
         )
         assert runs["runs"][0]["kind"] == "storage.prune"
         assert runs["runs"][0]["assignment_count"] == 1
+        reconcile_plan = CoveFleetClient.plan_reconcile(
+            fleet_url=server.url,
+            api_key="secret",
+        )
+        assert reconcile_plan["stale_workers"] == ["worker-2"]
+        assert reconcile_plan["warm_pool_assignments"] == ["warm-slot-1"]
+        reconciled = CoveFleetClient.reconcile(
+            fleet_url=server.url,
+            api_key="secret",
+        )
+        assert reconciled["requeued_assignments"] == ["assignment-1"]
+        assert reconciled["warm_pool_cleanup"] == ["cleanup-1"]
         summary = CoveFleetClient.get_operations_summary(
             fleet_url=server.url,
             api_key="secret",
@@ -527,7 +539,7 @@ def test_fleet_client_maintenance_runs() -> None:
         assert summary["warm_pools"]["pools"][0]["name"] == "runner"
         assert summary["metering"]["records"] == 2
 
-        paths = [request["path"] for request in server.requests[-14:]]
+        paths = [request["path"] for request in server.requests[-16:]]
         assert paths == [
             "/v1/images/gc",
             "/v1/images/gc/runs",
@@ -542,20 +554,23 @@ def test_fleet_client_maintenance_runs() -> None:
             "/v1/storage/prune/runs",
             "/v1/storage/prune/runs/storage-prune-1",
             "/v1/operations/runs",
+            "/v1/reconcile/plan",
+            "/v1/reconcile",
             "/v1/operations/summary",
         ]
-        assert server.requests[-14]["body"]["required_capabilities"] == ["ram-overlay", "asif"]
-        assert server.requests[-14]["body"]["dry_run"] is True
-        assert server.requests[-13]["query"]["apply"] == ["true"]
-        assert server.requests[-11]["body"]["run_budget"] == 100
-        assert server.requests[-11]["body"]["dry_run"] is True
-        assert server.requests[-10]["query"]["clear"] == ["false"]
-        assert server.requests[-8]["body"]["warn_pct"] == 70
-        assert server.requests[-8]["body"]["dry_run"] is True
-        assert server.requests[-7]["query"]["target"] == ["750GB"]
-        assert server.requests[-5]["body"]["category"] == "build-scratch"
-        assert server.requests[-5]["body"]["dry_run"] is True
-        assert server.requests[-2]["query"]["kind"] == ["storage.prune"]
+        assert server.requests[-16]["body"]["required_capabilities"] == ["ram-overlay", "asif"]
+        assert server.requests[-16]["body"]["dry_run"] is True
+        assert server.requests[-15]["query"]["apply"] == ["true"]
+        assert server.requests[-13]["body"]["run_budget"] == 100
+        assert server.requests[-13]["body"]["dry_run"] is True
+        assert server.requests[-12]["query"]["clear"] == ["false"]
+        assert server.requests[-10]["body"]["warn_pct"] == 70
+        assert server.requests[-10]["body"]["dry_run"] is True
+        assert server.requests[-9]["query"]["target"] == ["750GB"]
+        assert server.requests[-7]["body"]["category"] == "build-scratch"
+        assert server.requests[-7]["body"]["dry_run"] is True
+        assert server.requests[-4]["query"]["kind"] == ["storage.prune"]
+        assert server.requests[-2]["body"] == {}
         assert server.requests[-1]["query"]["namespace"] == ["team-a"]
     finally:
         server.stop()
@@ -1523,6 +1538,25 @@ def _placement_plan() -> dict[str, object]:
     }
 
 
+def _reconcile_plan() -> dict[str, object]:
+    return {
+        "stale_workers": ["worker-2"],
+        "requeued_assignments": ["assignment-1"],
+        "warm_pool_assignments": ["warm-slot-1"],
+    }
+
+
+def _reconcile_result() -> dict[str, object]:
+    return {
+        "stale_workers": ["worker-2"],
+        "requeued_assignments": ["assignment-1"],
+        "replaced_assignments": ["assignment-2"],
+        "warm_pool_assignments": ["warm-slot-1"],
+        "warm_pool_canceled": ["warm-slot-2"],
+        "warm_pool_cleanup": ["cleanup-1"],
+    }
+
+
 def _image_prepare_result(*, dry_run: bool = False) -> dict[str, object]:
     digest = "sha256:" + "1" * 64
     digest_ref = "ghcr.io/me/base@" + digest
@@ -2210,6 +2244,9 @@ class _FleetHTTPServer:
                         }
                     )
                     return
+                if path == "/v1/reconcile/plan":
+                    self._write(_reconcile_plan())
+                    return
                 if path == "/v1/operations/summary":
                     self._write(_operations_summary())
                     return
@@ -2487,6 +2524,9 @@ class _FleetHTTPServer:
                     return
                 if path == "/v1/storage/prune":
                     self._write(_storage_prune_result(dry_run=body.get("dry_run") is True))
+                    return
+                if path == "/v1/reconcile":
+                    self._write(_reconcile_result())
                     return
                 if path == "/v1/assignments/assignment-1/cancel":
                     self._write(_assignment_cancel(body))

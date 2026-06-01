@@ -969,6 +969,30 @@ class CoveFleetClient:
         return _normalize_run_page(result, "GET /v1/operations/runs")
 
     @classmethod
+    def plan_reconcile(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        seed = cls(sandbox_id="reconcile-plan", fleet_url=fleet_url, api_key=api_key, timeout=timeout)
+        result = seed._request("GET", "/v1/reconcile/plan", timeout=timeout)
+        return _normalize_reconcile_result(result, "GET /v1/reconcile/plan")
+
+    @classmethod
+    def reconcile(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        seed = cls(sandbox_id="reconcile", fleet_url=fleet_url, api_key=api_key, timeout=timeout)
+        result = seed._request("POST", "/v1/reconcile", {}, timeout=timeout)
+        return _normalize_reconcile_result(result, "POST /v1/reconcile")
+
+    @classmethod
     def get_operations_summary(
         cls,
         *,
@@ -2651,6 +2675,20 @@ def _normalize_run_page(data: dict[str, Any], endpoint: str) -> dict[str, Any]:
     _normalize_dict_list(page, "runs", endpoint)
     page["count"] = int(page.get("count") or len(page["runs"]))
     return page
+
+
+def _normalize_reconcile_result(data: dict[str, Any], endpoint: str) -> dict[str, Any]:
+    result = dict(data)
+    for key in (
+        "stale_workers",
+        "requeued_assignments",
+        "replaced_assignments",
+        "warm_pool_assignments",
+        "warm_pool_canceled",
+        "warm_pool_cleanup",
+    ):
+        _normalize_string_list(result, key, endpoint)
+    return result
 
 
 def _normalize_operations_summary(data: dict[str, Any], endpoint: str) -> dict[str, Any]:

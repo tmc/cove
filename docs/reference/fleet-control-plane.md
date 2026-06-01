@@ -765,12 +765,13 @@ same SDKs can dry-run hosted placement before creating a sandbox:
 `agentsandbox.Plan` in Go and `CoveFleetClient.plan_sandbox` in Python return
 the controller's feasible candidates and skipped-worker reasons. They also
 expose retained placement-plan history, image-preparation, maintenance fan-out,
-the operations dashboard summary, worker/assignment inventory, scoped
+the operations dashboard summary, reconcile plan/apply controls, worker/assignment inventory, scoped
 worker/assignment observability, retained controller-run history, service-account
 management, and fork warm-pool lifecycle controls, so
 hosted agent clients can pre-stage exact images, push image GC/lifecycle/storage
-policy work, inspect fleet pressure, enumerate current work, drill into
-per-worker and per-assignment timelines, verify audit-chain continuity, rotate
+policy work, inspect fleet pressure, preview and apply controller repairs,
+enumerate current work, drill into per-worker and per-assignment timelines,
+verify audit-chain continuity, rotate
 scoped controller credentials, inspect operations history, prewarm RAM-overlay
 slots, claim a ready slot for a guest command, read pool events, and delete the
 pool through the same fleet credentials.
@@ -780,7 +781,9 @@ feasible candidates and skipped-worker diagnostics.
 Maintenance helpers include `PushImageGC`, `PushLifecyclePolicy`,
 `PushStorageBudget`, `PushStoragePrune`, their list/get run companions, and
 `GetOperationsSummary` plus `ListControllerRuns` for the aggregate operations
-dashboard and timeline. Inventory helpers include `ListWorkers`, `GetWorker`,
+dashboard and timeline. Reconcile helpers include `PlanReconcile` and
+`Reconcile` for the same unscoped dry-run/apply repair path as
+`/v1/reconcile/plan` and `/v1/reconcile`. Inventory helpers include `ListWorkers`, `GetWorker`,
 `ListAssignments`, and `GetAssignment`, with the same filters and pagination as
 the REST API. Assignment control helpers include `CancelAssignment` and
 `RetryAssignment` for audited force-cancel and retry/replan operations. Worker
@@ -847,6 +850,24 @@ if err != nil {
 	log.Fatal(err)
 }
 log.Printf("ready workers=%d active sandboxes=%d", summary.Workers.Ready, summary.Sandboxes.Active)
+
+reconcilePlan, err := agentsandbox.PlanReconcile(ctx, agentsandbox.ReconcileOptions{
+	FleetURL: "https://fleet.internal.example",
+	APIKey:   os.Getenv("COVE_API_KEY"),
+})
+if err != nil {
+	log.Fatal(err)
+}
+log.Printf("reconcile stale=%d requeue=%d", len(reconcilePlan.StaleWorkers), len(reconcilePlan.RequeuedAssignments))
+
+reconciled, err := agentsandbox.Reconcile(ctx, agentsandbox.ReconcileOptions{
+	FleetURL: "https://fleet.internal.example",
+	APIKey:   os.Getenv("COVE_API_KEY"),
+})
+if err != nil {
+	log.Fatal(err)
+}
+log.Printf("reconciled requeue=%d warm-cleanup=%d", len(reconciled.RequeuedAssignments), len(reconciled.WarmPoolCleanup))
 
 workers, err := agentsandbox.ListWorkers(ctx, agentsandbox.WorkerListOptions{
 	FleetURL:             "https://fleet.internal.example",

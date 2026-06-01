@@ -9,6 +9,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 
 ### Added
 - The public Go `agentsandbox` package and OpenAI Agents Python adapter now
+  expose hosted reconcile plan/apply helpers for `/v1/reconcile/plan` and
+  `/v1/reconcile`, so SDK operators can preview and run controller repairs
+  without dropping to raw HTTP.
+- The public Go `agentsandbox` package and OpenAI Agents Python adapter now
   expose hosted OIDC and SAML identity-binding helpers, including SAML metadata
   refresh, SP metadata export, login redirect generation, and JSON SAML session
   exchange.

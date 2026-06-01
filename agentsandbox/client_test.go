@@ -564,6 +564,20 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 	if runs.Count != 1 || runs.Runs[0].Kind != "storage.prune" || runs.Runs[0].AssignmentCount != 1 {
 		t.Fatalf("ListControllerRuns = %+v, want storage prune summary", runs)
 	}
+	reconcilePlan, err := PlanReconcile(ctx, ReconcileOptions{FleetURL: server.URL, APIKey: "secret", Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("PlanReconcile: %v", err)
+	}
+	if !equalStringSlices(reconcilePlan.StaleWorkers, []string{"worker-2"}) || !equalStringSlices(reconcilePlan.WarmPoolAssignments, []string{"warm-slot-1"}) {
+		t.Fatalf("PlanReconcile = %+v, want stale worker and warm slot", reconcilePlan)
+	}
+	reconciled, err := Reconcile(ctx, ReconcileOptions{FleetURL: server.URL, APIKey: "secret", Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if !equalStringSlices(reconciled.RequeuedAssignments, []string{"assignment-1"}) || !equalStringSlices(reconciled.WarmPoolCleanup, []string{"cleanup-1"}) {
+		t.Fatalf("Reconcile = %+v, want assignment requeue and warm cleanup", reconciled)
+	}
 	summary, err := GetOperationsSummary(ctx, OperationsSummaryOptions{FleetURL: server.URL, APIKey: "secret", Namespace: "team-a", Timeout: time.Second})
 	if err != nil {
 		t.Fatalf("GetOperationsSummary: %v", err)
@@ -599,6 +613,8 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 		"/v1/storage/prune/runs",
 		"/v1/storage/prune/runs/storage-prune-1",
 		"/v1/operations/runs",
+		"/v1/reconcile/plan",
+		"/v1/reconcile",
 		"/v1/operations/summary",
 	}
 	if !equalStringSlices(paths, wantPaths) {
@@ -628,7 +644,10 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 	if query := server.requests[12].query; query.Get("kind") != "storage.prune" || query.Get("target_type") != "storage" || query.Get("namespace") != "team-a" {
 		t.Fatalf("controller runs query = %q", query.Encode())
 	}
-	if query := server.requests[13].query; query.Get("namespace") != "team-a" {
+	if body := server.requests[14].body; len(body) != 0 {
+		t.Fatalf("reconcile body = %+v, want empty body", body)
+	}
+	if query := server.requests[15].query; query.Get("namespace") != "team-a" {
 		t.Fatalf("operations summary query = %q", query.Encode())
 	}
 }
@@ -1866,6 +1885,10 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 				Offset: atoiDefault(r.URL.Query().Get("offset"), 0),
 				Limit:  atoiDefault(r.URL.Query().Get("limit"), 0),
 			})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/reconcile/plan":
+			writeSDKJSON(t, w, sdkReconcilePlan())
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/reconcile":
+			writeSDKJSON(t, w, sdkReconcileResult())
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/operations/summary":
 			writeSDKJSON(t, w, sdkOperationsSummary())
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/audit":
@@ -2218,6 +2241,25 @@ func sdkPlacementPlan() PlacementPlan {
 		Limit:                3,
 		Candidates:           []PlacementCandidate{{Rank: 1, WorkerID: "worker-1", Load: 1, MaxVMs: 4, RequestedVMs: 1, HasImage: true}},
 		Skipped:              []PlacementSkip{{WorkerID: "worker-2", Reason: "capability", MissingCapabilities: []string{"asif"}}},
+	}
+}
+
+func sdkReconcilePlan() ReconcileResult {
+	return ReconcileResult{
+		StaleWorkers:        []string{"worker-2"},
+		RequeuedAssignments: []string{"assignment-1"},
+		WarmPoolAssignments: []string{"warm-slot-1"},
+	}
+}
+
+func sdkReconcileResult() ReconcileResult {
+	return ReconcileResult{
+		StaleWorkers:        []string{"worker-2"},
+		RequeuedAssignments: []string{"assignment-1"},
+		ReplacedAssignments: []string{"assignment-2"},
+		WarmPoolAssignments: []string{"warm-slot-1"},
+		WarmPoolCanceled:    []string{"warm-slot-2"},
+		WarmPoolCleanup:     []string{"cleanup-1"},
 	}
 }
 
