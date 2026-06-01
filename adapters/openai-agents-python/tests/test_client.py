@@ -603,6 +603,56 @@ def test_fleet_client_inventory_validation() -> None:
         CoveFleetClient.get_assignment(fleet_url="https://fleet.example", api_key="secret", assignment_id="")
 
 
+def test_fleet_client_assignment_controls() -> None:
+    server = _FleetHTTPServer()
+    server.start()
+    try:
+        canceled = CoveFleetClient.cancel_assignment(
+            fleet_url=server.url,
+            api_key="secret",
+            assignment_id="assignment-1",
+            reason="bad input",
+            force=True,
+        )
+        assert canceled["canceled"] is True
+        assert canceled["force"] is True
+        assert canceled["reason"] == "bad input"
+        assert canceled["previous_status"] == "running"
+        assert canceled["assignment"]["status"] == "canceled"
+
+        retried = CoveFleetClient.retry_assignment(
+            fleet_url=server.url,
+            api_key="secret",
+            assignment_id="assignment-1",
+            reason="transient",
+            worker_id="worker-2",
+            replan=True,
+        )
+        assert retried["reason"] == "transient"
+        assert retried["previous_status"] == "failed"
+        assert retried["previous_worker_id"] == "worker-1"
+        assert retried["replanned"] is True
+        assert retried["assignment"]["status"] == "pending"
+        assert retried["assignment"]["worker_id"] == "worker-2"
+
+        paths = [request["path"] for request in server.requests[-2:]]
+        assert paths == [
+            "/v1/assignments/assignment-1/cancel",
+            "/v1/assignments/assignment-1/retry",
+        ]
+        assert server.requests[-2]["body"] == {"reason": "bad input", "force": True}
+        assert server.requests[-1]["body"] == {"reason": "transient", "worker_id": "worker-2", "replan": True}
+    finally:
+        server.stop()
+
+
+def test_fleet_client_assignment_control_validation() -> None:
+    with pytest.raises(ValueError, match="assignment id is required"):
+        CoveFleetClient.cancel_assignment(fleet_url="https://fleet.example", api_key="secret", assignment_id="")
+    with pytest.raises(ValueError, match="assignment id is required"):
+        CoveFleetClient.retry_assignment(fleet_url="https://fleet.example", api_key="secret", assignment_id="")
+
+
 def test_fleet_client_worker_lifecycle() -> None:
     server = _FleetHTTPServer()
     server.start()
@@ -1270,6 +1320,35 @@ def _inventory_assignment() -> dict[str, object]:
     return assignment
 
 
+def _assignment_cancel(body: dict[str, object]) -> dict[str, object]:
+    assignment = _inventory_assignment()
+    assignment["status"] = "canceled"
+    assignment["leased_to"] = ""
+    assignment.pop("lease_expires", None)
+    return {
+        "assignment": assignment,
+        "reason": str(body.get("reason") or ""),
+        "force": body.get("force") is True,
+        "canceled": True,
+        "previous_status": "running",
+    }
+
+
+def _assignment_retry(body: dict[str, object]) -> dict[str, object]:
+    assignment = _inventory_assignment()
+    assignment["status"] = "pending"
+    assignment["leased_to"] = ""
+    assignment.pop("lease_expires", None)
+    assignment["worker_id"] = str(body.get("worker_id") or "worker-1")
+    return {
+        "assignment": assignment,
+        "reason": str(body.get("reason") or ""),
+        "previous_status": "failed",
+        "previous_worker_id": "worker-1",
+        "replanned": body.get("replan") is True or assignment["worker_id"] != "worker-1",
+    }
+
+
 def _worker_evacuation(body: dict[str, object]) -> dict[str, object]:
     apply = body.get("apply") is True
     force = body.get("force") is True
@@ -1731,6 +1810,12 @@ class _FleetHTTPServer:
                     return
                 if path == "/v1/storage/prune":
                     self._write(_storage_prune_result(dry_run=body.get("dry_run") is True))
+                    return
+                if path == "/v1/assignments/assignment-1/cancel":
+                    self._write(_assignment_cancel(body))
+                    return
+                if path == "/v1/assignments/assignment-1/retry":
+                    self._write(_assignment_retry(body))
                     return
                 if path == "/v1/workers/worker-1/cordon":
                     self._write(_host_record(cordoned=True, cordon_reason=str(body.get("reason") or "")))

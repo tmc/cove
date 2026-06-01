@@ -1229,6 +1229,58 @@ class CoveFleetClient:
         return dict(seed._request("GET", _assignment_path(assignment_id), timeout=timeout))
 
     @classmethod
+    def cancel_assignment(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        assignment_id: str,
+        reason: str = "",
+        force: bool = False,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        assignment_id = assignment_id.strip()
+        if not assignment_id:
+            raise ValueError("assignment id is required")
+        seed = cls(sandbox_id="assignment-cancel", fleet_url=fleet_url, api_key=api_key, timeout=timeout)
+        body: dict[str, object] = {}
+        reason = reason.strip()
+        if reason:
+            body["reason"] = reason
+        if force:
+            body["force"] = True
+        result = seed._request("POST", _assignment_action_path(assignment_id, "cancel"), body, timeout=timeout)
+        return _normalize_assignment_control(result, "POST /v1/assignments/{id}/cancel")
+
+    @classmethod
+    def retry_assignment(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        assignment_id: str,
+        reason: str = "",
+        worker_id: str = "",
+        replan: bool = False,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        assignment_id = assignment_id.strip()
+        if not assignment_id:
+            raise ValueError("assignment id is required")
+        seed = cls(sandbox_id="assignment-retry", fleet_url=fleet_url, api_key=api_key, timeout=timeout)
+        body: dict[str, object] = {}
+        reason = reason.strip()
+        if reason:
+            body["reason"] = reason
+        worker_id = worker_id.strip()
+        if worker_id:
+            body["worker_id"] = worker_id
+        if replan:
+            body["replan"] = True
+        result = seed._request("POST", _assignment_action_path(assignment_id, "retry"), body, timeout=timeout)
+        return _normalize_assignment_control(result, "POST /v1/assignments/{id}/retry")
+
+    @classmethod
     def ensure_warm_pool(
         cls,
         *,
@@ -1986,6 +2038,15 @@ def _normalize_worker_decommission(data: dict[str, Any], endpoint: str) -> dict[
     return result
 
 
+def _normalize_assignment_control(data: dict[str, Any], endpoint: str) -> dict[str, Any]:
+    result = dict(data)
+    assignment = result.get("assignment") or {}
+    if not isinstance(assignment, dict):
+        raise CoveError(f"{endpoint}: expected assignment object")
+    result["assignment"] = dict(assignment)
+    return result
+
+
 def _normalize_dict_list(data: dict[str, Any], key: str, endpoint: str) -> None:
     items = data.get(key) or []
     if not isinstance(items, list):
@@ -2037,6 +2098,10 @@ def _worker_action_path(worker_id: str, action: str) -> str:
 
 def _assignment_path(assignment_id: str) -> str:
     return "/v1/assignments/" + urllib.parse.quote(assignment_id, safe="")
+
+
+def _assignment_action_path(assignment_id: str, action: str) -> str:
+    return _assignment_path(assignment_id) + "/" + urllib.parse.quote(action, safe="")
 
 
 def _selector_body(

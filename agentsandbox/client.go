@@ -698,12 +698,49 @@ type AssignmentGetOptions struct {
 	HTTP     *http.Client
 }
 
+type AssignmentCancelOptions struct {
+	FleetURL string
+	APIKey   string
+	ID       string
+	Reason   string
+	Force    bool
+	Timeout  time.Duration
+	HTTP     *http.Client
+}
+
+type AssignmentRetryOptions struct {
+	FleetURL string
+	APIKey   string
+	ID       string
+	Reason   string
+	WorkerID string
+	Replan   bool
+	Timeout  time.Duration
+	HTTP     *http.Client
+}
+
 type AssignmentListResult struct {
 	Assignments []Assignment `json:"assignments"`
 	Count       int          `json:"count"`
 	Offset      int          `json:"offset,omitempty"`
 	Limit       int          `json:"limit,omitempty"`
 	NextOffset  int          `json:"next_offset,omitempty"`
+}
+
+type AssignmentCancelResult struct {
+	Assignment     Assignment `json:"assignment"`
+	Reason         string     `json:"reason,omitempty"`
+	Force          bool       `json:"force,omitempty"`
+	Canceled       bool       `json:"canceled"`
+	PreviousStatus string     `json:"previous_status,omitempty"`
+}
+
+type AssignmentRetryResult struct {
+	Assignment       Assignment `json:"assignment"`
+	Reason           string     `json:"reason,omitempty"`
+	PreviousStatus   string     `json:"previous_status,omitempty"`
+	PreviousWorkerID string     `json:"previous_worker_id,omitempty"`
+	Replanned        bool       `json:"replanned,omitempty"`
 }
 
 type SandboxStopResult struct {
@@ -1887,6 +1924,55 @@ func GetAssignment(ctx context.Context, opts AssignmentGetOptions) (Assignment, 
 	return result, nil
 }
 
+func CancelAssignment(ctx context.Context, opts AssignmentCancelOptions) (AssignmentCancelResult, error) {
+	id := strings.TrimSpace(opts.ID)
+	if id == "" {
+		return AssignmentCancelResult{}, errors.New("agentsandbox: assignment id required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "assignment-cancel")
+	if err != nil {
+		return AssignmentCancelResult{}, err
+	}
+	body := map[string]any{}
+	if reason := strings.TrimSpace(opts.Reason); reason != "" {
+		body["reason"] = reason
+	}
+	if opts.Force {
+		body["force"] = true
+	}
+	var result AssignmentCancelResult
+	if err := c.request(ctx, http.MethodPost, assignmentActionPath(id, "cancel"), body, &result, c.timeout); err != nil {
+		return AssignmentCancelResult{}, err
+	}
+	return result, nil
+}
+
+func RetryAssignment(ctx context.Context, opts AssignmentRetryOptions) (AssignmentRetryResult, error) {
+	id := strings.TrimSpace(opts.ID)
+	if id == "" {
+		return AssignmentRetryResult{}, errors.New("agentsandbox: assignment id required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "assignment-retry")
+	if err != nil {
+		return AssignmentRetryResult{}, err
+	}
+	body := map[string]any{}
+	if reason := strings.TrimSpace(opts.Reason); reason != "" {
+		body["reason"] = reason
+	}
+	if workerID := strings.TrimSpace(opts.WorkerID); workerID != "" {
+		body["worker_id"] = workerID
+	}
+	if opts.Replan {
+		body["replan"] = true
+	}
+	var result AssignmentRetryResult
+	if err := c.request(ctx, http.MethodPost, assignmentActionPath(id, "retry"), body, &result, c.timeout); err != nil {
+		return AssignmentRetryResult{}, err
+	}
+	return result, nil
+}
+
 func EnsureWarmPool(ctx context.Context, opts WarmPoolOptions) (WarmPoolResult, error) {
 	name := strings.TrimSpace(opts.Name)
 	imageRef := strings.TrimSpace(opts.ImageRef)
@@ -2932,6 +3018,10 @@ func workerPath(id string) string {
 
 func assignmentPath(id string) string {
 	return "/v1/assignments/" + url.PathEscape(id)
+}
+
+func assignmentActionPath(id, action string) string {
+	return assignmentPath(id) + "/" + url.PathEscape(action)
 }
 
 func workerActionPath(id, action string) string {

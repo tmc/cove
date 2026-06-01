@@ -699,6 +699,72 @@ func TestCloudClientInventoryValidation(t *testing.T) {
 	}
 }
 
+func TestCloudClientAssignmentControls(t *testing.T) {
+	server := newSDKFleetServer(t)
+	ctx := context.Background()
+
+	canceled, err := CancelAssignment(ctx, AssignmentCancelOptions{
+		FleetURL: server.URL,
+		APIKey:   "secret",
+		ID:       "assignment-1",
+		Reason:   "bad input",
+		Force:    true,
+		Timeout:  time.Second,
+	})
+	if err != nil {
+		t.Fatalf("CancelAssignment: %v", err)
+	}
+	if !canceled.Canceled || !canceled.Force || canceled.Reason != "bad input" || canceled.PreviousStatus != "running" || canceled.Assignment.Status != "canceled" {
+		t.Fatalf("CancelAssignment = %+v, want canceled running assignment", canceled)
+	}
+	retried, err := RetryAssignment(ctx, AssignmentRetryOptions{
+		FleetURL: server.URL,
+		APIKey:   "secret",
+		ID:       "assignment-1",
+		Reason:   "transient",
+		WorkerID: "worker-2",
+		Replan:   true,
+		Timeout:  time.Second,
+	})
+	if err != nil {
+		t.Fatalf("RetryAssignment: %v", err)
+	}
+	if retried.Reason != "transient" || retried.PreviousStatus != "failed" || retried.PreviousWorkerID != "worker-1" || !retried.Replanned || retried.Assignment.Status != "pending" || retried.Assignment.WorkerID != "worker-2" {
+		t.Fatalf("RetryAssignment = %+v, want replanned pending assignment", retried)
+	}
+
+	paths := make([]string, 0, len(server.requests))
+	for _, req := range server.requests {
+		paths = append(paths, req.path)
+		if req.authorization != "Bearer secret" {
+			t.Fatalf("authorization for %s = %q, want bearer token", req.path, req.authorization)
+		}
+	}
+	wantPaths := []string{
+		"/v1/assignments/assignment-1/cancel",
+		"/v1/assignments/assignment-1/retry",
+	}
+	if !equalStringSlices(paths, wantPaths) {
+		t.Fatalf("paths = %+v, want %+v", paths, wantPaths)
+	}
+	if body := server.requests[0].body; body["reason"] != "bad input" || body["force"] != true {
+		t.Fatalf("cancel body = %+v, want reason and force", body)
+	}
+	if body := server.requests[1].body; body["reason"] != "transient" || body["worker_id"] != "worker-2" || body["replan"] != true {
+		t.Fatalf("retry body = %+v, want reason, worker, and replan", body)
+	}
+}
+
+func TestCloudClientAssignmentControlValidation(t *testing.T) {
+	ctx := context.Background()
+	if _, err := CancelAssignment(ctx, AssignmentCancelOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "assignment id required") {
+		t.Fatalf("CancelAssignment missing id err = %v, want validation error", err)
+	}
+	if _, err := RetryAssignment(ctx, AssignmentRetryOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "assignment id required") {
+		t.Fatalf("RetryAssignment missing id err = %v, want validation error", err)
+	}
+}
+
 func TestCloudClientWorkerLifecycle(t *testing.T) {
 	server := newSDKFleetServer(t)
 	ctx := context.Background()
@@ -1306,6 +1372,10 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/assignments/assignment-1":
 			writeSDKJSON(t, w, sdkInventoryAssignment())
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/assignments/assignment-1/cancel":
+			writeSDKJSON(t, w, sdkAssignmentCancel(req.body))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/assignments/assignment-1/retry":
+			writeSDKJSON(t, w, sdkAssignmentRetry(req.body))
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/workers/worker-1/cordon":
 			record := sdkHostRecord()
 			record.Cordoned = true
@@ -1702,6 +1772,38 @@ func sdkInventoryAssignment() Assignment {
 	assignment.LeasedTo = "worker-1"
 	assignment.LeaseExpires = time.Date(2026, 5, 31, 10, 6, 0, 0, time.UTC)
 	return assignment
+}
+
+func sdkAssignmentCancel(body map[string]any) AssignmentCancelResult {
+	assignment := sdkInventoryAssignment()
+	assignment.Status = "canceled"
+	assignment.LeasedTo = ""
+	assignment.LeaseExpires = time.Time{}
+	return AssignmentCancelResult{
+		Assignment:     assignment,
+		Reason:         stringValue(body["reason"]),
+		Force:          body["force"] == true,
+		Canceled:       true,
+		PreviousStatus: "running",
+	}
+}
+
+func sdkAssignmentRetry(body map[string]any) AssignmentRetryResult {
+	assignment := sdkInventoryAssignment()
+	assignment.Status = "pending"
+	assignment.LeasedTo = ""
+	assignment.LeaseExpires = time.Time{}
+	assignment.WorkerID = stringValue(body["worker_id"])
+	if assignment.WorkerID == "" {
+		assignment.WorkerID = "worker-1"
+	}
+	return AssignmentRetryResult{
+		Assignment:       assignment,
+		Reason:           stringValue(body["reason"]),
+		PreviousStatus:   "failed",
+		PreviousWorkerID: "worker-1",
+		Replanned:        body["replan"] == true || assignment.WorkerID != "worker-1",
+	}
 }
 
 func sdkWorkerEvacuation(body map[string]any) WorkerEvacuationResult {

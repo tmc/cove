@@ -776,7 +776,9 @@ Maintenance helpers include `PushImageGC`, `PushLifecyclePolicy`,
 `GetOperationsSummary` plus `ListControllerRuns` for the aggregate operations
 dashboard and timeline. Inventory helpers include `ListWorkers`, `GetWorker`,
 `ListAssignments`, and `GetAssignment`, with the same filters and pagination as
-the REST API. Worker lifecycle helpers include `CordonWorker`,
+the REST API. Assignment control helpers include `CancelAssignment` and
+`RetryAssignment` for audited force-cancel and retry/replan operations. Worker
+lifecycle helpers include `CordonWorker`,
 `UncordonWorker`, `QuarantineWorker`, `UnquarantineWorker`, `EvacuateWorker`,
 `DrainWorker`, and `DecommissionWorker`, so hosted operators can plan or apply
 maintenance without dropping to raw HTTP. Pass `DryRun` to maintenance pushes
@@ -856,6 +858,18 @@ if err != nil {
 	log.Fatal(err)
 }
 log.Printf("running assignments=%d", assignments.Count)
+
+retry, err := agentsandbox.RetryAssignment(ctx, agentsandbox.AssignmentRetryOptions{
+	FleetURL: "https://fleet.internal.example",
+	APIKey:   os.Getenv("COVE_API_KEY"),
+	ID:       "assignment-123",
+	Reason:   "transient host failure",
+	Replan:   true,
+})
+if err != nil {
+	log.Fatal(err)
+}
+log.Printf("retried assignment=%s worker=%s", retry.Assignment.ID, retry.Assignment.WorkerID)
 
 evacuation, err := agentsandbox.EvacuateWorker(ctx, agentsandbox.WorkerEvacuationOptions{
 	FleetURL: "https://fleet.internal.example",
