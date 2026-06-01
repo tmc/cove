@@ -1413,7 +1413,9 @@ reusable chunks, bytes, disk format, and source base path. Manifest-backed
 cove-native dry-runs also report disk chunks already covered by the local
 content store, disk chunks still requiring registry fetches, sparse zero
 chunks, and metadata blob store/fetch counts. Add `--json` to emit the dry-run
-plan as structured data for CI or fleet placement decisions. Use
+plan as structured data for CI or fleet placement decisions. Add
+`--verify-blobs` to HEAD-audit the registry blobs this host would need to fetch
+without downloading blob bodies. Use
 `cove image inspect -remote <ref>...` to fetch only registry metadata before a
 pull or private catalog audit. When a cove pull actually reuses a cloned base
 disk, completion output includes the same base-reuse summary.
@@ -1428,6 +1430,7 @@ cove pull <ref> [flags]
 | `--dry-run` | false | Validate inputs without writing a disk |
 | `--fetch-manifest` | false | Fetch registry manifest during dry-run |
 | `--json` | false | Print dry-run plan as JSON |
+| `--verify-blobs` | false | HEAD registry blobs during dry-run |
 | `--resume` | false | Continue an interrupted pull from `disk.img.partial` |
 | `--manifest <path>` | | Local OCI manifest JSON instead of fetching the registry |
 
@@ -1435,6 +1438,7 @@ cove pull <ref> [flags]
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run --fetch-manifest
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run --fetch-manifest --json
+cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run --fetch-manifest --verify-blobs --json
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run --json --manifest manifest.json
 cove pull ghcr.io/example/macos-sequoia:15.2 --resume
 cove pull ghcr.io/trycua/macos-sequoia-vanilla:latest --as sequoia --dry-run --manifest manifest.json

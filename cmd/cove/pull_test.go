@@ -197,8 +197,16 @@ func TestBuildPullPlanDryRunFetchManifest(t *testing.T) {
 	t.Setenv("HOME", home)
 	diskData := []byte("bootable")
 	manifest, blobs := pullCompressedTestManifest(t, diskData)
+	configData := []byte("{}")
+	manifest.Config = ociimage.Descriptor{
+		MediaType: ociimage.MediaTypeImageConfig,
+		Size:      int64(len(configData)),
+		Digest:    pushTestDigest(configData),
+	}
+	blobs[manifest.Config.Digest] = configData
 	manifestData, manifestDigest := pullTestManifestData(t, manifest)
 	var blobGets atomic.Int32
+	var blobHeads atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v2/me/dev-vm/manifests/v1":
@@ -209,13 +217,20 @@ func TestBuildPullPlanDryRunFetchManifest(t *testing.T) {
 			if !strings.HasPrefix(r.URL.Path, prefix) {
 				t.Fatalf("path = %q", r.URL.Path)
 			}
-			blobGets.Add(1)
 			digest := strings.TrimPrefix(r.URL.Path, prefix)
 			data, ok := blobs[digest]
 			if !ok {
 				http.NotFound(w, r)
 				return
 			}
+			if r.Method == http.MethodHead {
+				blobHeads.Add(1)
+				return
+			}
+			if r.Method != http.MethodGet {
+				t.Fatalf("method = %s, want GET or HEAD", r.Method)
+			}
+			blobGets.Add(1)
 			_, _ = w.Write(data)
 		}
 	}))
@@ -224,6 +239,7 @@ func TestBuildPullPlanDryRunFetchManifest(t *testing.T) {
 	plan, err := buildPullPlan("ghcr.io/me/dev-vm:v1", pullOptions{
 		DryRun:          true,
 		FetchManifest:   true,
+		VerifyBlobs:     true,
 		RegistryBaseURL: srv.URL,
 	})
 	if err != nil {
@@ -238,8 +254,32 @@ func TestBuildPullPlanDryRunFetchManifest(t *testing.T) {
 	if plan.FetchDiskChunks != 1 || plan.FetchMetadataBlobs != 3 {
 		t.Fatalf("fetch preflight = disk:%d metadata:%d, want disk 1 metadata 3", plan.FetchDiskChunks, plan.FetchMetadataBlobs)
 	}
+	if plan.BlobAudit != "ok" || plan.BlobDescriptors != 4 || len(plan.MissingBlobs) != 0 {
+		t.Fatalf("blob audit = status:%q descriptors:%d missing:%v, want ok 4 descriptors", plan.BlobAudit, plan.BlobDescriptors, plan.MissingBlobs)
+	}
+	if got := blobHeads.Load(); got != 4 {
+		t.Fatalf("blob HEADs = %d, want 4", got)
+	}
 	if got := blobGets.Load(); got != 0 {
 		t.Fatalf("blob GETs = %d, want zero for manifest-only dry-run", got)
+	}
+
+	var out strings.Builder
+	printPullDryRun(&out, plan)
+	if !strings.Contains(out.String(), "blob audit: ok (4 descriptors") {
+		t.Fatalf("dry-run output %q missing blob audit", out.String())
+	}
+
+	var jsonOut strings.Builder
+	if err := printPullDryRunJSON(&jsonOut, plan); err != nil {
+		t.Fatalf("printPullDryRunJSON(): %v", err)
+	}
+	var got pullDryRunOutput
+	if err := json.Unmarshal([]byte(jsonOut.String()), &got); err != nil {
+		t.Fatalf("Unmarshal(JSON): %v\n%s", err, jsonOut.String())
+	}
+	if got.BlobAudit == nil || got.BlobAudit.Status != "ok" || got.BlobAudit.Descriptors != 4 {
+		t.Fatalf("JSON blob audit = %+v, want ok 4 descriptors", got.BlobAudit)
 	}
 }
 
@@ -832,6 +872,20 @@ func TestHandlePullFetchManifestRequiresDryRun(t *testing.T) {
 	}
 }
 
+func TestHandlePullVerifyBlobsRequiresDryRun(t *testing.T) {
+	err := handlePull(commandTestEnv(), []string{"--verify-blobs", "ghcr.io/me/dev-vm:v1"})
+	if err == nil || !strings.Contains(err.Error(), "--verify-blobs requires --dry-run") {
+		t.Fatalf("handlePull() error = %v, want --verify-blobs requires --dry-run", err)
+	}
+}
+
+func TestHandlePullVerifyBlobsRequiresManifest(t *testing.T) {
+	err := handlePull(commandTestEnv(), []string{"--dry-run", "--verify-blobs", "ghcr.io/me/dev-vm:v1"})
+	if err == nil || !strings.Contains(err.Error(), "--verify-blobs requires --fetch-manifest or --manifest") {
+		t.Fatalf("handlePull() error = %v, want --verify-blobs requires manifest", err)
+	}
+}
+
 func TestHandlePullRejectsFetchManifestWithManifest(t *testing.T) {
 	err := handlePull(commandTestEnv(), []string{
 		"--dry-run",
@@ -879,7 +933,7 @@ func TestParsePullArgsHelpReturnsNoError(t *testing.T) {
 	if pos != nil {
 		t.Fatalf("parsePullArgs(-h) pos = %#v, want nil", pos)
 	}
-	if opts.DryRun || opts.JSON || opts.FetchManifest || opts.Resume || opts.As != "" || opts.ManifestPath != "" {
+	if opts.DryRun || opts.JSON || opts.FetchManifest || opts.VerifyBlobs || opts.Resume || opts.As != "" || opts.ManifestPath != "" {
 		t.Fatalf("parsePullArgs(-h) opts = %#v, want zero", opts)
 	}
 }
@@ -907,13 +961,14 @@ func TestParsePullArgsFetchManifest(t *testing.T) {
 		"registry.example/cove/vm:latest",
 		"--dry-run",
 		"--fetch-manifest",
+		"--verify-blobs",
 		"--json",
 	}, ioDiscard{})
 	if err != nil {
 		t.Fatalf("parsePullArgs fetch manifest: %v", err)
 	}
-	if !opts.DryRun || !opts.FetchManifest || !opts.JSON {
-		t.Fatalf("opts = %#v, want dry-run/fetch-manifest/json", opts)
+	if !opts.DryRun || !opts.FetchManifest || !opts.VerifyBlobs || !opts.JSON {
+		t.Fatalf("opts = %#v, want dry-run/fetch-manifest/verify-blobs/json", opts)
 	}
 	if strings.Join(pos, ",") != "registry.example/cove/vm:latest" {
 		t.Fatalf("pos = %#v", pos)

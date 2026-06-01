@@ -24,6 +24,7 @@ cove pull <ref> --dry-run --manifest manifest.json # validate a local manifest
 cove pull <ref> --dry-run --fetch-manifest        # fetch registry metadata only
 cove pull <ref> --dry-run --json --manifest manifest.json # machine-readable pull plan
 cove pull <ref> --dry-run --fetch-manifest --json # machine-readable registry pull plan
+cove pull <ref> --dry-run --fetch-manifest --verify-blobs # HEAD referenced blobs
 cove image inspect -remote <ref> -json            # inspect registry metadata only
 cove image inspect -remote -verify-blobs <ref>    # HEAD every referenced blob
 cove image inspect -remote <ref> <ref> -json      # audit several registry refs
@@ -51,7 +52,9 @@ source path. The same dry-run also reports cove-native transfer coverage: disk
 chunks already in the local content store, disk chunks that still need registry
 fetches, sparse zero chunks, and metadata blobs already present or still needed.
 Add `--json` to emit that dry-run as structured data for CI jobs or fleet
-controllers deciding which host should pull the image.
+controllers deciding which host should pull the image. Add `--verify-blobs` to
+HEAD-audit the registry blobs this host would need to fetch without downloading
+blob bodies.
 
 What happens:
 

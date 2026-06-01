@@ -31,6 +31,7 @@ type pullOptions struct {
 	DryRun          bool
 	JSON            bool
 	FetchManifest   bool
+	VerifyBlobs     bool
 	Resume          bool
 	ManifestPath    string
 	RegistryBaseURL string
@@ -39,26 +40,36 @@ type pullOptions struct {
 }
 
 type pullPlan struct {
-	Ref                 ociimage.Reference
-	VMName              string
-	VMDir               string
-	Manifest            ociimage.ParsedManifest
-	ManifestRaw         []byte
-	ManifestDigest      string
-	BaseReusePath       string
-	BaseReuseDiskFormat string
-	BaseReuseChunks     int
-	BaseReuseBytes      int64
-	FetchDiskChunks     int
-	FetchDiskBytes      int64
-	StoreDiskChunks     int
-	StoreDiskBytes      int64
-	ZeroDiskChunks      int
-	ZeroDiskBytes       int64
-	FetchMetadataBlobs  int
-	FetchMetadataBytes  int64
-	StoreMetadataBlobs  int
-	StoreMetadataBytes  int64
+	Ref                  ociimage.Reference
+	VMName               string
+	VMDir                string
+	Manifest             ociimage.ParsedManifest
+	ManifestRaw          []byte
+	ManifestDigest       string
+	BaseReusePath        string
+	BaseReuseDiskFormat  string
+	BaseReuseChunks      int
+	BaseReuseBytes       int64
+	FetchDiskChunks      int
+	FetchDiskBytes       int64
+	StoreDiskChunks      int
+	StoreDiskBytes       int64
+	ZeroDiskChunks       int
+	ZeroDiskBytes        int64
+	FetchMetadataBlobs   int
+	FetchMetadataBytes   int64
+	StoreMetadataBlobs   int
+	StoreMetadataBytes   int64
+	BlobAudit            string
+	BlobDescriptors      int
+	BlobBytes            int64
+	MissingBlobs         []string
+	FetchBlobDescriptors []pullBlobDescriptor
+}
+
+type pullBlobDescriptor struct {
+	Name       string
+	Descriptor ociimage.Descriptor
 }
 
 type pullDryRunOutput struct {
@@ -80,6 +91,7 @@ type pullDryRunOutput struct {
 	UploadTime       string                    `json:"upload_time,omitempty"`
 	Transfer         *pullDryRunTransferOutput `json:"transfer,omitempty"`
 	BaseReuse        *pullBaseReuseOutput      `json:"base_reuse,omitempty"`
+	BlobAudit        *pullBlobAuditOutput      `json:"blob_audit,omitempty"`
 }
 
 type pullDryRunTransferOutput struct {
@@ -102,6 +114,13 @@ type pullBaseReuseOutput struct {
 	Bytes      int64  `json:"bytes"`
 }
 
+type pullBlobAuditOutput struct {
+	Status      string   `json:"status"`
+	Descriptors int      `json:"descriptors"`
+	Bytes       int64    `json:"bytes"`
+	Missing     []string `json:"missing,omitempty"`
+}
+
 func handlePull(env commandEnv, args []string) error {
 	opts, pos, err := parsePullArgs(args, env.Stderr)
 	if err != nil {
@@ -118,6 +137,12 @@ func handlePull(env commandEnv, args []string) error {
 	}
 	if opts.FetchManifest && opts.ManifestPath != "" {
 		return fmt.Errorf("cove pull: --fetch-manifest cannot be used with --manifest")
+	}
+	if opts.VerifyBlobs && !opts.DryRun {
+		return fmt.Errorf("cove pull: --verify-blobs requires --dry-run")
+	}
+	if opts.VerifyBlobs && !opts.FetchManifest && opts.ManifestPath == "" {
+		return fmt.Errorf("cove pull: --verify-blobs requires --fetch-manifest or --manifest")
 	}
 	plan, err := buildPullPlan(pos[0], opts)
 	if err != nil {
@@ -156,6 +181,7 @@ func parsePullArgs(args []string, w io.Writer) (pullOptions, []string, error) {
 	fs.BoolVar(&opts.DryRun, "dry-run", false, "validate inputs without writing a disk")
 	fs.BoolVar(&opts.JSON, "json", false, "print dry-run plan as JSON")
 	fs.BoolVar(&opts.FetchManifest, "fetch-manifest", false, "fetch registry manifest during dry-run")
+	fs.BoolVar(&opts.VerifyBlobs, "verify-blobs", false, "HEAD registry blobs during dry-run")
 	fs.BoolVar(&opts.Resume, "resume", false, "continue an interrupted pull from disk.img.partial")
 	fs.StringVar(&opts.ManifestPath, "manifest", "", "local OCI manifest JSON instead of fetching the registry")
 	fs.Usage = func() { printPullUsage(w) }
@@ -174,6 +200,7 @@ func movePullFlagsFirst(args []string) []string {
 		"dry-run":        false,
 		"json":           false,
 		"fetch-manifest": false,
+		"verify-blobs":   false,
 		"resume":         false,
 		"manifest":       true,
 	})
@@ -234,6 +261,9 @@ func buildPullPlan(refText string, opts pullOptions) (*pullPlan, error) {
 		if err := planPullDryRunReuse(plan, opts); err != nil {
 			return nil, err
 		}
+		if err := planPullDryRunBlobAudit(context.Background(), plan, opts); err != nil {
+			return nil, err
+		}
 	}
 	return plan, nil
 }
@@ -284,6 +314,50 @@ func fetchPullManifest(ctx context.Context, ref ociimage.Reference, opts pullOpt
 		return out, "", nil, fmt.Errorf("encode registry manifest: %w", err)
 	}
 	return out, digest, data, nil
+}
+
+func planPullDryRunBlobAudit(ctx context.Context, plan *pullPlan, opts pullOptions) error {
+	if plan == nil || !opts.VerifyBlobs {
+		return nil
+	}
+	if len(plan.ManifestRaw) == 0 {
+		return fmt.Errorf("cove pull: --verify-blobs requires a manifest")
+	}
+	ctx, cancel := context.WithTimeout(ctx, pullManifestFetchTimeout)
+	defer cancel()
+	audit, err := auditPullDryRunBlobs(ctx, pullRegistryClient(plan.Ref, opts), plan.Ref, plan.FetchBlobDescriptors)
+	if err != nil {
+		return fmt.Errorf("cove pull: verify blobs: %w", err)
+	}
+	plan.BlobAudit = audit.Status
+	plan.BlobDescriptors = audit.Checked
+	plan.BlobBytes = audit.Bytes
+	plan.MissingBlobs = audit.Missing
+	return nil
+}
+
+func auditPullDryRunBlobs(ctx context.Context, client ociimage.RegistryClient, ref ociimage.Reference, descriptors []pullBlobDescriptor) (remoteBlobAudit, error) {
+	audit := remoteBlobAudit{Status: "ok", Checked: len(descriptors)}
+	for _, desc := range descriptors {
+		if desc.Descriptor.Size > 0 {
+			audit.Bytes += desc.Descriptor.Size
+		}
+		if desc.Descriptor.Digest == "" {
+			audit.Missing = append(audit.Missing, desc.Name+":missing digest")
+			continue
+		}
+		ok, err := client.BlobExists(ctx, ref, desc.Descriptor.Digest)
+		if err != nil {
+			return audit, fmt.Errorf("verify blob %s: %w", desc.Name, err)
+		}
+		if !ok {
+			audit.Missing = append(audit.Missing, desc.Name+":"+desc.Descriptor.Digest)
+		}
+	}
+	if len(audit.Missing) > 0 {
+		audit.Status = "missing"
+	}
+	return audit, nil
 }
 
 func pullDisk(ctx context.Context, plan *pullPlan, opts pullOptions) error {
@@ -621,6 +695,7 @@ func printPullDryRun(w io.Writer, plan *pullPlan) {
 	fmt.Fprintf(w, "  chunks: %d\n", len(plan.Manifest.Chunks))
 	fmt.Fprintf(w, "  metadata blobs: %d\n", len(plan.Manifest.Blobs))
 	printPullDryRunTransfer(w, plan)
+	printPullBlobAudit(w, plan)
 	printPullBaseReuse(w, plan)
 }
 
@@ -698,6 +773,14 @@ func pullDryRunOutputFromPlan(plan *pullPlan) pullDryRunOutput {
 			Bytes:      plan.BaseReuseBytes,
 		}
 	}
+	if plan.BlobAudit != "" {
+		out.BlobAudit = &pullBlobAuditOutput{
+			Status:      plan.BlobAudit,
+			Descriptors: plan.BlobDescriptors,
+			Bytes:       plan.BlobBytes,
+			Missing:     append([]string(nil), plan.MissingBlobs...),
+		}
+	}
 	return out
 }
 
@@ -748,6 +831,25 @@ func printPullDryRunTransfer(w io.Writer, plan *pullPlan) {
 	}
 }
 
+func printPullBlobAudit(w io.Writer, plan *pullPlan) {
+	if plan.BlobAudit == "" {
+		return
+	}
+	fmt.Fprintf(w, "  blob audit: %s", plan.BlobAudit)
+	if plan.BlobDescriptors > 0 {
+		fmt.Fprintf(w, " (%d descriptors", plan.BlobDescriptors)
+		if plan.BlobBytes > 0 {
+			fmt.Fprintf(w, ", %s)", bytefmt.Size(plan.BlobBytes))
+		} else {
+			fmt.Fprint(w, ")")
+		}
+	}
+	fmt.Fprintln(w)
+	for _, missing := range plan.MissingBlobs {
+		fmt.Fprintf(w, "    missing: %s\n", missing)
+	}
+}
+
 func printPullUsage(w io.Writer) {
 	fmt.Fprintln(w, `Usage: cove pull [flags] <ref>
 
@@ -763,6 +865,7 @@ Flags:
   --dry-run            Validate inputs without writing a disk
   --json               Print dry-run plan as JSON
   --fetch-manifest     Fetch registry manifest during dry-run
+  --verify-blobs       HEAD registry blobs during dry-run
   --resume             Continue an interrupted pull from disk.img.partial
   --manifest <path>    Local OCI manifest JSON instead of fetching the registry`)
 }

@@ -110,9 +110,13 @@ func recordPullDryRunTransfer(plan *pullPlan, blobStore store.Store, baseReuse *
 		}
 		plan.FetchDiskChunks++
 		plan.FetchDiskBytes += layer.Descriptor.Size
+		plan.FetchBlobDescriptors = append(plan.FetchBlobDescriptors, pullBlobDescriptor{
+			Name:       fmt.Sprintf("chunk[%d]", layer.Chunk.Index),
+			Descriptor: layer.Descriptor,
+		})
 	}
 	for _, desc := range plan.Manifest.Blobs {
-		_, ok, err := pullMetadataFileName(desc)
+		name, ok, err := pullMetadataFileName(desc)
 		if err != nil {
 			return err
 		}
@@ -132,6 +136,10 @@ func recordPullDryRunTransfer(plan *pullPlan, blobStore store.Store, baseReuse *
 		}
 		plan.FetchMetadataBlobs++
 		plan.FetchMetadataBytes += desc.Size
+		plan.FetchBlobDescriptors = append(plan.FetchBlobDescriptors, pullBlobDescriptor{
+			Name:       name,
+			Descriptor: desc,
+		})
 	}
 	return nil
 }
