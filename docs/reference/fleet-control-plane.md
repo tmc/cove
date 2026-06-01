@@ -190,7 +190,17 @@ curl -X POST http://127.0.0.1:9758/v1/saml-bindings \
     "role":"operator",
     "certificate_pem":"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"
   }'
+curl -X POST http://127.0.0.1:9758/v1/saml-bindings \
+  -H 'content-type: application/json' \
+  -d '{
+    "name":"okta-from-metadata",
+    "metadata_url":"https://idp.example/metadata.xml",
+    "audience":"https://fleet.example/saml/acs",
+    "namespace":"team-a",
+    "role":"operator"
+  }'
 curl http://127.0.0.1:9758/v1/saml-bindings
+curl -X POST http://127.0.0.1:9758/v1/saml-bindings/okta-from-metadata/refresh
 curl http://127.0.0.1:9758/v1/saml-bindings/okta/metadata
 curl 'http://127.0.0.1:9758/v1/saml-bindings/okta/login?relay_state=cli'
 curl -i 'http://127.0.0.1:9758/v1/saml-bindings/okta/login?redirect=true&relay_state=cli'
@@ -233,8 +243,14 @@ one of those public keys, must not be expired, and records audit actor
 on key misses so provider key rotation does not require rewriting the binding.
 `/v1/saml-bindings` lets admin users store an IdP entity ID, optional subject,
 SSO URL, service-provider audience, namespace, role, and PEM X.509 signing
-certificate. The controller validates and persists the certificate and exposes
-only its SHA-256 fingerprint in API responses. A request can authenticate with
+certificate. Instead of hand-entering IdP fields, admins can provide
+`metadata_xml` or `metadata_url`; the controller imports the IdP entity ID,
+preferred HTTP-Redirect SSO URL, and signing certificate from the SAML metadata.
+Bindings created with `metadata_url` persist the URL plus `metadata_fetched`,
+and `POST /v1/saml-bindings/{name}/refresh` re-fetches that URL, rotates the
+imported IdP fields, and records `saml_binding.refresh`. The controller
+validates and persists the certificate and exposes only its SHA-256 fingerprint
+in API responses. A request can authenticate with
 `Authorization: Bearer saml:<base64-saml-xml>` when the payload is a signed
 SAML response or assertion whose XML signature verifies against the binding
 certificate, issuer matches `entity_id`, audience matches `audience`, optional
@@ -256,8 +272,7 @@ signed, replay-checked assertion path and returns a short-lived
 that session token record audit actor `saml-session:<binding-name>` and inherit
 the binding's namespace and role. The controller records accepted assertion IDs
 until their time window expires and rejects replayed assertions across process
-restarts. Keep assertions short lived; IdP metadata import/refresh is still out
-of scope for this private controller surface.
+restarts. Keep assertions short lived.
 If a service account has `namespace` set, assignment, warm-pool, sandbox,
 service-account, and audit list/read/mutation requests through that bearer token
 are scoped to that namespace; attempts to write another namespace are rejected.

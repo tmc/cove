@@ -87,16 +87,18 @@ type oidcKeyRecord struct {
 }
 
 type samlBindingRecord struct {
-	Name           string    `json:"name"`
-	EntityID       string    `json:"entity_id"`
-	Subject        string    `json:"subject,omitempty"`
-	SSOURL         string    `json:"sso_url"`
-	Audience       string    `json:"audience"`
-	Namespace      string    `json:"namespace,omitempty"`
-	Role           string    `json:"role,omitempty"`
-	CertificatePEM string    `json:"certificate_pem"`
-	Created        time.Time `json:"created,omitempty"`
-	Updated        time.Time `json:"updated,omitempty"`
+	Name            string    `json:"name"`
+	EntityID        string    `json:"entity_id"`
+	Subject         string    `json:"subject,omitempty"`
+	SSOURL          string    `json:"sso_url"`
+	Audience        string    `json:"audience"`
+	Namespace       string    `json:"namespace,omitempty"`
+	Role            string    `json:"role,omitempty"`
+	CertificatePEM  string    `json:"certificate_pem"`
+	MetadataURL     string    `json:"metadata_url,omitempty"`
+	MetadataFetched time.Time `json:"metadata_fetched,omitempty"`
+	Created         time.Time `json:"created,omitempty"`
+	Updated         time.Time `json:"updated,omitempty"`
 }
 
 type samlReplayRecord struct {
@@ -2812,6 +2814,7 @@ func (s *Store) UpsertSAMLBinding(req SAMLBindingRequest) (SAMLBindingResult, er
 }
 
 func (s *Store) UpsertSAMLBindingActor(actor string, req SAMLBindingRequest) (SAMLBindingResult, error) {
+	now := s.now().UTC()
 	record := samlBindingRecord{
 		Name:           strings.TrimSpace(req.Name),
 		EntityID:       strings.TrimSpace(req.EntityID),
@@ -2821,13 +2824,16 @@ func (s *Store) UpsertSAMLBindingActor(actor string, req SAMLBindingRequest) (SA
 		Namespace:      normalizeNamespace(req.Namespace),
 		Role:           strings.TrimSpace(req.Role),
 		CertificatePEM: strings.TrimSpace(req.CertificatePEM),
+		MetadataURL:    strings.TrimSpace(req.MetadataURL),
+	}
+	if err := applySAMLBindingMetadataRequest(&record, req, now); err != nil {
+		return SAMLBindingResult{}, err
 	}
 	var err error
 	record, err = normalizeSAMLBindingRecord(record)
 	if err != nil {
 		return SAMLBindingResult{}, err
 	}
-	now := s.now().UTC()
 	actor = normalizeActor(actor)
 	record.Created = now
 	record.Updated = now
@@ -2853,6 +2859,7 @@ func (s *Store) UpsertSAMLBindingActor(actor string, req SAMLBindingRequest) (SA
 			"audience":           record.Audience,
 			"role":               record.Role,
 			"sso_url":            record.SSOURL,
+			"metadata_url":       record.MetadataURL,
 			"certificate_sha256": samlCertificateSHA256(record.CertificatePEM),
 		},
 	})
@@ -2864,6 +2871,67 @@ func (s *Store) UpsertSAMLBindingActor(actor string, req SAMLBindingRequest) (SA
 
 func (s *Store) DeleteSAMLBinding(name string) (SAMLBindingResult, error) {
 	return s.DeleteSAMLBindingActor("controller", name)
+}
+
+func (s *Store) RefreshSAMLBindingMetadata(name string) (SAMLBindingResult, error) {
+	return s.RefreshSAMLBindingMetadataActor("controller", name)
+}
+
+func (s *Store) RefreshSAMLBindingMetadataActor(actor, name string) (SAMLBindingResult, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return SAMLBindingResult{}, fmt.Errorf("saml binding name required")
+	}
+	now := s.now().UTC()
+	actor = normalizeActor(actor)
+
+	s.mu.Lock()
+	record, ok := s.samlBindings[name]
+	s.mu.Unlock()
+	if !ok {
+		return SAMLBindingResult{}, fmt.Errorf("saml binding %q not found", name)
+	}
+	if strings.TrimSpace(record.MetadataURL) == "" {
+		return SAMLBindingResult{}, fmt.Errorf("saml binding %q metadata_url required", name)
+	}
+	if err := applySAMLBindingMetadataURL(&record, now); err != nil {
+		return SAMLBindingResult{}, err
+	}
+	var err error
+	record, err = normalizeSAMLBindingRecord(record)
+	if err != nil {
+		return SAMLBindingResult{}, err
+	}
+	record.Updated = now
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, ok := s.samlBindings[name]
+	if !ok {
+		return SAMLBindingResult{}, fmt.Errorf("saml binding %q not found", name)
+	}
+	if current.Namespace != record.Namespace {
+		return SAMLBindingResult{}, fmt.Errorf("saml binding %q changed namespace during refresh", name)
+	}
+	record.Created = current.Created
+	s.samlBindings[name] = record
+	s.appendAuditLocked(now, AuditEvent{
+		Actor:      actor,
+		Namespace:  record.Namespace,
+		Action:     "saml_binding.refresh",
+		TargetType: "saml_binding",
+		TargetID:   record.Name,
+		Fields: map[string]string{
+			"entity_id":          record.EntityID,
+			"sso_url":            record.SSOURL,
+			"metadata_url":       record.MetadataURL,
+			"certificate_sha256": samlCertificateSHA256(record.CertificatePEM),
+		},
+	})
+	if err := s.persistLocked(); err != nil {
+		return SAMLBindingResult{}, err
+	}
+	return SAMLBindingResult{Binding: publicSAMLBinding(record)}, nil
 }
 
 func (s *Store) DeleteSAMLBindingActor(actor, name string) (SAMLBindingResult, error) {
@@ -3549,6 +3617,8 @@ func publicSAMLBinding(record samlBindingRecord) SAMLBinding {
 		Audience:          record.Audience,
 		Namespace:         record.Namespace,
 		Role:              record.Role,
+		MetadataURL:       record.MetadataURL,
+		MetadataFetched:   record.MetadataFetched,
 		CertificateSHA256: samlCertificateSHA256(record.CertificatePEM),
 		Created:           record.Created,
 		Updated:           record.Updated,
@@ -5153,6 +5223,41 @@ func oidcKeyIDs(keys []oidcKeyRecord) []string {
 	return ids
 }
 
+func applySAMLBindingMetadataRequest(record *samlBindingRecord, req SAMLBindingRequest, now time.Time) error {
+	if raw := strings.TrimSpace(req.MetadataXML); raw != "" {
+		metadata, err := parseSAMLIDPMetadata([]byte(raw))
+		if err != nil {
+			return err
+		}
+		applySAMLIDPMetadata(record, metadata)
+	}
+	if strings.TrimSpace(record.MetadataURL) != "" {
+		return applySAMLBindingMetadataURL(record, now)
+	}
+	return nil
+}
+
+func applySAMLBindingMetadataURL(record *samlBindingRecord, now time.Time) error {
+	data, metadataURL, err := fetchSAMLIDPMetadata(record.MetadataURL)
+	if err != nil {
+		return err
+	}
+	metadata, err := parseSAMLIDPMetadata(data)
+	if err != nil {
+		return err
+	}
+	applySAMLIDPMetadata(record, metadata)
+	record.MetadataURL = metadataURL
+	record.MetadataFetched = now.UTC()
+	return nil
+}
+
+func applySAMLIDPMetadata(record *samlBindingRecord, metadata samlIDPMetadata) {
+	record.EntityID = metadata.EntityID
+	record.SSOURL = metadata.SSOURL
+	record.CertificatePEM = metadata.CertificatePEM
+}
+
 func normalizeSAMLBindingRecord(record samlBindingRecord) (samlBindingRecord, error) {
 	record.Name = strings.TrimSpace(record.Name)
 	if record.Name == "" {
@@ -5185,6 +5290,15 @@ func normalizeSAMLBindingRecord(record samlBindingRecord) (samlBindingRecord, er
 	}
 	record.Role = role
 	record.Namespace = normalizeNamespace(record.Namespace)
+	if strings.TrimSpace(record.MetadataURL) != "" {
+		record.MetadataURL, err = normalizeOIDCURL(record.MetadataURL, "saml binding metadata_url")
+		if err != nil {
+			return samlBindingRecord{}, err
+		}
+	}
+	if !record.MetadataFetched.IsZero() {
+		record.MetadataFetched = record.MetadataFetched.UTC()
+	}
 	record.CertificatePEM, err = normalizeSAMLCertificatePEM(record.CertificatePEM)
 	if err != nil {
 		return samlBindingRecord{}, err

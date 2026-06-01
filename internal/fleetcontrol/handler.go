@@ -461,6 +461,14 @@ func firstValue(values url.Values, keys ...string) string {
 }
 
 func handleSAMLBinding(w http.ResponseWriter, r *http.Request, store *Store) {
+	if name, ok, err := samlBindingSubresourcePath(r.URL.Path, "refresh"); ok || err != nil {
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		handleSAMLBindingRefresh(w, r, store, name)
+		return
+	}
 	if name, ok, err := samlBindingSubresourcePath(r.URL.Path, "login"); ok || err != nil {
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
@@ -529,6 +537,38 @@ func samlBindingSubresourcePath(path, subresource string) (string, bool, error) 
 		return "", true, fmt.Errorf("saml binding name required")
 	}
 	return name, true, nil
+}
+
+func handleSAMLBindingRefresh(w http.ResponseWriter, r *http.Request, store *Store, name string) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleAdmin) {
+		return
+	}
+	if identity.Scoped {
+		binding, ok := samlBindingByName(store.ListSAMLBindingsNamespace(identity.Namespace), name)
+		if !ok {
+			writeError(w, http.StatusNotFound, "saml binding not found")
+			return
+		}
+		if !canAccessNamespace(identity, binding.Namespace) {
+			writeError(w, http.StatusForbidden, "namespace not allowed")
+			return
+		}
+	}
+	result, err := store.RefreshSAMLBindingMetadataActor(identity.Actor, name)
+	if err != nil {
+		status := http.StatusBadRequest
+		if strings.Contains(err.Error(), "not found") {
+			status = http.StatusNotFound
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func handleSAMLBindingLogin(w http.ResponseWriter, r *http.Request, store *Store, name string) {

@@ -3,6 +3,7 @@ package fleetcontrol
 import (
 	"bytes"
 	"compress/flate"
+	"context"
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/base64"
@@ -10,6 +11,8 @@ import (
 	"encoding/pem"
 	"encoding/xml"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -376,6 +379,135 @@ func samlRedirectURL(rawURL, samlRequest, relayState string) (string, error) {
 	}
 	u.RawQuery = values.Encode()
 	return u.String(), nil
+}
+
+type samlIDPMetadata struct {
+	EntityID       string
+	SSOURL         string
+	CertificatePEM string
+}
+
+func fetchSAMLIDPMetadata(rawURL string) ([]byte, string, error) {
+	metadataURL, err := normalizeOIDCURL(rawURL, "saml binding metadata_url")
+	if err != nil {
+		return nil, "", err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), oidcHTTPTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, metadataURL, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("build saml metadata request: %w", err)
+	}
+	req.Header.Set("accept", "application/samlmetadata+xml, application/xml, text/xml")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, "", fmt.Errorf("fetch saml metadata: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, "", fmt.Errorf("fetch saml metadata: status %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, oidcMaxJSONBytes))
+	if err != nil {
+		return nil, "", fmt.Errorf("read saml metadata: %w", err)
+	}
+	return data, metadataURL, nil
+}
+
+func parseSAMLIDPMetadata(data []byte) (samlIDPMetadata, error) {
+	doc := etree.NewDocument()
+	if err := doc.ReadFromBytes(data); err != nil || doc.Root() == nil {
+		if err == nil {
+			err = fmt.Errorf("empty document")
+		}
+		return samlIDPMetadata{}, fmt.Errorf("parse saml metadata: %w", err)
+	}
+	for _, entity := range samlMetadataEntityDescriptors(doc.Root()) {
+		idp := samlFirstChild(entity, "IDPSSODescriptor")
+		if idp == nil {
+			continue
+		}
+		out := samlIDPMetadata{
+			EntityID: strings.TrimSpace(samlAttr(entity, "entityID")),
+			SSOURL:   samlMetadataSSOURL(idp),
+		}
+		certPEM, err := samlMetadataSigningCertificate(idp)
+		if err != nil {
+			return samlIDPMetadata{}, err
+		}
+		out.CertificatePEM = certPEM
+		if out.EntityID == "" {
+			return samlIDPMetadata{}, fmt.Errorf("saml metadata entityID required")
+		}
+		if out.SSOURL == "" {
+			return samlIDPMetadata{}, fmt.Errorf("saml metadata SingleSignOnService required")
+		}
+		return out, nil
+	}
+	return samlIDPMetadata{}, fmt.Errorf("saml metadata IDPSSODescriptor required")
+}
+
+func samlMetadataEntityDescriptors(root *etree.Element) []*etree.Element {
+	if samlElementIs(root, "EntityDescriptor") {
+		return []*etree.Element{root}
+	}
+	return samlFindElements(root, "EntityDescriptor")
+}
+
+func samlMetadataSSOURL(idp *etree.Element) string {
+	services := samlChildren(idp, "SingleSignOnService")
+	if len(services) == 0 {
+		return ""
+	}
+	for _, binding := range []string{
+		"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
+		"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST",
+	} {
+		for _, service := range services {
+			if strings.TrimSpace(samlAttr(service, "Binding")) == binding {
+				if location := strings.TrimSpace(samlAttr(service, "Location")); location != "" {
+					return location
+				}
+			}
+		}
+	}
+	for _, service := range services {
+		if location := strings.TrimSpace(samlAttr(service, "Location")); location != "" {
+			return location
+		}
+	}
+	return ""
+}
+
+func samlMetadataSigningCertificate(idp *etree.Element) (string, error) {
+	for _, key := range samlChildren(idp, "KeyDescriptor") {
+		use := strings.TrimSpace(samlAttr(key, "use"))
+		if use != "" && use != "signing" {
+			continue
+		}
+		for _, cert := range samlFindElements(key, "X509Certificate") {
+			pemData, err := samlMetadataCertificatePEM(cert.Text())
+			if err == nil {
+				return pemData, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("saml metadata signing certificate required")
+}
+
+func samlMetadataCertificatePEM(raw string) (string, error) {
+	clean := strings.Join(strings.Fields(raw), "")
+	if clean == "" {
+		return "", fmt.Errorf("saml metadata certificate required")
+	}
+	der, err := base64.StdEncoding.DecodeString(clean)
+	if err != nil {
+		return "", fmt.Errorf("decode saml metadata certificate: %w", err)
+	}
+	if _, err := x509.ParseCertificate(der); err != nil {
+		return "", fmt.Errorf("parse saml metadata certificate: %w", err)
+	}
+	return strings.TrimSpace(string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))), nil
 }
 
 func validatedSAMLAssertions(root *etree.Element, certPEM string, now time.Time) []*etree.Element {

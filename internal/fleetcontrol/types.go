@@ -204,6 +204,8 @@ type SAMLBinding struct {
 	Audience          string    `json:"audience"`
 	Namespace         string    `json:"namespace,omitempty"`
 	Role              string    `json:"role,omitempty"`
+	MetadataURL       string    `json:"metadata_url,omitempty"`
+	MetadataFetched   time.Time `json:"metadata_fetched,omitempty"`
 	CertificateSHA256 string    `json:"certificate_sha256,omitempty"`
 	Created           time.Time `json:"created,omitempty"`
 	Updated           time.Time `json:"updated,omitempty"`
@@ -218,6 +220,8 @@ type SAMLBindingRequest struct {
 	Namespace      string `json:"namespace,omitempty"`
 	Role           string `json:"role,omitempty"`
 	CertificatePEM string `json:"certificate_pem"`
+	MetadataURL    string `json:"metadata_url,omitempty"`
+	MetadataXML    string `json:"metadata_xml,omitempty"`
 }
 
 type SAMLBindingResult struct {

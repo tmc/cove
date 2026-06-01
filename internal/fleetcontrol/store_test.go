@@ -1531,6 +1531,91 @@ func TestStoreSAMLBindingPersistsValidatedCertificate(t *testing.T) {
 	}
 }
 
+func TestStoreSAMLBindingImportsAndRefreshesMetadata(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	_, _, certPEM1 := testSAMLKeyCertificate(t)
+	_, _, certPEM2 := testSAMLKeyCertificate(t)
+	path := filepath.Join(t.TempDir(), "fleet.json")
+	store, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.now = func() time.Time { return now }
+
+	metadata := testSAMLIDPMetadata("https://idp.example/saml", "https://idp.example/sso", certPEM1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/samlmetadata+xml")
+		_, _ = w.Write([]byte(metadata))
+	}))
+	defer server.Close()
+
+	result, err := store.UpsertSAMLBinding(SAMLBindingRequest{
+		Name:        "okta",
+		MetadataURL: server.URL + "/metadata",
+		Audience:    "https://fleet.example/saml/acs",
+		Namespace:   "team-a",
+		Role:        ServiceAccountRoleOperator,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Binding.EntityID != "https://idp.example/saml" || result.Binding.SSOURL != "https://idp.example/sso" || result.Binding.CertificateSHA256 != samlCertificateSHA256(certPEM1) {
+		t.Fatalf("metadata binding = %+v, want imported idp fields", result.Binding)
+	}
+	if result.Binding.MetadataURL != server.URL+"/metadata" || !result.Binding.MetadataFetched.Equal(now) {
+		t.Fatalf("metadata url/fetched = %+v", result.Binding)
+	}
+
+	xmlResult, err := store.UpsertSAMLBinding(SAMLBindingRequest{
+		Name:        "xml",
+		MetadataXML: testSAMLIDPMetadata("https://xml-idp.example/saml", "https://xml-idp.example/sso", certPEM1),
+		Audience:    "https://fleet.example/saml/acs",
+		Role:        ServiceAccountRoleOperator,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if xmlResult.Binding.EntityID != "https://xml-idp.example/saml" || xmlResult.Binding.SSOURL != "https://xml-idp.example/sso" || xmlResult.Binding.MetadataURL != "" || !xmlResult.Binding.MetadataFetched.IsZero() {
+		t.Fatalf("xml metadata binding = %+v", xmlResult.Binding)
+	}
+
+	now = now.Add(time.Minute)
+	metadata = testSAMLIDPMetadata("https://idp2.example/saml", "https://idp2.example/sso", certPEM2)
+	refreshed, err := store.RefreshSAMLBindingMetadata("okta")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.Binding.EntityID != "https://idp2.example/saml" || refreshed.Binding.SSOURL != "https://idp2.example/sso" || refreshed.Binding.CertificateSHA256 != samlCertificateSHA256(certPEM2) {
+		t.Fatalf("refreshed binding = %+v, want second metadata", refreshed.Binding)
+	}
+	if !refreshed.Binding.MetadataFetched.Equal(now) {
+		t.Fatalf("refreshed metadata time = %v, want %v", refreshed.Binding.MetadataFetched, now)
+	}
+	if event := auditAction(store.ListAudit(0), "saml_binding.refresh"); event == nil || event.TargetID != "okta" || event.Fields["certificate_sha256"] != samlCertificateSHA256(certPEM2) {
+		t.Fatalf("refresh audit = %+v", event)
+	}
+	if _, err := store.RefreshSAMLBindingMetadata("xml"); err == nil || !strings.Contains(err.Error(), "metadata_url required") {
+		t.Fatalf("refresh xml binding err = %v, want metadata_url required", err)
+	}
+	if _, err := store.UpsertSAMLBinding(SAMLBindingRequest{
+		Name:        "bad-metadata",
+		MetadataXML: `<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" entityID="https://idp.example/saml"><md:IDPSSODescriptor><md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example/sso"/></md:IDPSSODescriptor></md:EntityDescriptor>`,
+		Audience:    "https://fleet.example/saml/acs",
+		Role:        ServiceAccountRoleOperator,
+	}); err == nil || !strings.Contains(err.Error(), "signing certificate") {
+		t.Fatalf("bad metadata err = %v, want signing certificate", err)
+	}
+
+	reopened, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bindings := reopened.ListSAMLBindings()
+	if len(bindings) != 2 || bindings[1].Name != "xml" || bindings[0].MetadataURL != server.URL+"/metadata" || !bindings[0].MetadataFetched.Equal(now) {
+		t.Fatalf("reopened bindings = %+v", bindings)
+	}
+}
+
 func TestStoreSAMLBindingAuthenticatesSignedAssertion(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
 	key, cert, certPEM := testSAMLKeyCertificate(t)
@@ -4902,6 +4987,55 @@ func TestHandlerOIDCBindingAuthScopesOperator(t *testing.T) {
 	}
 }
 
+func TestHandlerSAMLBindingMetadataRefresh(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	_, _, certPEM1 := testSAMLKeyCertificate(t)
+	_, _, certPEM2 := testSAMLKeyCertificate(t)
+	metadata := testSAMLIDPMetadata("https://idp.example/saml", "https://idp.example/sso", certPEM1)
+	metadataServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/samlmetadata+xml")
+		_, _ = w.Write([]byte(metadata))
+	}))
+	defer metadataServer.Close()
+
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var account ServiceAccountResult
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-a-admin", Namespace: "team-a", Role: ServiceAccountRoleAdmin, Token: "admin-a"}, &account)
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-a-operator", Namespace: "team-a", Role: ServiceAccountRoleOperator, Token: "operator-a"}, &account)
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-b-admin", Namespace: "team-b", Role: ServiceAccountRoleAdmin, Token: "admin-b"}, &account)
+
+	var binding SAMLBindingResult
+	postJSONAuth(t, server.URL+"/v1/saml-bindings", "admin-a", SAMLBindingRequest{
+		Name:        "okta",
+		MetadataURL: metadataServer.URL + "/metadata",
+		Audience:    "https://fleet.example/saml/acs",
+		Role:        ServiceAccountRoleOperator,
+	}, &binding)
+	if binding.Binding.EntityID != "https://idp.example/saml" || binding.Binding.SSOURL != "https://idp.example/sso" || binding.Binding.Namespace != "team-a" {
+		t.Fatalf("metadata imported binding = %+v", binding.Binding)
+	}
+
+	now = now.Add(time.Minute)
+	metadata = testSAMLIDPMetadata("https://idp2.example/saml", "https://idp2.example/sso", certPEM2)
+	postJSONAuth(t, server.URL+"/v1/saml-bindings/okta/refresh", "admin-a", map[string]string{}, &binding)
+	if binding.Binding.EntityID != "https://idp2.example/saml" || binding.Binding.SSOURL != "https://idp2.example/sso" || binding.Binding.CertificateSHA256 != samlCertificateSHA256(certPEM2) {
+		t.Fatalf("metadata refreshed binding = %+v", binding.Binding)
+	}
+	if code := postJSONStatus(t, server.URL+"/v1/saml-bindings/okta/refresh", "operator-a", map[string]string{}); code != http.StatusForbidden {
+		t.Fatalf("operator saml refresh status = %d, want 403", code)
+	}
+	if code := postJSONStatus(t, server.URL+"/v1/saml-bindings/okta/refresh", "admin-b", map[string]string{}); code != http.StatusNotFound {
+		t.Fatalf("cross-namespace saml refresh status = %d, want 404", code)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/saml-bindings/okta/refresh", "admin-a"); code != http.StatusMethodNotAllowed {
+		t.Fatalf("saml refresh GET status = %d, want 405", code)
+	}
+}
+
 func TestHandlerSAMLBindingRBACScopes(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
 	key, cert, certPEM := testSAMLKeyCertificate(t)
@@ -5420,6 +5554,17 @@ func testOIDCKey(t *testing.T) (*rsa.PrivateKey, string) {
 func testSAMLCertificate(t *testing.T) string {
 	_, _, certPEM := testSAMLKeyCertificate(t)
 	return certPEM
+}
+
+func testSAMLIDPMetadata(entityID, ssoURL, certPEM string) string {
+	block, _ := pem.Decode([]byte(certPEM))
+	cert := base64.StdEncoding.EncodeToString(block.Bytes)
+	return `<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" entityID="` + entityID + `">` +
+		`<md:IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">` +
+		`<md:KeyDescriptor use="signing"><ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:X509Data><ds:X509Certificate>` + cert + `</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor>` +
+		`<md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="https://idp.example/post"/>` +
+		`<md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="` + ssoURL + `"/>` +
+		`</md:IDPSSODescriptor></md:EntityDescriptor>`
 }
 
 func testSAMLKeyCertificate(t *testing.T) (*rsa.PrivateKey, *x509.Certificate, string) {
