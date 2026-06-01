@@ -1670,8 +1670,12 @@ func handleWorkerDecommission(w http.ResponseWriter, r *http.Request, store *Sto
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode worker lifecycle: %v", err))
 		return
 	}
-	result, err := store.DecommissionWorkerActor(actorFromRequest(r, store), id, lifecycle.Reason)
+	result, err := store.DecommissionWorkerActor(actorFromRequest(r, store), id, lifecycle.Reason, lifecycle.Force)
 	if err != nil {
+		if lifecycle.Force && len(result.Blocked) > 0 {
+			writeJSON(w, http.StatusConflict, result)
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

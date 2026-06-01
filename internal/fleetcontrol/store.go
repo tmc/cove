@@ -442,10 +442,10 @@ func (s *Store) DrainWorkerActor(actor, id, reason string) (WorkerDrainResult, e
 }
 
 func (s *Store) DecommissionWorker(id, reason string) (WorkerDecommissionResult, error) {
-	return s.DecommissionWorkerActor("controller", id, reason)
+	return s.DecommissionWorkerActor("controller", id, reason, false)
 }
 
-func (s *Store) DecommissionWorkerActor(actor, id, reason string) (WorkerDecommissionResult, error) {
+func (s *Store) DecommissionWorkerActor(actor, id, reason string, force bool) (WorkerDecommissionResult, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return WorkerDecommissionResult{}, fmt.Errorf("worker id required")
@@ -460,31 +460,75 @@ func (s *Store) DecommissionWorkerActor(actor, id, reason string) (WorkerDecommi
 	if !ok {
 		return WorkerDecommissionResult{}, fmt.Errorf("worker %q not registered", id)
 	}
-	var blockers []string
+	result := WorkerDecommissionResult{
+		Worker: s.statusLocked(record),
+		Reason: reason,
+		Force:  force,
+	}
+	var cancelable []Assignment
 	for _, assignment := range s.sortedAssignmentsLocked() {
 		if assignment.WorkerID != id && assignment.LeasedTo != id {
 			continue
 		}
-		if decommissionBlocksWorker(assignment.Status) {
-			blockers = append(blockers, assignment.ID)
+		if !decommissionBlocksWorker(assignment.Status) {
+			continue
 		}
+		if force && decommissionCancelsAssignment(assignment, id) {
+			cancelable = append(cancelable, assignment)
+			continue
+		}
+		result.Blocked = append(result.Blocked, WorkerDecommissionBlock{
+			AssignmentID: assignment.ID,
+			Status:       assignment.Status,
+			Reason:       decommissionBlockReason(assignment, id, force),
+		})
 	}
-	if len(blockers) > 0 {
-		return WorkerDecommissionResult{}, fmt.Errorf("worker %q has active assignments: %s", id, strings.Join(blockers, ", "))
+	if len(result.Blocked) > 0 {
+		return result, fmt.Errorf("worker %q has active assignments: %s", id, strings.Join(decommissionBlockIDs(result.Blocked), ", "))
+	}
+	for _, assignment := range cancelable {
+		assignment.Status = "canceled"
+		assignment.Updated = now
+		s.assignments[assignment.ID] = assignment
+		result.Canceled = append(result.Canceled, assignment.ID)
+		s.appendAuditLocked(now, AuditEvent{
+			Actor:        actor,
+			Namespace:    assignment.Namespace,
+			Action:       "assignment.cancel",
+			TargetType:   "assignment",
+			TargetID:     assignment.ID,
+			WorkerID:     id,
+			AssignmentID: assignment.ID,
+			Status:       assignment.Status,
+			Fields: map[string]string{
+				"reason":    reason,
+				"operation": "worker.decommission",
+			},
+		})
+	}
+	fields := map[string]string{
+		"reason":   reason,
+		"force":    strconv.FormatBool(force),
+		"canceled": strconv.Itoa(len(result.Canceled)),
+		"blocked":  strconv.Itoa(len(result.Blocked)),
+	}
+	if len(result.Canceled) > 0 {
+		fields["canceled_assignments"] = strings.Join(result.Canceled, ",")
 	}
 	delete(s.hosts, id)
+	result.Removed = true
 	s.appendAuditLocked(now, AuditEvent{
 		Actor:      actor,
 		Action:     "worker.decommission",
 		TargetType: "worker",
 		TargetID:   id,
 		WorkerID:   id,
-		Fields:     map[string]string{"reason": reason},
+		Fields:     fields,
 	})
 	if err := s.persistLocked(); err != nil {
 		return WorkerDecommissionResult{}, err
 	}
-	return WorkerDecommissionResult{Worker: s.statusLocked(record), Reason: reason, Removed: true}, nil
+	return result, nil
 }
 
 func (s *Store) UncordonWorker(id string) (HostRecord, error) {
@@ -2777,6 +2821,28 @@ func decommissionBlocksWorker(status string) bool {
 	default:
 		return false
 	}
+}
+
+func decommissionCancelsAssignment(assignment Assignment, workerID string) bool {
+	return assignment.WorkerID == workerID && assignment.Status == "pending" && assignment.LeasedTo == ""
+}
+
+func decommissionBlockReason(assignment Assignment, workerID string, force bool) string {
+	if !force && assignment.Status == "pending" && assignment.LeasedTo == "" {
+		return "pending assignment requires force"
+	}
+	if assignment.LeasedTo == workerID {
+		return "assignment leased to worker"
+	}
+	return "active assignment"
+}
+
+func decommissionBlockIDs(blocks []WorkerDecommissionBlock) []string {
+	ids := make([]string, 0, len(blocks))
+	for _, block := range blocks {
+		ids = append(ids, block.AssignmentID)
+	}
+	return ids
 }
 
 func assignmentCanPlace(assignment Assignment) bool {

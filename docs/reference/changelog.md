@@ -8,6 +8,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 ## Unreleased
 
 ### Added
+- Fleet worker decommission now accepts `{"force":true}` to atomically cancel
+  pending unleased assignments on a retiring worker; leased or running work
+  returns a structured blocked response, and the controller records
+  `assignment.cancel` plus `worker.decommission` audit details.
 - Forked run bundles now emit best-effort `resource_sample` metrics on
   agent-ready and before cleanup, including guest memory totals when the agent
   reports them and Virtualization.framework memory/balloon fields when the

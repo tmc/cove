@@ -223,6 +223,7 @@ type SAMLBindingResult struct {
 
 type WorkerLifecycle struct {
 	Reason string `json:"reason,omitempty"`
+	Force  bool   `json:"force,omitempty"`
 }
 
 type WorkerDrainResult struct {
@@ -232,9 +233,18 @@ type WorkerDrainResult struct {
 }
 
 type WorkerDecommissionResult struct {
-	Worker  HostRecord `json:"worker"`
-	Reason  string     `json:"reason,omitempty"`
-	Removed bool       `json:"removed"`
+	Worker   HostRecord                `json:"worker"`
+	Reason   string                    `json:"reason,omitempty"`
+	Force    bool                      `json:"force,omitempty"`
+	Removed  bool                      `json:"removed"`
+	Canceled []string                  `json:"canceled,omitempty"`
+	Blocked  []WorkerDecommissionBlock `json:"blocked,omitempty"`
+}
+
+type WorkerDecommissionBlock struct {
+	AssignmentID string `json:"assignment_id"`
+	Status       string `json:"status,omitempty"`
+	Reason       string `json:"reason"`
 }
 
 type WorkerDrainSkip struct {

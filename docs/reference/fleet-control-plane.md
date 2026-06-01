@@ -76,6 +76,9 @@ curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/drain \
 curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/decommission \
   -H 'content-type: application/json' \
   -d '{"reason":"retired"}'
+curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/decommission \
+  -H 'content-type: application/json' \
+  -d '{"reason":"retired","force":true}'
 curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/uncordon
 curl -X POST http://127.0.0.1:9758/v1/reconcile
 ```
@@ -94,12 +97,18 @@ stopped handles. Like cordon/uncordon, drain is a fleet-global operator action
 and requires an unscoped operator/admin identity.
 
 `POST /v1/workers/{id}/decommission` removes an idle or already-drained worker
-from controller inventory and records `worker.decommission`. It refuses removal
-while any pending, leased, running, ready, claimed, draining, or restarting
-assignment is still bound or leased to that worker; drain or let those
-assignments finish first. A later heartbeat with the same worker id registers a
-fresh worker record. Decommission is fleet-global and requires an unscoped
-operator/admin identity.
+from controller inventory and records `worker.decommission`. By default it
+refuses removal while any pending, leased, running, ready, claimed, draining,
+or restarting assignment is still bound or leased to that worker; drain or let
+those assignments finish first. With `{"force":true}`, decommission atomically
+cancels pending assignments that are bound to the worker and have not been
+leased yet, then removes the worker and returns their assignment ids in
+`canceled`. Leased or already-started work still blocks removal; the HTTP
+response is `409 Conflict` with `blocked`, and no pending assignment is
+canceled. Force-canceled assignments also record `assignment.cancel` audit
+events. A later heartbeat with the same worker id registers a fresh worker
+record. Decommission is fleet-global and requires an unscoped operator/admin
+identity.
 
 `GET /v1/operations/summary` is the dashboard entry point for operators. It
 reconciles first, then returns worker readiness/cordon/stale counts with
@@ -159,9 +168,10 @@ curl -X DELETE http://127.0.0.1:9758/v1/service-accounts/ci
 
 The controller persists audit events in the fleet store for high-value state
 changes: worker registration, cordon lifecycle, assignment creation, assignment
-leases, terminal assignment reports, fleet reconcile changes, image/policy/
-storage fan-out, and warm-pool ensure/claim/delete operations. Each new event
-carries `prev_hash` and `hash` fields that chain the global audit log;
+leases, assignment cancellation from forced decommission, terminal assignment
+reports, fleet reconcile changes, image/policy/storage fan-out, and warm-pool
+ensure/claim/delete operations. Each new event carries `prev_hash` and `hash`
+fields that chain the global audit log;
 `GET /v1/audit/verify` recomputes the chain and returns `ok`, `events`,
 `head_hash`, and any chain issues. `GET /v1/audit` returns `events`, `count`,
 `offset`, `limit`, and `next_offset`; query filters include `namespace`,

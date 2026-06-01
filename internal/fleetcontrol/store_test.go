@@ -2331,6 +2331,89 @@ func TestStoreDecommissionWorkerRemovesIdleInventory(t *testing.T) {
 	}
 }
 
+func TestStoreDecommissionWorkerForceCancelsPendingAssignments(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	path := filepath.Join(t.TempDir(), "fleet.json")
+	store, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "old"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAssignment(Assignment{ID: "queued", WorkerID: "old", Verb: "noop"}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.DecommissionWorkerActor("operator", "old", "retire", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Removed || !result.Force || !equalStrings(result.Canceled, []string{"queued"}) || len(result.Blocked) != 0 {
+		t.Fatalf("decommission result = %+v, want forced removal with queued canceled", result)
+	}
+	if _, ok := store.Get("old"); ok {
+		t.Fatal("Get(old) = true after forced decommission")
+	}
+	assignment, ok := store.GetAssignment("queued")
+	if !ok || assignment.Status != "canceled" {
+		t.Fatalf("queued assignment = %+v, %v; want canceled", assignment, ok)
+	}
+	events := store.ListAudit(0)
+	if event := auditAction(events, "assignment.cancel"); event == nil || event.AssignmentID != "queued" || event.Fields["operation"] != "worker.decommission" {
+		t.Fatalf("assignment cancel audit = %+v", event)
+	}
+	if event := auditAction(events, "worker.decommission"); event == nil || event.WorkerID != "old" || event.Fields["force"] != "true" || event.Fields["canceled"] != "1" {
+		t.Fatalf("decommission audit = %+v", event)
+	}
+	reopened, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assignment, ok = reopened.GetAssignment("queued")
+	if !ok || assignment.Status != "canceled" {
+		t.Fatalf("reopened queued assignment = %+v, %v; want canceled", assignment, ok)
+	}
+	if _, ok := reopened.Get("old"); ok {
+		t.Fatal("reopened Get(old) = true after forced decommission")
+	}
+}
+
+func TestStoreDecommissionWorkerForceBlocksLeasedAssignments(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "busy"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAssignment(Assignment{ID: "leased", WorkerID: "busy", Verb: "noop"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AwaitAssignment("busy"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAssignment(Assignment{ID: "queued", WorkerID: "busy", Verb: "noop"}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.DecommissionWorkerActor("operator", "busy", "retire", true)
+	if err == nil || !strings.Contains(err.Error(), "active assignments") {
+		t.Fatalf("DecommissionWorkerActor busy err = %v, want active assignment block", err)
+	}
+	if result.Removed || !result.Force || len(result.Canceled) != 0 || len(result.Blocked) != 1 {
+		t.Fatalf("decommission result = %+v, want one blocker and no cancellation", result)
+	}
+	if block := result.Blocked[0]; block.AssignmentID != "leased" || block.Status != "leased" || block.Reason == "" {
+		t.Fatalf("block = %+v, want leased assignment block", block)
+	}
+	if _, ok := store.Get("busy"); !ok {
+		t.Fatal("Get(busy) = false after blocked decommission")
+	}
+	assignment, ok := store.GetAssignment("queued")
+	if !ok || assignment.Status != "pending" {
+		t.Fatalf("queued assignment = %+v, %v; want pending after blocked decommission", assignment, ok)
+	}
+}
+
 func TestStorePrepareImageCreatesMissingWorkerAssignments(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	for _, hb := range []WorkerHeartbeat{
@@ -3461,6 +3544,8 @@ func TestHandlerWorkerDecommissionRemovesIdleWorker(t *testing.T) {
 	var record HostRecord
 	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "old"}, &record)
 	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "busy"}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "queued"}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "leased"}, &record)
 	var created Assignment
 	postJSON(t, server.URL+"/v1/assignments", Assignment{ID: "active", WorkerID: "busy", Verb: "noop"}, &created)
 	if code := postJSONStatus(t, server.URL+"/v1/workers/busy/decommission", "", WorkerLifecycle{Reason: "retire"}); code != http.StatusBadRequest {
@@ -3474,6 +3559,32 @@ func TestHandlerWorkerDecommissionRemovesIdleWorker(t *testing.T) {
 	}
 	if code := getJSONStatus(t, server.URL+"/v1/workers/old", ""); code != http.StatusNotFound {
 		t.Fatalf("GET old status = %d, want 404", code)
+	}
+
+	postJSON(t, server.URL+"/v1/assignments", Assignment{ID: "queued-work", WorkerID: "queued", Verb: "noop"}, &created)
+	result = WorkerDecommissionResult{}
+	postJSON(t, server.URL+"/v1/workers/queued/decommission", WorkerLifecycle{Reason: "retire", Force: true}, &result)
+	if !result.Removed || !result.Force || !equalStrings(result.Canceled, []string{"queued-work"}) {
+		t.Fatalf("forced decommission result = %+v, want queued-work canceled", result)
+	}
+	getJSON(t, server.URL+"/v1/assignments/queued-work", &created)
+	if created.Status != "canceled" {
+		t.Fatalf("queued assignment = %+v, want canceled", created)
+	}
+
+	postJSON(t, server.URL+"/v1/assignments", Assignment{ID: "leased-work", WorkerID: "leased", Verb: "noop"}, &created)
+	getJSON(t, server.URL+"/v1/workers/leased/assignments", &created)
+	resp := postJSONRequest(t, server.URL+"/v1/workers/leased/decommission", "", WorkerLifecycle{Reason: "retire", Force: true})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("leased forced decommission status = %d, want 409", resp.StatusCode)
+	}
+	result = WorkerDecommissionResult{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Removed || len(result.Blocked) != 1 || result.Blocked[0].AssignmentID != "leased-work" {
+		t.Fatalf("leased forced decommission result = %+v, want blocked leased-work", result)
 	}
 }
 
