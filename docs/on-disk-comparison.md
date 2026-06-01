@@ -147,7 +147,8 @@ delegates the disk/runtime work to `tart` or `vetu`.
    filter by manifest digest, digest ref, platform, image ref, and required
    capability, so operators can find exactly which queued or leased work, live
    handles, ready capacity, pre-staging runs, placement plans, and maintenance
-   pushes depend on an immutable image or RAM-overlay-class worker capability;
+   pushes depend on an immutable image or RAM-overlay-class worker capability,
+   assignment, or affected worker;
    the aggregate timeline also has a single drill-down endpoint that returns
    normalized assignments, affected workers, skipped workers, and the retained
    source object for dashboards and incident review.

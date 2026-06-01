@@ -635,6 +635,10 @@ def test_fleet_client_maintenance_runs() -> None:
             image_digest_ref="registry.example/base@sha256:base",
             image_platform="darwin/arm64",
             required_capability="ram-overlay",
+            assignment_id="assignment-storage-prune-1",
+            worker_id="worker-1",
+            candidate_worker_id="worker-1",
+            skipped_worker_id="worker-2",
             offset=1,
             limit=2,
         )
@@ -718,6 +722,10 @@ def test_fleet_client_maintenance_runs() -> None:
         assert server.requests[-5]["query"]["image_digest_ref"] == ["registry.example/base@sha256:base"]
         assert server.requests[-5]["query"]["image_platform"] == ["darwin/arm64"]
         assert server.requests[-5]["query"]["required_capability"] == ["ram-overlay"]
+        assert server.requests[-5]["query"]["assignment_id"] == ["assignment-storage-prune-1"]
+        assert server.requests[-5]["query"]["worker_id"] == ["worker-1"]
+        assert server.requests[-5]["query"]["candidate_worker_id"] == ["worker-1"]
+        assert server.requests[-5]["query"]["skipped_worker_id"] == ["worker-2"]
         assert server.requests[-2]["body"] == {}
         assert server.requests[-1]["query"]["namespace"] == ["team-a"]
     finally:

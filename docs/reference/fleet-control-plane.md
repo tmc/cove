@@ -80,6 +80,7 @@ curl http://127.0.0.1:9758/v1/operations/summary?namespace=team-a
 curl 'http://127.0.0.1:9758/v1/operations/runs?kind=storage.prune&limit=20'
 curl 'http://127.0.0.1:9758/v1/operations/runs?target_type=image&target_id=macos-runner:latest'
 curl 'http://127.0.0.1:9758/v1/operations/runs?image_manifest_digest=sha256:...&required_capability=ram-overlay&limit=20'
+curl 'http://127.0.0.1:9758/v1/operations/runs?worker_id=mini-1&assignment_id=assignment-...&limit=20'
 curl http://127.0.0.1:9758/v1/operations/runs/image-prepare-...
 curl http://127.0.0.1:9758/v1/workers
 curl 'http://127.0.0.1:9758/v1/workers?status=ready&label=zone=desk&capability=ram-overlay&image_ref=macos-runner:latest&limit=50'
@@ -224,14 +225,17 @@ placement plans, image preparations, image-GC runs, lifecycle-policy pushes,
 and storage budget/prune runs into one paginated timeline with `kind`,
 `target_type`, `target_id`, `source_ref`, `image_ref`,
 `image_manifest_digest`, `image_digest_ref`, `image_platform`,
-`required_capability`, `offset`, and `limit` filters. Scoped service-account
-tokens see only runs in their namespace. Run summaries include the source run
-`id`, `kind`, creation time, assignment/skip/candidate counts, common target
-fields, and kind-specific metadata in `fields`; placement-plan run summaries
-count both feasible candidates and skipped workers. The image provenance and
-capability filters match summary metadata when the source run carries it, so
+`required_capability`, `assignment_id`, `worker_id`,
+`candidate_worker_id`, `skipped_worker_id`, `offset`, and `limit` filters.
+Scoped service-account tokens see only runs in their namespace. Run summaries
+include the source run `id`, `kind`, creation time, assignment/skip/candidate
+counts, common target fields, and kind-specific metadata in `fields`;
+placement-plan run summaries count both feasible candidates and skipped
+workers. The image provenance, capability, assignment, and worker filters
+match summary or retained detail metadata when the source run carries it, so
 operators can collapse placement, preparation, and maintenance history around a
-specific immutable image or worker trait. `GET /v1/operations/runs/{id}`
+specific immutable image, worker trait, assignment, or affected worker.
+`GET /v1/operations/runs/{id}`
 returns the same summary plus the retained source object under one of
 `placement_plan`, `image_preparation`, `image_gc`, `lifecycle_policy`,
 `storage_budget`, or `storage_prune`, giving dashboards a single drill-down
@@ -1046,6 +1050,7 @@ runs, err := agentsandbox.ListControllerRuns(ctx, agentsandbox.ControllerRunList
 	Kind:                "image.prepare",
 	ImageManifestDigest: "sha256:...",
 	RequiredCapability:  "ram-overlay",
+	WorkerID:            "mini-1",
 	Limit:               20,
 })
 if err != nil {

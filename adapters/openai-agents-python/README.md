@@ -235,6 +235,7 @@ runs = CoveFleetClient.list_controller_runs(
     kind="image.prepare",
     image_manifest_digest="sha256:...",
     required_capability="ram-overlay",
+    worker_id="mini-1",
     limit=20,
 )
 print(runs["count"])

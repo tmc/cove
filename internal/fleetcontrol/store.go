@@ -3545,6 +3545,10 @@ func (s *Store) ListControllerRunsPage(filter ControllerRunListFilter) Controlle
 	filter.ImageDigestRef = strings.TrimSpace(filter.ImageDigestRef)
 	filter.ImagePlatform = strings.TrimSpace(filter.ImagePlatform)
 	filter.RequiredCapability = strings.TrimSpace(filter.RequiredCapability)
+	filter.AssignmentID = strings.TrimSpace(filter.AssignmentID)
+	filter.WorkerID = strings.TrimSpace(filter.WorkerID)
+	filter.CandidateWorkerID = strings.TrimSpace(filter.CandidateWorkerID)
+	filter.SkippedWorkerID = strings.TrimSpace(filter.SkippedWorkerID)
 	if filter.Offset < 0 {
 		filter.Offset = 0
 	}
@@ -3586,6 +3590,12 @@ func (s *Store) ListControllerRunsPage(filter ControllerRunListFilter) Controlle
 		if filter.RequiredCapability != "" && !controllerRunHasCapability(run.Fields, filter.RequiredCapability) {
 			continue
 		}
+		if controllerRunNeedsDetailFilter(filter) {
+			detail, ok := s.controllerRunDetailLocked(run.ID)
+			if !ok || !controllerRunDetailMatchesFilter(detail, filter) {
+				continue
+			}
+		}
 		filtered = append(filtered, run)
 	}
 	result := ControllerRunListResult{Offset: filter.Offset, Limit: filter.Limit}
@@ -3610,6 +3620,10 @@ func (s *Store) GetControllerRun(id string) (ControllerRunDetail, bool) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.controllerRunDetailLocked(id)
+}
+
+func (s *Store) controllerRunDetailLocked(id string) (ControllerRunDetail, bool) {
 	for _, plan := range s.plans {
 		if plan.ID != id {
 			continue
@@ -3693,6 +3707,30 @@ func (s *Store) GetControllerRun(id string) (ControllerRunDetail, bool) {
 		}, true
 	}
 	return ControllerRunDetail{}, false
+}
+
+func controllerRunNeedsDetailFilter(filter ControllerRunListFilter) bool {
+	return filter.AssignmentID != "" || filter.WorkerID != "" || filter.CandidateWorkerID != "" || filter.SkippedWorkerID != ""
+}
+
+func controllerRunDetailMatchesFilter(detail ControllerRunDetail, filter ControllerRunListFilter) bool {
+	if filter.AssignmentID != "" && !containsString(detail.AssignmentIDs, filter.AssignmentID) {
+		return false
+	}
+	if filter.WorkerID != "" && !controllerRunDetailHasWorker(detail, filter.WorkerID) {
+		return false
+	}
+	if filter.CandidateWorkerID != "" && !containsString(detail.CandidateWorkerIDs, filter.CandidateWorkerID) {
+		return false
+	}
+	if filter.SkippedWorkerID != "" && !containsString(detail.SkippedWorkerIDs, filter.SkippedWorkerID) {
+		return false
+	}
+	return true
+}
+
+func controllerRunDetailHasWorker(detail ControllerRunDetail, workerID string) bool {
+	return containsString(detail.WorkerIDs, workerID) || containsString(detail.CandidateWorkerIDs, workerID) || containsString(detail.SkippedWorkerIDs, workerID)
 }
 
 func controllerRunAssignmentIDs(assignments []Assignment) []string {

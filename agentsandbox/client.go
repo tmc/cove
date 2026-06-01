@@ -578,6 +578,10 @@ type ControllerRunListOptions struct {
 	ImageDigestRef      string
 	ImagePlatform       string
 	RequiredCapability  string
+	AssignmentID        string
+	WorkerID            string
+	CandidateWorkerID   string
+	SkippedWorkerID     string
 	Offset              int
 	Limit               int
 	Timeout             time.Duration
@@ -2364,6 +2368,10 @@ func ListControllerRuns(ctx context.Context, opts ControllerRunListOptions) (Con
 		"image_digest_ref":      opts.ImageDigestRef,
 		"image_platform":        opts.ImagePlatform,
 		"required_capability":   opts.RequiredCapability,
+		"assignment_id":         opts.AssignmentID,
+		"worker_id":             opts.WorkerID,
+		"candidate_worker_id":   opts.CandidateWorkerID,
+		"skipped_worker_id":     opts.SkippedWorkerID,
 	}
 	if opts.Offset > 0 {
 		query["offset"] = strconv.Itoa(opts.Offset)

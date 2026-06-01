@@ -352,6 +352,10 @@ func controllerRunListFilterFromRequest(r *http.Request, namespace string) (Cont
 		ImageDigestRef:      strings.TrimSpace(r.URL.Query().Get("image_digest_ref")),
 		ImagePlatform:       strings.TrimSpace(r.URL.Query().Get("image_platform")),
 		RequiredCapability:  strings.TrimSpace(r.URL.Query().Get("required_capability")),
+		AssignmentID:        strings.TrimSpace(r.URL.Query().Get("assignment_id")),
+		WorkerID:            strings.TrimSpace(r.URL.Query().Get("worker_id")),
+		CandidateWorkerID:   strings.TrimSpace(r.URL.Query().Get("candidate_worker_id")),
+		SkippedWorkerID:     strings.TrimSpace(r.URL.Query().Get("skipped_worker_id")),
 	}
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		limit, err := strconv.Atoi(raw)

@@ -661,6 +661,10 @@ type ControllerRunListFilter struct {
 	ImageDigestRef      string `json:"image_digest_ref,omitempty"`
 	ImagePlatform       string `json:"image_platform,omitempty"`
 	RequiredCapability  string `json:"required_capability,omitempty"`
+	AssignmentID        string `json:"assignment_id,omitempty"`
+	WorkerID            string `json:"worker_id,omitempty"`
+	CandidateWorkerID   string `json:"candidate_worker_id,omitempty"`
+	SkippedWorkerID     string `json:"skipped_worker_id,omitempty"`
 	Offset              int    `json:"offset,omitempty"`
 	Limit               int    `json:"limit,omitempty"`
 }

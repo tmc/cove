@@ -5033,6 +5033,18 @@ func TestStoreListControllerRunsPage(t *testing.T) {
 	if planFilter.Count != 1 || len(planFilter.Runs) != 1 || planFilter.Runs[0].ID != plan.ID {
 		t.Fatalf("plan provenance controller runs = %+v, want placement plan %s", planFilter, plan.ID)
 	}
+	assignmentFilter := store.ListControllerRunsPage(ControllerRunListFilter{Namespace: "team-a", AssignmentID: prep.Assignments[0].ID})
+	if assignmentFilter.Count != 1 || len(assignmentFilter.Runs) != 1 || assignmentFilter.Runs[0].ID != prep.ID {
+		t.Fatalf("assignment controller runs = %+v, want image prepare %s", assignmentFilter, prep.ID)
+	}
+	workerFilter := store.ListControllerRunsPage(ControllerRunListFilter{Namespace: "team-a", WorkerID: "desk"})
+	if workerFilter.Count != 6 || len(workerFilter.Runs) != 6 {
+		t.Fatalf("worker controller runs = %+v, want 6 runs touching desk", workerFilter)
+	}
+	candidateFilter := store.ListControllerRunsPage(ControllerRunListFilter{Namespace: "team-a", CandidateWorkerID: "desk"})
+	if candidateFilter.Count != 1 || len(candidateFilter.Runs) != 1 || candidateFilter.Runs[0].ID != plan.ID {
+		t.Fatalf("candidate controller runs = %+v, want placement plan %s", candidateFilter, plan.ID)
+	}
 	detail, ok := store.GetControllerRun(prep.ID)
 	if !ok || detail.Summary.ID != prep.ID || detail.Summary.Kind != ControllerRunKindImagePrepare || detail.ImagePreparation == nil || detail.ImagePreparation.ImageDigestRef != "registry.example/tool@sha256:tool" {
 		t.Fatalf("controller run detail = %+v, %v, want image preparation %s", detail, ok, prep.ID)
@@ -6393,6 +6405,7 @@ func TestHandlerControllerRuns(t *testing.T) {
 	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-b", Namespace: "team-b", Token: "token-b"}, &account)
 	var record HostRecord
 	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-2", Labels: map[string]string{"zone": "desk"}}, &record)
 	var prune StoragePruneResult
 	postJSONAuth(t, server.URL+"/v1/storage/prune", "token-a", StoragePruneRequest{
 		RequiredLabels:       map[string]string{"zone": "desk"},
@@ -6423,6 +6436,21 @@ func TestHandlerControllerRuns(t *testing.T) {
 	getJSONAuth(t, server.URL+"/v1/operations/runs?kind=image.prepare&source_ref=registry.example%2Frunner%3Av1&image_ref=runner:v1&image_manifest_digest=sha256:runner&image_digest_ref=registry.example%2Frunner%40sha256:runner&image_platform=darwin%2Farm64&required_capability=ram-overlay&limit=1", "token-a", &page)
 	if page.Count != 1 || len(page.Runs) != 1 || page.Runs[0].ID != prep.ID || page.Runs[0].Fields["image_digest_ref"] != "registry.example/runner@sha256:runner" {
 		t.Fatalf("filtered controller runs = %+v, want image prepare %s", page, prep.ID)
+	}
+	page = ControllerRunListResult{}
+	getJSONAuth(t, server.URL+"/v1/operations/runs?assignment_id="+prep.Assignments[0].ID, "token-a", &page)
+	if page.Count != 1 || len(page.Runs) != 1 || page.Runs[0].ID != prep.ID {
+		t.Fatalf("assignment controller runs = %+v, want image prepare %s", page, prep.ID)
+	}
+	page = ControllerRunListResult{}
+	getJSONAuth(t, server.URL+"/v1/operations/runs?worker_id=worker-1&limit=10", "token-a", &page)
+	if page.Count != 2 || len(page.Runs) != 2 {
+		t.Fatalf("worker controller runs = %+v, want prune and prepare on worker-1", page)
+	}
+	page = ControllerRunListResult{}
+	getJSONAuth(t, server.URL+"/v1/operations/runs?kind=image.prepare&skipped_worker_id=worker-2", "token-a", &page)
+	if page.Count != 1 || len(page.Runs) != 1 || page.Runs[0].ID != prep.ID {
+		t.Fatalf("skipped worker controller runs = %+v, want image prepare %s", page, prep.ID)
 	}
 	var detail ControllerRunDetail
 	getJSONAuth(t, server.URL+"/v1/operations/runs/"+prep.ID, "token-a", &detail)
