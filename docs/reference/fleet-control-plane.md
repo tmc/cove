@@ -776,9 +776,12 @@ Maintenance helpers include `PushImageGC`, `PushLifecyclePolicy`,
 `GetOperationsSummary` plus `ListControllerRuns` for the aggregate operations
 dashboard and timeline. Inventory helpers include `ListWorkers`, `GetWorker`,
 `ListAssignments`, and `GetAssignment`, with the same filters and pagination as
-the REST API. Pass `DryRun` to maintenance pushes to inspect planned
-assignments and structured skipped-worker diagnostics without mutating the
-controller.
+the REST API. Worker lifecycle helpers include `CordonWorker`,
+`UncordonWorker`, `QuarantineWorker`, `UnquarantineWorker`, `EvacuateWorker`,
+`DrainWorker`, and `DecommissionWorker`, so hosted operators can plan or apply
+maintenance without dropping to raw HTTP. Pass `DryRun` to maintenance pushes
+to inspect planned assignments and structured skipped-worker diagnostics
+without mutating the controller.
 
 Go SDK example:
 
@@ -853,6 +856,28 @@ if err != nil {
 	log.Fatal(err)
 }
 log.Printf("running assignments=%d", assignments.Count)
+
+evacuation, err := agentsandbox.EvacuateWorker(ctx, agentsandbox.WorkerEvacuationOptions{
+	FleetURL: "https://fleet.internal.example",
+	APIKey:   os.Getenv("COVE_API_KEY"),
+	ID:       "mini-1",
+	Reason:   "maintenance",
+})
+if err != nil {
+	log.Fatal(err)
+}
+log.Printf("evacuation plan assignments=%d blocked=%d", len(evacuation.Assignments), len(evacuation.Blocked))
+
+drain, err := agentsandbox.DrainWorker(ctx, agentsandbox.WorkerLifecycleOptions{
+	FleetURL: "https://fleet.internal.example",
+	APIKey:   os.Getenv("COVE_API_KEY"),
+	ID:       "mini-1",
+	Reason:   "maintenance",
+})
+if err != nil {
+	log.Fatal(err)
+}
+log.Printf("drained sandboxes=%d skipped=%d", len(drain.Sandboxes), len(drain.Skipped))
 
 runs, err := agentsandbox.ListControllerRuns(ctx, agentsandbox.ControllerRunListOptions{
 	FleetURL:   "https://fleet.internal.example",

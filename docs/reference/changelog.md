@@ -9,6 +9,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 
 ### Added
 - The public Go `agentsandbox` package and OpenAI Agents Python adapter now
+  expose hosted worker lifecycle controls for cordon, uncordon, quarantine,
+  unquarantine, evacuation plan/apply, drain, and decommission.
+- The public Go `agentsandbox` package and OpenAI Agents Python adapter now
   expose hosted worker and assignment inventory with filters and pagination,
   giving agent clients the same controller visibility as `/v1/workers` and
   `/v1/assignments`.

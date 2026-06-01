@@ -699,6 +699,117 @@ func TestCloudClientInventoryValidation(t *testing.T) {
 	}
 }
 
+func TestCloudClientWorkerLifecycle(t *testing.T) {
+	server := newSDKFleetServer(t)
+	ctx := context.Background()
+
+	cordoned, err := CordonWorker(ctx, WorkerLifecycleOptions{FleetURL: server.URL, APIKey: "secret", ID: "worker-1", Reason: "maintenance", Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("CordonWorker: %v", err)
+	}
+	if !cordoned.Cordoned || cordoned.CordonReason != "maintenance" || cordoned.Status != "cordoned" {
+		t.Fatalf("CordonWorker = %+v, want cordoned worker", cordoned)
+	}
+	uncordoned, err := UncordonWorker(ctx, WorkerLifecycleOptions{FleetURL: server.URL, APIKey: "secret", ID: "worker-1", Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("UncordonWorker: %v", err)
+	}
+	if uncordoned.Cordoned || uncordoned.Status != "ready" {
+		t.Fatalf("UncordonWorker = %+v, want ready worker", uncordoned)
+	}
+	quarantined, err := QuarantineWorker(ctx, WorkerLifecycleOptions{FleetURL: server.URL, APIKey: "secret", ID: "worker-1", Reason: "bad disk", Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("QuarantineWorker: %v", err)
+	}
+	if !quarantined.Quarantined || quarantined.QuarantineReason != "bad disk" || quarantined.Status != "quarantined" {
+		t.Fatalf("QuarantineWorker = %+v, want quarantined worker", quarantined)
+	}
+	unquarantined, err := UnquarantineWorker(ctx, WorkerLifecycleOptions{FleetURL: server.URL, APIKey: "secret", ID: "worker-1", Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("UnquarantineWorker: %v", err)
+	}
+	if unquarantined.Quarantined || unquarantined.Status != "ready" {
+		t.Fatalf("UnquarantineWorker = %+v, want ready worker", unquarantined)
+	}
+	plan, err := EvacuateWorker(ctx, WorkerEvacuationOptions{FleetURL: server.URL, APIKey: "secret", ID: "worker-1", Reason: "maintenance", Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("EvacuateWorker plan: %v", err)
+	}
+	if plan.Apply || plan.Applied || len(plan.Assignments) != 2 || plan.Assignments[0].Action != "requeue" || plan.Assignments[0].TargetWorkerID != "worker-2" || len(plan.Blocked) != 1 {
+		t.Fatalf("EvacuateWorker plan = %+v, want dry-run requeue and blocker", plan)
+	}
+	applied, err := EvacuateWorker(ctx, WorkerEvacuationOptions{FleetURL: server.URL, APIKey: "secret", ID: "worker-1", Reason: "maintenance", Apply: true, Force: true, Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("EvacuateWorker apply: %v", err)
+	}
+	if !applied.Apply || !applied.Applied || !applied.Force || len(applied.Requeued) != 1 || applied.Requeued[0].WorkerID != "worker-2" || len(applied.Canceled) != 1 {
+		t.Fatalf("EvacuateWorker apply = %+v, want applied requeue and cancellation", applied)
+	}
+	drained, err := DrainWorker(ctx, WorkerLifecycleOptions{FleetURL: server.URL, APIKey: "secret", ID: "worker-1", Reason: "maintenance", Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("DrainWorker: %v", err)
+	}
+	if !drained.Worker.Cordoned || len(drained.Sandboxes) != 1 || drained.Sandboxes[0].ID != "job-1" || len(drained.Skipped) != 1 {
+		t.Fatalf("DrainWorker = %+v, want stopped sandbox and skipped terminal sandbox", drained)
+	}
+	decommissioned, err := DecommissionWorker(ctx, WorkerLifecycleOptions{FleetURL: server.URL, APIKey: "secret", ID: "worker-1", Reason: "retire", Force: true, Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("DecommissionWorker: %v", err)
+	}
+	if !decommissioned.Removed || !decommissioned.Force || decommissioned.Reason != "retire" || !equalStringSlices(decommissioned.Canceled, []string{"assignment-1"}) {
+		t.Fatalf("DecommissionWorker = %+v, want forced removal", decommissioned)
+	}
+
+	paths := make([]string, 0, len(server.requests))
+	for _, req := range server.requests {
+		paths = append(paths, req.path)
+		if req.authorization != "Bearer secret" {
+			t.Fatalf("authorization for %s = %q, want bearer token", req.path, req.authorization)
+		}
+	}
+	wantPaths := []string{
+		"/v1/workers/worker-1/cordon",
+		"/v1/workers/worker-1/uncordon",
+		"/v1/workers/worker-1/quarantine",
+		"/v1/workers/worker-1/unquarantine",
+		"/v1/workers/worker-1/evacuate",
+		"/v1/workers/worker-1/evacuate",
+		"/v1/workers/worker-1/drain",
+		"/v1/workers/worker-1/decommission",
+	}
+	if !equalStringSlices(paths, wantPaths) {
+		t.Fatalf("paths = %+v, want %+v", paths, wantPaths)
+	}
+	if body := server.requests[0].body; body["reason"] != "maintenance" {
+		t.Fatalf("cordon body = %+v, want reason", body)
+	}
+	if body := server.requests[1].body; len(body) != 0 {
+		t.Fatalf("uncordon body = %+v, want empty body", body)
+	}
+	if body := server.requests[4].body; body["reason"] != "maintenance" || body["apply"] != nil || body["force"] != nil {
+		t.Fatalf("evacuate plan body = %+v, want dry-run reason only", body)
+	}
+	if body := server.requests[5].body; body["apply"] != true || body["force"] != true {
+		t.Fatalf("evacuate apply body = %+v, want apply force", body)
+	}
+	if body := server.requests[7].body; body["reason"] != "retire" || body["force"] != true {
+		t.Fatalf("decommission body = %+v, want forced retire", body)
+	}
+}
+
+func TestCloudClientWorkerLifecycleValidation(t *testing.T) {
+	ctx := context.Background()
+	if _, err := CordonWorker(ctx, WorkerLifecycleOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "worker id required") {
+		t.Fatalf("CordonWorker missing id err = %v, want validation error", err)
+	}
+	if _, err := EvacuateWorker(ctx, WorkerEvacuationOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "worker id required") {
+		t.Fatalf("EvacuateWorker missing id err = %v, want validation error", err)
+	}
+	if _, err := DecommissionWorker(ctx, WorkerLifecycleOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "worker id required") {
+		t.Fatalf("DecommissionWorker missing id err = %v, want validation error", err)
+	}
+}
+
 func TestCloudClientMaintenanceValidation(t *testing.T) {
 	ctx := context.Background()
 	if _, err := ListImageGCRuns(ctx, ImageGCListOptions{FleetURL: "https://fleet.example", APIKey: "secret", Limit: -1}); err == nil || !strings.Contains(err.Error(), "limit must be non-negative") {
@@ -1195,6 +1306,38 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/assignments/assignment-1":
 			writeSDKJSON(t, w, sdkInventoryAssignment())
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/workers/worker-1/cordon":
+			record := sdkHostRecord()
+			record.Cordoned = true
+			record.CordonReason = stringValue(req.body["reason"])
+			record.Status = "cordoned"
+			writeSDKJSON(t, w, record)
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/workers/worker-1/uncordon":
+			record := sdkHostRecord()
+			record.Cordoned = false
+			record.CordonReason = ""
+			record.CordonedAt = time.Time{}
+			record.Status = "ready"
+			writeSDKJSON(t, w, record)
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/workers/worker-1/quarantine":
+			record := sdkHostRecord()
+			record.Quarantined = true
+			record.QuarantineReason = stringValue(req.body["reason"])
+			record.Status = "quarantined"
+			writeSDKJSON(t, w, record)
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/workers/worker-1/unquarantine":
+			record := sdkHostRecord()
+			record.Quarantined = false
+			record.QuarantineReason = ""
+			record.QuarantinedAt = time.Time{}
+			record.Status = "ready"
+			writeSDKJSON(t, w, record)
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/workers/worker-1/evacuate":
+			writeSDKJSON(t, w, sdkWorkerEvacuation(req.body))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/workers/worker-1/drain":
+			writeSDKJSON(t, w, sdkWorkerDrain(stringValue(req.body["reason"])))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/workers/worker-1/decommission":
+			writeSDKJSON(t, w, sdkWorkerDecommission(req.body))
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/warm-pools":
 			status := sdkWarmPoolStatus()
 			writeSDKJSON(t, w, WarmPoolResult{
@@ -1561,6 +1704,84 @@ func sdkInventoryAssignment() Assignment {
 	return assignment
 }
 
+func sdkWorkerEvacuation(body map[string]any) WorkerEvacuationResult {
+	apply := body["apply"] == true
+	force := body["force"] == true
+	reason := stringValue(body["reason"])
+	result := WorkerEvacuationResult{
+		Worker: sdkHostRecord(),
+		Reason: reason,
+		Apply:  apply,
+		Force:  force,
+		Assignments: []WorkerEvacuationAssignment{
+			{
+				AssignmentID:   "assignment-1",
+				Namespace:      "team-a",
+				Status:         "pending",
+				WorkerID:       "worker-1",
+				Action:         "requeue",
+				TargetWorkerID: "worker-2",
+				Candidates:     []PlacementCandidate{{Rank: 1, WorkerID: "worker-2", RequestedVMs: 1}},
+			},
+			{
+				AssignmentID: "assignment-2",
+				Namespace:    "team-a",
+				Status:       "running",
+				WorkerID:     "worker-1",
+				Action:       "blocked",
+				Reason:       "active assignment",
+			},
+		},
+		Blocked: []WorkerEvacuationAssignment{{
+			AssignmentID: "assignment-2",
+			Namespace:    "team-a",
+			Status:       "running",
+			WorkerID:     "worker-1",
+			Action:       "blocked",
+			Reason:       "active assignment",
+		}},
+	}
+	if apply {
+		result.Applied = true
+		requeued := sdkInventoryAssignment()
+		requeued.WorkerID = "worker-2"
+		result.Requeued = []Assignment{requeued}
+		result.Canceled = []string{"assignment-3"}
+	}
+	return result
+}
+
+func sdkWorkerDrain(reason string) WorkerDrainResult {
+	record := sdkHostRecord()
+	record.Cordoned = true
+	record.CordonReason = reason
+	record.Status = "cordoned"
+	assignment := sdkInventoryAssignment()
+	assignment.Status = "draining"
+	return WorkerDrainResult{
+		Worker: record,
+		Sandboxes: []SandboxStopResult{{
+			Namespace:  "team-a",
+			ID:         "job-1",
+			VMName:     "job-1",
+			Status:     "draining",
+			Canceled:   true,
+			Assignment: assignment,
+		}},
+		Skipped: []WorkerDrainSkip{{SandboxID: "job-2", Status: "complete", Reason: "terminal"}},
+	}
+}
+
+func sdkWorkerDecommission(body map[string]any) WorkerDecommissionResult {
+	return WorkerDecommissionResult{
+		Worker:   sdkHostRecord(),
+		Reason:   stringValue(body["reason"]),
+		Force:    body["force"] == true,
+		Removed:  true,
+		Canceled: []string{"assignment-1"},
+	}
+}
+
 func sdkWarmPoolStatus() WarmPoolStatus {
 	return WarmPoolStatus{
 		WarmPool: WarmPool{
@@ -1610,6 +1831,11 @@ func sdkMetering(id string) MeteringResult {
 		Records: []MeteringRecord{{ID: "metering-1", SandboxID: id, AssignmentID: "assignment-1", Status: "ready", DurationMillis: 1000, VMMillis: 1000}},
 		Summary: MeteringSummary{SandboxID: id, Records: 1, DurationMillis: 1000, VMMillis: 1000},
 	}
+}
+
+func stringValue(value any) string {
+	s, _ := value.(string)
+	return s
 }
 
 func atoiDefault(raw string, fallback int) int {

@@ -603,6 +603,113 @@ def test_fleet_client_inventory_validation() -> None:
         CoveFleetClient.get_assignment(fleet_url="https://fleet.example", api_key="secret", assignment_id="")
 
 
+def test_fleet_client_worker_lifecycle() -> None:
+    server = _FleetHTTPServer()
+    server.start()
+    try:
+        cordoned = CoveFleetClient.cordon_worker(
+            fleet_url=server.url,
+            api_key="secret",
+            worker_id="worker-1",
+            reason="maintenance",
+        )
+        assert cordoned["cordoned"] is True
+        assert cordoned["cordon_reason"] == "maintenance"
+        uncordoned = CoveFleetClient.uncordon_worker(
+            fleet_url=server.url,
+            api_key="secret",
+            worker_id="worker-1",
+        )
+        assert uncordoned["cordoned"] is False
+        quarantined = CoveFleetClient.quarantine_worker(
+            fleet_url=server.url,
+            api_key="secret",
+            worker_id="worker-1",
+            reason="bad disk",
+        )
+        assert quarantined["quarantined"] is True
+        assert quarantined["quarantine_reason"] == "bad disk"
+        unquarantined = CoveFleetClient.unquarantine_worker(
+            fleet_url=server.url,
+            api_key="secret",
+            worker_id="worker-1",
+        )
+        assert unquarantined["quarantined"] is False
+
+        plan = CoveFleetClient.evacuate_worker(
+            fleet_url=server.url,
+            api_key="secret",
+            worker_id="worker-1",
+            reason="maintenance",
+        )
+        assert plan["apply"] is False
+        assert plan["assignments"][0]["action"] == "requeue"
+        assert plan["assignments"][0]["target_worker_id"] == "worker-2"
+        assert plan["blocked"][0]["assignment_id"] == "assignment-2"
+        applied = CoveFleetClient.evacuate_worker(
+            fleet_url=server.url,
+            api_key="secret",
+            worker_id="worker-1",
+            reason="maintenance",
+            apply=True,
+            force=True,
+        )
+        assert applied["applied"] is True
+        assert applied["force"] is True
+        assert applied["requeued"][0]["worker_id"] == "worker-2"
+        assert applied["canceled"] == ["assignment-3"]
+
+        drained = CoveFleetClient.drain_worker(
+            fleet_url=server.url,
+            api_key="secret",
+            worker_id="worker-1",
+            reason="maintenance",
+        )
+        assert drained["worker"]["cordoned"] is True
+        assert drained["sandboxes"][0]["id"] == "job-1"
+        assert drained["skipped"][0]["reason"] == "terminal"
+        decommissioned = CoveFleetClient.decommission_worker(
+            fleet_url=server.url,
+            api_key="secret",
+            worker_id="worker-1",
+            reason="retire",
+            force=True,
+        )
+        assert decommissioned["removed"] is True
+        assert decommissioned["force"] is True
+        assert decommissioned["canceled"] == ["assignment-1"]
+
+        paths = [request["path"] for request in server.requests[-8:]]
+        assert paths == [
+            "/v1/workers/worker-1/cordon",
+            "/v1/workers/worker-1/uncordon",
+            "/v1/workers/worker-1/quarantine",
+            "/v1/workers/worker-1/unquarantine",
+            "/v1/workers/worker-1/evacuate",
+            "/v1/workers/worker-1/evacuate",
+            "/v1/workers/worker-1/drain",
+            "/v1/workers/worker-1/decommission",
+        ]
+        assert server.requests[-8]["body"]["reason"] == "maintenance"
+        assert server.requests[-7]["body"] == {}
+        assert server.requests[-4]["body"] == {"reason": "maintenance"}
+        assert server.requests[-3]["body"]["apply"] is True
+        assert server.requests[-3]["body"]["force"] is True
+        assert server.requests[-1]["body"]["reason"] == "retire"
+        assert server.requests[-1]["body"]["force"] is True
+    finally:
+        server.stop()
+
+
+def test_fleet_client_worker_lifecycle_validation() -> None:
+    with pytest.raises(ValueError, match="worker id is required"):
+        CoveFleetClient.cordon_worker(fleet_url="https://fleet.example", api_key="secret", worker_id="")
+    with pytest.raises(ValueError, match="worker id is required"):
+        CoveFleetClient.evacuate_worker(fleet_url="https://fleet.example", api_key="secret", worker_id="")
+    with pytest.raises(ValueError, match="worker id is required"):
+        CoveFleetClient.decommission_worker(fleet_url="https://fleet.example", api_key="secret", worker_id="")
+
+
 def test_fleet_client_maintenance_validation() -> None:
     with pytest.raises(ValueError, match="image gc run limit must be non-negative"):
         CoveFleetClient.list_image_gc_runs(fleet_url="https://fleet.example", api_key="secret", limit=-1)
@@ -1116,7 +1223,18 @@ def _operations_summary() -> dict[str, object]:
     }
 
 
-def _host_record() -> dict[str, object]:
+def _host_record(
+    *,
+    cordoned: bool = False,
+    cordon_reason: str = "",
+    quarantined: bool = False,
+    quarantine_reason: str = "",
+) -> dict[str, object]:
+    status = "ready"
+    if cordoned:
+        status = "cordoned"
+    if quarantined:
+        status = "quarantined"
     return {
         "id": "worker-1",
         "host": "mini-1",
@@ -1127,9 +1245,11 @@ def _host_record() -> dict[str, object]:
         "image_refs": ["base:v1"],
         "image_details": [{"ref": "base:v1", "source_manifest_digest": "sha256:base"}],
         "capacity": {"vms": 1, "max_vms": 4},
-        "status": "ready",
-        "cordoned": True,
-        "cordon_reason": "maintenance",
+        "status": status,
+        "cordoned": cordoned,
+        "cordon_reason": cordon_reason,
+        "quarantined": quarantined,
+        "quarantine_reason": quarantine_reason,
         "last_seen": "2026-05-31T10:05:00Z",
         "expires": "2026-05-31T10:06:00Z",
         "last_report": {"id": "report-1", "status": "running", "time": "2026-05-31T10:05:00Z"},
@@ -1148,6 +1268,82 @@ def _inventory_assignment() -> dict[str, object]:
     assignment["leased_to"] = "worker-1"
     assignment["lease_expires"] = "2026-05-31T10:06:00Z"
     return assignment
+
+
+def _worker_evacuation(body: dict[str, object]) -> dict[str, object]:
+    apply = body.get("apply") is True
+    force = body.get("force") is True
+    result: dict[str, object] = {
+        "worker": _host_record(),
+        "reason": str(body.get("reason") or ""),
+        "apply": apply,
+        "force": force,
+        "assignments": [
+            {
+                "assignment_id": "assignment-1",
+                "namespace": "team-a",
+                "status": "pending",
+                "worker_id": "worker-1",
+                "action": "requeue",
+                "target_worker_id": "worker-2",
+                "candidates": [{"rank": 1, "worker_id": "worker-2", "requested_vms": 1}],
+            },
+            {
+                "assignment_id": "assignment-2",
+                "namespace": "team-a",
+                "status": "running",
+                "worker_id": "worker-1",
+                "action": "blocked",
+                "reason": "active assignment",
+            },
+        ],
+        "blocked": [
+            {
+                "assignment_id": "assignment-2",
+                "namespace": "team-a",
+                "status": "running",
+                "worker_id": "worker-1",
+                "action": "blocked",
+                "reason": "active assignment",
+            }
+        ],
+    }
+    if apply:
+        requeued = _inventory_assignment()
+        requeued["worker_id"] = "worker-2"
+        result["applied"] = True
+        result["requeued"] = [requeued]
+        result["canceled"] = ["assignment-3"]
+    return result
+
+
+def _worker_drain(reason: str) -> dict[str, object]:
+    assignment = _inventory_assignment()
+    assignment["status"] = "draining"
+    return {
+        "worker": _host_record(cordoned=True, cordon_reason=reason),
+        "sandboxes": [
+            {
+                "namespace": "team-a",
+                "id": "job-1",
+                "vm_name": "job-1",
+                "status": "draining",
+                "canceled": True,
+                "assignment": assignment,
+            }
+        ],
+        "skipped": [{"sandbox_id": "job-2", "status": "complete", "reason": "terminal"}],
+    }
+
+
+def _worker_decommission(body: dict[str, object]) -> dict[str, object]:
+    return {
+        "worker": _host_record(),
+        "reason": str(body.get("reason") or ""),
+        "force": body.get("force") is True,
+        "removed": True,
+        "canceled": ["assignment-1"],
+    }
 
 
 def _warm_pool_status() -> dict[str, object]:
@@ -1535,6 +1731,27 @@ class _FleetHTTPServer:
                     return
                 if path == "/v1/storage/prune":
                     self._write(_storage_prune_result(dry_run=body.get("dry_run") is True))
+                    return
+                if path == "/v1/workers/worker-1/cordon":
+                    self._write(_host_record(cordoned=True, cordon_reason=str(body.get("reason") or "")))
+                    return
+                if path == "/v1/workers/worker-1/uncordon":
+                    self._write(_host_record())
+                    return
+                if path == "/v1/workers/worker-1/quarantine":
+                    self._write(_host_record(quarantined=True, quarantine_reason=str(body.get("reason") or "")))
+                    return
+                if path == "/v1/workers/worker-1/unquarantine":
+                    self._write(_host_record())
+                    return
+                if path == "/v1/workers/worker-1/evacuate":
+                    self._write(_worker_evacuation(body))
+                    return
+                if path == "/v1/workers/worker-1/drain":
+                    self._write(_worker_drain(str(body.get("reason") or "")))
+                    return
+                if path == "/v1/workers/worker-1/decommission":
+                    self._write(_worker_decommission(body))
                     return
                 if path == "/v1/placements/plan":
                     self._write(

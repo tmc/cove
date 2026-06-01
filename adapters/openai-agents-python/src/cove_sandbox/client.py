@@ -1005,6 +1005,171 @@ class CoveFleetClient:
         return dict(seed._request("GET", _worker_path(worker_id), timeout=timeout))
 
     @classmethod
+    def cordon_worker(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        worker_id: str,
+        reason: str = "",
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        return cls._worker_lifecycle(
+            "cordon",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            worker_id=worker_id,
+            reason=reason,
+            timeout=timeout,
+        )
+
+    @classmethod
+    def uncordon_worker(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        worker_id: str,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        return cls._worker_lifecycle(
+            "uncordon",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            worker_id=worker_id,
+            timeout=timeout,
+        )
+
+    @classmethod
+    def quarantine_worker(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        worker_id: str,
+        reason: str = "",
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        return cls._worker_lifecycle(
+            "quarantine",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            worker_id=worker_id,
+            reason=reason,
+            timeout=timeout,
+        )
+
+    @classmethod
+    def unquarantine_worker(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        worker_id: str,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        return cls._worker_lifecycle(
+            "unquarantine",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            worker_id=worker_id,
+            timeout=timeout,
+        )
+
+    @classmethod
+    def drain_worker(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        worker_id: str,
+        reason: str = "",
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        worker_id = worker_id.strip()
+        if not worker_id:
+            raise ValueError("worker id is required")
+        seed = cls(sandbox_id="worker-drain", fleet_url=fleet_url, api_key=api_key, timeout=timeout)
+        result = seed._request(
+            "POST",
+            _worker_action_path(worker_id, "drain"),
+            _worker_lifecycle_body(reason),
+            timeout=timeout,
+        )
+        return _normalize_worker_drain(result, "POST /v1/workers/{id}/drain")
+
+    @classmethod
+    def evacuate_worker(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        worker_id: str,
+        reason: str = "",
+        apply: bool = False,
+        force: bool = False,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        worker_id = worker_id.strip()
+        if not worker_id:
+            raise ValueError("worker id is required")
+        seed = cls(sandbox_id="worker-evacuate", fleet_url=fleet_url, api_key=api_key, timeout=timeout)
+        body = _worker_lifecycle_body(reason)
+        if apply:
+            body["apply"] = True
+        if force:
+            body["force"] = True
+        result = seed._request("POST", _worker_action_path(worker_id, "evacuate"), body, timeout=timeout)
+        return _normalize_worker_evacuation(result, "POST /v1/workers/{id}/evacuate")
+
+    @classmethod
+    def decommission_worker(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        worker_id: str,
+        reason: str = "",
+        force: bool = False,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        worker_id = worker_id.strip()
+        if not worker_id:
+            raise ValueError("worker id is required")
+        seed = cls(sandbox_id="worker-decommission", fleet_url=fleet_url, api_key=api_key, timeout=timeout)
+        result = seed._request(
+            "POST",
+            _worker_action_path(worker_id, "decommission"),
+            _worker_lifecycle_body(reason, force=force),
+            timeout=timeout,
+        )
+        return _normalize_worker_decommission(result, "POST /v1/workers/{id}/decommission")
+
+    @classmethod
+    def _worker_lifecycle(
+        cls,
+        action: str,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        worker_id: str,
+        reason: str = "",
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        worker_id = worker_id.strip()
+        if not worker_id:
+            raise ValueError("worker id is required")
+        seed = cls(sandbox_id=f"worker-{action}", fleet_url=fleet_url, api_key=api_key, timeout=timeout)
+        return dict(
+            seed._request(
+                "POST",
+                _worker_action_path(worker_id, action),
+                _worker_lifecycle_body(reason),
+                timeout=timeout,
+            )
+        )
+
+    @classmethod
     def list_assignments(
         cls,
         *,
@@ -1785,6 +1950,42 @@ def _normalize_inventory_page(data: dict[str, Any], key: str, endpoint: str) -> 
     return page
 
 
+def _normalize_worker_drain(data: dict[str, Any], endpoint: str) -> dict[str, Any]:
+    result = dict(data)
+    worker = result.get("worker") or {}
+    if not isinstance(worker, dict):
+        raise CoveError(f"{endpoint}: expected worker object")
+    result["worker"] = dict(worker)
+    _normalize_dict_list(result, "sandboxes", endpoint)
+    _normalize_dict_list(result, "skipped", endpoint)
+    return result
+
+
+def _normalize_worker_evacuation(data: dict[str, Any], endpoint: str) -> dict[str, Any]:
+    result = dict(data)
+    worker = result.get("worker") or {}
+    if not isinstance(worker, dict):
+        raise CoveError(f"{endpoint}: expected worker object")
+    result["worker"] = dict(worker)
+    _normalize_dict_list(result, "assignments", endpoint)
+    _normalize_dict_list(result, "requeued", endpoint)
+    _normalize_dict_list(result, "sandboxes", endpoint)
+    _normalize_string_list(result, "canceled", endpoint)
+    _normalize_dict_list(result, "blocked", endpoint)
+    return result
+
+
+def _normalize_worker_decommission(data: dict[str, Any], endpoint: str) -> dict[str, Any]:
+    result = dict(data)
+    worker = result.get("worker") or {}
+    if not isinstance(worker, dict):
+        raise CoveError(f"{endpoint}: expected worker object")
+    result["worker"] = dict(worker)
+    _normalize_string_list(result, "canceled", endpoint)
+    _normalize_dict_list(result, "blocked", endpoint)
+    return result
+
+
 def _normalize_dict_list(data: dict[str, Any], key: str, endpoint: str) -> None:
     items = data.get(key) or []
     if not isinstance(items, list):
@@ -1830,6 +2031,10 @@ def _worker_path(worker_id: str) -> str:
     return "/v1/workers/" + urllib.parse.quote(worker_id, safe="")
 
 
+def _worker_action_path(worker_id: str, action: str) -> str:
+    return _worker_path(worker_id) + "/" + urllib.parse.quote(action, safe="")
+
+
 def _assignment_path(assignment_id: str) -> str:
     return "/v1/assignments/" + urllib.parse.quote(assignment_id, safe="")
 
@@ -1848,6 +2053,16 @@ def _selector_body(
     capabilities = _clean_string_list(required_capabilities)
     if capabilities:
         body["required_capabilities"] = capabilities
+    return body
+
+
+def _worker_lifecycle_body(reason: str = "", *, force: bool = False) -> dict[str, object]:
+    body: dict[str, object] = {}
+    reason = reason.strip()
+    if reason:
+        body["reason"] = reason
+    if force:
+        body["force"] = True
     return body
 
 

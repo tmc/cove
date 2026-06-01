@@ -591,12 +591,86 @@ type WorkerGetOptions struct {
 	HTTP     *http.Client
 }
 
+type WorkerLifecycleOptions struct {
+	FleetURL string
+	APIKey   string
+	ID       string
+	Reason   string
+	Force    bool
+	Timeout  time.Duration
+	HTTP     *http.Client
+}
+
+type WorkerEvacuationOptions struct {
+	FleetURL string
+	APIKey   string
+	ID       string
+	Reason   string
+	Apply    bool
+	Force    bool
+	Timeout  time.Duration
+	HTTP     *http.Client
+}
+
 type WorkerListResult struct {
 	Workers    []HostRecord `json:"workers"`
 	Count      int          `json:"count"`
 	Offset     int          `json:"offset,omitempty"`
 	Limit      int          `json:"limit,omitempty"`
 	NextOffset int          `json:"next_offset,omitempty"`
+}
+
+type WorkerDrainResult struct {
+	Worker    HostRecord          `json:"worker"`
+	Sandboxes []SandboxStopResult `json:"sandboxes,omitempty"`
+	Skipped   []WorkerDrainSkip   `json:"skipped,omitempty"`
+}
+
+type WorkerDrainSkip struct {
+	SandboxID string `json:"sandbox_id"`
+	Status    string `json:"status,omitempty"`
+	Reason    string `json:"reason"`
+}
+
+type WorkerDecommissionResult struct {
+	Worker   HostRecord                `json:"worker"`
+	Reason   string                    `json:"reason,omitempty"`
+	Force    bool                      `json:"force,omitempty"`
+	Removed  bool                      `json:"removed"`
+	Canceled []string                  `json:"canceled,omitempty"`
+	Blocked  []WorkerDecommissionBlock `json:"blocked,omitempty"`
+}
+
+type WorkerDecommissionBlock struct {
+	AssignmentID string `json:"assignment_id"`
+	Status       string `json:"status,omitempty"`
+	Reason       string `json:"reason"`
+}
+
+type WorkerEvacuationResult struct {
+	Worker      HostRecord                   `json:"worker"`
+	Reason      string                       `json:"reason,omitempty"`
+	Apply       bool                         `json:"apply,omitempty"`
+	Applied     bool                         `json:"applied,omitempty"`
+	Force       bool                         `json:"force,omitempty"`
+	Assignments []WorkerEvacuationAssignment `json:"assignments,omitempty"`
+	Requeued    []Assignment                 `json:"requeued,omitempty"`
+	Sandboxes   []SandboxStopResult          `json:"sandboxes,omitempty"`
+	Canceled    []string                     `json:"canceled,omitempty"`
+	Blocked     []WorkerEvacuationAssignment `json:"blocked,omitempty"`
+}
+
+type WorkerEvacuationAssignment struct {
+	AssignmentID   string               `json:"assignment_id"`
+	Namespace      string               `json:"namespace,omitempty"`
+	SandboxID      string               `json:"sandbox_id,omitempty"`
+	Status         string               `json:"status,omitempty"`
+	WorkerID       string               `json:"worker_id,omitempty"`
+	LeasedTo       string               `json:"leased_to,omitempty"`
+	Action         string               `json:"action"`
+	Reason         string               `json:"reason,omitempty"`
+	TargetWorkerID string               `json:"target_worker_id,omitempty"`
+	Candidates     []PlacementCandidate `json:"candidates,omitempty"`
 }
 
 type AssignmentListOptions struct {
@@ -630,6 +704,16 @@ type AssignmentListResult struct {
 	Offset      int          `json:"offset,omitempty"`
 	Limit       int          `json:"limit,omitempty"`
 	NextOffset  int          `json:"next_offset,omitempty"`
+}
+
+type SandboxStopResult struct {
+	Namespace  string      `json:"namespace,omitempty"`
+	ID         string      `json:"id"`
+	VMName     string      `json:"vm_name"`
+	Status     string      `json:"status,omitempty"`
+	Canceled   bool        `json:"canceled,omitempty"`
+	Assignment Assignment  `json:"assignment"`
+	Cleanup    *Assignment `json:"cleanup,omitempty"`
 }
 
 type OperationsSummary struct {
@@ -1672,6 +1756,80 @@ func GetWorker(ctx context.Context, opts WorkerGetOptions) (HostRecord, error) {
 	var result HostRecord
 	if err := c.request(ctx, http.MethodGet, workerPath(id), nil, &result, c.timeout); err != nil {
 		return HostRecord{}, err
+	}
+	return result, nil
+}
+
+func CordonWorker(ctx context.Context, opts WorkerLifecycleOptions) (HostRecord, error) {
+	return workerLifecycle(ctx, opts, "cordon")
+}
+
+func UncordonWorker(ctx context.Context, opts WorkerLifecycleOptions) (HostRecord, error) {
+	return workerLifecycle(ctx, opts, "uncordon")
+}
+
+func QuarantineWorker(ctx context.Context, opts WorkerLifecycleOptions) (HostRecord, error) {
+	return workerLifecycle(ctx, opts, "quarantine")
+}
+
+func UnquarantineWorker(ctx context.Context, opts WorkerLifecycleOptions) (HostRecord, error) {
+	return workerLifecycle(ctx, opts, "unquarantine")
+}
+
+func DrainWorker(ctx context.Context, opts WorkerLifecycleOptions) (WorkerDrainResult, error) {
+	id := strings.TrimSpace(opts.ID)
+	if id == "" {
+		return WorkerDrainResult{}, errors.New("agentsandbox: worker id required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "worker-drain")
+	if err != nil {
+		return WorkerDrainResult{}, err
+	}
+	var result WorkerDrainResult
+	if err := c.request(ctx, http.MethodPost, workerActionPath(id, "drain"), workerLifecycleBody(opts.Reason, false), &result, c.timeout); err != nil {
+		return WorkerDrainResult{}, err
+	}
+	return result, nil
+}
+
+func EvacuateWorker(ctx context.Context, opts WorkerEvacuationOptions) (WorkerEvacuationResult, error) {
+	id := strings.TrimSpace(opts.ID)
+	if id == "" {
+		return WorkerEvacuationResult{}, errors.New("agentsandbox: worker id required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "worker-evacuate")
+	if err != nil {
+		return WorkerEvacuationResult{}, err
+	}
+	body := map[string]any{}
+	if reason := strings.TrimSpace(opts.Reason); reason != "" {
+		body["reason"] = reason
+	}
+	if opts.Apply {
+		body["apply"] = true
+	}
+	if opts.Force {
+		body["force"] = true
+	}
+	var result WorkerEvacuationResult
+	if err := c.request(ctx, http.MethodPost, workerActionPath(id, "evacuate"), body, &result, c.timeout); err != nil {
+		return WorkerEvacuationResult{}, err
+	}
+	return result, nil
+}
+
+func DecommissionWorker(ctx context.Context, opts WorkerLifecycleOptions) (WorkerDecommissionResult, error) {
+	id := strings.TrimSpace(opts.ID)
+	if id == "" {
+		return WorkerDecommissionResult{}, errors.New("agentsandbox: worker id required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "worker-decommission")
+	if err != nil {
+		return WorkerDecommissionResult{}, err
+	}
+	var result WorkerDecommissionResult
+	if err := c.request(ctx, http.MethodPost, workerActionPath(id, "decommission"), workerLifecycleBody(opts.Reason, opts.Force), &result, c.timeout); err != nil {
+		return WorkerDecommissionResult{}, err
 	}
 	return result, nil
 }
@@ -2774,6 +2932,38 @@ func workerPath(id string) string {
 
 func assignmentPath(id string) string {
 	return "/v1/assignments/" + url.PathEscape(id)
+}
+
+func workerActionPath(id, action string) string {
+	return workerPath(id) + "/" + url.PathEscape(action)
+}
+
+func workerLifecycle(ctx context.Context, opts WorkerLifecycleOptions, action string) (HostRecord, error) {
+	id := strings.TrimSpace(opts.ID)
+	if id == "" {
+		return HostRecord{}, errors.New("agentsandbox: worker id required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "worker-"+action)
+	if err != nil {
+		return HostRecord{}, err
+	}
+	body := workerLifecycleBody(opts.Reason, false)
+	var result HostRecord
+	if err := c.request(ctx, http.MethodPost, workerActionPath(id, action), body, &result, c.timeout); err != nil {
+		return HostRecord{}, err
+	}
+	return result, nil
+}
+
+func workerLifecycleBody(reason string, force bool) map[string]any {
+	body := map[string]any{}
+	if reason := strings.TrimSpace(reason); reason != "" {
+		body["reason"] = reason
+	}
+	if force {
+		body["force"] = true
+	}
+	return body
 }
 
 func (c *Client) queryPath(path string, values map[string]string) string {
