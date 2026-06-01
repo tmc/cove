@@ -79,6 +79,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   expose hosted maintenance controls for image GC, lifecycle-policy pushes,
   storage budget/prune fan-out, and the retained `/v1/operations/runs`
   controller timeline, including non-mutating `dry_run` planning.
+- The operations summary and retained controller-run timeline now expose worker
+  skip-status rollups and filters, so cordoned, quarantined, stale, or otherwise
+  unavailable workers are dashboard-drillable.
 - The public Go `agentsandbox` package and OpenAI Agents Python adapter now
   expose the hosted `/v1/operations/summary` dashboard so agent clients can
   inspect worker readiness, capability coverage, active work, warm pools, and

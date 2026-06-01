@@ -136,9 +136,9 @@ delegates the disk/runtime work to `tart` or `vetu`.
    lifecycle-policy, and storage maintenance requests can require
    capabilities; the operations summary reports per-capability coverage by
    worker status plus controller-run active/attention rollups by kind, live
-   assignment status, skip reason, missing capability, and skipped worker, so
-   operators can see whether RAM-overlay capacity is ready and whether
-   preparation or maintenance fan-out is currently blocked;
+   assignment status, skip reason, skip status, missing capability, and skipped
+   worker, so operators can see whether RAM-overlay capacity is ready and
+   whether preparation or maintenance fan-out is currently blocked;
    placement plans retain skipped-worker reasons for capability, capacity,
    label, status, and exact-image mismatches and can be filtered by immutable
    image provenance and required capability, and assignment, placement-plan,
@@ -151,8 +151,8 @@ delegates the disk/runtime work to `tart` or `vetu`.
    capability, so operators can find exactly which queued or leased work, live
    handles, ready capacity, pre-staging runs, placement plans, and maintenance
    pushes depend on an immutable image or RAM-overlay-class worker capability,
-   assignment, affected worker, skip reason, missing worker capability, or
-   skipped-worker diagnostics;
+   assignment, affected worker, skip reason, skipped-worker status, missing
+   worker capability, or skipped-worker diagnostics;
    the aggregate timeline also filters by live assignment status, active-work
    presence, and skip presence, and has a single drill-down endpoint that
    returns current normalized assignments, assignment status summaries, affected

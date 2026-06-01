@@ -83,6 +83,7 @@ curl 'http://127.0.0.1:9758/v1/operations/runs?image_manifest_digest=sha256:...&
 curl 'http://127.0.0.1:9758/v1/operations/runs?worker_id=mini-1&assignment_id=assignment-...&limit=20'
 curl 'http://127.0.0.1:9758/v1/operations/runs?assignment_status=running&has_active_assignments=true&limit=20'
 curl 'http://127.0.0.1:9758/v1/operations/runs?skip_reason=capability&missing_capability=ram-overlay&has_skips=true&limit=20'
+curl 'http://127.0.0.1:9758/v1/operations/runs?skip_status=cordoned&limit=20'
 curl http://127.0.0.1:9758/v1/operations/runs/image-prepare-...
 curl http://127.0.0.1:9758/v1/workers
 curl 'http://127.0.0.1:9758/v1/workers?status=ready&label=zone=desk&capability=ram-overlay&image_ref=macos-runner:latest&limit=50'
@@ -216,14 +217,17 @@ with attention workers and per-capability coverage, assignment status counts
 with active assignments, hosted sandbox status counts with active and draining
 handles, warm-pool desired/slot counts, retained controller-run counts by kind
 with live assignment-status rollups, active runs, attention runs, skip-reason
-counts, skipped-worker rollups, and aggregate sandbox metering. The
-capability coverage section shows each reported worker capability, status
-counts, and the workers carrying it, so operators can see whether traits such
-as `ram-overlay`, `asif`, or `apfs-quota` are actually available before
-admitting capability-constrained work. The optional `namespace` query filters
-assignment, sandbox, warm-pool, and metering counts; worker inventory stays
-fleet-global. Because the response includes fleet-global worker state, scoped
-service-account tokens cannot read it.
+and skip-status counts, skipped-worker rollups, and aggregate sandbox metering.
+The capability coverage section shows each reported worker capability, status
+counts, and the workers carrying it, while controller-run rollups group
+skipped work by reason, worker status, missing capability, and skipped worker.
+Operators can see whether traits such as `ram-overlay`, `asif`, or
+`apfs-quota` are actually available before admitting capability-constrained
+work, and whether maintenance state such as `cordoned` workers is blocking
+fan-out. The optional `namespace` query filters assignment, sandbox, warm-pool,
+and metering counts; worker inventory stays fleet-global. Because the response
+includes fleet-global worker state, scoped service-account tokens cannot read
+it.
 `GET /v1/operations/runs` is the retained controller-run feed. It merges
 placement plans, image preparations, image-GC runs, lifecycle-policy pushes,
 and storage budget/prune runs into one paginated timeline with `kind`,
@@ -231,7 +235,7 @@ and storage budget/prune runs into one paginated timeline with `kind`,
 `image_manifest_digest`, `image_digest_ref`, `image_platform`,
 `required_capability`, `assignment_id`, `assignment_status`,
 `has_active_assignments`, `worker_id`,
-`candidate_worker_id`, `skipped_worker_id`, `skip_reason`,
+`candidate_worker_id`, `skipped_worker_id`, `skip_reason`, `skip_status`,
 `missing_capability`, `has_skips`, `offset`, and `limit` filters.
 Scoped service-account tokens see only runs in their namespace. Run summaries
 include the source run `id`, `kind`, creation time, assignment/skip/candidate
@@ -1065,6 +1069,7 @@ runs, err := agentsandbox.ListControllerRuns(ctx, agentsandbox.ControllerRunList
 	AssignmentStatus:     "running",
 	HasActiveAssignments: &hasActive,
 	SkipReason:           "capability",
+	SkipStatus:           "cordoned",
 	MissingCapability:    "ram-overlay",
 	HasSkips:             &hasSkips,
 	WorkerID:             "mini-1",

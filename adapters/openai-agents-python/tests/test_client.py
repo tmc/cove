@@ -642,6 +642,7 @@ def test_fleet_client_maintenance_runs() -> None:
             candidate_worker_id="worker-1",
             skipped_worker_id="worker-2",
             skip_reason="capability",
+            skip_status="cordoned",
             missing_capability="ram-overlay",
             has_skips=True,
             offset=1,
@@ -693,12 +694,15 @@ def test_fleet_client_maintenance_runs() -> None:
         assert summary["warm_pools"]["pools"][0]["name"] == "runner"
         assert summary["controller_runs"]["active"] == 1
         assert summary["controller_runs"]["attention"] == 1
-        assert summary["controller_runs"]["skipped"] == 2
+        assert summary["controller_runs"]["skipped"] == 4
         assert summary["controller_runs"]["by_kind"]["storage.prune"] == 1
         assert summary["controller_runs"]["by_assignment_status"]["running"] == 1
         assert summary["controller_runs"]["by_skip_reason"]["capability"] == 2
+        assert summary["controller_runs"]["by_skip_reason"]["status"] == 2
+        assert summary["controller_runs"]["by_skip_status"]["cordoned"] == 2
         assert summary["controller_runs"]["by_missing_capability"]["ram-overlay"] == 2
         assert summary["controller_runs"]["skipped_workers"][0]["worker_id"] == "worker-2"
+        assert summary["controller_runs"]["skipped_workers"][1]["worker_id"] == "worker-3"
         assert summary["metering"]["records"] == 2
 
         paths = [request["path"] for request in server.requests[-17:]]
@@ -746,6 +750,7 @@ def test_fleet_client_maintenance_runs() -> None:
         assert server.requests[-5]["query"]["candidate_worker_id"] == ["worker-1"]
         assert server.requests[-5]["query"]["skipped_worker_id"] == ["worker-2"]
         assert server.requests[-5]["query"]["skip_reason"] == ["capability"]
+        assert server.requests[-5]["query"]["skip_status"] == ["cordoned"]
         assert server.requests[-5]["query"]["missing_capability"] == ["ram-overlay"]
         assert server.requests[-5]["query"]["has_skips"] == ["true"]
         assert server.requests[-2]["body"] == {}
@@ -2115,10 +2120,11 @@ def _operations_summary() -> dict[str, object]:
             "assignment_backed": 2,
             "active": 1,
             "attention": 1,
-            "skipped": 2,
+            "skipped": 4,
             "by_kind": {"storage.prune": 1, "image.gc": 1},
             "by_assignment_status": {"running": 1, "failed": 1},
-            "by_skip_reason": {"capability": 2},
+            "by_skip_reason": {"capability": 2, "status": 2},
+            "by_skip_status": {"cordoned": 2},
             "by_missing_capability": {"ram-overlay": 2},
             "active_runs": [
                 {
@@ -2147,6 +2153,11 @@ def _operations_summary() -> dict[str, object]:
                     "worker_id": "worker-2",
                     "total": 2,
                     "by_reason": {"capability": 2},
+                },
+                {
+                    "worker_id": "worker-3",
+                    "total": 2,
+                    "by_reason": {"status": 2},
                 }
             ],
         },

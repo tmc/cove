@@ -2147,6 +2147,7 @@ func (s *Store) OperationsSummary(namespace string) OperationsSummary {
 			ByKind:              make(map[string]int),
 			ByAssignmentStatus:  make(map[string]int),
 			BySkipReason:        make(map[string]int),
+			BySkipStatus:        make(map[string]int),
 			ByMissingCapability: make(map[string]int),
 		},
 	}
@@ -2270,6 +2271,9 @@ func (s *Store) OperationsSummary(namespace string) OperationsSummary {
 			reason := controllerRunSkipReason(skip.reason)
 			summary.ControllerRuns.Skipped++
 			summary.ControllerRuns.BySkipReason[reason]++
+			if status := controllerRunSkipStatus(skip); status != "" {
+				summary.ControllerRuns.BySkipStatus[status]++
+			}
 			addControllerRunSkippedWorker(controllerRunSkippedWorkers, skip)
 			for _, capability := range controllerRunMissingCapabilities(skip) {
 				summary.ControllerRuns.ByMissingCapability[capability]++
@@ -3597,6 +3601,7 @@ func (s *Store) ListControllerRunsPage(filter ControllerRunListFilter) Controlle
 	} else {
 		filter.SkipReason = ""
 	}
+	filter.SkipStatus = strings.TrimSpace(filter.SkipStatus)
 	filter.MissingCapability = strings.TrimSpace(filter.MissingCapability)
 	if filter.Offset < 0 {
 		filter.Offset = 0
@@ -3793,7 +3798,7 @@ func (s *Store) controllerRunAssignmentsLocked(assignments []Assignment) []Assig
 }
 
 func controllerRunNeedsDetailFilter(filter ControllerRunListFilter) bool {
-	return filter.AssignmentID != "" || filter.AssignmentStatus != "" || filter.HasActiveAssignments != nil || filter.WorkerID != "" || filter.CandidateWorkerID != "" || filter.SkippedWorkerID != "" || filter.SkipReason != "" || filter.MissingCapability != "" || filter.HasSkips != nil
+	return filter.AssignmentID != "" || filter.AssignmentStatus != "" || filter.HasActiveAssignments != nil || filter.WorkerID != "" || filter.CandidateWorkerID != "" || filter.SkippedWorkerID != "" || filter.SkipReason != "" || filter.SkipStatus != "" || filter.MissingCapability != "" || filter.HasSkips != nil
 }
 
 func controllerRunDetailMatchesFilter(detail ControllerRunDetail, filter ControllerRunListFilter) bool {
@@ -3816,6 +3821,9 @@ func controllerRunDetailMatchesFilter(detail ControllerRunDetail, filter Control
 		return false
 	}
 	if filter.SkipReason != "" && !controllerRunHasSkipReason(detail, filter.SkipReason) {
+		return false
+	}
+	if filter.SkipStatus != "" && !controllerRunHasSkipStatus(detail, filter.SkipStatus) {
 		return false
 	}
 	if filter.MissingCapability != "" && !controllerRunHasMissingCapability(detail, filter.MissingCapability) {
@@ -3841,6 +3849,19 @@ func controllerRunHasSkipReason(detail ControllerRunDetail, reason string) bool 
 	return false
 }
 
+func controllerRunHasSkipStatus(detail ControllerRunDetail, status string) bool {
+	status = strings.TrimSpace(status)
+	if status == "" {
+		return false
+	}
+	for _, skip := range controllerRunSkips(detail) {
+		if controllerRunSkipStatus(skip) == status {
+			return true
+		}
+	}
+	return false
+}
+
 func controllerRunHasMissingCapability(detail ControllerRunDetail, capability string) bool {
 	capability = strings.TrimSpace(capability)
 	if capability == "" {
@@ -3859,6 +3880,7 @@ func controllerRunHasMissingCapability(detail ControllerRunDetail, capability st
 type controllerRunSkip struct {
 	workerID            string
 	reason              string
+	status              string
 	missingCapabilities []string
 }
 
@@ -3866,42 +3888,42 @@ func controllerRunSkips(detail ControllerRunDetail) []controllerRunSkip {
 	if detail.PlacementPlan != nil {
 		out := make([]controllerRunSkip, 0, len(detail.PlacementPlan.Skipped))
 		for _, skip := range detail.PlacementPlan.Skipped {
-			out = append(out, controllerRunSkip{workerID: skip.WorkerID, reason: skip.Reason, missingCapabilities: skip.MissingCapabilities})
+			out = append(out, controllerRunSkip{workerID: skip.WorkerID, reason: skip.Reason, status: skip.Status, missingCapabilities: skip.MissingCapabilities})
 		}
 		return out
 	}
 	if detail.ImagePreparation != nil {
 		out := make([]controllerRunSkip, 0, len(detail.ImagePreparation.Skipped))
 		for _, skip := range detail.ImagePreparation.Skipped {
-			out = append(out, controllerRunSkip{workerID: skip.WorkerID, reason: skip.Reason, missingCapabilities: skip.MissingCapabilities})
+			out = append(out, controllerRunSkip{workerID: skip.WorkerID, reason: skip.Reason, status: skip.Status, missingCapabilities: skip.MissingCapabilities})
 		}
 		return out
 	}
 	if detail.ImageGC != nil {
 		out := make([]controllerRunSkip, 0, len(detail.ImageGC.Skipped))
 		for _, skip := range detail.ImageGC.Skipped {
-			out = append(out, controllerRunSkip{workerID: skip.WorkerID, reason: skip.Reason, missingCapabilities: skip.MissingCapabilities})
+			out = append(out, controllerRunSkip{workerID: skip.WorkerID, reason: skip.Reason, status: skip.Status, missingCapabilities: skip.MissingCapabilities})
 		}
 		return out
 	}
 	if detail.LifecyclePolicy != nil {
 		out := make([]controllerRunSkip, 0, len(detail.LifecyclePolicy.Skipped))
 		for _, skip := range detail.LifecyclePolicy.Skipped {
-			out = append(out, controllerRunSkip{workerID: skip.WorkerID, reason: skip.Reason, missingCapabilities: skip.MissingCapabilities})
+			out = append(out, controllerRunSkip{workerID: skip.WorkerID, reason: skip.Reason, status: skip.Status, missingCapabilities: skip.MissingCapabilities})
 		}
 		return out
 	}
 	if detail.StorageBudget != nil {
 		out := make([]controllerRunSkip, 0, len(detail.StorageBudget.Skipped))
 		for _, skip := range detail.StorageBudget.Skipped {
-			out = append(out, controllerRunSkip{workerID: skip.WorkerID, reason: skip.Reason, missingCapabilities: skip.MissingCapabilities})
+			out = append(out, controllerRunSkip{workerID: skip.WorkerID, reason: skip.Reason, status: skip.Status, missingCapabilities: skip.MissingCapabilities})
 		}
 		return out
 	}
 	if detail.StoragePrune != nil {
 		out := make([]controllerRunSkip, 0, len(detail.StoragePrune.Skipped))
 		for _, skip := range detail.StoragePrune.Skipped {
-			out = append(out, controllerRunSkip{workerID: skip.WorkerID, reason: skip.Reason, missingCapabilities: skip.MissingCapabilities})
+			out = append(out, controllerRunSkip{workerID: skip.WorkerID, reason: skip.Reason, status: skip.Status, missingCapabilities: skip.MissingCapabilities})
 		}
 		return out
 	}
@@ -3949,6 +3971,10 @@ func controllerRunSkipReason(reason string) string {
 		return "unknown"
 	}
 	return reason
+}
+
+func controllerRunSkipStatus(skip controllerRunSkip) string {
+	return strings.TrimSpace(skip.status)
 }
 
 func controllerRunMissingCapabilities(skip controllerRunSkip) []string {

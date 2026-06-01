@@ -585,6 +585,7 @@ type ControllerRunListOptions struct {
 	CandidateWorkerID    string
 	SkippedWorkerID      string
 	SkipReason           string
+	SkipStatus           string
 	MissingCapability    string
 	HasSkips             *bool
 	Offset               int
@@ -1311,6 +1312,7 @@ type ControllerRunOperationsSummary struct {
 	ByKind              map[string]int                      `json:"by_kind,omitempty"`
 	ByAssignmentStatus  map[string]int                      `json:"by_assignment_status,omitempty"`
 	BySkipReason        map[string]int                      `json:"by_skip_reason,omitempty"`
+	BySkipStatus        map[string]int                      `json:"by_skip_status,omitempty"`
 	ByMissingCapability map[string]int                      `json:"by_missing_capability,omitempty"`
 	ActiveRuns          []ControllerRunSummary              `json:"active_runs,omitempty"`
 	AttentionRuns       []ControllerRunSummary              `json:"attention_runs,omitempty"`
@@ -2404,6 +2406,7 @@ func ListControllerRuns(ctx context.Context, opts ControllerRunListOptions) (Con
 		"candidate_worker_id":   opts.CandidateWorkerID,
 		"skipped_worker_id":     opts.SkippedWorkerID,
 		"skip_reason":           opts.SkipReason,
+		"skip_status":           opts.SkipStatus,
 		"missing_capability":    opts.MissingCapability,
 	}
 	if opts.HasActiveAssignments != nil {

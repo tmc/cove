@@ -1538,6 +1538,17 @@ func TestStoreOperationsSummaryControllerRuns(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{
+		ID:           "worker-3",
+		Labels:       map[string]string{"zone": "desk"},
+		Capabilities: []string{"ram-overlay"},
+		Capacity:     Capacity{MaxVMs: 4},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CordonWorker("worker-3", "maintenance"); err != nil {
+		t.Fatal(err)
+	}
 	prep, err := store.PrepareImage(ImagePrepareRequest{
 		Namespace:            "team-a",
 		SourceRef:            "registry.example/runner:v1",
@@ -1592,6 +1603,10 @@ func TestStoreOperationsSummaryControllerRuns(t *testing.T) {
 	if missingCapabilityFilter.Count != 2 || len(missingCapabilityFilter.Runs) != 2 {
 		t.Fatalf("missing capability controller runs = %+v, want prepare and prune", missingCapabilityFilter)
 	}
+	skipStatusFilter := store.ListControllerRunsPage(ControllerRunListFilter{Namespace: "team-a", SkipStatus: "cordoned"})
+	if skipStatusFilter.Count != 2 || len(skipStatusFilter.Runs) != 2 {
+		t.Fatalf("skip status controller runs = %+v, want prepare and prune", skipStatusFilter)
+	}
 	hasSkips := true
 	hasSkipsFilter := store.ListControllerRunsPage(ControllerRunListFilter{Namespace: "team-a", HasSkips: &hasSkips})
 	if hasSkipsFilter.Count != 2 || len(hasSkipsFilter.Runs) != 2 {
@@ -1608,14 +1623,17 @@ func TestStoreOperationsSummaryControllerRuns(t *testing.T) {
 	if runs.Total != 2 || runs.AssignmentBacked != 2 || runs.Active != 1 || runs.Attention != 1 {
 		t.Fatalf("controller run summary = %+v, want two assignment-backed runs with one active and one attention", runs)
 	}
-	if runs.Skipped != 2 || runs.BySkipReason["capability"] != 2 {
-		t.Fatalf("controller run skips = total %d reasons %+v, want two capability skips", runs.Skipped, runs.BySkipReason)
+	if runs.Skipped != 4 || runs.BySkipReason["capability"] != 2 || runs.BySkipReason["status"] != 2 {
+		t.Fatalf("controller run skips = total %d reasons %+v, want capability and status skips", runs.Skipped, runs.BySkipReason)
+	}
+	if runs.BySkipStatus["cordoned"] != 2 {
+		t.Fatalf("controller run skip statuses = %+v, want two cordoned skips", runs.BySkipStatus)
 	}
 	if runs.ByMissingCapability["ram-overlay"] != 2 {
 		t.Fatalf("controller run missing capabilities = %+v, want two ram-overlay skips", runs.ByMissingCapability)
 	}
-	if len(runs.SkippedWorkers) != 1 || runs.SkippedWorkers[0].WorkerID != "worker-2" || runs.SkippedWorkers[0].Total != 2 || runs.SkippedWorkers[0].ByReason["capability"] != 2 {
-		t.Fatalf("controller run skipped workers = %+v, want worker-2 capability skips", runs.SkippedWorkers)
+	if len(runs.SkippedWorkers) != 2 || runs.SkippedWorkers[0].WorkerID != "worker-2" || runs.SkippedWorkers[0].Total != 2 || runs.SkippedWorkers[0].ByReason["capability"] != 2 || runs.SkippedWorkers[1].WorkerID != "worker-3" || runs.SkippedWorkers[1].Total != 2 || runs.SkippedWorkers[1].ByReason["status"] != 2 {
+		t.Fatalf("controller run skipped workers = %+v, want worker-2 capability and worker-3 status skips", runs.SkippedWorkers)
 	}
 	if runs.ByKind[ControllerRunKindImagePrepare] != 1 || runs.ByKind[ControllerRunKindStoragePrune] != 1 || runs.ByKind[ControllerRunKindImageGC] != 0 {
 		t.Fatalf("controller run kinds = %+v, want team-a prepare and prune only", runs.ByKind)
@@ -6544,6 +6562,10 @@ func TestHandlerControllerRuns(t *testing.T) {
 	var record HostRecord
 	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}}, &record)
 	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-2", Labels: map[string]string{"zone": "desk"}}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-3", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}}, &record)
+	if _, err := store.CordonWorker("worker-3", "maintenance"); err != nil {
+		t.Fatal(err)
+	}
 	var prune StoragePruneResult
 	postJSONAuth(t, server.URL+"/v1/storage/prune", "token-a", StoragePruneRequest{
 		RequiredLabels:       map[string]string{"zone": "desk"},
@@ -6620,6 +6642,11 @@ func TestHandlerControllerRuns(t *testing.T) {
 	getJSONAuth(t, server.URL+"/v1/operations/runs?missing_capability=ram-overlay&limit=10", "token-a", &page)
 	if page.Count != 2 || len(page.Runs) != 2 {
 		t.Fatalf("missing capability controller runs = %+v, want prune and prepare", page)
+	}
+	page = ControllerRunListResult{}
+	getJSONAuth(t, server.URL+"/v1/operations/runs?skip_status=cordoned&limit=10", "token-a", &page)
+	if page.Count != 2 || len(page.Runs) != 2 {
+		t.Fatalf("skip status controller runs = %+v, want prune and prepare", page)
 	}
 	page = ControllerRunListResult{}
 	getJSONAuth(t, server.URL+"/v1/operations/runs?has_skips=true&limit=10", "token-a", &page)

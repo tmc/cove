@@ -730,7 +730,7 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 		t.Fatalf("GetStoragePruneRun = %+v, want storage-prune-1", gotPrune)
 	}
 
-	runs, err := ListControllerRuns(ctx, ControllerRunListOptions{FleetURL: server.URL, APIKey: "secret", Namespace: "team-a", Kind: "storage.prune", TargetType: "storage", SourceRef: "registry.example/base:v1", ImageRef: "base:v1", ImageManifestDigest: "sha256:base", ImageDigestRef: "registry.example/base@sha256:base", ImagePlatform: "darwin/arm64", RequiredCapability: "ram-overlay", AssignmentID: "assignment-storage-prune-1", AssignmentStatus: "running", HasActiveAssignments: &hasActive, WorkerID: "worker-1", CandidateWorkerID: "worker-1", SkippedWorkerID: "worker-2", SkipReason: "capability", MissingCapability: "ram-overlay", HasSkips: &hasSkips, Offset: 1, Limit: 2, Timeout: time.Second})
+	runs, err := ListControllerRuns(ctx, ControllerRunListOptions{FleetURL: server.URL, APIKey: "secret", Namespace: "team-a", Kind: "storage.prune", TargetType: "storage", SourceRef: "registry.example/base:v1", ImageRef: "base:v1", ImageManifestDigest: "sha256:base", ImageDigestRef: "registry.example/base@sha256:base", ImagePlatform: "darwin/arm64", RequiredCapability: "ram-overlay", AssignmentID: "assignment-storage-prune-1", AssignmentStatus: "running", HasActiveAssignments: &hasActive, WorkerID: "worker-1", CandidateWorkerID: "worker-1", SkippedWorkerID: "worker-2", SkipReason: "capability", SkipStatus: "cordoned", MissingCapability: "ram-overlay", HasSkips: &hasSkips, Offset: 1, Limit: 2, Timeout: time.Second})
 	if err != nil {
 		t.Fatalf("ListControllerRuns: %v", err)
 	}
@@ -774,8 +774,8 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 	if summary.ControllerRuns.Total != 2 || summary.ControllerRuns.Active != 1 || summary.ControllerRuns.Attention != 1 || summary.ControllerRuns.ByKind["storage.prune"] != 1 || summary.ControllerRuns.ByAssignmentStatus["running"] != 1 {
 		t.Fatalf("controller run operations summary = %+v, want active storage prune and attention run", summary.ControllerRuns)
 	}
-	if summary.ControllerRuns.Skipped != 2 || summary.ControllerRuns.BySkipReason["capability"] != 2 || summary.ControllerRuns.ByMissingCapability["ram-overlay"] != 2 || len(summary.ControllerRuns.SkippedWorkers) != 1 || summary.ControllerRuns.SkippedWorkers[0].WorkerID != "worker-2" {
-		t.Fatalf("controller run skip summary = %+v, want worker-2 capability skips", summary.ControllerRuns)
+	if summary.ControllerRuns.Skipped != 4 || summary.ControllerRuns.BySkipReason["capability"] != 2 || summary.ControllerRuns.BySkipReason["status"] != 2 || summary.ControllerRuns.BySkipStatus["cordoned"] != 2 || summary.ControllerRuns.ByMissingCapability["ram-overlay"] != 2 || len(summary.ControllerRuns.SkippedWorkers) != 2 || summary.ControllerRuns.SkippedWorkers[0].WorkerID != "worker-2" || summary.ControllerRuns.SkippedWorkers[1].WorkerID != "worker-3" {
+		t.Fatalf("controller run skip summary = %+v, want capability and cordoned status skips", summary.ControllerRuns)
 	}
 	if len(summary.Workers.Capabilities) != 2 || summary.Workers.Capabilities[0].Name != "asif" || summary.Workers.Capabilities[0].Ready != 1 {
 		t.Fatalf("operations capabilities = %+v, want sorted capability coverage", summary.Workers.Capabilities)
@@ -834,7 +834,7 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 	if body := server.requests[9].body; body["category"] != "build-scratch" || body["older_than"] != "48h" || body["apply"] != true || body["dry_run"] != true {
 		t.Fatalf("storage prune body = %+v", body)
 	}
-	if query := server.requests[12].query; query.Get("kind") != "storage.prune" || query.Get("target_type") != "storage" || query.Get("namespace") != "team-a" || query.Get("source_ref") != "registry.example/base:v1" || query.Get("image_ref") != "base:v1" || query.Get("image_manifest_digest") != "sha256:base" || query.Get("image_digest_ref") != "registry.example/base@sha256:base" || query.Get("image_platform") != "darwin/arm64" || query.Get("required_capability") != "ram-overlay" || query.Get("assignment_id") != "assignment-storage-prune-1" || query.Get("assignment_status") != "running" || query.Get("has_active_assignments") != "true" || query.Get("worker_id") != "worker-1" || query.Get("candidate_worker_id") != "worker-1" || query.Get("skipped_worker_id") != "worker-2" || query.Get("skip_reason") != "capability" || query.Get("missing_capability") != "ram-overlay" || query.Get("has_skips") != "true" {
+	if query := server.requests[12].query; query.Get("kind") != "storage.prune" || query.Get("target_type") != "storage" || query.Get("namespace") != "team-a" || query.Get("source_ref") != "registry.example/base:v1" || query.Get("image_ref") != "base:v1" || query.Get("image_manifest_digest") != "sha256:base" || query.Get("image_digest_ref") != "registry.example/base@sha256:base" || query.Get("image_platform") != "darwin/arm64" || query.Get("required_capability") != "ram-overlay" || query.Get("assignment_id") != "assignment-storage-prune-1" || query.Get("assignment_status") != "running" || query.Get("has_active_assignments") != "true" || query.Get("worker_id") != "worker-1" || query.Get("candidate_worker_id") != "worker-1" || query.Get("skipped_worker_id") != "worker-2" || query.Get("skip_reason") != "capability" || query.Get("skip_status") != "cordoned" || query.Get("missing_capability") != "ram-overlay" || query.Get("has_skips") != "true" {
 		t.Fatalf("controller runs query = %q", query.Encode())
 	}
 	if body := server.requests[15].body; len(body) != 0 {
@@ -2909,10 +2909,11 @@ func sdkOperationsSummary() OperationsSummary {
 			AssignmentBacked:    2,
 			Active:              1,
 			Attention:           1,
-			Skipped:             2,
+			Skipped:             4,
 			ByKind:              map[string]int{"storage.prune": 1, "image.gc": 1},
 			ByAssignmentStatus:  map[string]int{"running": 1, "failed": 1},
-			BySkipReason:        map[string]int{"capability": 2},
+			BySkipReason:        map[string]int{"capability": 2, "status": 2},
+			BySkipStatus:        map[string]int{"cordoned": 2},
 			ByMissingCapability: map[string]int{"ram-overlay": 2},
 			ActiveRuns: []ControllerRunSummary{{
 				ID:              "storage-prune-1",
@@ -2936,6 +2937,10 @@ func sdkOperationsSummary() OperationsSummary {
 				WorkerID: "worker-2",
 				Total:    2,
 				ByReason: map[string]int{"capability": 2},
+			}, {
+				WorkerID: "worker-3",
+				Total:    2,
+				ByReason: map[string]int{"status": 2},
 			}},
 		},
 		Metering: MeteringSummary{Namespace: "team-a", Records: 2, DurationMillis: 2000, VMMillis: 2000},
