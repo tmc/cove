@@ -1441,6 +1441,8 @@ func handleWorker(w http.ResponseWriter, r *http.Request, store *Store) {
 		handleWorkerQuarantine(w, r, store, id)
 	case "reports":
 		handleWorkerReports(w, r, store, id)
+	case "metering":
+		handleWorkerMetering(w, r, store, id)
 	case "uncordon":
 		identity := identityFromRequest(r, store)
 		if !requireRole(w, identity, ServiceAccountRoleOperator) {
@@ -1518,6 +1520,34 @@ func workerEventsFilterFromRequest(r *http.Request, id string) (AuditListFilter,
 		filter.Offset = offset
 	}
 	return filter, nil
+}
+
+func handleWorkerMetering(w http.ResponseWriter, r *http.Request, store *Store, id string) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	if !requireUnscoped(w, r, store) {
+		return
+	}
+	if !reconcile(w, store) {
+		return
+	}
+	if _, ok := store.Get(id); !ok {
+		writeError(w, http.StatusNotFound, "worker not found")
+		return
+	}
+	namespace := namespaceFilterFromRequest(r, identity)
+	sandboxID := strings.TrimSpace(r.URL.Query().Get("sandbox_id"))
+	if sandboxID == "" {
+		sandboxID = strings.TrimSpace(r.URL.Query().Get("sandbox"))
+	}
+	status := strings.TrimSpace(r.URL.Query().Get("status"))
+	writeJSON(w, http.StatusOK, store.ListWorkerMetering(namespace, id, sandboxID, status))
 }
 
 func handleWorkerAssignments(w http.ResponseWriter, r *http.Request, store *Store, id string) {

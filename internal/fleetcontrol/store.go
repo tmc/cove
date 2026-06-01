@@ -1626,6 +1626,37 @@ func (s *Store) ListSandboxMetering(namespace, sandboxID string) SandboxMetering
 	}
 }
 
+func (s *Store) ListWorkerMetering(namespace, workerID, sandboxID, status string) SandboxMeteringResult {
+	namespace = normalizeNamespace(namespace)
+	workerID = strings.TrimSpace(workerID)
+	sandboxID = strings.TrimSpace(sandboxID)
+	status = strings.TrimSpace(status)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	records := make([]SandboxMeteringRecord, 0, len(s.metering))
+	for _, record := range s.sortedMeteringLocked() {
+		if !namespaceMatches(record.Namespace, namespace) {
+			continue
+		}
+		if workerID != "" && record.WorkerID != workerID {
+			continue
+		}
+		if sandboxID != "" && record.SandboxID != sandboxID {
+			continue
+		}
+		if status != "" && record.Status != status {
+			continue
+		}
+		records = append(records, cloneSandboxMeteringRecord(record))
+	}
+	summary := sandboxMeteringSummary(namespace, sandboxID, records)
+	summary.WorkerID = workerID
+	return SandboxMeteringResult{
+		Records: records,
+		Summary: summary,
+	}
+}
+
 func (s *Store) ListSandboxReportsPage(filter SandboxReportFilter) SandboxReportListResult {
 	filter.Namespace = normalizeNamespace(filter.Namespace)
 	filter.SandboxID = strings.TrimSpace(filter.SandboxID)

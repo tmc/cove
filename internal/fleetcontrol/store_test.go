@@ -862,6 +862,10 @@ func TestStoreSandboxMeteringRecordsRunningIntervals(t *testing.T) {
 	if got := store.ListSandboxMetering("team-b", "job-1"); len(got.Records) != 0 || got.Summary.Records != 0 {
 		t.Fatalf("cross-namespace metering = %+v, want none", got)
 	}
+	workerMetering := store.ListWorkerMetering("team-a", "worker-1", "job-1", "running")
+	if len(workerMetering.Records) != 1 || workerMetering.Summary.WorkerID != "worker-1" || workerMetering.Summary.DurationMillis != 2000 || workerMetering.Summary.CPUMillis != 4000 {
+		t.Fatalf("worker running metering = %+v, want one 2s worker record", workerMetering)
+	}
 	reopened, err := OpenStore(path, time.Minute)
 	if err != nil {
 		t.Fatal(err)
@@ -5368,6 +5372,10 @@ func TestHandlerSandboxMetering(t *testing.T) {
 	if metering.Summary.SandboxID != "job-1" || metering.Summary.DurationMillis != 3000 {
 		t.Fatalf("sandbox metering = %+v, want job-1 3s", metering)
 	}
+	getJSON(t, server.URL+"/v1/workers/worker-1/metering?sandbox_id=job-1&status=running", &metering)
+	if len(metering.Records) != 1 || metering.Summary.WorkerID != "worker-1" || metering.Summary.DurationMillis != 2000 || metering.Summary.CPUMillis != 4000 {
+		t.Fatalf("worker metering = %+v, want worker-1 running 2s/4cpu-s", metering)
+	}
 	getJSONAuth(t, server.URL+"/v1/metering/sandboxes?sandbox_id=job-1", "token-a", &metering)
 	if len(metering.Records) != 2 || metering.Summary.Namespace != "team-a" {
 		t.Fatalf("team-a metering = %+v, want scoped records", metering)
@@ -5378,6 +5386,12 @@ func TestHandlerSandboxMetering(t *testing.T) {
 	}
 	if code := getJSONStatus(t, server.URL+"/v1/sandboxes/job-1/metering", "token-b"); code != http.StatusNotFound {
 		t.Fatalf("cross-namespace sandbox metering status = %d, want 404", code)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/workers/missing/metering", ""); code != http.StatusNotFound {
+		t.Fatalf("missing worker metering status = %d, want 404", code)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/workers/worker-1/metering", "token-a"); code != http.StatusForbidden {
+		t.Fatalf("scoped worker metering status = %d, want 403", code)
 	}
 }
 

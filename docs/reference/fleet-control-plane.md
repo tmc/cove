@@ -71,6 +71,7 @@ curl 'http://127.0.0.1:9758/v1/workers?status=ready&label=zone=desk&image_ref=ma
 curl http://127.0.0.1:9758/v1/workers/mini-1
 curl 'http://127.0.0.1:9758/v1/workers/mini-1/events?limit=50'
 curl 'http://127.0.0.1:9758/v1/workers/mini-1/reports?limit=50'
+curl 'http://127.0.0.1:9758/v1/workers/mini-1/metering?status=running'
 curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/cordon \
   -H 'content-type: application/json' \
   -d '{"reason":"maintenance"}'
@@ -125,6 +126,12 @@ identity.
 that worker, including active renewals and terminal stdout/stderr/error/exit
 details. It accepts `assignment_id`, `status`, `offset`, and `limit`. Worker
 report history is fleet-global and requires an unscoped viewer/operator/admin
+identity.
+
+`GET /v1/workers/{id}/metering` returns the persisted sandbox active-interval
+metering records for a worker plus the aggregate duration, VM, CPU, and memory
+summary. It accepts `namespace`, `sandbox_id` or `sandbox`, and `status`; the
+endpoint is fleet-global and requires an unscoped viewer/operator/admin
 identity.
 
 `POST /v1/workers/{id}/drain` is the controller maintenance path for hosted
