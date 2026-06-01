@@ -569,6 +569,112 @@ def test_fleet_client_audit() -> None:
         server.stop()
 
 
+def test_fleet_client_scoped_observability() -> None:
+    server = _FleetHTTPServer()
+    server.start()
+    try:
+        sandboxes = CoveFleetClient.list_worker_sandboxes(
+            fleet_url=server.url,
+            api_key="secret",
+            worker_id="worker-1",
+            namespace="team-a",
+            status="ready",
+            image_ref="base:v1",
+            offset=1,
+            limit=2,
+        )
+        assert sandboxes["count"] == 1
+        assert sandboxes["sandboxes"][0]["worker_id"] == "worker-1"
+        worker_events = CoveFleetClient.list_worker_events(
+            fleet_url=server.url,
+            api_key="secret",
+            worker_id="worker-1",
+            actor="service-account:ci",
+            action="assignment.create",
+            target_type="assignment",
+            target_id="assignment-1",
+            sandbox_id="job-1",
+            offset=1,
+            limit=2,
+        )
+        assert worker_events["events"][0]["worker_id"] == "worker-1"
+        worker_reports = CoveFleetClient.list_worker_reports(
+            fleet_url=server.url,
+            api_key="secret",
+            worker_id="worker-1",
+            assignment_id="assignment-1",
+            status="complete",
+            offset=1,
+            limit=2,
+        )
+        assert worker_reports["reports"][0]["report"]["stdout"] == "out"
+        worker_metering = CoveFleetClient.get_worker_metering(
+            fleet_url=server.url,
+            api_key="secret",
+            worker_id="worker-1",
+            namespace="team-a",
+            sandbox_id="job-1",
+            status="ready",
+        )
+        assert worker_metering["summary"]["worker_id"] == "worker-1"
+        assert worker_metering["records"][0]["resources"]["vms"] == 1
+
+        assignment_events = CoveFleetClient.list_assignment_events(
+            fleet_url=server.url,
+            api_key="secret",
+            assignment_id="assignment-1",
+            actor="service-account:ci",
+            action="assignment.create",
+            target_type="assignment",
+            target_id="assignment-1",
+            worker_id="worker-1",
+            sandbox_id="job-1",
+            offset=1,
+            limit=2,
+        )
+        assert assignment_events["events"][0]["assignment_id"] == "assignment-1"
+        assignment_reports = CoveFleetClient.list_assignment_reports(
+            fleet_url=server.url,
+            api_key="secret",
+            assignment_id="assignment-1",
+            worker_id="worker-1",
+            status="complete",
+            offset=1,
+            limit=2,
+        )
+        assert assignment_reports["reports"][0]["assignment_id"] == "assignment-1"
+        assignment_metering = CoveFleetClient.get_assignment_metering(
+            fleet_url=server.url,
+            api_key="secret",
+            assignment_id="assignment-1",
+            status="ready",
+        )
+        assert assignment_metering["summary"]["assignment_id"] == "assignment-1"
+        assert assignment_metering["records"][0]["worker_id"] == "worker-1"
+
+        paths = [request["path"] for request in server.requests[-7:]]
+        assert paths == [
+            "/v1/workers/worker-1/sandboxes",
+            "/v1/workers/worker-1/events",
+            "/v1/workers/worker-1/reports",
+            "/v1/workers/worker-1/metering",
+            "/v1/assignments/assignment-1/events",
+            "/v1/assignments/assignment-1/reports",
+            "/v1/assignments/assignment-1/metering",
+        ]
+        assert server.requests[-7]["query"]["namespace"] == ["team-a"]
+        assert server.requests[-7]["query"]["image_ref"] == ["base:v1"]
+        assert server.requests[-6]["query"]["actor"] == ["service-account:ci"]
+        assert server.requests[-6]["query"]["sandbox_id"] == ["job-1"]
+        assert server.requests[-5]["query"]["assignment_id"] == ["assignment-1"]
+        assert server.requests[-4]["query"]["sandbox_id"] == ["job-1"]
+        assert server.requests[-3]["query"]["worker_id"] == ["worker-1"]
+        assert server.requests[-2]["query"]["status"] == ["complete"]
+        assert server.requests[-1]["query"]["status"] == ["ready"]
+    finally:
+        server.stop()
+
+
 def test_fleet_client_inventory() -> None:
     server = _FleetHTTPServer()
     server.start()
@@ -654,6 +760,46 @@ def test_fleet_client_audit_validation() -> None:
         CoveFleetClient.list_audit_events(fleet_url="https://fleet.example", api_key="secret", limit=-1)
     with pytest.raises(ValueError, match="audit offset must be non-negative"):
         CoveFleetClient.list_audit_events(fleet_url="https://fleet.example", api_key="secret", offset=-1)
+
+
+def test_fleet_client_scoped_observability_validation() -> None:
+    with pytest.raises(ValueError, match="worker id is required"):
+        CoveFleetClient.list_worker_events(fleet_url="https://fleet.example", api_key="secret", worker_id="")
+    with pytest.raises(ValueError, match="worker reports limit must be non-negative"):
+        CoveFleetClient.list_worker_reports(
+            fleet_url="https://fleet.example",
+            api_key="secret",
+            worker_id="worker-1",
+            limit=-1,
+        )
+    with pytest.raises(ValueError, match="worker sandboxes offset must be non-negative"):
+        CoveFleetClient.list_worker_sandboxes(
+            fleet_url="https://fleet.example",
+            api_key="secret",
+            worker_id="worker-1",
+            offset=-1,
+        )
+    with pytest.raises(ValueError, match="worker id is required"):
+        CoveFleetClient.get_worker_metering(fleet_url="https://fleet.example", api_key="secret", worker_id="")
+    with pytest.raises(ValueError, match="assignment id is required"):
+        CoveFleetClient.list_assignment_events(
+            fleet_url="https://fleet.example",
+            api_key="secret",
+            assignment_id="",
+        )
+    with pytest.raises(ValueError, match="assignment reports limit must be non-negative"):
+        CoveFleetClient.list_assignment_reports(
+            fleet_url="https://fleet.example",
+            api_key="secret",
+            assignment_id="assignment-1",
+            limit=-1,
+        )
+    with pytest.raises(ValueError, match="assignment id is required"):
+        CoveFleetClient.get_assignment_metering(
+            fleet_url="https://fleet.example",
+            api_key="secret",
+            assignment_id="",
+        )
 
 
 def test_fleet_client_assignment_controls() -> None:
@@ -1109,6 +1255,23 @@ def _metering(sandbox_id: str) -> dict[str, object]:
     }
 
 
+def _worker_metering(worker_id: str) -> dict[str, object]:
+    data = _metering("job-1")
+    data["summary"]["worker_id"] = worker_id
+    for record in data["records"]:
+        record["worker_id"] = worker_id
+        record["resources"] = {"vms": 1, "cpus": 4}
+    return data
+
+
+def _assignment_metering(assignment_id: str) -> dict[str, object]:
+    data = _worker_metering("worker-1")
+    data["summary"]["assignment_id"] = assignment_id
+    for record in data["records"]:
+        record["assignment_id"] = assignment_id
+    return data
+
+
 def _image_prepare_result(*, dry_run: bool = False) -> dict[str, object]:
     digest = "sha256:" + "1" * 64
     digest_ref = "ghcr.io/me/base@" + digest
@@ -1341,6 +1504,24 @@ def _audit_event() -> dict[str, object]:
         "fields": {"reason": "created"},
         "prev_hash": "prev-1",
         "hash": "hash-1",
+    }
+
+
+def _assignment_report() -> dict[str, object]:
+    return {
+        "namespace": "team-a",
+        "assignment_id": "assignment-1",
+        "worker_id": "worker-1",
+        "status": "complete",
+        "created": "2026-05-31T10:04:00Z",
+        "updated": "2026-05-31T10:05:00Z",
+        "report": {
+            "assignment_id": "assignment-1",
+            "status": "complete",
+            "exit_code": 7,
+            "stdout": "out",
+            "stderr": "err",
+        },
     }
 
 
@@ -1741,6 +1922,48 @@ class _FleetHTTPServer:
                         }
                     )
                     return
+                if path == "/v1/workers/worker-1/sandboxes":
+                    self._write(
+                        {
+                            "sandboxes": [
+                                {
+                                    "namespace": "team-a",
+                                    "id": "job-1",
+                                    "vm_name": "cove-sandbox-job-1",
+                                    "image_ref": "base:v1",
+                                    "status": "ready",
+                                    "worker_id": "worker-1",
+                                }
+                            ],
+                            "count": 1,
+                            "offset": int(query.get("offset", ["0"])[0]),
+                            "limit": int(query.get("limit", ["0"])[0]),
+                        }
+                    )
+                    return
+                if path == "/v1/workers/worker-1/events":
+                    self._write(
+                        {
+                            "events": [_audit_event()],
+                            "count": 1,
+                            "offset": int(query.get("offset", ["0"])[0]),
+                            "limit": int(query.get("limit", ["0"])[0]),
+                        }
+                    )
+                    return
+                if path == "/v1/workers/worker-1/reports":
+                    self._write(
+                        {
+                            "reports": [_assignment_report()],
+                            "count": 1,
+                            "offset": int(query.get("offset", ["0"])[0]),
+                            "limit": int(query.get("limit", ["0"])[0]),
+                        }
+                    )
+                    return
+                if path == "/v1/workers/worker-1/metering":
+                    self._write(_worker_metering("worker-1"))
+                    return
                 if path == "/v1/workers/worker-1":
                     self._write(_host_record())
                     return
@@ -1756,6 +1979,29 @@ class _FleetHTTPServer:
                     return
                 if path == "/v1/assignments/assignment-1":
                     self._write(_inventory_assignment())
+                    return
+                if path == "/v1/assignments/assignment-1/events":
+                    self._write(
+                        {
+                            "events": [_audit_event()],
+                            "count": 1,
+                            "offset": int(query.get("offset", ["0"])[0]),
+                            "limit": int(query.get("limit", ["0"])[0]),
+                        }
+                    )
+                    return
+                if path == "/v1/assignments/assignment-1/reports":
+                    self._write(
+                        {
+                            "reports": [_assignment_report()],
+                            "count": 1,
+                            "offset": int(query.get("offset", ["0"])[0]),
+                            "limit": int(query.get("limit", ["0"])[0]),
+                        }
+                    )
+                    return
+                if path == "/v1/assignments/assignment-1/metering":
+                    self._write(_assignment_metering("assignment-1"))
                     return
                 if path == "/v1/sandboxes":
                     self._write(

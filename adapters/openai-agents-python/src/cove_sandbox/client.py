@@ -1061,6 +1061,139 @@ class CoveFleetClient:
         return dict(seed._request("GET", _worker_path(worker_id), timeout=timeout))
 
     @classmethod
+    def list_worker_events(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        worker_id: str,
+        actor: str = "",
+        action: str = "",
+        target_type: str = "",
+        target_id: str = "",
+        sandbox_id: str = "",
+        offset: int = 0,
+        limit: int = 0,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        worker_id = worker_id.strip()
+        if not worker_id:
+            raise ValueError("worker id is required")
+        if offset < 0:
+            raise ValueError("worker events offset must be non-negative")
+        if limit < 0:
+            raise ValueError("worker events limit must be non-negative")
+        seed = cls(sandbox_id="worker-events", fleet_url=fleet_url, api_key=api_key, timeout=timeout)
+        query = {
+            "actor": actor,
+            "action": action,
+            "target_type": target_type,
+            "target_id": target_id,
+            "sandbox_id": sandbox_id,
+            "offset": str(offset) if offset else "",
+            "limit": str(limit) if limit else "",
+        }
+        result = seed._request("GET", _query_path(_worker_action_path(worker_id, "events"), query), timeout=timeout)
+        return _normalize_audit_page(result, "GET /v1/workers/{id}/events")
+
+    @classmethod
+    def list_worker_reports(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        worker_id: str,
+        assignment_id: str = "",
+        status: str = "",
+        offset: int = 0,
+        limit: int = 0,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        worker_id = worker_id.strip()
+        if not worker_id:
+            raise ValueError("worker id is required")
+        if offset < 0:
+            raise ValueError("worker reports offset must be non-negative")
+        if limit < 0:
+            raise ValueError("worker reports limit must be non-negative")
+        seed = cls(sandbox_id="worker-reports", fleet_url=fleet_url, api_key=api_key, timeout=timeout)
+        query = {
+            "assignment_id": assignment_id,
+            "status": status,
+            "offset": str(offset) if offset else "",
+            "limit": str(limit) if limit else "",
+        }
+        result = seed._request("GET", _query_path(_worker_action_path(worker_id, "reports"), query), timeout=timeout)
+        return _normalize_report_page(result, "GET /v1/workers/{id}/reports")
+
+    @classmethod
+    def get_worker_metering(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        worker_id: str,
+        namespace: str | None = None,
+        sandbox_id: str = "",
+        status: str = "",
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        worker_id = worker_id.strip()
+        if not worker_id:
+            raise ValueError("worker id is required")
+        seed = cls(
+            sandbox_id="worker-metering",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        query = {
+            "namespace": namespace or "",
+            "sandbox_id": sandbox_id,
+            "status": status,
+        }
+        return seed._request("GET", _query_path(_worker_action_path(worker_id, "metering"), query), timeout=timeout)
+
+    @classmethod
+    def list_worker_sandboxes(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        worker_id: str,
+        namespace: str | None = None,
+        status: str = "",
+        image_ref: str = "",
+        offset: int = 0,
+        limit: int = 0,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        worker_id = worker_id.strip()
+        if not worker_id:
+            raise ValueError("worker id is required")
+        if offset < 0:
+            raise ValueError("worker sandboxes offset must be non-negative")
+        if limit < 0:
+            raise ValueError("worker sandboxes limit must be non-negative")
+        seed = cls(
+            sandbox_id="worker-sandboxes",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        query = {
+            "namespace": namespace or "",
+            "status": status,
+            "image_ref": image_ref,
+            "offset": str(offset) if offset else "",
+            "limit": str(limit) if limit else "",
+        }
+        result = seed._request("GET", _query_path(_worker_action_path(worker_id, "sandboxes"), query), timeout=timeout)
+        return _normalize_inventory_page(result, "sandboxes", "GET /v1/workers/{id}/sandboxes")
+
+    @classmethod
     def cordon_worker(
         cls,
         *,
@@ -1283,6 +1416,102 @@ class CoveFleetClient:
             raise ValueError("assignment id is required")
         seed = cls(sandbox_id="assignment", fleet_url=fleet_url, api_key=api_key, timeout=timeout)
         return dict(seed._request("GET", _assignment_path(assignment_id), timeout=timeout))
+
+    @classmethod
+    def list_assignment_events(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        assignment_id: str,
+        actor: str = "",
+        action: str = "",
+        target_type: str = "",
+        target_id: str = "",
+        worker_id: str = "",
+        sandbox_id: str = "",
+        offset: int = 0,
+        limit: int = 0,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        assignment_id = assignment_id.strip()
+        if not assignment_id:
+            raise ValueError("assignment id is required")
+        if offset < 0:
+            raise ValueError("assignment events offset must be non-negative")
+        if limit < 0:
+            raise ValueError("assignment events limit must be non-negative")
+        seed = cls(sandbox_id="assignment-events", fleet_url=fleet_url, api_key=api_key, timeout=timeout)
+        query = {
+            "actor": actor,
+            "action": action,
+            "target_type": target_type,
+            "target_id": target_id,
+            "worker_id": worker_id,
+            "sandbox_id": sandbox_id,
+            "offset": str(offset) if offset else "",
+            "limit": str(limit) if limit else "",
+        }
+        result = seed._request(
+            "GET",
+            _query_path(_assignment_action_path(assignment_id, "events"), query),
+            timeout=timeout,
+        )
+        return _normalize_audit_page(result, "GET /v1/assignments/{id}/events")
+
+    @classmethod
+    def list_assignment_reports(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        assignment_id: str,
+        worker_id: str = "",
+        status: str = "",
+        offset: int = 0,
+        limit: int = 0,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        assignment_id = assignment_id.strip()
+        if not assignment_id:
+            raise ValueError("assignment id is required")
+        if offset < 0:
+            raise ValueError("assignment reports offset must be non-negative")
+        if limit < 0:
+            raise ValueError("assignment reports limit must be non-negative")
+        seed = cls(sandbox_id="assignment-reports", fleet_url=fleet_url, api_key=api_key, timeout=timeout)
+        query = {
+            "worker_id": worker_id,
+            "status": status,
+            "offset": str(offset) if offset else "",
+            "limit": str(limit) if limit else "",
+        }
+        result = seed._request(
+            "GET",
+            _query_path(_assignment_action_path(assignment_id, "reports"), query),
+            timeout=timeout,
+        )
+        return _normalize_report_page(result, "GET /v1/assignments/{id}/reports")
+
+    @classmethod
+    def get_assignment_metering(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        assignment_id: str,
+        status: str = "",
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        assignment_id = assignment_id.strip()
+        if not assignment_id:
+            raise ValueError("assignment id is required")
+        seed = cls(sandbox_id="assignment-metering", fleet_url=fleet_url, api_key=api_key, timeout=timeout)
+        return seed._request(
+            "GET",
+            _query_path(_assignment_action_path(assignment_id, "metering"), {"status": status}),
+            timeout=timeout,
+        )
 
     @classmethod
     def cancel_assignment(
@@ -2064,6 +2293,13 @@ def _normalize_audit_verify(data: dict[str, Any], endpoint: str) -> dict[str, An
     result["events"] = int(result.get("events") or 0)
     _normalize_dict_list(result, "issues", endpoint)
     return result
+
+
+def _normalize_report_page(data: dict[str, Any], endpoint: str) -> dict[str, Any]:
+    page = dict(data)
+    _normalize_dict_list(page, "reports", endpoint)
+    page["count"] = int(page.get("count") or len(page["reports"]))
+    return page
 
 
 def _normalize_inventory_page(data: dict[str, Any], key: str, endpoint: str) -> dict[str, Any]:

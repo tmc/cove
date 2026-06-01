@@ -657,6 +657,57 @@ type WorkerEvacuationOptions struct {
 	HTTP     *http.Client
 }
 
+type WorkerEventListOptions struct {
+	FleetURL   string
+	APIKey     string
+	ID         string
+	Actor      string
+	Action     string
+	TargetType string
+	TargetID   string
+	SandboxID  string
+	Offset     int
+	Limit      int
+	Timeout    time.Duration
+	HTTP       *http.Client
+}
+
+type WorkerReportListOptions struct {
+	FleetURL     string
+	APIKey       string
+	ID           string
+	AssignmentID string
+	Status       string
+	Offset       int
+	Limit        int
+	Timeout      time.Duration
+	HTTP         *http.Client
+}
+
+type WorkerMeteringOptions struct {
+	FleetURL  string
+	APIKey    string
+	ID        string
+	Namespace string
+	SandboxID string
+	Status    string
+	Timeout   time.Duration
+	HTTP      *http.Client
+}
+
+type WorkerSandboxListOptions struct {
+	FleetURL  string
+	APIKey    string
+	ID        string
+	Namespace string
+	Status    string
+	ImageRef  string
+	Offset    int
+	Limit     int
+	Timeout   time.Duration
+	HTTP      *http.Client
+}
+
 type WorkerListResult struct {
 	Workers    []HostRecord `json:"workers"`
 	Count      int          `json:"count"`
@@ -760,6 +811,43 @@ type AssignmentRetryOptions struct {
 	Reason   string
 	WorkerID string
 	Replan   bool
+	Timeout  time.Duration
+	HTTP     *http.Client
+}
+
+type AssignmentEventListOptions struct {
+	FleetURL   string
+	APIKey     string
+	ID         string
+	Actor      string
+	Action     string
+	TargetType string
+	TargetID   string
+	WorkerID   string
+	SandboxID  string
+	Offset     int
+	Limit      int
+	Timeout    time.Duration
+	HTTP       *http.Client
+}
+
+type AssignmentReportListOptions struct {
+	FleetURL string
+	APIKey   string
+	ID       string
+	WorkerID string
+	Status   string
+	Offset   int
+	Limit    int
+	Timeout  time.Duration
+	HTTP     *http.Client
+}
+
+type AssignmentMeteringOptions struct {
+	FleetURL string
+	APIKey   string
+	ID       string
+	Status   string
 	Timeout  time.Duration
 	HTTP     *http.Client
 }
@@ -1003,6 +1091,7 @@ type MeteringRecord struct {
 	Started          time.Time `json:"started"`
 	Ended            time.Time `json:"ended"`
 	DurationMillis   int64     `json:"duration_millis"`
+	Resources        Capacity  `json:"resources,omitempty"`
 	VMMillis         int64     `json:"vm_millis"`
 	CPUMillis        int64     `json:"cpu_millis,omitempty"`
 	MemoryByteMillis uint64    `json:"memory_byte_millis,omitempty"`
@@ -1011,6 +1100,8 @@ type MeteringRecord struct {
 type MeteringSummary struct {
 	Namespace        string `json:"namespace,omitempty"`
 	SandboxID        string `json:"sandbox_id,omitempty"`
+	AssignmentID     string `json:"assignment_id,omitempty"`
+	WorkerID         string `json:"worker_id,omitempty"`
 	Records          int    `json:"records"`
 	DurationMillis   int64  `json:"duration_millis"`
 	VMMillis         int64  `json:"vm_millis"`
@@ -1092,6 +1183,24 @@ type SandboxReportListResult struct {
 	Offset     int             `json:"offset,omitempty"`
 	Limit      int             `json:"limit,omitempty"`
 	NextOffset int             `json:"next_offset,omitempty"`
+}
+
+type AssignmentReport struct {
+	Namespace    string       `json:"namespace,omitempty"`
+	AssignmentID string       `json:"assignment_id"`
+	WorkerID     string       `json:"worker_id,omitempty"`
+	Status       string       `json:"status,omitempty"`
+	Created      time.Time    `json:"created,omitempty"`
+	Updated      time.Time    `json:"updated,omitempty"`
+	Report       WorkerReport `json:"report"`
+}
+
+type AssignmentReportListResult struct {
+	Reports    []AssignmentReport `json:"reports"`
+	Count      int                `json:"count,omitempty"`
+	Offset     int                `json:"offset,omitempty"`
+	Limit      int                `json:"limit,omitempty"`
+	NextOffset int                `json:"next_offset,omitempty"`
 }
 
 type WaitResult struct {
@@ -1893,6 +2002,136 @@ func GetWorker(ctx context.Context, opts WorkerGetOptions) (HostRecord, error) {
 	return result, nil
 }
 
+func ListWorkerEvents(ctx context.Context, opts WorkerEventListOptions) (AuditListResult, error) {
+	id := strings.TrimSpace(opts.ID)
+	if id == "" {
+		return AuditListResult{}, errors.New("agentsandbox: worker id required")
+	}
+	if opts.Limit < 0 {
+		return AuditListResult{}, errors.New("agentsandbox: worker events limit must be non-negative")
+	}
+	if opts.Offset < 0 {
+		return AuditListResult{}, errors.New("agentsandbox: worker events offset must be non-negative")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "worker-events")
+	if err != nil {
+		return AuditListResult{}, err
+	}
+	query := map[string]string{
+		"actor":       opts.Actor,
+		"action":      opts.Action,
+		"target_type": opts.TargetType,
+		"target_id":   opts.TargetID,
+		"sandbox_id":  opts.SandboxID,
+	}
+	if opts.Offset > 0 {
+		query["offset"] = strconv.Itoa(opts.Offset)
+	}
+	if opts.Limit > 0 {
+		query["limit"] = strconv.Itoa(opts.Limit)
+	}
+	var result AuditListResult
+	if err := c.request(ctx, http.MethodGet, c.queryPath(workerActionPath(id, "events"), query), nil, &result, c.timeout); err != nil {
+		return AuditListResult{}, err
+	}
+	if result.Count == 0 && len(result.Events) > 0 {
+		result.Count = len(result.Events)
+	}
+	return result, nil
+}
+
+func ListWorkerReports(ctx context.Context, opts WorkerReportListOptions) (AssignmentReportListResult, error) {
+	id := strings.TrimSpace(opts.ID)
+	if id == "" {
+		return AssignmentReportListResult{}, errors.New("agentsandbox: worker id required")
+	}
+	if opts.Limit < 0 {
+		return AssignmentReportListResult{}, errors.New("agentsandbox: worker reports limit must be non-negative")
+	}
+	if opts.Offset < 0 {
+		return AssignmentReportListResult{}, errors.New("agentsandbox: worker reports offset must be non-negative")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "worker-reports")
+	if err != nil {
+		return AssignmentReportListResult{}, err
+	}
+	query := map[string]string{
+		"assignment_id": opts.AssignmentID,
+		"status":        opts.Status,
+	}
+	if opts.Offset > 0 {
+		query["offset"] = strconv.Itoa(opts.Offset)
+	}
+	if opts.Limit > 0 {
+		query["limit"] = strconv.Itoa(opts.Limit)
+	}
+	var result AssignmentReportListResult
+	if err := c.request(ctx, http.MethodGet, c.queryPath(workerActionPath(id, "reports"), query), nil, &result, c.timeout); err != nil {
+		return AssignmentReportListResult{}, err
+	}
+	if result.Count == 0 && len(result.Reports) > 0 {
+		result.Count = len(result.Reports)
+	}
+	return result, nil
+}
+
+func GetWorkerMetering(ctx context.Context, opts WorkerMeteringOptions) (MeteringResult, error) {
+	id := strings.TrimSpace(opts.ID)
+	if id == "" {
+		return MeteringResult{}, errors.New("agentsandbox: worker id required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "worker-metering")
+	if err != nil {
+		return MeteringResult{}, err
+	}
+	query := map[string]string{
+		"namespace":  opts.Namespace,
+		"sandbox_id": opts.SandboxID,
+		"status":     opts.Status,
+	}
+	var result MeteringResult
+	if err := c.request(ctx, http.MethodGet, c.queryPath(workerActionPath(id, "metering"), query), nil, &result, c.timeout); err != nil {
+		return MeteringResult{}, err
+	}
+	return result, nil
+}
+
+func ListWorkerSandboxes(ctx context.Context, opts WorkerSandboxListOptions) (SandboxListResult, error) {
+	id := strings.TrimSpace(opts.ID)
+	if id == "" {
+		return SandboxListResult{}, errors.New("agentsandbox: worker id required")
+	}
+	if opts.Limit < 0 {
+		return SandboxListResult{}, errors.New("agentsandbox: worker sandboxes limit must be non-negative")
+	}
+	if opts.Offset < 0 {
+		return SandboxListResult{}, errors.New("agentsandbox: worker sandboxes offset must be non-negative")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "worker-sandboxes")
+	if err != nil {
+		return SandboxListResult{}, err
+	}
+	query := map[string]string{
+		"namespace": opts.Namespace,
+		"status":    opts.Status,
+		"image_ref": opts.ImageRef,
+	}
+	if opts.Offset > 0 {
+		query["offset"] = strconv.Itoa(opts.Offset)
+	}
+	if opts.Limit > 0 {
+		query["limit"] = strconv.Itoa(opts.Limit)
+	}
+	var result SandboxListResult
+	if err := c.request(ctx, http.MethodGet, c.queryPath(workerActionPath(id, "sandboxes"), query), nil, &result, c.timeout); err != nil {
+		return SandboxListResult{}, err
+	}
+	if result.Count == 0 && len(result.Sandboxes) > 0 {
+		result.Count = len(result.Sandboxes)
+	}
+	return result, nil
+}
+
 func CordonWorker(ctx context.Context, opts WorkerLifecycleOptions) (HostRecord, error) {
 	return workerLifecycle(ctx, opts, "cordon")
 }
@@ -2016,6 +2255,97 @@ func GetAssignment(ctx context.Context, opts AssignmentGetOptions) (Assignment, 
 	var result Assignment
 	if err := c.request(ctx, http.MethodGet, assignmentPath(id), nil, &result, c.timeout); err != nil {
 		return Assignment{}, err
+	}
+	return result, nil
+}
+
+func ListAssignmentEvents(ctx context.Context, opts AssignmentEventListOptions) (AuditListResult, error) {
+	id := strings.TrimSpace(opts.ID)
+	if id == "" {
+		return AuditListResult{}, errors.New("agentsandbox: assignment id required")
+	}
+	if opts.Limit < 0 {
+		return AuditListResult{}, errors.New("agentsandbox: assignment events limit must be non-negative")
+	}
+	if opts.Offset < 0 {
+		return AuditListResult{}, errors.New("agentsandbox: assignment events offset must be non-negative")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "assignment-events")
+	if err != nil {
+		return AuditListResult{}, err
+	}
+	query := map[string]string{
+		"actor":       opts.Actor,
+		"action":      opts.Action,
+		"target_type": opts.TargetType,
+		"target_id":   opts.TargetID,
+		"worker_id":   opts.WorkerID,
+		"sandbox_id":  opts.SandboxID,
+	}
+	if opts.Offset > 0 {
+		query["offset"] = strconv.Itoa(opts.Offset)
+	}
+	if opts.Limit > 0 {
+		query["limit"] = strconv.Itoa(opts.Limit)
+	}
+	var result AuditListResult
+	if err := c.request(ctx, http.MethodGet, c.queryPath(assignmentActionPath(id, "events"), query), nil, &result, c.timeout); err != nil {
+		return AuditListResult{}, err
+	}
+	if result.Count == 0 && len(result.Events) > 0 {
+		result.Count = len(result.Events)
+	}
+	return result, nil
+}
+
+func ListAssignmentReports(ctx context.Context, opts AssignmentReportListOptions) (AssignmentReportListResult, error) {
+	id := strings.TrimSpace(opts.ID)
+	if id == "" {
+		return AssignmentReportListResult{}, errors.New("agentsandbox: assignment id required")
+	}
+	if opts.Limit < 0 {
+		return AssignmentReportListResult{}, errors.New("agentsandbox: assignment reports limit must be non-negative")
+	}
+	if opts.Offset < 0 {
+		return AssignmentReportListResult{}, errors.New("agentsandbox: assignment reports offset must be non-negative")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "assignment-reports")
+	if err != nil {
+		return AssignmentReportListResult{}, err
+	}
+	query := map[string]string{
+		"worker_id": opts.WorkerID,
+		"status":    opts.Status,
+	}
+	if opts.Offset > 0 {
+		query["offset"] = strconv.Itoa(opts.Offset)
+	}
+	if opts.Limit > 0 {
+		query["limit"] = strconv.Itoa(opts.Limit)
+	}
+	var result AssignmentReportListResult
+	if err := c.request(ctx, http.MethodGet, c.queryPath(assignmentActionPath(id, "reports"), query), nil, &result, c.timeout); err != nil {
+		return AssignmentReportListResult{}, err
+	}
+	if result.Count == 0 && len(result.Reports) > 0 {
+		result.Count = len(result.Reports)
+	}
+	return result, nil
+}
+
+func GetAssignmentMetering(ctx context.Context, opts AssignmentMeteringOptions) (MeteringResult, error) {
+	id := strings.TrimSpace(opts.ID)
+	if id == "" {
+		return MeteringResult{}, errors.New("agentsandbox: assignment id required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "assignment-metering")
+	if err != nil {
+		return MeteringResult{}, err
+	}
+	query := map[string]string{"status": opts.Status}
+	var result MeteringResult
+	if err := c.request(ctx, http.MethodGet, c.queryPath(assignmentActionPath(id, "metering"), query), nil, &result, c.timeout); err != nil {
+		return MeteringResult{}, err
 	}
 	return result, nil
 }

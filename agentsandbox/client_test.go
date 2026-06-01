@@ -641,6 +641,168 @@ func TestCloudClientAudit(t *testing.T) {
 	}
 }
 
+func TestCloudClientScopedObservability(t *testing.T) {
+	server := newSDKFleetServer(t)
+	ctx := context.Background()
+	sandboxes, err := ListWorkerSandboxes(ctx, WorkerSandboxListOptions{
+		FleetURL:  server.URL,
+		APIKey:    "secret",
+		ID:        "worker-1",
+		Namespace: "team-a",
+		Status:    "ready",
+		ImageRef:  "base:v1",
+		Offset:    1,
+		Limit:     2,
+		Timeout:   time.Second,
+	})
+	if err != nil {
+		t.Fatalf("ListWorkerSandboxes: %v", err)
+	}
+	if sandboxes.Count != 1 || sandboxes.Sandboxes[0].WorkerID != "worker-1" {
+		t.Fatalf("ListWorkerSandboxes = %+v, want worker-1 sandbox", sandboxes)
+	}
+	workerEvents, err := ListWorkerEvents(ctx, WorkerEventListOptions{
+		FleetURL:   server.URL,
+		APIKey:     "secret",
+		ID:         "worker-1",
+		Actor:      "service-account:ci",
+		Action:     "assignment.create",
+		TargetType: "assignment",
+		TargetID:   "assignment-1",
+		SandboxID:  "job-1",
+		Offset:     1,
+		Limit:      2,
+		Timeout:    time.Second,
+	})
+	if err != nil {
+		t.Fatalf("ListWorkerEvents: %v", err)
+	}
+	if workerEvents.Count != 1 || workerEvents.Events[0].WorkerID != "worker-1" {
+		t.Fatalf("ListWorkerEvents = %+v, want worker-1 event", workerEvents)
+	}
+	workerReports, err := ListWorkerReports(ctx, WorkerReportListOptions{
+		FleetURL:     server.URL,
+		APIKey:       "secret",
+		ID:           "worker-1",
+		AssignmentID: "assignment-1",
+		Status:       "complete",
+		Offset:       1,
+		Limit:        2,
+		Timeout:      time.Second,
+	})
+	if err != nil {
+		t.Fatalf("ListWorkerReports: %v", err)
+	}
+	if workerReports.Count != 1 || workerReports.Reports[0].Report.Stdout != "out" {
+		t.Fatalf("ListWorkerReports = %+v, want report stdout", workerReports)
+	}
+	workerMetering, err := GetWorkerMetering(ctx, WorkerMeteringOptions{
+		FleetURL:  server.URL,
+		APIKey:    "secret",
+		ID:        "worker-1",
+		Namespace: "team-a",
+		SandboxID: "job-1",
+		Status:    "ready",
+		Timeout:   time.Second,
+	})
+	if err != nil {
+		t.Fatalf("GetWorkerMetering: %v", err)
+	}
+	if workerMetering.Summary.WorkerID != "worker-1" || workerMetering.Records[0].Resources.VMs != 1 {
+		t.Fatalf("GetWorkerMetering = %+v, want worker-1 resource metering", workerMetering)
+	}
+	assignmentEvents, err := ListAssignmentEvents(ctx, AssignmentEventListOptions{
+		FleetURL:   server.URL,
+		APIKey:     "secret",
+		ID:         "assignment-1",
+		Actor:      "service-account:ci",
+		Action:     "assignment.create",
+		TargetType: "assignment",
+		TargetID:   "assignment-1",
+		WorkerID:   "worker-1",
+		SandboxID:  "job-1",
+		Offset:     1,
+		Limit:      2,
+		Timeout:    time.Second,
+	})
+	if err != nil {
+		t.Fatalf("ListAssignmentEvents: %v", err)
+	}
+	if assignmentEvents.Count != 1 || assignmentEvents.Events[0].AssignmentID != "assignment-1" {
+		t.Fatalf("ListAssignmentEvents = %+v, want assignment-1 event", assignmentEvents)
+	}
+	assignmentReports, err := ListAssignmentReports(ctx, AssignmentReportListOptions{
+		FleetURL: server.URL,
+		APIKey:   "secret",
+		ID:       "assignment-1",
+		WorkerID: "worker-1",
+		Status:   "complete",
+		Offset:   1,
+		Limit:    2,
+		Timeout:  time.Second,
+	})
+	if err != nil {
+		t.Fatalf("ListAssignmentReports: %v", err)
+	}
+	if assignmentReports.Count != 1 || assignmentReports.Reports[0].AssignmentID != "assignment-1" {
+		t.Fatalf("ListAssignmentReports = %+v, want assignment-1 report", assignmentReports)
+	}
+	assignmentMetering, err := GetAssignmentMetering(ctx, AssignmentMeteringOptions{
+		FleetURL: server.URL,
+		APIKey:   "secret",
+		ID:       "assignment-1",
+		Status:   "ready",
+		Timeout:  time.Second,
+	})
+	if err != nil {
+		t.Fatalf("GetAssignmentMetering: %v", err)
+	}
+	if assignmentMetering.Summary.AssignmentID != "assignment-1" || assignmentMetering.Records[0].WorkerID != "worker-1" {
+		t.Fatalf("GetAssignmentMetering = %+v, want assignment-1 metering", assignmentMetering)
+	}
+
+	paths := make([]string, 0, len(server.requests))
+	for _, req := range server.requests {
+		paths = append(paths, req.path)
+		if req.authorization != "Bearer secret" {
+			t.Fatalf("authorization for %s = %q, want bearer token", req.path, req.authorization)
+		}
+	}
+	wantPaths := []string{
+		"/v1/workers/worker-1/sandboxes",
+		"/v1/workers/worker-1/events",
+		"/v1/workers/worker-1/reports",
+		"/v1/workers/worker-1/metering",
+		"/v1/assignments/assignment-1/events",
+		"/v1/assignments/assignment-1/reports",
+		"/v1/assignments/assignment-1/metering",
+	}
+	if !equalStringSlices(paths, wantPaths) {
+		t.Fatalf("paths = %+v, want %+v", paths, wantPaths)
+	}
+	if query := server.requests[0].query; query.Get("namespace") != "team-a" || query.Get("status") != "ready" || query.Get("image_ref") != "base:v1" || query.Get("offset") != "1" || query.Get("limit") != "2" {
+		t.Fatalf("worker sandboxes query = %q", query.Encode())
+	}
+	if query := server.requests[1].query; query.Get("actor") != "service-account:ci" || query.Get("action") != "assignment.create" || query.Get("target_type") != "assignment" || query.Get("target_id") != "assignment-1" || query.Get("sandbox_id") != "job-1" || query.Get("offset") != "1" || query.Get("limit") != "2" {
+		t.Fatalf("worker events query = %q", query.Encode())
+	}
+	if query := server.requests[2].query; query.Get("assignment_id") != "assignment-1" || query.Get("status") != "complete" || query.Get("offset") != "1" || query.Get("limit") != "2" {
+		t.Fatalf("worker reports query = %q", query.Encode())
+	}
+	if query := server.requests[3].query; query.Get("namespace") != "team-a" || query.Get("sandbox_id") != "job-1" || query.Get("status") != "ready" {
+		t.Fatalf("worker metering query = %q", query.Encode())
+	}
+	if query := server.requests[4].query; query.Get("actor") != "service-account:ci" || query.Get("worker_id") != "worker-1" || query.Get("sandbox_id") != "job-1" || query.Get("offset") != "1" || query.Get("limit") != "2" {
+		t.Fatalf("assignment events query = %q", query.Encode())
+	}
+	if query := server.requests[5].query; query.Get("worker_id") != "worker-1" || query.Get("status") != "complete" || query.Get("offset") != "1" || query.Get("limit") != "2" {
+		t.Fatalf("assignment reports query = %q", query.Encode())
+	}
+	if query := server.requests[6].query; query.Get("status") != "ready" {
+		t.Fatalf("assignment metering query = %q", query.Encode())
+	}
+}
+
 func TestCloudClientInventory(t *testing.T) {
 	server := newSDKFleetServer(t)
 	ctx := context.Background()
@@ -758,6 +920,31 @@ func TestCloudClientAuditValidation(t *testing.T) {
 	}
 	if _, err := ListAuditEvents(ctx, AuditListOptions{FleetURL: "https://fleet.example", APIKey: "secret", Offset: -1}); err == nil || !strings.Contains(err.Error(), "offset must be non-negative") {
 		t.Fatalf("ListAuditEvents negative offset err = %v, want validation error", err)
+	}
+}
+
+func TestCloudClientScopedObservabilityValidation(t *testing.T) {
+	ctx := context.Background()
+	if _, err := ListWorkerEvents(ctx, WorkerEventListOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "worker id required") {
+		t.Fatalf("ListWorkerEvents missing id err = %v, want validation error", err)
+	}
+	if _, err := ListWorkerReports(ctx, WorkerReportListOptions{FleetURL: "https://fleet.example", APIKey: "secret", ID: "worker-1", Limit: -1}); err == nil || !strings.Contains(err.Error(), "limit must be non-negative") {
+		t.Fatalf("ListWorkerReports negative limit err = %v, want validation error", err)
+	}
+	if _, err := ListWorkerSandboxes(ctx, WorkerSandboxListOptions{FleetURL: "https://fleet.example", APIKey: "secret", ID: "worker-1", Offset: -1}); err == nil || !strings.Contains(err.Error(), "offset must be non-negative") {
+		t.Fatalf("ListWorkerSandboxes negative offset err = %v, want validation error", err)
+	}
+	if _, err := GetWorkerMetering(ctx, WorkerMeteringOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "worker id required") {
+		t.Fatalf("GetWorkerMetering missing id err = %v, want validation error", err)
+	}
+	if _, err := ListAssignmentEvents(ctx, AssignmentEventListOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "assignment id required") {
+		t.Fatalf("ListAssignmentEvents missing id err = %v, want validation error", err)
+	}
+	if _, err := ListAssignmentReports(ctx, AssignmentReportListOptions{FleetURL: "https://fleet.example", APIKey: "secret", ID: "assignment-1", Limit: -1}); err == nil || !strings.Contains(err.Error(), "limit must be non-negative") {
+		t.Fatalf("ListAssignmentReports negative limit err = %v, want validation error", err)
+	}
+	if _, err := GetAssignmentMetering(ctx, AssignmentMeteringOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "assignment id required") {
+		t.Fatalf("GetAssignmentMetering missing id err = %v, want validation error", err)
 	}
 }
 
@@ -1436,6 +1623,29 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 				Offset:  atoiDefault(r.URL.Query().Get("offset"), 0),
 				Limit:   atoiDefault(r.URL.Query().Get("limit"), 0),
 			})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/workers/worker-1/sandboxes":
+			writeSDKJSON(t, w, SandboxListResult{
+				Sandboxes: []SandboxStatus{sdkWorkerSandbox()},
+				Count:     1,
+				Offset:    atoiDefault(r.URL.Query().Get("offset"), 0),
+				Limit:     atoiDefault(r.URL.Query().Get("limit"), 0),
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/workers/worker-1/events":
+			writeSDKJSON(t, w, AuditListResult{
+				Events: []AuditEvent{sdkAuditEvent()},
+				Count:  1,
+				Offset: atoiDefault(r.URL.Query().Get("offset"), 0),
+				Limit:  atoiDefault(r.URL.Query().Get("limit"), 0),
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/workers/worker-1/reports":
+			writeSDKJSON(t, w, AssignmentReportListResult{
+				Reports: []AssignmentReport{sdkAssignmentReport()},
+				Count:   1,
+				Offset:  atoiDefault(r.URL.Query().Get("offset"), 0),
+				Limit:   atoiDefault(r.URL.Query().Get("limit"), 0),
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/workers/worker-1/metering":
+			writeSDKJSON(t, w, sdkWorkerMetering("worker-1"))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/workers/worker-1":
 			writeSDKJSON(t, w, sdkHostRecord())
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/assignments":
@@ -1447,6 +1657,22 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/assignments/assignment-1":
 			writeSDKJSON(t, w, sdkInventoryAssignment())
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/assignments/assignment-1/events":
+			writeSDKJSON(t, w, AuditListResult{
+				Events: []AuditEvent{sdkAuditEvent()},
+				Count:  1,
+				Offset: atoiDefault(r.URL.Query().Get("offset"), 0),
+				Limit:  atoiDefault(r.URL.Query().Get("limit"), 0),
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/assignments/assignment-1/reports":
+			writeSDKJSON(t, w, AssignmentReportListResult{
+				Reports: []AssignmentReport{sdkAssignmentReport()},
+				Count:   1,
+				Offset:  atoiDefault(r.URL.Query().Get("offset"), 0),
+				Limit:   atoiDefault(r.URL.Query().Get("limit"), 0),
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/assignments/assignment-1/metering":
+			writeSDKJSON(t, w, sdkAssignmentMetering("assignment-1"))
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/assignments/assignment-1/cancel":
 			writeSDKJSON(t, w, sdkAssignmentCancel(req.body))
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/assignments/assignment-1/retry":
@@ -1830,6 +2056,49 @@ func sdkAuditEvent() AuditEvent {
 		PrevHash:     "prev-1",
 		Hash:         "hash-1",
 	}
+}
+
+func sdkWorkerSandbox() SandboxStatus {
+	return SandboxStatus{
+		Namespace: "team-a",
+		ID:        "job-1",
+		VMName:    "cove-sandbox-job-1",
+		ImageRef:  "base:v1",
+		Status:    "ready",
+		WorkerID:  "worker-1",
+	}
+}
+
+func sdkAssignmentReport() AssignmentReport {
+	now := time.Date(2026, 5, 31, 10, 5, 0, 0, time.UTC)
+	return AssignmentReport{
+		Namespace:    "team-a",
+		AssignmentID: "assignment-1",
+		WorkerID:     "worker-1",
+		Status:       "complete",
+		Created:      now.Add(-time.Minute),
+		Updated:      now,
+		Report:       WorkerReport{AssignmentID: "assignment-1", Status: "complete", ExitCode: 7, Stdout: "out", Stderr: "err", Time: now},
+	}
+}
+
+func sdkWorkerMetering(id string) MeteringResult {
+	result := sdkMetering("job-1")
+	result.Summary.WorkerID = id
+	for i := range result.Records {
+		result.Records[i].WorkerID = id
+		result.Records[i].Resources = Capacity{VMs: 1, CPUs: 4}
+	}
+	return result
+}
+
+func sdkAssignmentMetering(id string) MeteringResult {
+	result := sdkWorkerMetering("worker-1")
+	result.Summary.AssignmentID = id
+	for i := range result.Records {
+		result.Records[i].AssignmentID = id
+	}
+	return result
 }
 
 func sdkHostRecord() HostRecord {

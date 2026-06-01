@@ -175,7 +175,9 @@ provenance. Pass `required_labels` for operator-defined selectors and
 runtime traits such as `ram-overlay`. The direct fleet client can also queue
 image preparation before placement or warm-pool replenishment, push image
 GC/lifecycle/storage maintenance work, read the retained controller-run
-timeline, and inspect or verify the hash-chained audit feed.
+timeline, inspect or verify the hash-chained audit feed, and drill into
+worker- or assignment-scoped events, reports, metering, and hosted sandbox
+lists.
 
 For direct fleet-client code, `CoveFleetClient` covers hosted sandbox and
 warm-pool lifecycles plus maintenance controls:
@@ -284,6 +286,19 @@ assignments = CoveFleetClient.list_assignments(
     limit=20,
 )
 print(assignments["count"])
+worker_events = CoveFleetClient.list_worker_events(
+    fleet_url="https://fleet.internal.example",
+    api_key="cove_...",
+    worker_id="mini-1",
+    limit=20,
+)
+assignment_reports = CoveFleetClient.list_assignment_reports(
+    fleet_url="https://fleet.internal.example",
+    api_key="cove_...",
+    assignment_id="assignment-123",
+    limit=20,
+)
+print(worker_events["count"], assignment_reports["count"])
 retry = CoveFleetClient.retry_assignment(
     fleet_url="https://fleet.internal.example",
     api_key="cove_...",
@@ -344,8 +359,12 @@ Maintenance helpers include `push_image_gc`, `push_lifecycle_policy`,
 `list_assignments`, `get_assignment`, `cancel_assignment`, `retry_assignment`,
 worker lifecycle helpers such as `cordon_worker`, `evacuate_worker`,
 `drain_worker`, and `decommission_worker`, `list_audit_events`,
-`verify_audit_log`, and `list_controller_runs` for the aggregate operations
-dashboard, inventory, maintenance controls, audit chain, and timeline.
+`verify_audit_log`, scoped observability helpers such as
+`list_worker_sandboxes`, `list_worker_events`, `list_worker_reports`,
+`get_worker_metering`, `list_assignment_events`, `list_assignment_reports`,
+and `get_assignment_metering`, and `list_controller_runs` for the aggregate
+operations dashboard, inventory, maintenance controls, audit chain, and
+timeline.
 Pass `dry_run=True` to maintenance pushes to inspect planned
 assignments and structured skipped-worker diagnostics without mutating the
 controller.
