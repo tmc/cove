@@ -60,9 +60,10 @@ delegates the disk/runtime work to `tart` or `vetu`.
    selection, optional all-platform child-manifest classification, disk format
    for cove-native/image-store artifacts, pull plan, cove base-chain
    disk-format/size/chunk compatibility, and
-   verification posture; `-verify-blobs` HEAD-audits every remote config/layer
-   descriptor without downloading disks, and multiple refs can be inspected as
-   one batch for private catalog audits.
+   verification posture; `-verify-blobs` HEAD-audits remote config/layer
+   descriptors without downloading disks, including per-child audits when
+   combined with `-all-platforms`, and multiple refs can be inspected as one
+   batch for private catalog audits.
 
 4. **ASIF-aware image metadata.** cove can create ASIF VM disks with
    DiskImages2, local image manifests record whether a captured disk is `raw`
@@ -86,6 +87,8 @@ delegates the disk/runtime work to `tart` or `vetu`.
    OCI index/list child candidates and selection, can force
    `--platform os/arch[/variant]`, then HEAD-audit the registry blobs this host
    would need for cove-native, Tart, or Lume pulls without downloading them.
+   Remote inspect can apply the same HEAD-only blob audit to every child of a
+   mixed-platform index before choosing which disk to pull.
    Pull completion reports the actual reused chunk count, bytes, disk format,
    and base disk path when the base clone succeeds. Local
    images built from pulled VMs preserve the

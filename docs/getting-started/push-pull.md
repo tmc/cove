@@ -30,6 +30,7 @@ cove image inspect -remote <ref> -json            # inspect registry metadata on
 cove image inspect -remote <ref> -platform linux/arm64 -json # inspect one platform
 cove image inspect -remote <ref> -all-platforms -json # classify every index child
 cove image inspect -remote -verify-blobs <ref>    # HEAD every referenced blob
+cove image inspect -remote <ref> -all-platforms -verify-blobs -json # audit every child
 cove image inspect -remote <ref> <ref> -json      # audit several registry refs
 ```
 
@@ -48,7 +49,9 @@ cove/Tart/Lume/image-store artifacts, cove base-chain
 availability/compatibility when a base manifest is declared, and the
 verification work cove will perform during pull/import. Add `-all-platforms` to
 fetch each child manifest and classify every platform without downloading disk
-blobs.
+blobs. Combine `-all-platforms` with `-verify-blobs` to HEAD-audit every child
+manifest's config and layer descriptors and report per-child blob status in the
+index manifest list.
 Add `-verify-blobs` to send HEAD requests for every config and layer descriptor
 so a private catalog audit can catch missing registry blobs without downloading
 VM disks. Plain `--dry-run` is network-free. Use `--manifest` to validate local

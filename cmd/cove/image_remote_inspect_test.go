@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -255,6 +256,72 @@ func TestInspectRemoteImageResolvesIndexPlatform(t *testing.T) {
 	}
 }
 
+func TestInspectRemoteImageAllPlatformsVerifyBlobs(t *testing.T) {
+	darwinManifest, _, _ := pullCompressedChunkedTestManifest(t, []byte("darwin"), 3)
+	linuxManifest, _, _ := pullCompressedChunkedTestManifest(t, []byte("linux-child"), 5)
+	setRemoteInspectTestConfig(&darwinManifest, []byte("darwin-config"))
+	setRemoteInspectTestConfig(&linuxManifest, []byte("linux-config"))
+	darwinData, darwinDigest := pullTestManifestData(t, darwinManifest)
+	linuxData, linuxDigest := pullTestManifestData(t, linuxManifest)
+	index := ociimage.Index{
+		SchemaVersion: 2,
+		MediaType:     ociimage.MediaTypeImageIndex,
+		Manifests: []ociimage.IndexDescriptor{
+			{
+				Descriptor: ociimage.Descriptor{MediaType: ociimage.MediaTypeImageManifest, Size: int64(len(darwinData)), Digest: darwinDigest},
+				Platform:   &ociimage.Platform{OS: "darwin", Architecture: "arm64"},
+			},
+			{
+				Descriptor: ociimage.Descriptor{MediaType: ociimage.MediaTypeImageManifest, Size: int64(len(linuxData)), Digest: linuxDigest},
+				Platform:   &ociimage.Platform{OS: "linux", Architecture: "arm64"},
+			},
+		},
+	}
+	blobs := remoteInspectExistingBlobs(darwinManifest, linuxManifest)
+	srv := newRemoteInspectMultiIndexBlobRegistry(t, index, map[string][]byte{
+		darwinDigest: darwinData,
+		linuxDigest:  linuxData,
+	}, blobs)
+	t.Cleanup(srv.Close)
+
+	out, err := InspectRemoteImage(context.Background(), "ghcr.io/me/dev-vm:v1", remoteInspectOptions{
+		RegistryBaseURL:       srv.URL,
+		Platform:              "linux/arm64",
+		InspectIndexManifests: true,
+		VerifyBlobs:           true,
+	})
+	if err != nil {
+		t.Fatalf("InspectRemoteImage: %v", err)
+	}
+	if out.BlobAudit != "ok" || out.BlobDescriptors != len(remoteBlobDescriptors(linuxManifest)) {
+		t.Fatalf("selected blob audit = %q/%d, want ok/%d", out.BlobAudit, out.BlobDescriptors, len(remoteBlobDescriptors(linuxManifest)))
+	}
+	manifests := map[string]ociimage.Manifest{
+		darwinDigest: darwinManifest,
+		linuxDigest:  linuxManifest,
+	}
+	if len(out.IndexManifests) != 2 {
+		t.Fatalf("index manifests = %d, want 2", len(out.IndexManifests))
+	}
+	for _, child := range out.IndexManifests {
+		manifest, ok := manifests[child.Digest]
+		if !ok {
+			t.Fatalf("unexpected child digest %s", child.Digest)
+		}
+		wantDescriptors := len(remoteBlobDescriptors(manifest))
+		if child.BlobAudit != "ok" || child.BlobDescriptors != wantDescriptors || len(child.MissingBlobs) != 0 {
+			t.Fatalf("child %s audit = status:%q descriptors:%d missing:%v, want ok/%d", child.Platform, child.BlobAudit, child.BlobDescriptors, child.MissingBlobs, wantDescriptors)
+		}
+	}
+	wantHeads := len(remoteBlobDescriptors(darwinManifest)) + 2*len(remoteBlobDescriptors(linuxManifest))
+	if got := int(srv.blobHeads.Load()); got != wantHeads {
+		t.Fatalf("blob HEADs = %d, want %d", got, wantHeads)
+	}
+	if got := srv.blobGets.Load(); got != 0 {
+		t.Fatalf("blob GETs = %d, want 0", got)
+	}
+}
+
 func TestInspectRemoteImageLumeManifest(t *testing.T) {
 	srv := newOCIDispatchRegistry(t, newLumeMockManifest())
 	t.Cleanup(srv.Close)
@@ -443,8 +510,8 @@ func TestWriteRemoteInspectText(t *testing.T) {
 		SelectedDigest:    "sha256:" + strings.Repeat("2", 64),
 		SelectedPlatform:  "darwin/arm64",
 		IndexManifests: []ImageRemoteIndexManifest{
-			{Digest: "sha256:" + strings.Repeat("1", 64), MediaType: ociimage.MediaTypeImageManifest, Size: 1024, Platform: "linux/arm64", Format: "cove", DiskSize: 4096, DiskFormat: "raw", CompressedDiskBytes: 128, ChunkCount: 1},
-			{Digest: "sha256:" + strings.Repeat("2", 64), MediaType: ociimage.MediaTypeImageManifest, Size: 2048, Platform: "darwin/arm64", Selected: true, Format: "tart", DiskSize: 8192, CompressedDiskBytes: 256, ChunkCount: 2},
+			{Digest: "sha256:" + strings.Repeat("1", 64), MediaType: ociimage.MediaTypeImageManifest, Size: 1024, Platform: "linux/arm64", Format: "cove", DiskSize: 4096, DiskFormat: "raw", CompressedDiskBytes: 128, ChunkCount: 1, BlobAudit: "ok", BlobDescriptors: 2, BlobBytes: 512},
+			{Digest: "sha256:" + strings.Repeat("2", 64), MediaType: ociimage.MediaTypeImageManifest, Size: 2048, Platform: "darwin/arm64", Selected: true, Format: "tart", DiskSize: 8192, CompressedDiskBytes: 256, ChunkCount: 2, BlobAudit: "missing", BlobDescriptors: 3, MissingBlobs: []string{"layer[1]:sha256:missing"}},
 		},
 		Kind:                "vm-oci",
 		Format:              "cove",
@@ -475,7 +542,7 @@ func TestWriteRemoteInspectText(t *testing.T) {
 	if err != nil {
 		t.Fatalf("writeRemoteInspectText: %v", err)
 	}
-	for _, want := range []string{"Remote image ghcr.io/me/dev-vm:v1", "format:          cove", "pull plan:       cove chunked pull", "verification:    manifest parsed", "index manifests: 2", "platform=darwin/arm64", "size=2.0 KB", "format=tart", "disk_size=8.0 KB", "transport=256 B", "blob audit:      missing", "missing:       layer[0]:sha256:missing", "disk format:     raw", "chunks:          2", "base audit:      ok", "disk_format=raw", "matching_chunks=2", "matching_bytes=8.0 KB"} {
+	for _, want := range []string{"Remote image ghcr.io/me/dev-vm:v1", "format:          cove", "pull plan:       cove chunked pull", "verification:    manifest parsed", "index manifests: 2", "platform=darwin/arm64", "size=2.0 KB", "format=tart", "disk_size=8.0 KB", "transport=256 B", "blob_audit=ok", "blobs=2", "blob_bytes=512 B", "blob_audit=missing", "missing=1", "missing: layer[1]:sha256:missing", "blob audit:      missing", "missing:       layer[0]:sha256:missing", "disk format:     raw", "chunks:          2", "base audit:      ok", "disk_format=raw", "matching_chunks=2", "matching_bytes=8.0 KB"} {
 		if !strings.Contains(b.String(), want) {
 			t.Fatalf("text missing %q:\n%s", want, b.String())
 		}
@@ -644,4 +711,74 @@ func newRemoteInspectMultiIndexRegistry(t *testing.T, index ociimage.Index, mani
 			http.NotFound(w, r)
 		}
 	}))
+}
+
+type remoteInspectMultiIndexBlobRegistry struct {
+	*httptest.Server
+	blobHeads atomic.Int64
+	blobGets  atomic.Int64
+}
+
+func newRemoteInspectMultiIndexBlobRegistry(t *testing.T, index ociimage.Index, manifests map[string][]byte, blobs map[string]bool) *remoteInspectMultiIndexBlobRegistry {
+	t.Helper()
+	srv := &remoteInspectMultiIndexBlobRegistry{}
+	srv.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v2/me/dev-vm/manifests/v1":
+			w.Header().Set("Content-Type", ociimage.MediaTypeImageIndex)
+			w.Header().Set("Docker-Content-Digest", "sha256:index")
+			if err := json.NewEncoder(w).Encode(index); err != nil {
+				t.Errorf("encode index: %v", err)
+			}
+		case strings.HasPrefix(r.URL.Path, "/v2/me/dev-vm/manifests/"):
+			digest := strings.TrimPrefix(r.URL.Path, "/v2/me/dev-vm/manifests/")
+			data, ok := manifests[digest]
+			if !ok {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", ociimage.MediaTypeImageManifest)
+			w.Header().Set("Docker-Content-Digest", digest)
+			_, _ = w.Write(data)
+		case strings.HasPrefix(r.URL.Path, "/v2/me/dev-vm/blobs/"):
+			digest := strings.TrimPrefix(r.URL.Path, "/v2/me/dev-vm/blobs/")
+			switch r.Method {
+			case http.MethodHead:
+				srv.blobHeads.Add(1)
+				if !blobs[digest] {
+					http.NotFound(w, r)
+					return
+				}
+				w.WriteHeader(http.StatusOK)
+			case http.MethodGet:
+				srv.blobGets.Add(1)
+				http.Error(w, "unexpected blob GET", http.StatusInternalServerError)
+			default:
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			}
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	return srv
+}
+
+func setRemoteInspectTestConfig(manifest *ociimage.Manifest, data []byte) {
+	manifest.Config = ociimage.Descriptor{
+		MediaType: ociimage.MediaTypeImageConfig,
+		Size:      int64(len(data)),
+		Digest:    pushTestDigest(data),
+	}
+}
+
+func remoteInspectExistingBlobs(manifests ...ociimage.Manifest) map[string]bool {
+	blobs := map[string]bool{}
+	for _, manifest := range manifests {
+		for _, desc := range remoteBlobDescriptors(manifest) {
+			if desc.Descriptor.Digest != "" {
+				blobs[desc.Descriptor.Digest] = true
+			}
+		}
+	}
+	return blobs
 }
