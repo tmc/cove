@@ -172,7 +172,7 @@ func runImageInspect(env commandEnv, args []string) error {
 	allPlatforms := fs.Bool("all-platforms", false, "inspect every remote image-index child manifest")
 	manifestOut := fs.String("manifest-out", "", "write selected remote manifest JSON to path")
 	indexOut := fs.String("index-out", "", "write remote index/list JSON to path")
-	manifestDir := fs.String("manifest-dir", "", "write index and child manifest JSON files to directory")
+	manifestDir := fs.String("manifest-dir", "", "write index, summary, and child manifest JSON files to directory")
 	if err := parseFlagsOrHelp(fs, moveImageInspectFlagsFirst(args)); err != nil {
 		if errors.Is(err, errFlagHelp) {
 			return nil
@@ -371,7 +371,7 @@ Flags:
   -index-out P
                  with -remote, write index/list JSON to path
   -manifest-dir D
-                 with -remote -all-platforms, write index and child manifests to directory`)
+                 with -remote -all-platforms, write index, summary, and child manifests to directory`)
 }
 
 func writeInspectJSON(w io.Writer, out ImageInspectOutput) error {

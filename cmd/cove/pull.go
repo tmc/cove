@@ -250,7 +250,7 @@ func parsePullArgs(args []string, w io.Writer) (pullOptions, []string, error) {
 	fs.StringVar(&opts.ManifestPath, "manifest", "", "local OCI manifest JSON instead of fetching the registry")
 	fs.StringVar(&opts.ManifestOut, "manifest-out", "", "write fetched selected manifest JSON during dry-run")
 	fs.StringVar(&opts.IndexOut, "index-out", "", "write fetched index/list JSON during dry-run")
-	fs.StringVar(&opts.ManifestDir, "manifest-dir", "", "write fetched index and child manifest JSON files to directory")
+	fs.StringVar(&opts.ManifestDir, "manifest-dir", "", "write fetched index, summary, and child manifest JSON files to directory")
 	fs.StringVar(&opts.Platform, "platform", "", "select image-index platform (os/arch[/variant])")
 	fs.Usage = func() { printPullUsage(w) }
 	if err := fs.Parse(movePullFlagsFirst(args)); err != nil {
@@ -399,10 +399,67 @@ func writePullManifestDir(plan *pullPlan) error {
 			Data:   child.manifestRaw,
 		})
 	}
-	if err := writeManifestBundle(plan.ManifestDir, plan.ManifestResolution.IndexData, plan.ManifestRaw, children); err != nil {
+	summary := manifestBundleSummaryFromPullPlan(plan)
+	if err := writeManifestBundle(plan.ManifestDir, plan.ManifestResolution.IndexData, plan.ManifestRaw, children, &summary); err != nil {
 		return fmt.Errorf("cove pull: write manifest-dir: %w", err)
 	}
 	return nil
+}
+
+func manifestBundleSummaryFromPullPlan(plan *pullPlan) manifestBundleSummary {
+	if plan == nil {
+		return manifestBundleSummary{SchemaVersion: 1, Source: "pull dry-run"}
+	}
+	out := pullDryRunOutputFromPlan(plan)
+	summary := manifestBundleSummary{
+		SchemaVersion:       1,
+		Source:              "pull dry-run",
+		Ref:                 out.Ref,
+		VM:                  out.VM,
+		Target:              out.Target,
+		IndexDigest:         out.IndexDigest,
+		IndexDigestRef:      out.IndexDigestRef,
+		IndexMediaType:      out.IndexMediaType,
+		ManifestDigest:      out.ManifestDigest,
+		DigestRef:           out.DigestRef,
+		ResolvedFromIndex:   out.ResolvedFromIndex,
+		SelectedDigest:      out.SelectedDigest,
+		SelectedPlatform:    out.SelectedPlatform,
+		Format:              out.Format,
+		DiskSize:            out.DiskSize,
+		DiskFormat:          out.DiskFormat,
+		CompressedDiskBytes: out.CompressedBytes,
+		ChunkCount:          out.Chunks,
+		DiskLayerCount:      out.DiskLayers,
+		DiskPartCount:       out.DiskParts,
+		MetadataBlobs:       out.MetadataBlobs,
+		ConfigBytes:         out.ConfigBytes,
+		NVRAMBytes:          out.NVRAMBytes,
+	}
+	if len(plan.ManifestResolution.IndexData) > 0 {
+		summary.IndexPath = "index.json"
+		summary.IndexFileDigest = digestData(plan.ManifestResolution.IndexData)
+	}
+	if len(plan.ManifestRaw) > 0 {
+		summary.SelectedPath = "selected.json"
+		summary.SelectedFileDigest = digestData(plan.ManifestRaw)
+	}
+	if out.BaseReuse != nil {
+		summary.BaseReuse = &manifestBundleBaseReuse{
+			Path:       out.BaseReuse.Path,
+			DiskFormat: out.BaseReuse.DiskFormat,
+			Chunks:     out.BaseReuse.Chunks,
+			Bytes:      out.BaseReuse.Bytes,
+		}
+	}
+	if out.BlobAudit != nil {
+		summary.BlobAudit = manifestBundleBlobAuditFromParts(out.BlobAudit.Status, out.BlobAudit.Descriptors, out.BlobAudit.Bytes, out.BlobAudit.Missing)
+	}
+	for _, child := range pullIndexManifestOutputs(plan) {
+		summary.Children = append(summary.Children, manifestBundleChildSummaryFromIndexManifest(child))
+	}
+	summary.ChildCount = len(summary.Children)
+	return summary
 }
 
 func preparePullOptions(opts *pullOptions) error {
@@ -1228,7 +1285,7 @@ Flags:
   --manifest-out <path>
                        Write fetched selected manifest JSON during dry-run
   --index-out <path>   Write fetched index/list JSON during dry-run
-  --manifest-dir <dir> Write fetched index and child manifests to directory
+  --manifest-dir <dir> Write fetched index, summary, and child manifests to directory
   --platform <os/arch[/variant]>
                        Select an image-index platform`)
 }

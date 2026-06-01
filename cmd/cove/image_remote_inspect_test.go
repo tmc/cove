@@ -312,6 +312,22 @@ func TestInspectRemoteImageResolvesIndexPlatform(t *testing.T) {
 	assertManifestBundleFile(t, filepath.Join(manifestDir, "selected.json"), linuxData)
 	assertManifestBundleFile(t, filepath.Join(manifestDir, "manifests", manifestBundleDigestName(darwinDigest)+".json"), darwinData)
 	assertManifestBundleFile(t, filepath.Join(manifestDir, "manifests", manifestBundleDigestName(linuxDigest)+".json"), linuxData)
+	summary := readManifestBundleSummary(t, manifestDir)
+	if summary.SchemaVersion != 1 || summary.Source != "image inspect remote" || summary.Ref != "ghcr.io/me/dev-vm:v1" {
+		t.Fatalf("bundle summary header = %+v, want remote inspect schema/ref", summary)
+	}
+	if summary.IndexPath != "index.json" || summary.IndexDigest != "sha256:index" || summary.IndexFileDigest != digestData(indexData) {
+		t.Fatalf("bundle summary index = path:%q digest:%q file:%q, want exact index metadata", summary.IndexPath, summary.IndexDigest, summary.IndexFileDigest)
+	}
+	if summary.SelectedPath != "selected.json" || summary.SelectedDigest != linuxDigest || summary.SelectedFileDigest != linuxDigest || summary.SelectedPlatform != "linux/arm64" {
+		t.Fatalf("bundle summary selected = path:%q digest:%q file:%q platform:%q, want linux child", summary.SelectedPath, summary.SelectedDigest, summary.SelectedFileDigest, summary.SelectedPlatform)
+	}
+	if summary.Format != "cove" || summary.DiskSize != int64(len("linux-child")) || summary.ChildCount != 2 {
+		t.Fatalf("bundle summary selected format/disk/children = %s/%d/%d, want cove/linux/two children", summary.Format, summary.DiskSize, summary.ChildCount)
+	}
+	if got := summary.Children[1]; got.Digest != linuxDigest || got.Path != manifestBundleChildPath(linuxDigest) || got.FileDigest != linuxDigest || got.Platform != "linux/arm64" || !got.Selected || got.Format != "cove" {
+		t.Fatalf("bundle summary linux child = %+v, want selected child metadata", got)
+	}
 	if out.DiskSize != int64(len("linux-child")) {
 		t.Fatalf("disk size = %d, want linux child", out.DiskSize)
 	}
@@ -931,6 +947,19 @@ func assertManifestBundleFile(t *testing.T, path string, want []byte) {
 	if string(got) != string(want) {
 		t.Fatalf("bundle file %s = %q, want %q", path, string(got), string(want))
 	}
+}
+
+func readManifestBundleSummary(t *testing.T, dir string) manifestBundleSummary {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(dir, "summary.json"))
+	if err != nil {
+		t.Fatalf("read bundle summary: %v", err)
+	}
+	var summary manifestBundleSummary
+	if err := json.Unmarshal(data, &summary); err != nil {
+		t.Fatalf("parse bundle summary: %v\n%s", err, string(data))
+	}
+	return summary
 }
 
 func newRemoteInspectMultiIndexBlobRegistry(t *testing.T, index ociimage.Index, manifests map[string][]byte, blobs map[string]bool) *remoteInspectMultiIndexBlobRegistry {

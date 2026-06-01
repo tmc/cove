@@ -498,6 +498,25 @@ func TestBuildPullPlanDryRunFetchManifestAllPlatforms(t *testing.T) {
 	assertManifestBundleFile(t, filepath.Join(manifestDir, "selected.json"), linuxData)
 	assertManifestBundleFile(t, filepath.Join(manifestDir, "manifests", manifestBundleDigestName(darwinDigest)+".json"), darwinData)
 	assertManifestBundleFile(t, filepath.Join(manifestDir, "manifests", manifestBundleDigestName(linuxDigest)+".json"), linuxData)
+	summary := readManifestBundleSummary(t, manifestDir)
+	if summary.Source != "pull dry-run" || summary.Ref != "ghcr.io/me/dev-vm:v1" || summary.VM != "dev-vm" || summary.Target == "" {
+		t.Fatalf("bundle summary pull header = %+v, want pull dry-run ref/vm/target", summary)
+	}
+	if summary.IndexFileDigest != digestData(indexData) || summary.SelectedFileDigest != linuxDigest || summary.SelectedPlatform != "linux/arm64" {
+		t.Fatalf("bundle summary pull digests = index:%q selected:%q platform:%q, want exact files and platform", summary.IndexFileDigest, summary.SelectedFileDigest, summary.SelectedPlatform)
+	}
+	if summary.Format != "cove" || summary.DiskSize != int64(len("linux-child")) || summary.DiskFormat != "raw" || summary.ChildCount != 2 {
+		t.Fatalf("bundle summary pull format/disk/children = %s/%d/%s/%d, want cove linux raw two children", summary.Format, summary.DiskSize, summary.DiskFormat, summary.ChildCount)
+	}
+	if summary.BlobAudit == nil || summary.BlobAudit.Status != "ok" || summary.BlobAudit.Descriptors == 0 {
+		t.Fatalf("bundle summary blob audit = %+v, want selected ok blob audit", summary.BlobAudit)
+	}
+	if got := summary.Children[0]; got.Digest != darwinDigest || got.BaseChainAudit != "ok" || got.BlobAudit == nil || got.BlobAudit.Status != "ok" {
+		t.Fatalf("bundle summary darwin child = %+v, want base/blob audit", got)
+	}
+	if got := summary.Children[1]; got.Digest != linuxDigest || got.Path != manifestBundleChildPath(linuxDigest) || !got.Selected || got.BaseChainAudit != "missing" || got.BlobAudit == nil || got.BlobAudit.Status != "ok" {
+		t.Fatalf("bundle summary linux child = %+v, want selected missing-base ok-blob audit", got)
+	}
 
 	var out strings.Builder
 	printPullDryRun(&out, plan)

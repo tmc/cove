@@ -310,7 +310,7 @@ var cliDocSpecs = []cliDocSpec{
 		{Name: "--manifest", Argument: "<path>", Summary: "Local OCI manifest JSON instead of fetching the registry."},
 		{Name: "--manifest-out", Argument: "<path>", Summary: "Write fetched selected manifest JSON during dry-run."},
 		{Name: "--index-out", Argument: "<path>", Summary: "Write fetched index/list JSON during dry-run."},
-		{Name: "--manifest-dir", Argument: "<dir>", Summary: "Write fetched index and child manifests to a directory."},
+		{Name: "--manifest-dir", Argument: "<dir>", Summary: "Write fetched index, summary, and child manifests to a directory."},
 		{Name: "--platform", Argument: "<os/arch[/variant]>", Summary: "Select an image-index platform."},
 	}, Examples: []string{
 		"cove pull ghcr.io/me/dev-vm:v1 --dry-run",

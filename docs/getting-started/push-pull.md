@@ -61,8 +61,10 @@ through an index/list, the top-level index digest ref. Add
 index resolution without creating a pull target. Add `-index-out <path>` when
 the ref resolves through an index/list to preserve the exact top-level
 tag-resolution object. Add `-manifest-dir <dir>` with `-all-platforms` to write
-`index.json`, `selected.json`, and every fetched child manifest under
-`manifests/<digest>.json`. Add `-all-platforms` to fetch each child manifest,
+`summary.json`, `index.json`, `selected.json`, and every fetched child manifest
+under `manifests/<digest>.json`. `summary.json` records the selected digest,
+index digest, platform, format, disk size/format, and per-child audit summaries
+for offline CI or fleet policy checks. Add `-all-platforms` to fetch each child manifest,
 classify every platform, and audit cove base chains for each cove-native child
 without downloading disk blobs. Combine
 `-all-platforms` with `-verify-blobs` to HEAD-audit every child manifest's
@@ -77,13 +79,16 @@ write the exact selected registry manifest bytes after index resolution, which
 can later be fed to network-free `--manifest <path>` validation. Add
 `--index-out <path>` to save the exact fetched top-level index/list bytes for
 the same tag-resolution audit. Add `--manifest-dir <dir>` with
-`--all-platforms` to save `index.json`, `selected.json`, and every fetched child
-manifest under `manifests/<digest>.json`. When a cove-native manifest is
-available during `--dry-run`, cove also checks whether a compatible local or
-registry-cache base disk can be reused and prints the reusable chunks, bytes,
-disk format, and source path. Manifest-backed dry-runs that resolve an index
-also print the index digest, selected manifest digest, selected platform,
-copy-pasteable digest refs, and selectable child manifest candidates. Add
+`--all-platforms` to save `summary.json`, `index.json`, `selected.json`, and
+every fetched child manifest under `manifests/<digest>.json`. `summary.json`
+records the pull target, selected digest, index digest, platform, format, disk
+size/format, base reuse, blob audit, and per-child audit summaries for offline
+CI or fleet policy checks. When a cove-native manifest is available during
+`--dry-run`, cove also checks whether a compatible local or registry-cache base
+disk can be reused and prints the reusable chunks, bytes, disk format, and
+source path. Manifest-backed dry-runs that resolve an index also print the index
+digest, selected manifest digest, selected platform, copy-pasteable digest refs,
+and selectable child manifest candidates. Add
 `--all-platforms` with `--fetch-manifest` to fetch each child manifest and
 include per-child format, disk size/format, transport bytes, cove base-chain
 audit, and optional `--verify-blobs` descriptor audit in the same pull preflight.

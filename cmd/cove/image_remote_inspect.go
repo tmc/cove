@@ -273,7 +273,8 @@ func writeRemoteInspectManifestDir(out ImageRemoteInspectOutput, path string) er
 			Data:   child.manifestRaw,
 		})
 	}
-	if err := writeManifestBundle(path, out.indexRaw, out.manifestRaw, children); err != nil {
+	summary := manifestBundleSummaryFromRemoteInspect(out)
+	if err := writeManifestBundle(path, out.indexRaw, out.manifestRaw, children, &summary); err != nil {
 		return fmt.Errorf("image inspect remote: write manifest-dir: %w", err)
 	}
 	return nil
@@ -284,7 +285,97 @@ type manifestBundleChild struct {
 	Data   []byte
 }
 
-func writeManifestBundle(path string, indexRaw, selectedRaw []byte, children []manifestBundleChild) error {
+type manifestBundleSummary struct {
+	SchemaVersion       int                          `json:"schema_version"`
+	Source              string                       `json:"source,omitempty"`
+	Ref                 string                       `json:"ref,omitempty"`
+	VM                  string                       `json:"vm,omitempty"`
+	Target              string                       `json:"target,omitempty"`
+	IndexPath           string                       `json:"index_path,omitempty"`
+	IndexDigest         string                       `json:"index_digest,omitempty"`
+	IndexFileDigest     string                       `json:"index_file_digest,omitempty"`
+	IndexDigestRef      string                       `json:"index_digest_ref,omitempty"`
+	IndexMediaType      string                       `json:"index_media_type,omitempty"`
+	SelectedPath        string                       `json:"selected_path,omitempty"`
+	ManifestDigest      string                       `json:"manifest_digest,omitempty"`
+	SelectedFileDigest  string                       `json:"selected_file_digest,omitempty"`
+	DigestRef           string                       `json:"digest_ref,omitempty"`
+	ResolvedFromIndex   bool                         `json:"resolved_from_index"`
+	SelectedDigest      string                       `json:"selected_digest,omitempty"`
+	SelectedPlatform    string                       `json:"selected_platform,omitempty"`
+	Kind                string                       `json:"kind,omitempty"`
+	Format              string                       `json:"format,omitempty"`
+	PullPlan            string                       `json:"pull_plan,omitempty"`
+	MediaType           string                       `json:"media_type,omitempty"`
+	ConfigMediaType     string                       `json:"config_media_type,omitempty"`
+	LayerCount          int                          `json:"layer_count,omitempty"`
+	TotalLayerBytes     int64                        `json:"total_layer_bytes,omitempty"`
+	DiskSize            int64                        `json:"disk_size,omitempty"`
+	DiskFormat          string                       `json:"disk_format,omitempty"`
+	CompressedDiskBytes int64                        `json:"compressed_disk_bytes,omitempty"`
+	ChunkCount          int                          `json:"chunk_count,omitempty"`
+	ZeroChunks          int                          `json:"zero_chunks,omitempty"`
+	DiskLayerCount      int                          `json:"disk_layer_count,omitempty"`
+	DiskPartCount       int                          `json:"disk_part_count,omitempty"`
+	MetadataBlobs       int                          `json:"metadata_blobs,omitempty"`
+	MetadataBytes       int64                        `json:"metadata_bytes,omitempty"`
+	ConfigBytes         int64                        `json:"config_bytes,omitempty"`
+	NVRAMBytes          int64                        `json:"nvram_bytes,omitempty"`
+	BaseManifest        string                       `json:"base_manifest,omitempty"`
+	BaseChainAudit      string                       `json:"base_chain_audit,omitempty"`
+	BaseChainDepth      int                          `json:"base_chain_depth,omitempty"`
+	BaseChain           []ImageRemoteBaseManifest    `json:"base_chain,omitempty"`
+	BaseReuse           *manifestBundleBaseReuse     `json:"base_reuse,omitempty"`
+	BlobAudit           *manifestBundleBlobAudit     `json:"blob_audit,omitempty"`
+	ChildCount          int                          `json:"child_count"`
+	Children            []manifestBundleChildSummary `json:"children,omitempty"`
+}
+
+type manifestBundleBaseReuse struct {
+	Path       string `json:"path,omitempty"`
+	DiskFormat string `json:"disk_format,omitempty"`
+	Chunks     int    `json:"chunks"`
+	Bytes      int64  `json:"bytes"`
+}
+
+type manifestBundleBlobAudit struct {
+	Status      string   `json:"status"`
+	Descriptors int      `json:"descriptors,omitempty"`
+	Bytes       int64    `json:"bytes,omitempty"`
+	Missing     []string `json:"missing,omitempty"`
+}
+
+type manifestBundleChildSummary struct {
+	Digest              string                    `json:"digest"`
+	Path                string                    `json:"path,omitempty"`
+	FileDigest          string                    `json:"file_digest,omitempty"`
+	MediaType           string                    `json:"media_type,omitempty"`
+	Size                int64                     `json:"size,omitempty"`
+	Platform            string                    `json:"platform,omitempty"`
+	Selected            bool                      `json:"selected,omitempty"`
+	Kind                string                    `json:"kind,omitempty"`
+	Format              string                    `json:"format,omitempty"`
+	PullPlan            string                    `json:"pull_plan,omitempty"`
+	DiskSize            int64                     `json:"disk_size,omitempty"`
+	DiskFormat          string                    `json:"disk_format,omitempty"`
+	CompressedDiskBytes int64                     `json:"compressed_disk_bytes,omitempty"`
+	ChunkCount          int                       `json:"chunk_count,omitempty"`
+	ZeroChunks          int                       `json:"zero_chunks,omitempty"`
+	DiskLayerCount      int                       `json:"disk_layer_count,omitempty"`
+	DiskPartCount       int                       `json:"disk_part_count,omitempty"`
+	MetadataBlobs       int                       `json:"metadata_blobs,omitempty"`
+	MetadataBytes       int64                     `json:"metadata_bytes,omitempty"`
+	ConfigBytes         int64                     `json:"config_bytes,omitempty"`
+	NVRAMBytes          int64                     `json:"nvram_bytes,omitempty"`
+	BaseManifest        string                    `json:"base_manifest,omitempty"`
+	BaseChainAudit      string                    `json:"base_chain_audit,omitempty"`
+	BaseChainDepth      int                       `json:"base_chain_depth,omitempty"`
+	BaseChain           []ImageRemoteBaseManifest `json:"base_chain,omitempty"`
+	BlobAudit           *manifestBundleBlobAudit  `json:"blob_audit,omitempty"`
+	Error               string                    `json:"error,omitempty"`
+}
+
+func writeManifestBundle(path string, indexRaw, selectedRaw []byte, children []manifestBundleChild, summary *manifestBundleSummary) error {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return nil
@@ -318,6 +409,13 @@ func writeManifestBundle(path string, indexRaw, selectedRaw []byte, children []m
 	if len(missing) > 0 {
 		return fmt.Errorf("missing child manifest bytes: %s", strings.Join(missing, ", "))
 	}
+	if summary != nil {
+		data, err := json.MarshalIndent(summary, "", "  ")
+		if err != nil {
+			return fmt.Errorf("encode manifest summary: %w", err)
+		}
+		files = append(files, manifestBundleFile{Path: filepath.Join(path, "summary.json"), Data: append(data, '\n')})
+	}
 	if err := os.MkdirAll(filepath.Join(path, "manifests"), 0755); err != nil {
 		return fmt.Errorf("create manifest-dir: %w", err)
 	}
@@ -327,6 +425,113 @@ func writeManifestBundle(path string, indexRaw, selectedRaw []byte, children []m
 		}
 	}
 	return nil
+}
+
+func manifestBundleSummaryFromRemoteInspect(out ImageRemoteInspectOutput) manifestBundleSummary {
+	summary := manifestBundleSummary{
+		SchemaVersion:       1,
+		Source:              "image inspect remote",
+		Ref:                 out.Ref,
+		IndexDigest:         out.IndexDigest,
+		IndexDigestRef:      out.IndexDigestRef,
+		IndexMediaType:      out.IndexMediaType,
+		ManifestDigest:      out.ManifestDigest,
+		DigestRef:           out.DigestRef,
+		ResolvedFromIndex:   out.ResolvedFromIndex,
+		SelectedDigest:      out.SelectedDigest,
+		SelectedPlatform:    out.SelectedPlatform,
+		Kind:                out.Kind,
+		Format:              out.Format,
+		PullPlan:            out.PullPlan,
+		MediaType:           out.MediaType,
+		ConfigMediaType:     out.ConfigMediaType,
+		LayerCount:          out.LayerCount,
+		TotalLayerBytes:     out.TotalLayerBytes,
+		DiskSize:            out.DiskSize,
+		DiskFormat:          out.DiskFormat,
+		CompressedDiskBytes: out.CompressedDiskBytes,
+		ChunkCount:          out.ChunkCount,
+		ZeroChunks:          out.ZeroChunks,
+		DiskLayerCount:      out.DiskLayerCount,
+		DiskPartCount:       out.DiskPartCount,
+		MetadataBlobs:       out.MetadataBlobs,
+		MetadataBytes:       out.MetadataBytes,
+		ConfigBytes:         out.ConfigBytes,
+		NVRAMBytes:          out.NVRAMBytes,
+		BaseManifest:        out.BaseManifest,
+		BaseChainAudit:      out.BaseChainAudit,
+		BaseChainDepth:      out.BaseChainDepth,
+		BaseChain:           out.BaseChain,
+		BlobAudit:           manifestBundleBlobAuditFromParts(out.BlobAudit, out.BlobDescriptors, out.BlobBytes, out.MissingBlobs),
+	}
+	if len(out.indexRaw) > 0 {
+		summary.IndexPath = "index.json"
+		summary.IndexFileDigest = digestData(out.indexRaw)
+	}
+	if len(out.manifestRaw) > 0 {
+		summary.SelectedPath = "selected.json"
+		summary.SelectedFileDigest = digestData(out.manifestRaw)
+	}
+	for _, child := range out.IndexManifests {
+		summary.Children = append(summary.Children, manifestBundleChildSummaryFromIndexManifest(child))
+	}
+	summary.ChildCount = len(summary.Children)
+	return summary
+}
+
+func manifestBundleChildSummaryFromIndexManifest(child ImageRemoteIndexManifest) manifestBundleChildSummary {
+	summary := manifestBundleChildSummary{
+		Digest:              child.Digest,
+		Path:                manifestBundleChildPath(child.Digest),
+		MediaType:           child.MediaType,
+		Size:                child.Size,
+		Platform:            child.Platform,
+		Selected:            child.Selected,
+		Kind:                child.Kind,
+		Format:              child.Format,
+		PullPlan:            child.PullPlan,
+		DiskSize:            child.DiskSize,
+		DiskFormat:          child.DiskFormat,
+		CompressedDiskBytes: child.CompressedDiskBytes,
+		ChunkCount:          child.ChunkCount,
+		ZeroChunks:          child.ZeroChunks,
+		DiskLayerCount:      child.DiskLayerCount,
+		DiskPartCount:       child.DiskPartCount,
+		MetadataBlobs:       child.MetadataBlobs,
+		MetadataBytes:       child.MetadataBytes,
+		ConfigBytes:         child.ConfigBytes,
+		NVRAMBytes:          child.NVRAMBytes,
+		BaseManifest:        child.BaseManifest,
+		BaseChainAudit:      child.BaseChainAudit,
+		BaseChainDepth:      child.BaseChainDepth,
+		BaseChain:           child.BaseChain,
+		BlobAudit:           manifestBundleBlobAuditFromParts(child.BlobAudit, child.BlobDescriptors, child.BlobBytes, child.MissingBlobs),
+		Error:               child.Error,
+	}
+	if len(child.manifestRaw) > 0 {
+		summary.FileDigest = digestData(child.manifestRaw)
+	}
+	return summary
+}
+
+func manifestBundleBlobAuditFromParts(status string, descriptors int, bytes int64, missing []string) *manifestBundleBlobAudit {
+	if status == "" && descriptors == 0 && bytes == 0 && len(missing) == 0 {
+		return nil
+	}
+	return &manifestBundleBlobAudit{
+		Status:      status,
+		Descriptors: descriptors,
+		Bytes:       bytes,
+		Missing:     append([]string(nil), missing...),
+	}
+}
+
+func manifestBundleChildPath(digest string) string {
+	name := manifestBundleDigestName(digest)
+	if name == "" {
+		return ""
+	}
+	return filepath.ToSlash(filepath.Join("manifests", name+".json"))
 }
 
 type manifestBundleFile struct {

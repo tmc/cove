@@ -134,8 +134,11 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   a multi-platform object.
 - `cove image inspect -remote -all-platforms -manifest-dir <dir>` and
   `cove pull --dry-run --fetch-manifest --all-platforms --manifest-dir <dir>`
-  now write complete offline manifest bundles with `index.json`,
-  `selected.json`, and per-child `manifests/<digest>.json` files.
+  now write complete offline manifest bundles with `summary.json`,
+  `index.json`, `selected.json`, and per-child `manifests/<digest>.json` files.
+  The summary records selected/index digests, platform, format, disk
+  size/format, blob and base-chain audit posture, and per-child audit summaries
+  for offline CI or fleet policy checks.
 - `cove pull --platform <os/arch[/variant]>` and
   `cove image inspect -remote -platform <os/arch[/variant]>` now select an OCI
   image-index or Docker manifest-list child explicitly, and pull dry-runs report
