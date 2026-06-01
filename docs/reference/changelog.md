@@ -10,7 +10,8 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 ### Added
 - The public Go `agentsandbox` package and OpenAI Agents Python adapter now
   expose hosted OIDC and SAML identity-binding helpers, including SAML metadata
-  refresh, login redirect generation, and JSON SAML session exchange.
+  refresh, SP metadata export, login redirect generation, and JSON SAML session
+  exchange.
 - The public Go `agentsandbox` package and OpenAI Agents Python adapter now
   expose hosted service-account list/upsert/delete helpers, so SDK operators
   can bootstrap and rotate namespace-scoped controller bearer tokens.

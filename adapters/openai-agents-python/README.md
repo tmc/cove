@@ -315,7 +315,12 @@ saml_login = CoveFleetClient.saml_binding_login(
     name="okta",
     relay_state="cli",
 )
-print(oidc["binding"]["name"], saml_login["redirect_url"])
+saml_metadata = CoveFleetClient.get_saml_metadata(
+    fleet_url="https://fleet.internal.example",
+    api_key="cove_...",
+    name="okta",
+)
+print(oidc["binding"]["name"], saml_login["redirect_url"], len(saml_metadata))
 workers = CoveFleetClient.list_workers(
     fleet_url="https://fleet.internal.example",
     api_key="cove_...",
@@ -413,8 +418,8 @@ worker lifecycle helpers such as `cordon_worker`, `evacuate_worker`,
 `verify_audit_log`, `list_service_accounts`, `upsert_service_account`,
 `delete_service_account`, `list_oidc_bindings`, `upsert_oidc_binding`,
 `delete_oidc_binding`, `list_saml_bindings`, `upsert_saml_binding`,
-`refresh_saml_binding`, `saml_binding_login`, `create_saml_session`, and
-`delete_saml_binding`, scoped observability helpers such as
+`refresh_saml_binding`, `get_saml_metadata`, `saml_binding_login`,
+`create_saml_session`, and `delete_saml_binding`, scoped observability helpers such as
 `list_worker_sandboxes`, `list_worker_events`, `list_worker_reports`,
 `get_worker_metering`, `list_assignment_events`, `list_assignment_reports`,
 and `get_assignment_metering`, and `list_controller_runs` for the aggregate

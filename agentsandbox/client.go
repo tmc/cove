@@ -2451,6 +2451,22 @@ func SAMLBindingLogin(ctx context.Context, opts SAMLBindingLoginOptions) (SAMLAu
 	return result, nil
 }
 
+func GetSAMLMetadata(ctx context.Context, opts SAMLBindingNameOptions) ([]byte, error) {
+	name := strings.TrimSpace(opts.Name)
+	if name == "" {
+		return nil, errors.New("agentsandbox: saml binding name required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "saml-metadata")
+	if err != nil {
+		return nil, err
+	}
+	data, err := c.requestBytes(ctx, http.MethodGet, samlBindingActionPath(name, "metadata"), c.timeout)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
 func CreateSAMLSession(ctx context.Context, opts SAMLSessionOptions) (SAMLSessionResult, error) {
 	response := strings.TrimSpace(opts.SAMLResponse)
 	assertion := strings.TrimSpace(opts.SAMLAssertion)
@@ -3940,6 +3956,34 @@ func (c *Client) request(ctx context.Context, method, path string, in, out any, 
 		return fmt.Errorf("agentsandbox: decode response: %w", err)
 	}
 	return nil
+}
+
+func (c *Client) requestBytes(ctx context.Context, method, path string, timeout time.Duration) ([]byte, error) {
+	if c.provider != ProviderCloud {
+		return nil, errors.New("agentsandbox: cloud client not configured")
+	}
+	ctx, cancel := contextWithTimeout(ctx, timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, method, c.fleetURL+path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("agentsandbox: create request: %w", err)
+	}
+	if c.apiKey != "" {
+		req.Header.Set("authorization", "Bearer "+c.apiKey)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("agentsandbox: %s %s: %w", method, path, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return nil, responseError(method, path, resp)
+	}
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("agentsandbox: read response: %w", err)
+	}
+	return data, nil
 }
 
 func (c *Client) sandboxPath(action string) string {

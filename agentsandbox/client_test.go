@@ -828,6 +828,13 @@ func TestCloudClientIdentityBindings(t *testing.T) {
 	if _, err := RefreshSAMLBinding(ctx, SAMLBindingNameOptions{FleetURL: server.URL, APIKey: "secret", Name: "okta", Timeout: time.Second}); err != nil {
 		t.Fatalf("RefreshSAMLBinding: %v", err)
 	}
+	metadata, err := GetSAMLMetadata(ctx, SAMLBindingNameOptions{FleetURL: server.URL, APIKey: "secret", Name: "okta", Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("GetSAMLMetadata: %v", err)
+	}
+	if !strings.Contains(string(metadata), "EntityDescriptor") || !strings.Contains(string(metadata), "https://fleet.example/saml/acs") {
+		t.Fatalf("GetSAMLMetadata = %q, want SP metadata", metadata)
+	}
 	login, err := SAMLBindingLogin(ctx, SAMLBindingLoginOptions{FleetURL: server.URL, APIKey: "secret", Name: "okta", RelayState: "cli", Timeout: time.Second})
 	if err != nil {
 		t.Fatalf("SAMLBindingLogin: %v", err)
@@ -852,6 +859,7 @@ func TestCloudClientIdentityBindings(t *testing.T) {
 		"/v1/saml-bindings",
 		"/v1/saml-bindings",
 		"/v1/saml-bindings/okta/refresh",
+		"/v1/saml-bindings/okta/metadata",
 		"/v1/saml-bindings/okta/login",
 		"/v1/saml/acs",
 		"/v1/saml-bindings/okta",
@@ -872,10 +880,10 @@ func TestCloudClientIdentityBindings(t *testing.T) {
 	if body := server.requests[1].body; body["issuer"] != "https://token.actions.githubusercontent.com" || body["namespace"] != "team-a" || body["jwks_url"] == "" {
 		t.Fatalf("oidc body = %+v", body)
 	}
-	if query := server.requests[6].query; query.Get("relay_state") != "cli" {
+	if query := server.requests[7].query; query.Get("relay_state") != "cli" {
 		t.Fatalf("saml login query = %q", query.Encode())
 	}
-	if body := server.requests[7].body; body["saml_response"] != "response" || body["relay_state"] != "cli" || body["ttl"] != "1h" {
+	if body := server.requests[8].body; body["saml_response"] != "response" || body["relay_state"] != "cli" || body["ttl"] != "1h" {
 		t.Fatalf("saml session body = %+v", body)
 	}
 	if _, err := UpsertOIDCBinding(ctx, OIDCBindingUpsertOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "oidc binding name required") {
@@ -889,6 +897,9 @@ func TestCloudClientIdentityBindings(t *testing.T) {
 	}
 	if _, err := SAMLBindingLogin(ctx, SAMLBindingLoginOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "saml binding name required") {
 		t.Fatalf("missing saml login name err = %v, want validation error", err)
+	}
+	if _, err := GetSAMLMetadata(ctx, SAMLBindingNameOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "saml binding name required") {
+		t.Fatalf("missing saml metadata name err = %v, want validation error", err)
 	}
 	if _, err := CreateSAMLSession(ctx, SAMLSessionOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "saml response or assertion required") {
 		t.Fatalf("missing saml response err = %v, want validation error", err)
@@ -1978,6 +1989,10 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 			}})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/saml-bindings/okta/refresh":
 			writeSDKJSON(t, w, SAMLBindingResult{Binding: sdkSAMLBinding()})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/saml-bindings/okta/metadata":
+			w.Header().Set("content-type", "application/samlmetadata+xml; charset=utf-8")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" entityID="https://fleet.example/saml/acs"></md:EntityDescriptor>`))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/saml-bindings/okta/login":
 			writeSDKJSON(t, w, sdkSAMLLogin(r.URL.Query().Get("relay_state")))
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/saml/acs":

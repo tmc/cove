@@ -1303,6 +1303,21 @@ class CoveFleetClient:
         return _normalize_saml_login(result, "GET /v1/saml-bindings/{name}/login")
 
     @classmethod
+    def get_saml_metadata(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        name: str,
+        timeout: float = 30.0,
+    ) -> str:
+        name = name.strip()
+        if not name:
+            raise ValueError("saml binding name is required")
+        seed = cls(sandbox_id="saml-metadata", fleet_url=fleet_url, api_key=api_key, timeout=timeout)
+        return seed._request_text("GET", _saml_binding_action_path(name, "metadata"), timeout=timeout)
+
+    @classmethod
     def create_saml_session(
         cls,
         *,
@@ -2534,6 +2549,33 @@ class CoveFleetClient:
         if not isinstance(loaded, dict):
             raise CoveError(f"{method} {path}: expected json object")
         return loaded
+
+    def _request_text(
+        self,
+        method: str,
+        path: str,
+        payload: Mapping[str, object] | None = None,
+        *,
+        timeout: float | None = None,
+    ) -> str:
+        url = self.fleet_url + path
+        data = None
+        headers: dict[str, str] = {}
+        if payload is not None:
+            data = json.dumps(payload, separators=(",", ":")).encode()
+            headers["content-type"] = "application/json"
+        if self.api_key:
+            headers["authorization"] = "Bearer " + self.api_key
+        req = urllib.request.Request(url, data=data, method=method, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout or self.timeout) as resp:
+                return resp.read().decode("utf-8")
+        except urllib.error.HTTPError as exc:
+            body = exc.read()
+            msg = _json_error(body) or exc.reason or str(exc)
+            raise CoveError(f"{method} {path}: {msg}") from exc
+        except urllib.error.URLError as exc:
+            raise CoveError(f"{method} {path}: {exc.reason}") from exc
 
 
 def _fleet_api_key_from_env() -> str:

@@ -792,9 +792,10 @@ maintenance without dropping to raw HTTP. Audit helpers include
 global chain verification. Identity helpers include `ListServiceAccounts`,
 `UpsertServiceAccount`, `DeleteServiceAccount`, `ListOIDCBindings`,
 `UpsertOIDCBinding`, `DeleteOIDCBinding`, `ListSAMLBindings`,
-`UpsertSAMLBinding`, `RefreshSAMLBinding`, `SAMLBindingLogin`, and
-`CreateSAMLSession` for scoped bearer-token bootstrap, federated identity
-bindings, and browserless SAML session exchange. Scoped observability helpers include
+`UpsertSAMLBinding`, `RefreshSAMLBinding`, `GetSAMLMetadata`,
+`SAMLBindingLogin`, and `CreateSAMLSession` for scoped bearer-token bootstrap,
+federated identity bindings, metadata export, and browserless SAML session
+exchange. Scoped observability helpers include
 `ListWorkerSandboxes`, `ListWorkerEvents`, `ListWorkerReports`,
 `GetWorkerMetering`, `ListAssignmentEvents`, `ListAssignmentReports`, and
 `GetAssignmentMetering`. Pass `DryRun` to maintenance pushes to inspect planned
@@ -1029,7 +1030,15 @@ samlLogin, err := agentsandbox.SAMLBindingLogin(ctx, agentsandbox.SAMLBindingLog
 if err != nil {
 	log.Fatal(err)
 }
-log.Printf("oidc=%s saml_redirect=%s", oidc.Binding.Name, samlLogin.RedirectURL)
+metadata, err := agentsandbox.GetSAMLMetadata(ctx, agentsandbox.SAMLBindingNameOptions{
+	FleetURL: "https://fleet.internal.example",
+	APIKey:   os.Getenv("COVE_API_KEY"),
+	Name:     "okta",
+})
+if err != nil {
+	log.Fatal(err)
+}
+log.Printf("oidc=%s saml_redirect=%s metadata=%d", oidc.Binding.Name, samlLogin.RedirectURL, len(metadata))
 
 pool, err := agentsandbox.EnsureWarmPool(ctx, agentsandbox.WarmPoolOptions{
 	FleetURL:             "https://fleet.internal.example",

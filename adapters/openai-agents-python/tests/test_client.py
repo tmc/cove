@@ -721,6 +721,13 @@ def test_fleet_client_identity_bindings() -> None:
             name="okta",
         )
         assert refreshed["binding"]["name"] == "okta"
+        metadata = CoveFleetClient.get_saml_metadata(
+            fleet_url=server.url,
+            api_key="secret",
+            name="okta",
+        )
+        assert "EntityDescriptor" in metadata
+        assert "https://fleet.example/saml/acs" in metadata
         login = CoveFleetClient.saml_binding_login(
             fleet_url=server.url,
             api_key="secret",
@@ -746,7 +753,7 @@ def test_fleet_client_identity_bindings() -> None:
         )
         assert deleted_saml["binding"]["name"] == "okta"
 
-        paths = [request["path"] for request in server.requests[-9:]]
+        paths = [request["path"] for request in server.requests[-10:]]
         assert paths == [
             "/v1/oidc-bindings",
             "/v1/oidc-bindings",
@@ -754,17 +761,18 @@ def test_fleet_client_identity_bindings() -> None:
             "/v1/saml-bindings",
             "/v1/saml-bindings",
             "/v1/saml-bindings/okta/refresh",
+            "/v1/saml-bindings/okta/metadata",
             "/v1/saml-bindings/okta/login",
             "/v1/saml/acs",
             "/v1/saml-bindings/okta",
         ]
-        assert server.requests[-9]["query"]["namespace"] == ["team-a"]
-        assert server.requests[-8]["body"]["jwks_url"] == "https://token.actions.githubusercontent.com/.well-known/jwks"
-        assert server.requests[-8]["body"]["keys"] == [{"kid": "kid-1", "alg": "RS256", "pem": "pem"}]
-        assert server.requests[-5]["body"]["metadata_xml"] == "<EntityDescriptor/>"
+        assert server.requests[-10]["query"]["namespace"] == ["team-a"]
+        assert server.requests[-9]["body"]["jwks_url"] == "https://token.actions.githubusercontent.com/.well-known/jwks"
+        assert server.requests[-9]["body"]["keys"] == [{"kid": "kid-1", "alg": "RS256", "pem": "pem"}]
+        assert server.requests[-6]["body"]["metadata_xml"] == "<EntityDescriptor/>"
         assert server.requests[-3]["query"]["relay_state"] == ["cli"]
         assert server.requests[-2]["body"] == {"saml_response": "response", "relay_state": "cli", "ttl": "1h"}
-        assert all(request["authorization"] == "Bearer secret" for request in server.requests[-9:])
+        assert all(request["authorization"] == "Bearer secret" for request in server.requests[-10:])
 
         with pytest.raises(ValueError, match="oidc binding name is required"):
             CoveFleetClient.upsert_oidc_binding(fleet_url="https://fleet.example", api_key="secret", name="")
@@ -774,6 +782,8 @@ def test_fleet_client_identity_bindings() -> None:
             CoveFleetClient.upsert_saml_binding(fleet_url="https://fleet.example", api_key="secret", name="")
         with pytest.raises(ValueError, match="saml binding name is required"):
             CoveFleetClient.saml_binding_login(fleet_url="https://fleet.example", api_key="secret", name="")
+        with pytest.raises(ValueError, match="saml binding name is required"):
+            CoveFleetClient.get_saml_metadata(fleet_url="https://fleet.example", api_key="secret", name="")
         with pytest.raises(ValueError, match="saml response or assertion is required"):
             CoveFleetClient.create_saml_session(fleet_url="https://fleet.example", api_key="secret")
     finally:
@@ -2240,6 +2250,14 @@ class _FleetHTTPServer:
                     return
                 if path == "/v1/saml-bindings/okta/login":
                     self._write(_saml_login(str(query.get("relay_state", [""])[0])))
+                    return
+                if path == "/v1/saml-bindings/okta/metadata":
+                    self.send_response(200)
+                    self.send_header("content-type", "application/samlmetadata+xml; charset=utf-8")
+                    self.end_headers()
+                    self.wfile.write(
+                        b'<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" entityID="https://fleet.example/saml/acs"></md:EntityDescriptor>'
+                    )
                     return
                 if path == "/v1/workers":
                     self._write(
