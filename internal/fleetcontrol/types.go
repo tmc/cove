@@ -879,6 +879,9 @@ type SandboxListFilter struct {
 	ImageRef           string `json:"image_ref,omitempty"`
 	HasOpenAssignments *bool  `json:"has_open_assignments,omitempty"`
 	Retrying           *bool  `json:"retrying,omitempty"`
+	HasCleanup         *bool  `json:"has_cleanup,omitempty"`
+	HasLease           *bool  `json:"has_lease,omitempty"`
+	LeaseHolder        string `json:"lease_holder,omitempty"`
 	Offset             int    `json:"offset,omitempty"`
 	Limit              int    `json:"limit,omitempty"`
 }

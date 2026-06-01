@@ -920,6 +920,9 @@ def test_fleet_client_scoped_observability() -> None:
             image_ref="base:v1",
             has_open_assignments=True,
             retrying=True,
+            has_cleanup=True,
+            has_lease=True,
+            lease_holder="client-a",
             offset=1,
             limit=2,
         )
@@ -927,6 +930,9 @@ def test_fleet_client_scoped_observability() -> None:
         assert sandboxes["sandboxes"][0]["worker_id"] == "worker-1"
         assert server.requests[-1]["query"]["has_open_assignments"] == ["true"]
         assert server.requests[-1]["query"]["retrying"] == ["true"]
+        assert server.requests[-1]["query"]["has_cleanup"] == ["true"]
+        assert server.requests[-1]["query"]["has_lease"] == ["true"]
+        assert server.requests[-1]["query"]["lease_holder"] == ["client-a"]
         worker_events = CoveFleetClient.list_worker_events(
             fleet_url=server.url,
             api_key="secret",
@@ -1513,6 +1519,9 @@ def test_fleet_client_list_filters() -> None:
             image_ref="base:v1",
             has_open_assignments=True,
             retrying=True,
+            has_cleanup=True,
+            has_lease=True,
+            lease_holder="client-a",
             offset=2,
             limit=5,
         )
@@ -1527,6 +1536,9 @@ def test_fleet_client_list_filters() -> None:
         assert query["image_ref"] == ["base:v1"]
         assert query["has_open_assignments"] == ["true"]
         assert query["retrying"] == ["true"]
+        assert query["has_cleanup"] == ["true"]
+        assert query["has_lease"] == ["true"]
+        assert query["lease_holder"] == ["client-a"]
         assert query["offset"] == ["2"]
         assert query["limit"] == ["5"]
 
@@ -1537,12 +1549,16 @@ def test_fleet_client_list_filters() -> None:
             status="ready",
             has_open_assignments=False,
             retrying=False,
+            has_cleanup=False,
+            has_lease=False,
             limit=1,
         )
         assert listed[0]["id"] == "job-1"
         assert server.requests[-1]["query"]["status"] == ["ready"]
         assert server.requests[-1]["query"]["has_open_assignments"] == ["false"]
         assert server.requests[-1]["query"]["retrying"] == ["false"]
+        assert server.requests[-1]["query"]["has_cleanup"] == ["false"]
+        assert server.requests[-1]["query"]["has_lease"] == ["false"]
         assert server.requests[-1]["query"]["limit"] == ["1"]
 
         with pytest.raises(ValueError, match="limit must be non-negative"):

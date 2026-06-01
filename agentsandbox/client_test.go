@@ -1090,6 +1090,8 @@ func TestCloudClientScopedObservability(t *testing.T) {
 	ctx := context.Background()
 	hasOpen := true
 	retrying := true
+	hasCleanup := true
+	hasLease := true
 	sandboxes, err := ListWorkerSandboxes(ctx, WorkerSandboxListOptions{
 		FleetURL:           server.URL,
 		APIKey:             "secret",
@@ -1099,6 +1101,9 @@ func TestCloudClientScopedObservability(t *testing.T) {
 		ImageRef:           "base:v1",
 		HasOpenAssignments: &hasOpen,
 		Retrying:           &retrying,
+		HasCleanup:         &hasCleanup,
+		HasLease:           &hasLease,
+		LeaseHolder:        "client-a",
 		Offset:             1,
 		Limit:              2,
 		Timeout:            time.Second,
@@ -1242,7 +1247,7 @@ func TestCloudClientScopedObservability(t *testing.T) {
 	if !equalStringSlices(paths, wantPaths) {
 		t.Fatalf("paths = %+v, want %+v", paths, wantPaths)
 	}
-	if query := server.requests[0].query; query.Get("namespace") != "team-a" || query.Get("status") != "ready" || query.Get("image_ref") != "base:v1" || query.Get("has_open_assignments") != "true" || query.Get("retrying") != "true" || query.Get("offset") != "1" || query.Get("limit") != "2" {
+	if query := server.requests[0].query; query.Get("namespace") != "team-a" || query.Get("status") != "ready" || query.Get("image_ref") != "base:v1" || query.Get("has_open_assignments") != "true" || query.Get("retrying") != "true" || query.Get("has_cleanup") != "true" || query.Get("has_lease") != "true" || query.Get("lease_holder") != "client-a" || query.Get("offset") != "1" || query.Get("limit") != "2" {
 		t.Fatalf("worker sandboxes query = %q", query.Encode())
 	}
 	if query := server.requests[1].query; query.Get("actor") != "service-account:ci" || query.Get("action") != "assignment.create" || query.Get("target_type") != "assignment" || query.Get("target_id") != "assignment-1" || query.Get("sandbox_id") != "job-1" || query.Get("offset") != "1" || query.Get("limit") != "2" {
@@ -1896,6 +1901,8 @@ func TestCloudClientListFilters(t *testing.T) {
 	ctx := context.Background()
 	hasOpen := true
 	retrying := true
+	hasCleanup := true
+	hasLease := true
 	client, err := NewClient(ClientOptions{
 		Provider:  ProviderCloud,
 		FleetURL:  server.URL,
@@ -1912,6 +1919,9 @@ func TestCloudClientListFilters(t *testing.T) {
 		ImageRef:           "base:v1",
 		HasOpenAssignments: &hasOpen,
 		Retrying:           &retrying,
+		HasCleanup:         &hasCleanup,
+		HasLease:           &hasLease,
+		LeaseHolder:        "client-a",
 		Offset:             2,
 		Limit:              5,
 	})
@@ -1926,7 +1936,7 @@ func TestCloudClientListFilters(t *testing.T) {
 		t.Fatalf("ListPage metadata = %+v, want offset 2 limit 5 count 1", page)
 	}
 	query := server.requests[len(server.requests)-1].query
-	if query.Get("namespace") != "team-a" || query.Get("status") != "ready" || query.Get("worker_id") != "worker-1" || query.Get("image_ref") != "base:v1" || query.Get("has_open_assignments") != "true" || query.Get("retrying") != "true" || query.Get("offset") != "2" || query.Get("limit") != "5" {
+	if query.Get("namespace") != "team-a" || query.Get("status") != "ready" || query.Get("worker_id") != "worker-1" || query.Get("image_ref") != "base:v1" || query.Get("has_open_assignments") != "true" || query.Get("retrying") != "true" || query.Get("has_cleanup") != "true" || query.Get("has_lease") != "true" || query.Get("lease_holder") != "client-a" || query.Get("offset") != "2" || query.Get("limit") != "5" {
 		t.Fatalf("filtered list query = %q", query.Encode())
 	}
 	if _, err := client.List(ctx, SandboxListOptions{Limit: -1}); err == nil || !strings.Contains(err.Error(), "limit must be non-negative") {

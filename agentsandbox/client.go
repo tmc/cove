@@ -103,6 +103,9 @@ type SandboxListOptions struct {
 	ImageRef           string
 	HasOpenAssignments *bool
 	Retrying           *bool
+	HasCleanup         *bool
+	HasLease           *bool
+	LeaseHolder        string
 	Offset             int
 	Limit              int
 }
@@ -982,6 +985,9 @@ type WorkerSandboxListOptions struct {
 	ImageRef           string
 	HasOpenAssignments *bool
 	Retrying           *bool
+	HasCleanup         *bool
+	HasLease           *bool
+	LeaseHolder        string
 	Offset             int
 	Limit              int
 	Timeout            time.Duration
@@ -2867,6 +2873,15 @@ func ListWorkerSandboxes(ctx context.Context, opts WorkerSandboxListOptions) (Sa
 	if opts.Retrying != nil {
 		query["retrying"] = strconv.FormatBool(*opts.Retrying)
 	}
+	if opts.HasCleanup != nil {
+		query["has_cleanup"] = strconv.FormatBool(*opts.HasCleanup)
+	}
+	if opts.HasLease != nil {
+		query["has_lease"] = strconv.FormatBool(*opts.HasLease)
+	}
+	if holder := strings.TrimSpace(opts.LeaseHolder); holder != "" {
+		query["lease_holder"] = holder
+	}
 	if opts.Offset > 0 {
 		query["offset"] = strconv.Itoa(opts.Offset)
 	}
@@ -3522,6 +3537,15 @@ func sandboxMatchesListOptions(status SandboxStatus, options SandboxListOptions)
 	if options.Retrying != nil && sandboxStatusRetrying(status) != *options.Retrying {
 		return false
 	}
+	if options.HasCleanup != nil && (status.Cleanup != nil) != *options.HasCleanup {
+		return false
+	}
+	if options.HasLease != nil && (status.Lease != nil) != *options.HasLease {
+		return false
+	}
+	if holder := strings.TrimSpace(options.LeaseHolder); holder != "" && (status.Lease == nil || status.Lease.Holder != holder) {
+		return false
+	}
 	return true
 }
 
@@ -3547,6 +3571,15 @@ func (o SandboxListOptions) query() (map[string]string, error) {
 	}
 	if o.Retrying != nil {
 		query["retrying"] = strconv.FormatBool(*o.Retrying)
+	}
+	if o.HasCleanup != nil {
+		query["has_cleanup"] = strconv.FormatBool(*o.HasCleanup)
+	}
+	if o.HasLease != nil {
+		query["has_lease"] = strconv.FormatBool(*o.HasLease)
+	}
+	if holder := strings.TrimSpace(o.LeaseHolder); holder != "" {
+		query["lease_holder"] = holder
 	}
 	if o.Offset > 0 {
 		query["offset"] = strconv.Itoa(o.Offset)

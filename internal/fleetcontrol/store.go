@@ -1856,6 +1856,7 @@ func (s *Store) ListSandboxesPage(filter SandboxListFilter) SandboxListResult {
 	filter.Status = strings.TrimSpace(filter.Status)
 	filter.WorkerID = strings.TrimSpace(filter.WorkerID)
 	filter.ImageRef = strings.TrimSpace(filter.ImageRef)
+	filter.LeaseHolder = strings.TrimSpace(filter.LeaseHolder)
 	if filter.Offset < 0 {
 		filter.Offset = 0
 	}
@@ -1888,6 +1889,15 @@ func (s *Store) ListSandboxesPage(filter SandboxListFilter) SandboxListResult {
 			continue
 		}
 		if filter.Retrying != nil && sandboxRetrying(sandbox) != *filter.Retrying {
+			continue
+		}
+		if filter.HasCleanup != nil && (sandbox.Cleanup != nil) != *filter.HasCleanup {
+			continue
+		}
+		if filter.HasLease != nil && (sandbox.Lease != nil) != *filter.HasLease {
+			continue
+		}
+		if filter.LeaseHolder != "" && (sandbox.Lease == nil || sandbox.Lease.Holder != filter.LeaseHolder) {
 			continue
 		}
 		if offset < filter.Offset {

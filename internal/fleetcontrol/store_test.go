@@ -979,6 +979,14 @@ func TestStoreDeleteRunningSandboxQueuesStop(t *testing.T) {
 	if !ok || status.Status != "draining" || status.Cleanup == nil || status.Cleanup.ID != deleted.Cleanup.ID {
 		t.Fatalf("GetSandbox draining = %+v, %v, want cleanup %s", status, ok, deleted.Cleanup.ID)
 	}
+	hasCleanup := true
+	if got := store.ListSandboxesFiltered(SandboxListFilter{HasCleanup: &hasCleanup}); len(got) != 1 || got[0].ID != "job-1" {
+		t.Fatalf("cleanup sandboxes = %+v, want job-1", got)
+	}
+	hasCleanup = false
+	if got := store.ListSandboxesFiltered(SandboxListFilter{HasCleanup: &hasCleanup}); len(got) != 0 {
+		t.Fatalf("non-cleanup sandboxes = %+v, want none", got)
+	}
 	wait, err := store.WaitSandbox("job-1")
 	if err != nil {
 		t.Fatal(err)
@@ -1709,6 +1717,20 @@ func TestStoreSandboxLeaseAcquireRenewRelease(t *testing.T) {
 	}
 	if leased.Sandbox.Lease == nil || leased.Sandbox.Assignment.SandboxLeaseHolder != "client-a" {
 		t.Fatalf("leased sandbox = %+v, want visible lease", leased.Sandbox)
+	}
+	hasLease := true
+	if got := store.ListSandboxesFiltered(SandboxListFilter{HasLease: &hasLease}); len(got) != 1 || got[0].ID != "job-1" {
+		t.Fatalf("leased sandboxes = %+v, want job-1", got)
+	}
+	hasLease = false
+	if got := store.ListSandboxesFiltered(SandboxListFilter{HasLease: &hasLease}); len(got) != 0 {
+		t.Fatalf("unleased sandboxes = %+v, want none", got)
+	}
+	if got := store.ListSandboxesFiltered(SandboxListFilter{LeaseHolder: "client-a"}); len(got) != 1 || got[0].ID != "job-1" {
+		t.Fatalf("client-a leased sandboxes = %+v, want job-1", got)
+	}
+	if got := store.ListSandboxesFiltered(SandboxListFilter{LeaseHolder: "client-b"}); len(got) != 0 {
+		t.Fatalf("client-b leased sandboxes = %+v, want none", got)
 	}
 
 	reopened, err := OpenStore(path, time.Minute)
@@ -6981,6 +7003,19 @@ func TestHandlerSandboxCleanupDiagnostics(t *testing.T) {
 	getJSON(t, server.URL+"/v1/sandboxes/job-1", &got)
 	var list SandboxListResult
 	getJSON(t, server.URL+"/v1/sandboxes?status=draining", &list)
+	var cleanupList SandboxListResult
+	getJSON(t, server.URL+"/v1/sandboxes?has_cleanup=true", &cleanupList)
+	if len(cleanupList.Sandboxes) != 1 || cleanupList.Sandboxes[0].ID != "job-1" {
+		t.Fatalf("cleanup sandbox filter = %+v, want job-1", cleanupList)
+	}
+	var workerList SandboxListResult
+	getJSON(t, server.URL+"/v1/workers/worker-1/sandboxes?has_cleanup=false", &workerList)
+	if len(workerList.Sandboxes) != 0 {
+		t.Fatalf("worker non-cleanup sandbox filter = %+v, want none", workerList)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/sandboxes?has_cleanup=bad", ""); code != http.StatusBadRequest {
+		t.Fatalf("bad cleanup filter status = %d, want 400", code)
+	}
 	var wait SandboxWaitResult
 	postJSON(t, server.URL+"/v1/sandboxes/job-1/wait?status=stopped&timeout=0", map[string]string{}, &wait)
 	if len(list.Sandboxes) != 1 {
@@ -7085,6 +7120,22 @@ func TestHandlerSandboxLeaseGuardsMutations(t *testing.T) {
 	postJSON(t, server.URL+"/v1/workers/worker-1/reports", WorkerReport{AssignmentID: leased.ID, Status: "ready"}, &record)
 	var lease SandboxLeaseResult
 	postJSON(t, server.URL+"/v1/sandboxes/job-1/lease", SandboxLeaseRequest{Holder: "client-a", TTL: "30s"}, &lease)
+	var list SandboxListResult
+	getJSON(t, server.URL+"/v1/sandboxes?has_lease=true&lease_holder=client-a", &list)
+	if len(list.Sandboxes) != 1 || list.Sandboxes[0].ID != "job-1" {
+		t.Fatalf("leased sandbox filter = %+v, want job-1", list)
+	}
+	getJSON(t, server.URL+"/v1/workers/worker-1/sandboxes?has_lease=false", &list)
+	if len(list.Sandboxes) != 0 {
+		t.Fatalf("worker unleased sandbox filter = %+v, want none", list)
+	}
+	getJSON(t, server.URL+"/v1/sandboxes?lease_holder=client-b", &list)
+	if len(list.Sandboxes) != 0 {
+		t.Fatalf("wrong holder sandbox filter = %+v, want none", list)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/sandboxes?has_lease=bad", ""); code != http.StatusBadRequest {
+		t.Fatalf("bad lease filter status = %d, want 400", code)
+	}
 
 	if code := postJSONStatus(t, server.URL+"/v1/sandboxes/job-1/exec?timeout=0", "", SandboxExecRequest{Command: []string{"true"}}); code != http.StatusConflict {
 		t.Fatalf("leased exec without holder status = %d, want 409", code)

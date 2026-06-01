@@ -845,6 +845,17 @@ func sandboxListFilterFromRequest(r *http.Request, namespace string) (SandboxLis
 		return SandboxListFilter{}, err
 	}
 	filter.Retrying = retrying
+	hasCleanup, err := sandboxCleanupFilterFromRequest(r, "sandbox")
+	if err != nil {
+		return SandboxListFilter{}, err
+	}
+	filter.HasCleanup = hasCleanup
+	hasLease, err := sandboxLeaseFilterFromRequest(r, "sandbox")
+	if err != nil {
+		return SandboxListFilter{}, err
+	}
+	filter.HasLease = hasLease
+	filter.LeaseHolder = strings.TrimSpace(r.URL.Query().Get("lease_holder"))
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		limit, err := strconv.Atoi(raw)
 		if err != nil || limit < 0 {
@@ -1765,6 +1776,17 @@ func workerSandboxesFilterFromRequest(r *http.Request, namespace, id string) (Sa
 		return SandboxListFilter{}, err
 	}
 	filter.Retrying = retrying
+	hasCleanup, err := sandboxCleanupFilterFromRequest(r, "worker sandboxes")
+	if err != nil {
+		return SandboxListFilter{}, err
+	}
+	filter.HasCleanup = hasCleanup
+	hasLease, err := sandboxLeaseFilterFromRequest(r, "worker sandboxes")
+	if err != nil {
+		return SandboxListFilter{}, err
+	}
+	filter.HasLease = hasLease
+	filter.LeaseHolder = strings.TrimSpace(r.URL.Query().Get("lease_holder"))
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		limit, err := strconv.Atoi(raw)
 		if err != nil || limit < 0 {
@@ -1788,6 +1810,14 @@ func sandboxListBoolFilterFromRequest(r *http.Request, name string) (*bool, erro
 
 func sandboxRetryingFilterFromRequest(r *http.Request, name string) (*bool, error) {
 	return boolFilterFromRequest(r, name, "retrying", "has_retry")
+}
+
+func sandboxCleanupFilterFromRequest(r *http.Request, name string) (*bool, error) {
+	return boolFilterFromRequest(r, name, "has_cleanup", "cleanup")
+}
+
+func sandboxLeaseFilterFromRequest(r *http.Request, name string) (*bool, error) {
+	return boolFilterFromRequest(r, name, "has_lease", "leased")
 }
 
 func boolFilterFromRequest(r *http.Request, name, field string, aliases ...string) (*bool, error) {
