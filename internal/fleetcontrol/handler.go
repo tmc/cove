@@ -283,6 +283,7 @@ func auditListFilterFromRequest(r *http.Request, namespace string) (AuditListFil
 		Action:     strings.TrimSpace(r.URL.Query().Get("action")),
 		TargetType: strings.TrimSpace(r.URL.Query().Get("target_type")),
 		TargetID:   strings.TrimSpace(r.URL.Query().Get("target_id")),
+		WorkerID:   strings.TrimSpace(r.URL.Query().Get("worker_id")),
 		SandboxID:  strings.TrimSpace(r.URL.Query().Get("sandbox_id")),
 	}
 	if filter.SandboxID == "" {
@@ -1390,6 +1391,8 @@ func handleWorker(w http.ResponseWriter, r *http.Request, store *Store) {
 	switch parts[1] {
 	case "assignments":
 		handleWorkerAssignments(w, r, store, id)
+	case "events":
+		handleWorkerEvents(w, r, store, id)
 	case "cordon":
 		identity := identityFromRequest(r, store)
 		if !requireRole(w, identity, ServiceAccountRoleOperator) {
@@ -1458,6 +1461,62 @@ func handleWorker(w http.ResponseWriter, r *http.Request, store *Store) {
 	default:
 		writeError(w, http.StatusNotFound, "worker route not found")
 	}
+}
+
+func handleWorkerEvents(w http.ResponseWriter, r *http.Request, store *Store, id string) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	if !requireUnscoped(w, r, store) {
+		return
+	}
+	if !reconcile(w, store) {
+		return
+	}
+	if _, ok := store.Get(id); !ok {
+		writeError(w, http.StatusNotFound, "worker not found")
+		return
+	}
+	filter, err := workerEventsFilterFromRequest(r, id)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, store.ListAuditPage(filter))
+}
+
+func workerEventsFilterFromRequest(r *http.Request, id string) (AuditListFilter, error) {
+	filter := AuditListFilter{
+		WorkerID:   id,
+		Actor:      strings.TrimSpace(r.URL.Query().Get("actor")),
+		Action:     strings.TrimSpace(r.URL.Query().Get("action")),
+		TargetType: strings.TrimSpace(r.URL.Query().Get("target_type")),
+		TargetID:   strings.TrimSpace(r.URL.Query().Get("target_id")),
+		SandboxID:  strings.TrimSpace(r.URL.Query().Get("sandbox_id")),
+	}
+	if filter.SandboxID == "" {
+		filter.SandboxID = strings.TrimSpace(r.URL.Query().Get("sandbox"))
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 0 {
+			return AuditListFilter{}, fmt.Errorf("worker events limit must be non-negative")
+		}
+		filter.Limit = limit
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		offset, err := strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			return AuditListFilter{}, fmt.Errorf("worker events offset must be non-negative")
+		}
+		filter.Offset = offset
+	}
+	return filter, nil
 }
 
 func handleWorkerAssignments(w http.ResponseWriter, r *http.Request, store *Store, id string) {

@@ -2734,6 +2734,7 @@ func (s *Store) ListAuditPage(filter AuditListFilter) AuditListResult {
 	filter.Action = strings.TrimSpace(filter.Action)
 	filter.TargetType = strings.TrimSpace(filter.TargetType)
 	filter.TargetID = strings.TrimSpace(filter.TargetID)
+	filter.WorkerID = strings.TrimSpace(filter.WorkerID)
 	filter.SandboxID = strings.TrimSpace(filter.SandboxID)
 	if filter.Offset < 0 {
 		filter.Offset = 0
@@ -2759,6 +2760,9 @@ func (s *Store) ListAuditPage(filter AuditListFilter) AuditListResult {
 			continue
 		}
 		if filter.TargetID != "" && event.TargetID != filter.TargetID {
+			continue
+		}
+		if filter.WorkerID != "" && event.WorkerID != filter.WorkerID {
 			continue
 		}
 		if filter.SandboxID != "" && !auditEventMatchesSandbox(event, filter.SandboxID) {

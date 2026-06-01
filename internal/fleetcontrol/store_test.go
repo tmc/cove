@@ -202,6 +202,15 @@ func TestStoreListAuditPageFilters(t *testing.T) {
 		t.Fatal(err)
 	}
 	now = now.Add(time.Second)
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-2"}); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	other, err := store.CreateAssignmentActor("service-account:other", Assignment{Namespace: "team-c", WorkerID: "worker-2", Verb: "noop"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
 	teamA, err := store.CreateAssignmentActor("service-account:ci", Assignment{Namespace: "team-a", WorkerID: "worker-1", Verb: "noop"})
 	if err != nil {
 		t.Fatal(err)
@@ -217,12 +226,16 @@ func TestStoreListAuditPageFilters(t *testing.T) {
 		t.Fatalf("latest assignment audit page = %+v, want newest team-b event", page)
 	}
 	page = store.ListAuditPage(AuditListFilter{Action: "assignment.create", Offset: 1, Limit: 1})
-	if page.Count != 1 || page.Offset != 1 || page.NextOffset != 0 || page.Events[0].Actor != "service-account:ci" || page.Events[0].AssignmentID != teamA.ID {
+	if page.Count != 1 || page.Offset != 1 || page.NextOffset != 2 || page.Events[0].Actor != "service-account:ci" || page.Events[0].AssignmentID != teamA.ID {
 		t.Fatalf("second assignment audit page = %+v, want team-a event", page)
 	}
 	page = store.ListAuditPage(AuditListFilter{Namespace: "team-a", TargetType: "assignment", TargetID: teamA.ID})
 	if page.Count != 1 || page.Events[0].Namespace != "team-a" || page.Events[0].TargetID != teamA.ID {
 		t.Fatalf("team-a target audit page = %+v, want assignment %s only", page, teamA.ID)
+	}
+	page = store.ListAuditPage(AuditListFilter{WorkerID: "worker-2", Action: "assignment.create"})
+	if page.Count != 1 || page.Events[0].WorkerID != "worker-2" || page.Events[0].AssignmentID != other.ID {
+		t.Fatalf("worker-2 audit page = %+v, want assignment %s only", page, other.ID)
 	}
 	if events := store.ListAuditFiltered(AuditListFilter{Actor: "missing"}); len(events) != 0 {
 		t.Fatalf("missing actor audit events = %+v, want none", events)
@@ -4122,6 +4135,37 @@ func TestHandlerWorkerListFilters(t *testing.T) {
 	}
 	if code := getJSONStatus(t, server.URL+"/v1/workers?label=zone", ""); code != http.StatusBadRequest {
 		t.Fatalf("bad worker label status = %d, want %d", code, http.StatusBadRequest)
+	}
+}
+
+func TestHandlerWorkerEvents(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1"}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-2"}, &record)
+	var other Assignment
+	postJSON(t, server.URL+"/v1/assignments", Assignment{WorkerID: "worker-2", Verb: "noop"}, &other)
+	var created Assignment
+	postJSON(t, server.URL+"/v1/assignments", Assignment{WorkerID: "worker-1", Verb: "noop"}, &created)
+
+	var events AuditListResult
+	getJSON(t, server.URL+"/v1/workers/worker-1/events?action=assignment.create&limit=1", &events)
+	if events.Count != 1 || len(events.Events) != 1 || events.Events[0].WorkerID != "worker-1" || events.Events[0].AssignmentID != created.ID {
+		t.Fatalf("worker events = %+v, want worker-1 assignment %s", events, created.ID)
+	}
+	events = AuditListResult{}
+	getJSON(t, server.URL+"/v1/audit?worker_id=worker-2&action=assignment.create&limit=1", &events)
+	if events.Count != 1 || len(events.Events) != 1 || events.Events[0].WorkerID != "worker-2" || events.Events[0].AssignmentID != other.ID {
+		t.Fatalf("worker audit filter = %+v, want worker-2 assignment %s", events, other.ID)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/workers/missing/events", ""); code != http.StatusNotFound {
+		t.Fatalf("missing worker events status = %d, want %d", code, http.StatusNotFound)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/workers/worker-1/events?offset=-1", ""); code != http.StatusBadRequest {
+		t.Fatalf("bad worker events offset status = %d, want %d", code, http.StatusBadRequest)
 	}
 }
 

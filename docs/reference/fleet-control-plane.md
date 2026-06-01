@@ -69,6 +69,7 @@ curl http://127.0.0.1:9758/v1/operations/summary?namespace=team-a
 curl http://127.0.0.1:9758/v1/workers
 curl 'http://127.0.0.1:9758/v1/workers?status=ready&label=zone=desk&image_ref=macos-runner:latest&limit=50'
 curl http://127.0.0.1:9758/v1/workers/mini-1
+curl 'http://127.0.0.1:9758/v1/workers/mini-1/events?limit=50'
 curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/cordon \
   -H 'content-type: application/json' \
   -d '{"reason":"maintenance"}'
@@ -110,6 +111,14 @@ unscoped operator/admin identity.
 `image_ref`, `source_manifest_digest` or `image_manifest_digest`, repeated
 `label=key=value`, `offset`, and `limit`. Worker inventory is fleet-global, so
 scoped service-account tokens cannot read it.
+
+`GET /v1/workers/{id}/events` returns the worker-scoped slice of the
+hash-chained controller audit feed. It includes worker lifecycle events plus
+assignment, sandbox, and report events that carry the same `worker_id`;
+`actor`, `action`, `target_type`, `target_id`, `sandbox_id`, `offset`, and
+`limit` query filters match the global audit-list semantics. Worker event
+history is fleet-global and requires an unscoped viewer/operator/admin
+identity.
 
 `POST /v1/workers/{id}/drain` is the controller maintenance path for hosted
 sandbox workloads. It cordons the worker to prevent new placement, then walks
@@ -227,6 +236,7 @@ curl -X POST http://127.0.0.1:9758/v1/saml/acs \
 curl http://127.0.0.1:9758/v1/audit
 curl http://127.0.0.1:9758/v1/audit?limit=50
 curl 'http://127.0.0.1:9758/v1/audit?action=assignment.create&actor=service-account:ci&target_type=assignment&limit=50'
+curl 'http://127.0.0.1:9758/v1/audit?worker_id=mini-1&limit=50'
 curl 'http://127.0.0.1:9758/v1/audit?offset=50&limit=50'
 curl http://127.0.0.1:9758/v1/audit/verify
 curl -X DELETE http://127.0.0.1:9758/v1/service-accounts/ci
@@ -242,8 +252,8 @@ fields that chain the global audit log;
 `GET /v1/audit/verify` recomputes the chain and returns `ok`, `events`,
 `head_hash`, and any chain issues. `GET /v1/audit` returns `events`, `count`,
 `offset`, `limit`, and `next_offset`; query filters include `namespace`,
-`actor`, `action`, `target_type`, `target_id`, and `sandbox_id`. `limit`
-preserves the existing latest-events behavior, and `offset` pages backward
+`actor`, `action`, `target_type`, `target_id`, `worker_id`, and `sandbox_id`.
+`limit` preserves the existing latest-events behavior, and `offset` pages backward
 through matching events. Service-account tokens are stored only as
 SHA-256 hashes, so operators should provide high-entropy random tokens and keep
 the plaintext in their own secret manager. Supplying a matching bearer token on
