@@ -3569,7 +3569,11 @@ func TestLifecyclePolicyArgs(t *testing.T) {
 
 func TestStorePushesStorageBudgetAssignments(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
-	store := NewMemoryStore(time.Minute)
+	path := filepath.Join(t.TempDir(), "fleet.json")
+	store, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
 	store.now = func() time.Time { return now }
 	for _, hb := range []WorkerHeartbeat{
 		{ID: "desk", Labels: map[string]string{"zone": "desk"}},
@@ -3607,6 +3611,13 @@ func TestStorePushesStorageBudgetAssignments(t *testing.T) {
 	if len(result.Assignments) != 1 {
 		t.Fatalf("assignments = %+v, want 1", result.Assignments)
 	}
+	if result.ID == "" || result.Created.IsZero() || result.Clear || result.Target != "500GB" || result.WarnPct == nil || *result.WarnPct != 75 || result.HardPct == nil || *result.HardPct != 90 {
+		t.Fatalf("storage budget identity = %+v, want retained set metadata", result)
+	}
+	if result.RequiredLabels["zone"] != "desk" {
+		t.Fatalf("required labels = %+v, want zone=desk", result.RequiredLabels)
+	}
+	firstID := result.ID
 	assignment := result.Assignments[0]
 	wantArgs := []string{"storage", "budget", "set", "-target", "500GB", "-warn", "75", "-hard", "90"}
 	if assignment.WorkerID != "desk" || assignment.Verb != "cove" || !equalStrings(assignment.Args, wantArgs) {
@@ -3626,11 +3637,40 @@ func TestStorePushesStorageBudgetAssignments(t *testing.T) {
 	if len(result.Assignments) != 0 || skipStoragePolicyReason(result.Skipped, "desk") != "active" {
 		t.Fatalf("second storage budget = %+v, want active skip for desk", result)
 	}
+	if result.ID == "" || result.Created.IsZero() || !result.Clear {
+		t.Fatalf("second storage budget identity = %+v, want retained clear run", result)
+	}
+	page := store.ListStorageBudgetRunsPage(StorageBudgetListFilter{Limit: 1})
+	if page.Count != 1 || page.NextOffset != 1 || len(page.Runs) != 1 || page.Runs[0].ID != result.ID {
+		t.Fatalf("storage budget history page = %+v, want latest run %s", page, result.ID)
+	}
+	clear := true
+	page = store.ListStorageBudgetRunsPage(StorageBudgetListFilter{Clear: &clear})
+	if page.Count != 1 || len(page.Runs) != 1 || page.Runs[0].ID != result.ID {
+		t.Fatalf("clear storage budget history = %+v, want %s", page, result.ID)
+	}
+	clear = false
+	page = store.ListStorageBudgetRunsPage(StorageBudgetListFilter{Target: "500GB", Clear: &clear})
+	if page.Count != 1 || len(page.Runs) != 1 || page.Runs[0].ID != firstID {
+		t.Fatalf("set storage budget history = %+v, want %s", page, firstID)
+	}
+	reopened, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	persisted, ok := reopened.GetStorageBudgetRun(result.ID)
+	if !ok || persisted.ID != result.ID || skipStoragePolicyReason(persisted.Skipped, "desk") != "active" || !persisted.Clear {
+		t.Fatalf("reopened storage budget = %+v ok=%v, want active skip history", persisted, ok)
+	}
 }
 
 func TestStorePushesStoragePruneAssignments(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
-	store := NewMemoryStore(time.Minute)
+	path := filepath.Join(t.TempDir(), "fleet.json")
+	store, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
 	store.now = func() time.Time { return now }
 	for _, hb := range []WorkerHeartbeat{
 		{ID: "desk", Labels: map[string]string{"zone": "desk"}},
@@ -3667,6 +3707,13 @@ func TestStorePushesStoragePruneAssignments(t *testing.T) {
 	if len(result.Assignments) != 1 {
 		t.Fatalf("assignments = %+v, want 1", result.Assignments)
 	}
+	if result.ID == "" || result.Created.IsZero() || result.Category != "build-scratch" || result.OlderThan != "48h" || !result.Apply {
+		t.Fatalf("storage prune identity = %+v, want retained apply metadata", result)
+	}
+	if result.RequiredLabels["zone"] != "desk" {
+		t.Fatalf("required labels = %+v, want zone=desk", result.RequiredLabels)
+	}
+	firstID := result.ID
 	assignment := result.Assignments[0]
 	wantArgs := []string{"storage", "prune", "build-scratch", "-apply", "-older-than", "48h"}
 	if assignment.WorkerID != "desk" || assignment.Verb != "cove" || !equalStrings(assignment.Args, wantArgs) {
@@ -3685,6 +3732,31 @@ func TestStorePushesStoragePruneAssignments(t *testing.T) {
 	}
 	if len(result.Assignments) != 0 || skipStoragePolicyReason(result.Skipped, "desk") != "active" {
 		t.Fatalf("second storage prune = %+v, want active skip for desk", result)
+	}
+	if result.ID == "" || result.Created.IsZero() || result.Apply || result.OlderThan != "48h" {
+		t.Fatalf("second storage prune identity = %+v, want retained dry-run", result)
+	}
+	page := store.ListStoragePruneRunsPage(StoragePruneListFilter{OlderThan: "48h", Limit: 1})
+	if page.Count != 1 || page.NextOffset != 1 || len(page.Runs) != 1 || page.Runs[0].ID != result.ID {
+		t.Fatalf("storage prune history page = %+v, want latest run %s", page, result.ID)
+	}
+	apply := true
+	page = store.ListStoragePruneRunsPage(StoragePruneListFilter{Category: "build-scratch", Apply: &apply})
+	if page.Count != 1 || len(page.Runs) != 1 || page.Runs[0].ID != firstID {
+		t.Fatalf("apply storage prune history = %+v, want %s", page, firstID)
+	}
+	apply = false
+	page = store.ListStoragePruneRunsPage(StoragePruneListFilter{Apply: &apply})
+	if page.Count != 1 || len(page.Runs) != 1 || page.Runs[0].ID != result.ID {
+		t.Fatalf("dry-run storage prune history = %+v, want %s", page, result.ID)
+	}
+	reopened, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	persisted, ok := reopened.GetStoragePruneRun(result.ID)
+	if !ok || persisted.ID != result.ID || skipStoragePolicyReason(persisted.Skipped, "desk") != "active" || persisted.Apply {
+		t.Fatalf("reopened storage prune = %+v ok=%v, want active skip dry-run history", persisted, ok)
 	}
 }
 
@@ -5139,11 +5211,14 @@ func TestHandlerStorageBudget(t *testing.T) {
 	server := httptest.NewServer(Handler(store))
 	defer server.Close()
 
+	var account ServiceAccountResult
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-a", Namespace: "team-a", Token: "token-a"}, &account)
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-b", Namespace: "team-b", Token: "token-b"}, &account)
 	var record HostRecord
 	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", Labels: map[string]string{"zone": "desk"}}, &record)
 	warn, hard := 70, 90
 	var result StorageBudgetResult
-	postJSON(t, server.URL+"/v1/storage/budget", StorageBudgetRequest{
+	postJSONAuth(t, server.URL+"/v1/storage/budget", "token-a", StorageBudgetRequest{
 		RequiredLabels: map[string]string{"zone": "desk"},
 		Target:         "750GB",
 		WarnPct:        &warn,
@@ -5152,9 +5227,36 @@ func TestHandlerStorageBudget(t *testing.T) {
 	if len(result.Assignments) != 1 || result.Assignments[0].WorkerID != "worker-1" {
 		t.Fatalf("storage budget result = %+v", result)
 	}
+	if result.ID == "" || result.Namespace != "team-a" || result.Target != "750GB" || result.WarnPct == nil || *result.WarnPct != 70 || result.HardPct == nil || *result.HardPct != 90 {
+		t.Fatalf("storage budget identity = %+v, want team-a retained run", result)
+	}
 	wantArgs := []string{"storage", "budget", "set", "-target", "750GB", "-warn", "70", "-hard", "90"}
 	if !equalStrings(result.Assignments[0].Args, wantArgs) {
 		t.Fatalf("args = %+v, want %+v", result.Assignments[0].Args, wantArgs)
+	}
+	var list StorageBudgetListResult
+	getJSONAuth(t, server.URL+"/v1/storage/budget/runs?target=750GB&clear=false&limit=1", "token-a", &list)
+	if list.Count != 1 || len(list.Runs) != 1 || list.Runs[0].ID != result.ID {
+		t.Fatalf("storage budget history = %+v, want %s", list, result.ID)
+	}
+	var got StorageBudgetResult
+	getJSONAuth(t, server.URL+"/v1/storage/budget/runs/"+result.ID, "token-a", &got)
+	if got.ID != result.ID || got.Namespace != "team-a" || len(got.Assignments) != 1 {
+		t.Fatalf("storage budget get = %+v, want %s", got, result.ID)
+	}
+	list = StorageBudgetListResult{}
+	getJSONAuth(t, server.URL+"/v1/storage/budget/runs", "token-b", &list)
+	if list.Count != 0 || len(list.Runs) != 0 {
+		t.Fatalf("team-b storage budget history = %+v, want none", list)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/storage/budget/runs/"+result.ID, "token-b"); code != http.StatusNotFound {
+		t.Fatalf("cross-namespace storage budget status = %d, want %d", code, http.StatusNotFound)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/storage/budget/runs?limit=-1", "token-a"); code != http.StatusBadRequest {
+		t.Fatalf("bad storage budget history limit status = %d, want %d", code, http.StatusBadRequest)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/storage/budget/runs?clear=sometimes", "token-a"); code != http.StatusBadRequest {
+		t.Fatalf("bad storage budget history clear status = %d, want %d", code, http.StatusBadRequest)
 	}
 }
 
@@ -5163,19 +5265,51 @@ func TestHandlerStoragePrune(t *testing.T) {
 	server := httptest.NewServer(Handler(store))
 	defer server.Close()
 
+	var account ServiceAccountResult
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-a", Namespace: "team-a", Token: "token-a"}, &account)
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-b", Namespace: "team-b", Token: "token-b"}, &account)
 	var record HostRecord
 	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", Labels: map[string]string{"zone": "desk"}}, &record)
 	var result StoragePruneResult
-	postJSON(t, server.URL+"/v1/storage/prune", StoragePruneRequest{
+	postJSONAuth(t, server.URL+"/v1/storage/prune", "token-a", StoragePruneRequest{
 		RequiredLabels: map[string]string{"zone": "desk"},
+		Category:       "build-scratch",
 		OlderThan:      "168h",
+		Apply:          true,
 	}, &result)
 	if len(result.Assignments) != 1 || result.Assignments[0].WorkerID != "worker-1" {
 		t.Fatalf("storage prune result = %+v", result)
 	}
-	wantArgs := []string{"storage", "prune", "-older-than", "168h"}
+	if result.ID == "" || result.Namespace != "team-a" || result.Category != "build-scratch" || result.OlderThan != "168h" || !result.Apply {
+		t.Fatalf("storage prune identity = %+v, want team-a retained run", result)
+	}
+	wantArgs := []string{"storage", "prune", "build-scratch", "-apply", "-older-than", "168h"}
 	if !equalStrings(result.Assignments[0].Args, wantArgs) {
 		t.Fatalf("args = %+v, want %+v", result.Assignments[0].Args, wantArgs)
+	}
+	var list StoragePruneListResult
+	getJSONAuth(t, server.URL+"/v1/storage/prune/runs?category=build-scratch&older_than=168h&apply=true&limit=1", "token-a", &list)
+	if list.Count != 1 || len(list.Runs) != 1 || list.Runs[0].ID != result.ID {
+		t.Fatalf("storage prune history = %+v, want %s", list, result.ID)
+	}
+	var got StoragePruneResult
+	getJSONAuth(t, server.URL+"/v1/storage/prune/runs/"+result.ID, "token-a", &got)
+	if got.ID != result.ID || got.Namespace != "team-a" || len(got.Assignments) != 1 {
+		t.Fatalf("storage prune get = %+v, want %s", got, result.ID)
+	}
+	list = StoragePruneListResult{}
+	getJSONAuth(t, server.URL+"/v1/storage/prune/runs", "token-b", &list)
+	if list.Count != 0 || len(list.Runs) != 0 {
+		t.Fatalf("team-b storage prune history = %+v, want none", list)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/storage/prune/runs/"+result.ID, "token-b"); code != http.StatusNotFound {
+		t.Fatalf("cross-namespace storage prune status = %d, want %d", code, http.StatusNotFound)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/storage/prune/runs?limit=-1", "token-a"); code != http.StatusBadRequest {
+		t.Fatalf("bad storage prune history limit status = %d, want %d", code, http.StatusBadRequest)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/storage/prune/runs?apply=sometimes", "token-a"); code != http.StatusBadRequest {
+		t.Fatalf("bad storage prune history apply status = %d, want %d", code, http.StatusBadRequest)
 	}
 }
 

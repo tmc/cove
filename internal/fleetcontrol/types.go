@@ -527,9 +527,32 @@ type StorageBudgetRequest struct {
 }
 
 type StorageBudgetResult struct {
-	Namespace   string              `json:"namespace,omitempty"`
-	Assignments []Assignment        `json:"assignments,omitempty"`
-	Skipped     []StoragePolicySkip `json:"skipped,omitempty"`
+	ID             string              `json:"id,omitempty"`
+	Created        time.Time           `json:"created,omitempty"`
+	Namespace      string              `json:"namespace,omitempty"`
+	RequiredLabels map[string]string   `json:"required_labels,omitempty"`
+	Clear          bool                `json:"clear"`
+	Target         string              `json:"target,omitempty"`
+	WarnPct        *int                `json:"warn_pct,omitempty"`
+	HardPct        *int                `json:"hard_pct,omitempty"`
+	Assignments    []Assignment        `json:"assignments,omitempty"`
+	Skipped        []StoragePolicySkip `json:"skipped,omitempty"`
+}
+
+type StorageBudgetListFilter struct {
+	Namespace string `json:"namespace,omitempty"`
+	Target    string `json:"target,omitempty"`
+	Clear     *bool  `json:"clear,omitempty"`
+	Offset    int    `json:"offset,omitempty"`
+	Limit     int    `json:"limit,omitempty"`
+}
+
+type StorageBudgetListResult struct {
+	Runs       []StorageBudgetResult `json:"runs"`
+	Count      int                   `json:"count"`
+	Offset     int                   `json:"offset,omitempty"`
+	Limit      int                   `json:"limit,omitempty"`
+	NextOffset int                   `json:"next_offset,omitempty"`
 }
 
 type StoragePruneRequest struct {
@@ -541,9 +564,32 @@ type StoragePruneRequest struct {
 }
 
 type StoragePruneResult struct {
-	Namespace   string              `json:"namespace,omitempty"`
-	Assignments []Assignment        `json:"assignments,omitempty"`
-	Skipped     []StoragePolicySkip `json:"skipped,omitempty"`
+	ID             string              `json:"id,omitempty"`
+	Created        time.Time           `json:"created,omitempty"`
+	Namespace      string              `json:"namespace,omitempty"`
+	RequiredLabels map[string]string   `json:"required_labels,omitempty"`
+	Category       string              `json:"category,omitempty"`
+	OlderThan      string              `json:"older_than,omitempty"`
+	Apply          bool                `json:"apply"`
+	Assignments    []Assignment        `json:"assignments,omitempty"`
+	Skipped        []StoragePolicySkip `json:"skipped,omitempty"`
+}
+
+type StoragePruneListFilter struct {
+	Namespace string `json:"namespace,omitempty"`
+	Category  string `json:"category,omitempty"`
+	OlderThan string `json:"older_than,omitempty"`
+	Apply     *bool  `json:"apply,omitempty"`
+	Offset    int    `json:"offset,omitempty"`
+	Limit     int    `json:"limit,omitempty"`
+}
+
+type StoragePruneListResult struct {
+	Runs       []StoragePruneResult `json:"runs"`
+	Count      int                  `json:"count"`
+	Offset     int                  `json:"offset,omitempty"`
+	Limit      int                  `json:"limit,omitempty"`
+	NextOffset int                  `json:"next_offset,omitempty"`
 }
 
 type StoragePolicySkip struct {

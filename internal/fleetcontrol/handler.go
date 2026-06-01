@@ -118,8 +118,20 @@ func Handler(store *Store) http.Handler {
 	mux.HandleFunc("/v1/sandboxes", func(w http.ResponseWriter, r *http.Request) {
 		handleSandboxes(w, r, store)
 	})
+	mux.HandleFunc("/v1/storage/budget/runs/", func(w http.ResponseWriter, r *http.Request) {
+		handleStorageBudgetRun(w, r, store)
+	})
+	mux.HandleFunc("/v1/storage/budget/runs", func(w http.ResponseWriter, r *http.Request) {
+		handleStorageBudgetRuns(w, r, store)
+	})
 	mux.HandleFunc("/v1/storage/budget", func(w http.ResponseWriter, r *http.Request) {
 		handleStorageBudget(w, r, store)
+	})
+	mux.HandleFunc("/v1/storage/prune/runs/", func(w http.ResponseWriter, r *http.Request) {
+		handleStoragePruneRun(w, r, store)
+	})
+	mux.HandleFunc("/v1/storage/prune/runs", func(w http.ResponseWriter, r *http.Request) {
+		handleStoragePruneRuns(w, r, store)
 	})
 	mux.HandleFunc("/v1/storage/prune", func(w http.ResponseWriter, r *http.Request) {
 		handleStoragePrune(w, r, store)
@@ -2028,6 +2040,74 @@ func handleStorageBudget(w http.ResponseWriter, r *http.Request, store *Store) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+func handleStorageBudgetRuns(w http.ResponseWriter, r *http.Request, store *Store) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	filter, err := storageBudgetListFilterFromRequest(r, namespaceFilterFromRequest(r, identity))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, store.ListStorageBudgetRunsPage(filter))
+}
+
+func handleStorageBudgetRun(w http.ResponseWriter, r *http.Request, store *Store) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	id, err := nameFromPath(r.URL.Path, "/v1/storage/budget/runs/", "storage budget run")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	run, ok := store.GetStorageBudgetRun(id)
+	if !ok || !canAccessNamespace(identity, run.Namespace) {
+		writeError(w, http.StatusNotFound, "storage budget run not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, run)
+}
+
+func storageBudgetListFilterFromRequest(r *http.Request, namespace string) (StorageBudgetListFilter, error) {
+	filter := StorageBudgetListFilter{
+		Namespace: namespace,
+		Target:    strings.TrimSpace(r.URL.Query().Get("target")),
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("clear")); raw != "" {
+		clear, err := strconv.ParseBool(raw)
+		if err != nil {
+			return StorageBudgetListFilter{}, fmt.Errorf("storage budget clear must be true or false")
+		}
+		filter.Clear = &clear
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 0 {
+			return StorageBudgetListFilter{}, fmt.Errorf("storage budget limit must be non-negative")
+		}
+		filter.Limit = limit
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		offset, err := strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			return StorageBudgetListFilter{}, fmt.Errorf("storage budget offset must be non-negative")
+		}
+		filter.Offset = offset
+	}
+	return filter, nil
+}
+
 func handleStoragePrune(w http.ResponseWriter, r *http.Request, store *Store) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -2051,6 +2131,79 @@ func handleStoragePrune(w http.ResponseWriter, r *http.Request, store *Store) {
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+func handleStoragePruneRuns(w http.ResponseWriter, r *http.Request, store *Store) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	filter, err := storagePruneListFilterFromRequest(r, namespaceFilterFromRequest(r, identity))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, store.ListStoragePruneRunsPage(filter))
+}
+
+func handleStoragePruneRun(w http.ResponseWriter, r *http.Request, store *Store) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	id, err := nameFromPath(r.URL.Path, "/v1/storage/prune/runs/", "storage prune run")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	run, ok := store.GetStoragePruneRun(id)
+	if !ok || !canAccessNamespace(identity, run.Namespace) {
+		writeError(w, http.StatusNotFound, "storage prune run not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, run)
+}
+
+func storagePruneListFilterFromRequest(r *http.Request, namespace string) (StoragePruneListFilter, error) {
+	filter := StoragePruneListFilter{
+		Namespace: namespace,
+		Category:  strings.TrimSpace(r.URL.Query().Get("category")),
+	}
+	olderThan, err := normalizeDurationString(r.URL.Query().Get("older_than"), "storage prune older_than")
+	if err != nil {
+		return StoragePruneListFilter{}, err
+	}
+	filter.OlderThan = olderThan
+	if raw := strings.TrimSpace(r.URL.Query().Get("apply")); raw != "" {
+		apply, err := strconv.ParseBool(raw)
+		if err != nil {
+			return StoragePruneListFilter{}, fmt.Errorf("storage prune apply must be true or false")
+		}
+		filter.Apply = &apply
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 0 {
+			return StoragePruneListFilter{}, fmt.Errorf("storage prune limit must be non-negative")
+		}
+		filter.Limit = limit
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		offset, err := strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			return StoragePruneListFilter{}, fmt.Errorf("storage prune offset must be non-negative")
+		}
+		filter.Offset = offset
+	}
+	return filter, nil
 }
 
 func handlePlacementPlan(w http.ResponseWriter, r *http.Request, store *Store) {

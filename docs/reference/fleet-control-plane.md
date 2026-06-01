@@ -438,6 +438,10 @@ curl -X POST http://127.0.0.1:9758/v1/storage/budget \
 curl -X POST http://127.0.0.1:9758/v1/storage/prune \
   -H 'content-type: application/json' \
   -d '{"required_labels":{"zone":"desk"},"older_than":"168h","apply":true}'
+curl 'http://127.0.0.1:9758/v1/storage/budget/runs?target=750GB&clear=false&limit=20'
+curl http://127.0.0.1:9758/v1/storage/budget/runs/storage-budget-...
+curl 'http://127.0.0.1:9758/v1/storage/prune/runs?older_than=168h&apply=true&limit=20'
+curl http://127.0.0.1:9758/v1/storage/prune/runs/storage-prune-...
 ```
 
 Storage budget push creates one `cove storage budget set -target <target>`
@@ -450,6 +454,20 @@ ready worker. It is dry-run by default; `apply:true` adds `-apply`, and
 Set `category:"build-scratch"` to target `cove storage prune build-scratch`.
 Workers that are cordoned or stale, or already have an active storage
 budget/prune assignment for the same operation, are returned in `skipped`.
+Each successful storage budget response is persisted with `id`, `created`,
+label selector, clear/set mode, target, warn and hard percentages, and queued
+assignment or skip details, including skipped-only no-op runs. `GET
+/v1/storage/budget/runs` returns paginated budget history with `target`,
+`clear`, `offset`, and `limit` filters; scoped service-account tokens only see
+runs in their namespace. The `GET /v1/storage/budget/runs/{id}` endpoint
+returns one retained budget result or `404` across namespace boundaries.
+Each successful storage prune response is persisted with `id`, `created`, label
+selector, category, `older_than`, `apply`, and queued assignment or skip
+details, including skipped-only no-op runs. `GET /v1/storage/prune/runs`
+returns paginated prune history with `category`, `older_than`, `apply`,
+`offset`, and `limit` filters; scoped service-account tokens only see runs in
+their namespace. The `GET /v1/storage/prune/runs/{id}` endpoint returns one
+retained prune result or `404` across namespace boundaries.
 
 Placement planning endpoint:
 
@@ -849,7 +867,8 @@ curl -X POST http://127.0.0.1:9758/v1/workers/register \
 This surface is intentionally private and local-first. It now has basic
 controller reconciliation, worker cordon/quarantine/evacuate/drain/decommission
 lifecycle, fleet image preparation, fleet image-GC push, lifecycle-policy push
-with retained history, storage budget/prune push, retained placement plans, and a first fork warm-pool
+with retained history, storage budget/prune push with retained history,
+retained placement plans, and a first fork warm-pool
 quota reconciler with agent-ready slot claim and guest `Exec` handoff through
 the `cove shell` path plus claimed-slot stop and downsize cleanup, plus a
 persistent fleet audit feed.

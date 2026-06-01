@@ -38,6 +38,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   `GET /v1/policies/lifecycle/runs` plus
   `GET /v1/policies/lifecycle/runs/{id}` for namespace-scoped policy history
   with VM name, clear, offset, and limit filters.
+- `cove-fleetd` now persists storage budget and prune runs and exposes
+  `GET /v1/storage/budget/runs`, `GET /v1/storage/budget/runs/{id}`,
+  `GET /v1/storage/prune/runs`, and `GET /v1/storage/prune/runs/{id}` for
+  namespace-scoped storage maintenance history.
 - `cove-fleetd` now exposes `GET /v1/assignments/{id}/events` for
   assignment-scoped audit history, and global audit queries now accept
   `assignment_id`.
