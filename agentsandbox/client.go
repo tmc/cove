@@ -82,6 +82,9 @@ type SandboxStatus struct {
 	Status               string    `json:"status,omitempty"`
 	WorkerID             string    `json:"worker_id,omitempty"`
 	Lease                *Lease    `json:"lease,omitempty"`
+	QueueExpires         time.Time `json:"queue_expires,omitempty"`
+	QueueAgeMillis       int64     `json:"queue_age_millis,omitempty"`
+	QueueRemainingMillis int64     `json:"queue_remaining_millis,omitempty"`
 	Created              time.Time `json:"created,omitempty"`
 	Updated              time.Time `json:"updated,omitempty"`
 }

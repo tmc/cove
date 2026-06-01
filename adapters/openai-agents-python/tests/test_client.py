@@ -169,6 +169,9 @@ def test_fleet_client_create_wait_exec_and_delete() -> None:
         assert sandboxes[0]["id"] == "job-1"
         assert sandboxes[0]["image_ref"] == "base:v1"
         assert sandboxes[0]["required_capabilities"] == ["ram-overlay"]
+        assert sandboxes[0]["queue_age_millis"] == 1500
+        assert sandboxes[0]["queue_remaining_millis"] == 8500
+        assert sandboxes[0]["queue_expires"] == "2026-05-31T10:10:00Z"
         listed = CoveFleetClient.list_sandboxes(fleet_url=server.url, api_key="secret", namespace="team-a")
         assert listed[0]["id"] == "job-1"
         status = client.status()
@@ -2570,7 +2573,10 @@ class _FleetHTTPServer:
                                     "vm_name": "cove-sandbox-job-1",
                                     "image_ref": "base:v1",
                                     "required_capabilities": ["ram-overlay"],
-                                    "status": "ready",
+                                    "status": "pending",
+                                    "queue_expires": "2026-05-31T10:10:00Z",
+                                    "queue_age_millis": 1500,
+                                    "queue_remaining_millis": 8500,
                                 }
                             ],
                             "count": 1,

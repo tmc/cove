@@ -713,8 +713,34 @@ func TestStoreSandboxQueueTTLExpiresAndReleasesCap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !first.Assignment.QueueExpires.Equal(now.Add(time.Second)) {
-		t.Fatalf("sandbox queue expires = %v, want +1s", first.Assignment.QueueExpires)
+	if !first.QueueExpires.Equal(now.Add(time.Second)) || !first.Assignment.QueueExpires.Equal(now.Add(time.Second)) {
+		t.Fatalf("sandbox queue expires = status %v assignment %v, want +1s", first.QueueExpires, first.Assignment.QueueExpires)
+	}
+	if first.QueueAgeMillis != 0 || first.QueueRemainingMillis != 1000 {
+		t.Fatalf("created queue diagnostics = age %d remaining %d, want 0/1000", first.QueueAgeMillis, first.QueueRemainingMillis)
+	}
+	now = now.Add(250 * time.Millisecond)
+	got, ok := store.GetSandbox("job-1")
+	if !ok {
+		t.Fatal("job-1 not found")
+	}
+	list := store.ListSandboxesFiltered(SandboxListFilter{Namespace: "team-a"})
+	summary := store.OperationsSummary("team-a")
+	if len(list) != 1 || len(summary.Sandboxes.ActiveSandboxes) != 1 {
+		t.Fatalf("sandbox diagnostics sources = list %d active %d, want 1/1", len(list), len(summary.Sandboxes.ActiveSandboxes))
+	}
+	cases := []struct {
+		name string
+		got  SandboxStatus
+	}{
+		{name: "get", got: got},
+		{name: "list", got: list[0]},
+		{name: "summary", got: summary.Sandboxes.ActiveSandboxes[0]},
+	}
+	for _, tc := range cases {
+		if !tc.got.QueueExpires.Equal(now.Add(750*time.Millisecond)) || tc.got.QueueAgeMillis != 250 || tc.got.QueueRemainingMillis != 750 {
+			t.Fatalf("%s queue diagnostics = expires %v age %d remaining %d, want +750ms 250/750", tc.name, tc.got.QueueExpires, tc.got.QueueAgeMillis, tc.got.QueueRemainingMillis)
+		}
 	}
 	if _, err := store.CreateSandbox(SandboxRequest{Namespace: "team-a", ID: "job-2", ImageRef: "base:v1", MaxActiveSandboxes: 1}); err == nil || !strings.Contains(err.Error(), "max_active_sandboxes") {
 		t.Fatalf("CreateSandbox over cap err = %v, want max_active_sandboxes", err)
@@ -6718,6 +6744,46 @@ func TestHandlerSandboxMaxActiveSandboxes(t *testing.T) {
 	postJSON(t, server.URL+"/v1/sandboxes", SandboxRequest{Namespace: "team-b", ID: "job-b", ImageRef: "base:v1", MaxActiveSandboxes: 1}, &created)
 	if created.Namespace != "team-b" || created.ID != "job-b" {
 		t.Fatalf("other namespace sandbox = %+v, want team-b job-b", created)
+	}
+}
+
+func TestHandlerSandboxQueueDiagnostics(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 4}}, &record)
+	var created SandboxStatus
+	postJSON(t, server.URL+"/v1/sandboxes", SandboxRequest{ID: "job-1", ImageRef: "base:v1", QueueTTL: "2s"}, &created)
+	if !created.QueueExpires.Equal(now.Add(2*time.Second)) || created.QueueAgeMillis != 0 || created.QueueRemainingMillis != 2000 {
+		t.Fatalf("created queue diagnostics = %+v, want +2s 0/2000", created)
+	}
+	now = now.Add(500 * time.Millisecond)
+
+	var got SandboxStatus
+	getJSON(t, server.URL+"/v1/sandboxes/job-1", &got)
+	var list SandboxListResult
+	getJSON(t, server.URL+"/v1/sandboxes?status=pending", &list)
+	var wait SandboxWaitResult
+	postJSON(t, server.URL+"/v1/sandboxes/job-1/wait?status=ready&timeout=0", map[string]string{}, &wait)
+	if len(list.Sandboxes) != 1 {
+		t.Fatalf("sandbox list = %+v, want one pending sandbox", list)
+	}
+	cases := []struct {
+		name string
+		got  SandboxStatus
+	}{
+		{name: "get", got: got},
+		{name: "list", got: list.Sandboxes[0]},
+		{name: "wait", got: wait.Sandbox},
+	}
+	for _, tc := range cases {
+		if !tc.got.QueueExpires.Equal(now.Add(1500*time.Millisecond)) || tc.got.QueueAgeMillis != 500 || tc.got.QueueRemainingMillis != 1500 {
+			t.Fatalf("%s queue diagnostics = %+v, want +1500ms 500/1500", tc.name, tc.got)
+		}
 	}
 }
 

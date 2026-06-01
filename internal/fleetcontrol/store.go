@@ -6405,9 +6405,18 @@ func sandboxStatusFromAssignment(assignment Assignment, now time.Time) SandboxSt
 		RequiredCapabilities: cloneStrings(assignment.RequiredCapabilities),
 		WorkerID:             assignment.WorkerID,
 		Status:               assignment.Status,
+		QueueExpires:         assignment.QueueExpires,
 		Assignment:           assignment,
 		Created:              assignment.Created,
 		Updated:              assignment.Updated,
+	}
+	if normalizeOperationStatus(assignment.Status) == "pending" {
+		if !assignment.Created.IsZero() {
+			status.QueueAgeMillis = positiveDurationMillis(now.Sub(assignment.Created))
+		}
+		if !assignment.QueueExpires.IsZero() {
+			status.QueueRemainingMillis = positiveDurationMillis(assignment.QueueExpires.Sub(now))
+		}
 	}
 	if assignment.SandboxLeaseHolder != "" && !assignment.SandboxLeaseExpires.IsZero() {
 		status.Lease = &SandboxLease{
@@ -6416,6 +6425,13 @@ func sandboxStatusFromAssignment(assignment Assignment, now time.Time) SandboxSt
 		}
 	}
 	return status
+}
+
+func positiveDurationMillis(d time.Duration) int64 {
+	if d <= 0 {
+		return 0
+	}
+	return d.Milliseconds()
 }
 
 func sandboxLeaseRequest(req SandboxLeaseRequest, actor string, now time.Time) (string, time.Time, error) {
