@@ -1972,6 +1972,50 @@ func TestStoreReconcileRequeuesExpiredLease(t *testing.T) {
 	}
 }
 
+func TestStoreReconcilePlanDoesNotMutate(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.assignmentTTL = time.Second
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAssignment(Assignment{ID: "assignment-1", Verb: "noop"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AwaitAssignment("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	store.now = func() time.Time { return now.Add(2 * time.Second) }
+
+	plan := store.ReconcilePlan()
+	if len(plan.RequeuedAssignments) != 1 || plan.RequeuedAssignments[0] != "assignment-1" {
+		t.Fatalf("reconcile plan = %+v", plan)
+	}
+	assignment, ok := store.GetAssignment("assignment-1")
+	if !ok {
+		t.Fatal("assignment missing")
+	}
+	if assignment.Status != "leased" || assignment.LeasedTo != "worker-1" || assignment.LeaseExpires.IsZero() {
+		t.Fatalf("assignment after plan = %+v, want leased", assignment)
+	}
+
+	applied, err := store.Reconcile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(applied.RequeuedAssignments) != 1 || applied.RequeuedAssignments[0] != "assignment-1" {
+		t.Fatalf("reconcile apply = %+v", applied)
+	}
+	assignment, ok = store.GetAssignment("assignment-1")
+	if !ok {
+		t.Fatal("assignment missing after apply")
+	}
+	if assignment.Status != "pending" || assignment.LeasedTo != "" || !assignment.LeaseExpires.IsZero() {
+		t.Fatalf("assignment after apply = %+v, want pending", assignment)
+	}
+}
+
 func TestStoreReconcileReplacesStaleScheduledWorker(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
 	store := NewMemoryStore(time.Minute)
@@ -3318,6 +3362,53 @@ func TestStoreReconcileReplenishesWarmPool(t *testing.T) {
 	pools := store.ListWarmPools()
 	if len(pools) != 1 || pools[0].Active != 1 || pools[0].Slots != 1 || pools[0].Assignments[0].ID == first {
 		t.Fatalf("pools = %+v", pools)
+	}
+}
+
+func TestStoreReconcilePlanIncludesWarmPoolReplenish(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 2}}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.EnsureWarmPool(WarmPoolRequest{Name: "runner", ImageRef: "base:v1", Size: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Created) != 1 {
+		t.Fatalf("created = %+v, want one slot", result.Created)
+	}
+	first := result.Created[0].ID
+	if _, err := store.AwaitAssignment("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: first, Status: "complete"}); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+
+	plan := store.ReconcilePlan()
+	if len(plan.WarmPoolAssignments) != 1 {
+		t.Fatalf("reconcile plan = %+v, want one warm pool assignment", plan)
+	}
+	if _, ok := store.GetAssignment(plan.WarmPoolAssignments[0]); ok {
+		t.Fatalf("planned warm-pool assignment %q exists before apply", plan.WarmPoolAssignments[0])
+	}
+	pools := store.ListWarmPools()
+	if len(pools) != 1 || pools[0].Active != 0 || pools[0].Slots != 0 {
+		t.Fatalf("pools after plan = %+v, want no active slots", pools)
+	}
+
+	applied, err := store.Reconcile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(applied.WarmPoolAssignments) != 1 {
+		t.Fatalf("reconcile apply = %+v, want one warm pool assignment", applied)
+	}
+	if _, ok := store.GetAssignment(applied.WarmPoolAssignments[0]); !ok {
+		t.Fatalf("applied warm-pool assignment %q missing", applied.WarmPoolAssignments[0])
 	}
 }
 
@@ -5297,10 +5388,32 @@ func TestHandlerReconcileEndpoint(t *testing.T) {
 	}
 
 	store.now = func() time.Time { return now.Add(2 * time.Second) }
+	var plan ReconcileResult
+	getJSON(t, server.URL+"/v1/reconcile/plan", &plan)
+	if len(plan.RequeuedAssignments) != 1 || plan.RequeuedAssignments[0] != "assignment-1" {
+		t.Fatalf("reconcile plan = %+v", plan)
+	}
+	assignment, ok := store.GetAssignment("assignment-1")
+	if !ok {
+		t.Fatal("assignment missing")
+	}
+	if assignment.Status != "leased" || assignment.LeasedTo != "worker-1" {
+		t.Fatalf("assignment after plan = %+v, want leased", assignment)
+	}
+	if code := postJSONStatus(t, server.URL+"/v1/reconcile/plan", "", map[string]string{}); code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST reconcile plan status = %d, want %d", code, http.StatusMethodNotAllowed)
+	}
 	var result ReconcileResult
 	postJSON(t, server.URL+"/v1/reconcile", map[string]string{}, &result)
 	if len(result.RequeuedAssignments) != 1 || result.RequeuedAssignments[0] != "assignment-1" {
 		t.Fatalf("reconcile result = %+v", result)
+	}
+	assignment, ok = store.GetAssignment("assignment-1")
+	if !ok {
+		t.Fatal("assignment missing after apply")
+	}
+	if assignment.Status != "pending" || assignment.LeasedTo != "" {
+		t.Fatalf("assignment after reconcile = %+v, want pending", assignment)
 	}
 }
 

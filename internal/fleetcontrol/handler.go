@@ -41,6 +41,20 @@ func Handler(store *Store) http.Handler {
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"workers": store.List()})
 	})
+	mux.HandleFunc("/v1/reconcile/plan", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		identity := identityFromRequest(r, store)
+		if !requireRole(w, identity, ServiceAccountRoleOperator) {
+			return
+		}
+		if !requireUnscoped(w, r, store) {
+			return
+		}
+		writeJSON(w, http.StatusOK, store.ReconcilePlan())
+	})
 	mux.HandleFunc("/v1/reconcile", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")

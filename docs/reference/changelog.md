@@ -8,6 +8,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 ## Unreleased
 
 ### Added
+- `cove-fleetd` now exposes `GET /v1/reconcile/plan` for unscoped operators to
+  preview stale-worker, expired-lease, worker-replacement, and warm-pool
+  reconcile changes without mutating controller state or writing audit events.
 - SAML bindings can now import IdP entity ID, SSO URL, and signing certificate
   from `metadata_xml` or `metadata_url`, persist metadata fetch timestamps, and
   refresh URL-backed bindings through

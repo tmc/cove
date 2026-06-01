@@ -91,8 +91,18 @@ curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/decommission \
   -d '{"reason":"retired","force":true}'
 curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/uncordon
 curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/unquarantine
+curl http://127.0.0.1:9758/v1/reconcile/plan
 curl -X POST http://127.0.0.1:9758/v1/reconcile
 ```
+
+`GET /v1/reconcile/plan` is the operator dry-run for the next reconcile pass.
+It returns the same stale-worker, requeued assignment, replacement,
+warm-pool-created, warm-pool-canceled, and warm-pool-cleanup fields as
+`POST /v1/reconcile`, but computes them against a cloned controller snapshot,
+so it does not persist changes or write audit events. Planned generated
+assignment IDs reflect the snapshot time and can change if state changes before
+the later apply. Like apply, the plan endpoint is fleet-global and requires an
+unscoped operator/admin identity.
 
 `POST /v1/workers/{id}/drain` is the controller maintenance path for hosted
 sandbox workloads. It cordons the worker to prevent new placement, then walks

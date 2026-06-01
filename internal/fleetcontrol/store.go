@@ -273,6 +273,22 @@ func (s *Store) Reconcile() (ReconcileResult, error) {
 	return s.ReconcileActor("controller")
 }
 
+func (s *Store) ReconcilePlan() ReconcileResult {
+	now := s.now().UTC()
+	s.mu.Lock()
+	shadow := &Store{
+		ttl:           s.ttl,
+		assignmentTTL: s.assignmentTTL,
+		now:           func() time.Time { return now },
+		hosts:         cloneHostMap(s.hosts),
+		assignments:   cloneAssignmentMap(s.assignments),
+		warmPools:     cloneWarmPoolMap(s.warmPools),
+		metering:      cloneSandboxMeteringRecords(s.metering),
+	}
+	s.mu.Unlock()
+	return shadow.reconcileLocked(now)
+}
+
 func (s *Store) ReconcileActor(actor string) (ReconcileResult, error) {
 	now := s.now().UTC()
 	actor = normalizeActor(actor)
@@ -3506,10 +3522,38 @@ func cloneAssignmentMap(in map[string]Assignment) map[string]Assignment {
 	return out
 }
 
+func cloneHostRecord(in HostRecord) HostRecord {
+	out := in
+	out.Labels = cloneLabels(in.Labels)
+	out.ImageRefs = cloneStrings(in.ImageRefs)
+	out.ImageDetails = cloneWorkerImages(in.ImageDetails)
+	if in.Report != nil {
+		report := *in.Report
+		out.Report = &report
+	}
+	return out
+}
+
+func cloneHostMap(in map[string]HostRecord) map[string]HostRecord {
+	out := make(map[string]HostRecord, len(in))
+	for id, host := range in {
+		out[id] = cloneHostRecord(host)
+	}
+	return out
+}
+
 func cloneWarmPool(in WarmPool) WarmPool {
 	out := in
 	out.RequiredLabels = cloneLabels(in.RequiredLabels)
 	out.Args = cloneStrings(in.Args)
+	return out
+}
+
+func cloneWarmPoolMap(in map[string]WarmPool) map[string]WarmPool {
+	out := make(map[string]WarmPool, len(in))
+	for name, pool := range in {
+		out[name] = cloneWarmPool(pool)
+	}
 	return out
 }
 
