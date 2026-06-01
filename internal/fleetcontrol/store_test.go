@@ -590,13 +590,29 @@ func TestStoreWarmPoolRequiresManifestDigestMatch(t *testing.T) {
 
 func TestStoreListSandboxesFiltered(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
-	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", Labels: map[string]string{"zone": "a"}, ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 4}}); err != nil {
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{
+		ID:           "worker-1",
+		Labels:       map[string]string{"zone": "a"},
+		Capabilities: []string{"ram-overlay"},
+		ImageRefs:    []string{"base:v1"},
+		ImageDetails: []WorkerImage{{Ref: "base:v1", SourceManifestDigest: "sha256:ready"}},
+		Capacity:     Capacity{MaxVMs: 4},
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-2", Labels: map[string]string{"zone": "b"}, ImageRefs: []string{"base:v2"}, Capacity: Capacity{MaxVMs: 4}}); err != nil {
 		t.Fatal(err)
 	}
-	ready, err := store.CreateSandbox(SandboxRequest{Namespace: "team-a", ID: "job-ready", ImageRef: "base:v1", RequiredLabels: map[string]string{"zone": "a"}})
+	ready, err := store.CreateSandbox(SandboxRequest{
+		Namespace:            "team-a",
+		ID:                   "job-ready",
+		ImageRef:             "base:v1",
+		ImageManifestDigest:  "sha256:ready",
+		ImageDigestRef:       "ghcr.io/me/base@sha256:ready",
+		ImagePlatform:        "darwin/arm64",
+		RequiredLabels:       map[string]string{"zone": "a"},
+		RequiredCapabilities: []string{"ram-overlay"},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -629,6 +645,18 @@ func TestStoreListSandboxesFiltered(t *testing.T) {
 	}
 	if got := store.ListSandboxesFiltered(SandboxListFilter{Namespace: "team-a", ImageRef: "base:v2"}); len(got) != 1 || got[0].ID != "job-pending" {
 		t.Fatalf("base:v2 sandboxes = %+v, want job-pending", got)
+	}
+	if got := store.ListSandboxesFiltered(SandboxListFilter{Namespace: "team-a", ImageManifestDigest: "sha256:ready"}); len(got) != 1 || got[0].ID != "job-ready" {
+		t.Fatalf("manifest digest sandboxes = %+v, want job-ready", got)
+	}
+	if got := store.ListSandboxesFiltered(SandboxListFilter{Namespace: "team-a", ImageDigestRef: "ghcr.io/me/base@sha256:ready"}); len(got) != 1 || got[0].ID != "job-ready" {
+		t.Fatalf("digest ref sandboxes = %+v, want job-ready", got)
+	}
+	if got := store.ListSandboxesFiltered(SandboxListFilter{Namespace: "team-a", ImagePlatform: "darwin/arm64"}); len(got) != 1 || got[0].ID != "job-ready" {
+		t.Fatalf("platform sandboxes = %+v, want job-ready", got)
+	}
+	if got := store.ListSandboxesFiltered(SandboxListFilter{Namespace: "team-a", RequiredCapability: "ram-overlay"}); len(got) != 1 || got[0].ID != "job-ready" {
+		t.Fatalf("capability sandboxes = %+v, want job-ready", got)
 	}
 	if got := store.ListSandboxesFiltered(SandboxListFilter{Namespace: "team-a", HasOpenAssignments: &hasOpen}); len(got) != 1 || got[0].ID != "job-ready" {
 		t.Fatalf("open assignment sandboxes = %+v, want job-ready", got)
@@ -7258,9 +7286,22 @@ func TestHandlerSandboxListFilters(t *testing.T) {
 	defer server.Close()
 
 	var record HostRecord
-	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1", "base:v2"}, Capacity: Capacity{MaxVMs: 4}}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{
+		ID:           "worker-1",
+		Capabilities: []string{"ram-overlay"},
+		ImageRefs:    []string{"base:v1", "base:v2"},
+		ImageDetails: []WorkerImage{{Ref: "base:v1", SourceManifestDigest: "sha256:ready"}},
+		Capacity:     Capacity{MaxVMs: 4},
+	}, &record)
 	var ready SandboxStatus
-	postJSON(t, server.URL+"/v1/sandboxes", SandboxRequest{ID: "job-ready", ImageRef: "base:v1"}, &ready)
+	postJSON(t, server.URL+"/v1/sandboxes", SandboxRequest{
+		ID:                   "job-ready",
+		ImageRef:             "base:v1",
+		ImageManifestDigest:  "sha256:ready",
+		ImageDigestRef:       "ghcr.io/me/base@sha256:ready",
+		ImagePlatform:        "darwin/arm64",
+		RequiredCapabilities: []string{"ram-overlay"},
+	}, &ready)
 	var leased Assignment
 	getJSON(t, server.URL+"/v1/workers/worker-1/assignments", &leased)
 	postJSON(t, server.URL+"/v1/workers/worker-1/reports", WorkerReport{AssignmentID: leased.ID, Status: "ready"}, &record)
@@ -7281,6 +7322,22 @@ func TestHandlerSandboxListFilters(t *testing.T) {
 	getJSON(t, server.URL+"/v1/sandboxes?image_ref=base:v2", &list)
 	if len(list.Sandboxes) != 1 || list.Sandboxes[0].ID != "job-pending" {
 		t.Fatalf("base:v2 sandboxes = %+v, want job-pending", list.Sandboxes)
+	}
+	getJSON(t, server.URL+"/v1/sandboxes?image_manifest_digest=sha256:ready", &list)
+	if len(list.Sandboxes) != 1 || list.Sandboxes[0].ID != "job-ready" {
+		t.Fatalf("manifest digest sandboxes = %+v, want job-ready", list.Sandboxes)
+	}
+	getJSON(t, server.URL+"/v1/sandboxes?image_digest_ref=ghcr.io/me/base@sha256:ready", &list)
+	if len(list.Sandboxes) != 1 || list.Sandboxes[0].ID != "job-ready" {
+		t.Fatalf("digest ref sandboxes = %+v, want job-ready", list.Sandboxes)
+	}
+	getJSON(t, server.URL+"/v1/sandboxes?image_platform=darwin/arm64", &list)
+	if len(list.Sandboxes) != 1 || list.Sandboxes[0].ID != "job-ready" {
+		t.Fatalf("platform sandboxes = %+v, want job-ready", list.Sandboxes)
+	}
+	getJSON(t, server.URL+"/v1/workers/worker-1/sandboxes?required_capability=ram-overlay", &list)
+	if len(list.Sandboxes) != 1 || list.Sandboxes[0].ID != "job-ready" {
+		t.Fatalf("capability sandboxes = %+v, want job-ready", list.Sandboxes)
 	}
 	getJSON(t, server.URL+"/v1/sandboxes?worker_id=worker-1&limit=1", &list)
 	if len(list.Sandboxes) != 1 || list.Sandboxes[0].ID != "job-ready" || list.Count != 1 || list.Limit != 1 || list.NextOffset != 1 {

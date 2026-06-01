@@ -97,17 +97,21 @@ type SandboxStatus struct {
 }
 
 type SandboxListOptions struct {
-	Namespace          string
-	Status             string
-	WorkerID           string
-	ImageRef           string
-	HasOpenAssignments *bool
-	Retrying           *bool
-	HasCleanup         *bool
-	HasLease           *bool
-	LeaseHolder        string
-	Offset             int
-	Limit              int
+	Namespace           string
+	Status              string
+	WorkerID            string
+	ImageRef            string
+	ImageManifestDigest string
+	ImageDigestRef      string
+	ImagePlatform       string
+	RequiredCapability  string
+	HasOpenAssignments  *bool
+	Retrying            *bool
+	HasCleanup          *bool
+	HasLease            *bool
+	LeaseHolder         string
+	Offset              int
+	Limit               int
 }
 
 type SandboxListResult struct {
@@ -977,21 +981,25 @@ type SandboxMeteringOptions struct {
 }
 
 type WorkerSandboxListOptions struct {
-	FleetURL           string
-	APIKey             string
-	ID                 string
-	Namespace          string
-	Status             string
-	ImageRef           string
-	HasOpenAssignments *bool
-	Retrying           *bool
-	HasCleanup         *bool
-	HasLease           *bool
-	LeaseHolder        string
-	Offset             int
-	Limit              int
-	Timeout            time.Duration
-	HTTP               *http.Client
+	FleetURL            string
+	APIKey              string
+	ID                  string
+	Namespace           string
+	Status              string
+	ImageRef            string
+	ImageManifestDigest string
+	ImageDigestRef      string
+	ImagePlatform       string
+	RequiredCapability  string
+	HasOpenAssignments  *bool
+	Retrying            *bool
+	HasCleanup          *bool
+	HasLease            *bool
+	LeaseHolder         string
+	Offset              int
+	Limit               int
+	Timeout             time.Duration
+	HTTP                *http.Client
 }
 
 type WorkerListResult struct {
@@ -2867,6 +2875,18 @@ func ListWorkerSandboxes(ctx context.Context, opts WorkerSandboxListOptions) (Sa
 		"status":    opts.Status,
 		"image_ref": opts.ImageRef,
 	}
+	if digest := strings.TrimSpace(opts.ImageManifestDigest); digest != "" {
+		query["image_manifest_digest"] = digest
+	}
+	if ref := strings.TrimSpace(opts.ImageDigestRef); ref != "" {
+		query["image_digest_ref"] = ref
+	}
+	if platform := strings.TrimSpace(opts.ImagePlatform); platform != "" {
+		query["image_platform"] = platform
+	}
+	if capability := strings.TrimSpace(opts.RequiredCapability); capability != "" {
+		query["required_capability"] = capability
+	}
 	if opts.HasOpenAssignments != nil {
 		query["has_open_assignments"] = strconv.FormatBool(*opts.HasOpenAssignments)
 	}
@@ -3531,6 +3551,18 @@ func sandboxMatchesListOptions(status SandboxStatus, options SandboxListOptions)
 	if options.ImageRef != "" && status.ImageRef != options.ImageRef {
 		return false
 	}
+	if digest := strings.TrimSpace(options.ImageManifestDigest); digest != "" && status.ImageManifestDigest != digest {
+		return false
+	}
+	if ref := strings.TrimSpace(options.ImageDigestRef); ref != "" && status.ImageDigestRef != ref {
+		return false
+	}
+	if platform := strings.TrimSpace(options.ImagePlatform); platform != "" && status.ImagePlatform != platform {
+		return false
+	}
+	if capability := strings.TrimSpace(options.RequiredCapability); capability != "" && !stringSliceContains(status.RequiredCapabilities, capability) {
+		return false
+	}
 	if options.HasOpenAssignments != nil && (len(status.OpenAssignments) > 0) != *options.HasOpenAssignments {
 		return false
 	}
@@ -3565,6 +3597,18 @@ func (o SandboxListOptions) query() (map[string]string, error) {
 		"status":    o.Status,
 		"worker_id": o.WorkerID,
 		"image_ref": o.ImageRef,
+	}
+	if digest := strings.TrimSpace(o.ImageManifestDigest); digest != "" {
+		query["image_manifest_digest"] = digest
+	}
+	if ref := strings.TrimSpace(o.ImageDigestRef); ref != "" {
+		query["image_digest_ref"] = ref
+	}
+	if platform := strings.TrimSpace(o.ImagePlatform); platform != "" {
+		query["image_platform"] = platform
+	}
+	if capability := strings.TrimSpace(o.RequiredCapability); capability != "" {
+		query["required_capability"] = capability
 	}
 	if o.HasOpenAssignments != nil {
 		query["has_open_assignments"] = strconv.FormatBool(*o.HasOpenAssignments)
@@ -4597,6 +4641,15 @@ func cloneStrings(in []string) []string {
 	out := make([]string, len(in))
 	copy(out, in)
 	return out
+}
+
+func stringSliceContains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func nonzeroCapacity(c Capacity) bool {

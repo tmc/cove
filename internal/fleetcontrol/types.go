@@ -873,17 +873,21 @@ type SandboxStatus struct {
 }
 
 type SandboxListFilter struct {
-	Namespace          string `json:"namespace,omitempty"`
-	Status             string `json:"status,omitempty"`
-	WorkerID           string `json:"worker_id,omitempty"`
-	ImageRef           string `json:"image_ref,omitempty"`
-	HasOpenAssignments *bool  `json:"has_open_assignments,omitempty"`
-	Retrying           *bool  `json:"retrying,omitempty"`
-	HasCleanup         *bool  `json:"has_cleanup,omitempty"`
-	HasLease           *bool  `json:"has_lease,omitempty"`
-	LeaseHolder        string `json:"lease_holder,omitempty"`
-	Offset             int    `json:"offset,omitempty"`
-	Limit              int    `json:"limit,omitempty"`
+	Namespace           string `json:"namespace,omitempty"`
+	Status              string `json:"status,omitempty"`
+	WorkerID            string `json:"worker_id,omitempty"`
+	ImageRef            string `json:"image_ref,omitempty"`
+	ImageManifestDigest string `json:"image_manifest_digest,omitempty"`
+	ImageDigestRef      string `json:"image_digest_ref,omitempty"`
+	ImagePlatform       string `json:"image_platform,omitempty"`
+	RequiredCapability  string `json:"required_capability,omitempty"`
+	HasOpenAssignments  *bool  `json:"has_open_assignments,omitempty"`
+	Retrying            *bool  `json:"retrying,omitempty"`
+	HasCleanup          *bool  `json:"has_cleanup,omitempty"`
+	HasLease            *bool  `json:"has_lease,omitempty"`
+	LeaseHolder         string `json:"lease_holder,omitempty"`
+	Offset              int    `json:"offset,omitempty"`
+	Limit               int    `json:"limit,omitempty"`
 }
 
 type SandboxListResult struct {

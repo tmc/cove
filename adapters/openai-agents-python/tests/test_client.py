@@ -918,6 +918,10 @@ def test_fleet_client_scoped_observability() -> None:
             namespace="team-a",
             status="ready",
             image_ref="base:v1",
+            image_manifest_digest="sha256:ready",
+            image_digest_ref="ghcr.io/me/base@sha256:ready",
+            image_platform="darwin/arm64",
+            required_capability="ram-overlay",
             has_open_assignments=True,
             retrying=True,
             has_cleanup=True,
@@ -928,6 +932,10 @@ def test_fleet_client_scoped_observability() -> None:
         )
         assert sandboxes["count"] == 1
         assert sandboxes["sandboxes"][0]["worker_id"] == "worker-1"
+        assert server.requests[-1]["query"]["image_manifest_digest"] == ["sha256:ready"]
+        assert server.requests[-1]["query"]["image_digest_ref"] == ["ghcr.io/me/base@sha256:ready"]
+        assert server.requests[-1]["query"]["image_platform"] == ["darwin/arm64"]
+        assert server.requests[-1]["query"]["required_capability"] == ["ram-overlay"]
         assert server.requests[-1]["query"]["has_open_assignments"] == ["true"]
         assert server.requests[-1]["query"]["retrying"] == ["true"]
         assert server.requests[-1]["query"]["has_cleanup"] == ["true"]
@@ -1517,6 +1525,10 @@ def test_fleet_client_list_filters() -> None:
             status="ready",
             worker_id="worker-1",
             image_ref="base:v1",
+            image_manifest_digest="sha256:ready",
+            image_digest_ref="ghcr.io/me/base@sha256:ready",
+            image_platform="darwin/arm64",
+            required_capability="ram-overlay",
             has_open_assignments=True,
             retrying=True,
             has_cleanup=True,
@@ -1534,6 +1546,10 @@ def test_fleet_client_list_filters() -> None:
         assert query["status"] == ["ready"]
         assert query["worker_id"] == ["worker-1"]
         assert query["image_ref"] == ["base:v1"]
+        assert query["image_manifest_digest"] == ["sha256:ready"]
+        assert query["image_digest_ref"] == ["ghcr.io/me/base@sha256:ready"]
+        assert query["image_platform"] == ["darwin/arm64"]
+        assert query["required_capability"] == ["ram-overlay"]
         assert query["has_open_assignments"] == ["true"]
         assert query["retrying"] == ["true"]
         assert query["has_cleanup"] == ["true"]

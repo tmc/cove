@@ -141,7 +141,10 @@ delegates the disk/runtime work to `tart` or `vetu`.
    warm-pool, sandbox, and image-preparation
    requests can carry or resolve the selected digest from an offline
    `manifest_bundle`, so stale mutable refs are rejected or force-refreshed
-   before hosted work lands.
+   before hosted work lands. Hosted sandbox inventory can also filter by
+   manifest digest, digest ref, platform, and required capability, so
+   operators can find exactly which live handles depend on an immutable image
+   or RAM-overlay-class worker capability.
 
 ## Where competitors still lead
 

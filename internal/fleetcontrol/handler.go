@@ -830,10 +830,14 @@ func handleSandboxes(w http.ResponseWriter, r *http.Request, store *Store) {
 
 func sandboxListFilterFromRequest(r *http.Request, namespace string) (SandboxListFilter, error) {
 	filter := SandboxListFilter{
-		Namespace: namespace,
-		Status:    strings.TrimSpace(r.URL.Query().Get("status")),
-		WorkerID:  strings.TrimSpace(r.URL.Query().Get("worker_id")),
-		ImageRef:  strings.TrimSpace(r.URL.Query().Get("image_ref")),
+		Namespace:           namespace,
+		Status:              strings.TrimSpace(r.URL.Query().Get("status")),
+		WorkerID:            strings.TrimSpace(r.URL.Query().Get("worker_id")),
+		ImageRef:            strings.TrimSpace(r.URL.Query().Get("image_ref")),
+		ImageManifestDigest: strings.TrimSpace(r.URL.Query().Get("image_manifest_digest")),
+		ImageDigestRef:      strings.TrimSpace(r.URL.Query().Get("image_digest_ref")),
+		ImagePlatform:       strings.TrimSpace(r.URL.Query().Get("image_platform")),
+		RequiredCapability:  strings.TrimSpace(r.URL.Query().Get("required_capability")),
 	}
 	hasOpen, err := sandboxListBoolFilterFromRequest(r, "sandbox")
 	if err != nil {
@@ -1761,10 +1765,14 @@ func handleWorkerSandboxes(w http.ResponseWriter, r *http.Request, store *Store,
 
 func workerSandboxesFilterFromRequest(r *http.Request, namespace, id string) (SandboxListFilter, error) {
 	filter := SandboxListFilter{
-		Namespace: namespace,
-		Status:    strings.TrimSpace(r.URL.Query().Get("status")),
-		WorkerID:  id,
-		ImageRef:  strings.TrimSpace(r.URL.Query().Get("image_ref")),
+		Namespace:           namespace,
+		Status:              strings.TrimSpace(r.URL.Query().Get("status")),
+		WorkerID:            id,
+		ImageRef:            strings.TrimSpace(r.URL.Query().Get("image_ref")),
+		ImageManifestDigest: strings.TrimSpace(r.URL.Query().Get("image_manifest_digest")),
+		ImageDigestRef:      strings.TrimSpace(r.URL.Query().Get("image_digest_ref")),
+		ImagePlatform:       strings.TrimSpace(r.URL.Query().Get("image_platform")),
+		RequiredCapability:  strings.TrimSpace(r.URL.Query().Get("required_capability")),
 	}
 	hasOpen, err := sandboxListBoolFilterFromRequest(r, "worker sandboxes")
 	if err != nil {

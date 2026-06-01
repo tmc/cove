@@ -1856,6 +1856,10 @@ func (s *Store) ListSandboxesPage(filter SandboxListFilter) SandboxListResult {
 	filter.Status = strings.TrimSpace(filter.Status)
 	filter.WorkerID = strings.TrimSpace(filter.WorkerID)
 	filter.ImageRef = strings.TrimSpace(filter.ImageRef)
+	filter.ImageManifestDigest = strings.TrimSpace(filter.ImageManifestDigest)
+	filter.ImageDigestRef = strings.TrimSpace(filter.ImageDigestRef)
+	filter.ImagePlatform = strings.TrimSpace(filter.ImagePlatform)
+	filter.RequiredCapability = strings.TrimSpace(filter.RequiredCapability)
 	filter.LeaseHolder = strings.TrimSpace(filter.LeaseHolder)
 	if filter.Offset < 0 {
 		filter.Offset = 0
@@ -1883,6 +1887,18 @@ func (s *Store) ListSandboxesPage(filter SandboxListFilter) SandboxListResult {
 			continue
 		}
 		if filter.ImageRef != "" && sandbox.ImageRef != filter.ImageRef {
+			continue
+		}
+		if filter.ImageManifestDigest != "" && sandbox.ImageManifestDigest != filter.ImageManifestDigest {
+			continue
+		}
+		if filter.ImageDigestRef != "" && sandbox.ImageDigestRef != filter.ImageDigestRef {
+			continue
+		}
+		if filter.ImagePlatform != "" && sandbox.ImagePlatform != filter.ImagePlatform {
+			continue
+		}
+		if filter.RequiredCapability != "" && !containsString(sandbox.RequiredCapabilities, filter.RequiredCapability) {
 			continue
 		}
 		if filter.HasOpenAssignments != nil && (len(sandbox.OpenAssignments) > 0) != *filter.HasOpenAssignments {
