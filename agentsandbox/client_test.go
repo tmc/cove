@@ -1088,16 +1088,18 @@ func TestCloudClientIdentityBindings(t *testing.T) {
 func TestCloudClientScopedObservability(t *testing.T) {
 	server := newSDKFleetServer(t)
 	ctx := context.Background()
+	hasOpen := true
 	sandboxes, err := ListWorkerSandboxes(ctx, WorkerSandboxListOptions{
-		FleetURL:  server.URL,
-		APIKey:    "secret",
-		ID:        "worker-1",
-		Namespace: "team-a",
-		Status:    "ready",
-		ImageRef:  "base:v1",
-		Offset:    1,
-		Limit:     2,
-		Timeout:   time.Second,
+		FleetURL:           server.URL,
+		APIKey:             "secret",
+		ID:                 "worker-1",
+		Namespace:          "team-a",
+		Status:             "ready",
+		ImageRef:           "base:v1",
+		HasOpenAssignments: &hasOpen,
+		Offset:             1,
+		Limit:              2,
+		Timeout:            time.Second,
 	})
 	if err != nil {
 		t.Fatalf("ListWorkerSandboxes: %v", err)
@@ -1238,7 +1240,7 @@ func TestCloudClientScopedObservability(t *testing.T) {
 	if !equalStringSlices(paths, wantPaths) {
 		t.Fatalf("paths = %+v, want %+v", paths, wantPaths)
 	}
-	if query := server.requests[0].query; query.Get("namespace") != "team-a" || query.Get("status") != "ready" || query.Get("image_ref") != "base:v1" || query.Get("offset") != "1" || query.Get("limit") != "2" {
+	if query := server.requests[0].query; query.Get("namespace") != "team-a" || query.Get("status") != "ready" || query.Get("image_ref") != "base:v1" || query.Get("has_open_assignments") != "true" || query.Get("offset") != "1" || query.Get("limit") != "2" {
 		t.Fatalf("worker sandboxes query = %q", query.Encode())
 	}
 	if query := server.requests[1].query; query.Get("actor") != "service-account:ci" || query.Get("action") != "assignment.create" || query.Get("target_type") != "assignment" || query.Get("target_id") != "assignment-1" || query.Get("sandbox_id") != "job-1" || query.Get("offset") != "1" || query.Get("limit") != "2" {
@@ -1890,6 +1892,7 @@ func TestCloudClientPassesLeaseHolderToMutations(t *testing.T) {
 func TestCloudClientListFilters(t *testing.T) {
 	server := newSDKFleetServer(t)
 	ctx := context.Background()
+	hasOpen := true
 	client, err := NewClient(ClientOptions{
 		Provider:  ProviderCloud,
 		FleetURL:  server.URL,
@@ -1901,11 +1904,12 @@ func TestCloudClientListFilters(t *testing.T) {
 		t.Fatal(err)
 	}
 	page, err := client.ListPage(ctx, SandboxListOptions{
-		Status:   "ready",
-		WorkerID: "worker-1",
-		ImageRef: "base:v1",
-		Offset:   2,
-		Limit:    5,
+		Status:             "ready",
+		WorkerID:           "worker-1",
+		ImageRef:           "base:v1",
+		HasOpenAssignments: &hasOpen,
+		Offset:             2,
+		Limit:              5,
 	})
 	if err != nil {
 		t.Fatalf("ListPage filtered: %v", err)
@@ -1918,7 +1922,7 @@ func TestCloudClientListFilters(t *testing.T) {
 		t.Fatalf("ListPage metadata = %+v, want offset 2 limit 5 count 1", page)
 	}
 	query := server.requests[len(server.requests)-1].query
-	if query.Get("namespace") != "team-a" || query.Get("status") != "ready" || query.Get("worker_id") != "worker-1" || query.Get("image_ref") != "base:v1" || query.Get("offset") != "2" || query.Get("limit") != "5" {
+	if query.Get("namespace") != "team-a" || query.Get("status") != "ready" || query.Get("worker_id") != "worker-1" || query.Get("image_ref") != "base:v1" || query.Get("has_open_assignments") != "true" || query.Get("offset") != "2" || query.Get("limit") != "5" {
 		t.Fatalf("filtered list query = %q", query.Encode())
 	}
 	if _, err := client.List(ctx, SandboxListOptions{Limit: -1}); err == nil || !strings.Contains(err.Error(), "limit must be non-negative") {

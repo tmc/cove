@@ -873,12 +873,13 @@ type SandboxStatus struct {
 }
 
 type SandboxListFilter struct {
-	Namespace string `json:"namespace,omitempty"`
-	Status    string `json:"status,omitempty"`
-	WorkerID  string `json:"worker_id,omitempty"`
-	ImageRef  string `json:"image_ref,omitempty"`
-	Offset    int    `json:"offset,omitempty"`
-	Limit     int    `json:"limit,omitempty"`
+	Namespace          string `json:"namespace,omitempty"`
+	Status             string `json:"status,omitempty"`
+	WorkerID           string `json:"worker_id,omitempty"`
+	ImageRef           string `json:"image_ref,omitempty"`
+	HasOpenAssignments *bool  `json:"has_open_assignments,omitempty"`
+	Offset             int    `json:"offset,omitempty"`
+	Limit              int    `json:"limit,omitempty"`
 }
 
 type SandboxListResult struct {

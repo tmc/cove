@@ -1884,6 +1884,9 @@ func (s *Store) ListSandboxesPage(filter SandboxListFilter) SandboxListResult {
 		if filter.ImageRef != "" && sandbox.ImageRef != filter.ImageRef {
 			continue
 		}
+		if filter.HasOpenAssignments != nil && (len(sandbox.OpenAssignments) > 0) != *filter.HasOpenAssignments {
+			continue
+		}
 		if offset < filter.Offset {
 			offset++
 			continue

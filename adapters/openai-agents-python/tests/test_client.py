@@ -918,11 +918,13 @@ def test_fleet_client_scoped_observability() -> None:
             namespace="team-a",
             status="ready",
             image_ref="base:v1",
+            has_open_assignments=True,
             offset=1,
             limit=2,
         )
         assert sandboxes["count"] == 1
         assert sandboxes["sandboxes"][0]["worker_id"] == "worker-1"
+        assert server.requests[-1]["query"]["has_open_assignments"] == ["true"]
         worker_events = CoveFleetClient.list_worker_events(
             fleet_url=server.url,
             api_key="secret",
@@ -1503,7 +1505,14 @@ def test_fleet_client_list_filters() -> None:
     server.start()
     try:
         client = CoveFleetClient(sandbox_id="job-1", fleet_url=server.url, api_key="secret", namespace="team-a")
-        page = client.list_page(status="ready", worker_id="worker-1", image_ref="base:v1", offset=2, limit=5)
+        page = client.list_page(
+            status="ready",
+            worker_id="worker-1",
+            image_ref="base:v1",
+            has_open_assignments=True,
+            offset=2,
+            limit=5,
+        )
         assert page["sandboxes"][0]["id"] == "job-1"
         assert page["count"] == 1
         assert page["offset"] == 2
@@ -1513,6 +1522,7 @@ def test_fleet_client_list_filters() -> None:
         assert query["status"] == ["ready"]
         assert query["worker_id"] == ["worker-1"]
         assert query["image_ref"] == ["base:v1"]
+        assert query["has_open_assignments"] == ["true"]
         assert query["offset"] == ["2"]
         assert query["limit"] == ["5"]
 
@@ -1521,10 +1531,12 @@ def test_fleet_client_list_filters() -> None:
             api_key="secret",
             namespace="team-a",
             status="ready",
+            has_open_assignments=False,
             limit=1,
         )
         assert listed[0]["id"] == "job-1"
         assert server.requests[-1]["query"]["status"] == ["ready"]
+        assert server.requests[-1]["query"]["has_open_assignments"] == ["false"]
         assert server.requests[-1]["query"]["limit"] == ["1"]
 
         with pytest.raises(ValueError, match="limit must be non-negative"):

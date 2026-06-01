@@ -97,12 +97,13 @@ type SandboxStatus struct {
 }
 
 type SandboxListOptions struct {
-	Namespace string
-	Status    string
-	WorkerID  string
-	ImageRef  string
-	Offset    int
-	Limit     int
+	Namespace          string
+	Status             string
+	WorkerID           string
+	ImageRef           string
+	HasOpenAssignments *bool
+	Offset             int
+	Limit              int
 }
 
 type SandboxListResult struct {
@@ -972,16 +973,17 @@ type SandboxMeteringOptions struct {
 }
 
 type WorkerSandboxListOptions struct {
-	FleetURL  string
-	APIKey    string
-	ID        string
-	Namespace string
-	Status    string
-	ImageRef  string
-	Offset    int
-	Limit     int
-	Timeout   time.Duration
-	HTTP      *http.Client
+	FleetURL           string
+	APIKey             string
+	ID                 string
+	Namespace          string
+	Status             string
+	ImageRef           string
+	HasOpenAssignments *bool
+	Offset             int
+	Limit              int
+	Timeout            time.Duration
+	HTTP               *http.Client
 }
 
 type WorkerListResult struct {
@@ -2857,6 +2859,9 @@ func ListWorkerSandboxes(ctx context.Context, opts WorkerSandboxListOptions) (Sa
 		"status":    opts.Status,
 		"image_ref": opts.ImageRef,
 	}
+	if opts.HasOpenAssignments != nil {
+		query["has_open_assignments"] = strconv.FormatBool(*opts.HasOpenAssignments)
+	}
 	if opts.Offset > 0 {
 		query["offset"] = strconv.Itoa(opts.Offset)
 	}
@@ -3506,6 +3511,9 @@ func sandboxMatchesListOptions(status SandboxStatus, options SandboxListOptions)
 	if options.ImageRef != "" && status.ImageRef != options.ImageRef {
 		return false
 	}
+	if options.HasOpenAssignments != nil && (len(status.OpenAssignments) > 0) != *options.HasOpenAssignments {
+		return false
+	}
 	return true
 }
 
@@ -3521,6 +3529,9 @@ func (o SandboxListOptions) query() (map[string]string, error) {
 		"status":    o.Status,
 		"worker_id": o.WorkerID,
 		"image_ref": o.ImageRef,
+	}
+	if o.HasOpenAssignments != nil {
+		query["has_open_assignments"] = strconv.FormatBool(*o.HasOpenAssignments)
 	}
 	if o.Offset > 0 {
 		query["offset"] = strconv.Itoa(o.Offset)

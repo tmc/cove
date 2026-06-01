@@ -612,6 +612,11 @@ func TestStoreListSandboxesFiltered(t *testing.T) {
 	if _, err := store.CreateSandbox(SandboxRequest{Namespace: "team-b", ID: "job-other", ImageRef: "base:v1", RequiredLabels: map[string]string{"zone": "a"}}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := store.ExecSandbox("job-ready", SandboxExecRequest{Command: []string{"sleep", "60"}}); err != nil {
+		t.Fatal(err)
+	}
+	hasOpen := true
+	hasNoOpen := false
 
 	if got := store.ListSandboxesFiltered(SandboxListFilter{Namespace: "team-a"}); len(got) != 2 {
 		t.Fatalf("team-a sandboxes = %+v, want 2", got)
@@ -624,6 +629,12 @@ func TestStoreListSandboxesFiltered(t *testing.T) {
 	}
 	if got := store.ListSandboxesFiltered(SandboxListFilter{Namespace: "team-a", ImageRef: "base:v2"}); len(got) != 1 || got[0].ID != "job-pending" {
 		t.Fatalf("base:v2 sandboxes = %+v, want job-pending", got)
+	}
+	if got := store.ListSandboxesFiltered(SandboxListFilter{Namespace: "team-a", HasOpenAssignments: &hasOpen}); len(got) != 1 || got[0].ID != "job-ready" {
+		t.Fatalf("open assignment sandboxes = %+v, want job-ready", got)
+	}
+	if got := store.ListSandboxesFiltered(SandboxListFilter{Namespace: "team-a", HasOpenAssignments: &hasNoOpen}); len(got) != 1 || got[0].ID != "job-pending" {
+		t.Fatalf("no open assignment sandboxes = %+v, want job-pending", got)
 	}
 	if got := store.ListSandboxesFiltered(SandboxListFilter{Namespace: "team-a", Limit: 1}); len(got) != 1 || got[0].ID != "job-ready" {
 		t.Fatalf("limited sandboxes = %+v, want first team-a sandbox", got)
@@ -7148,6 +7159,17 @@ func TestHandlerSandboxWorkTimeoutBecomesRunTimeout(t *testing.T) {
 		if !equalStrings(openAssignmentIDs(tc.got.OpenAssignments), wantOpen) {
 			t.Fatalf("%s open assignments = %+v, want %+v", tc.name, tc.got.OpenAssignments, wantOpen)
 		}
+	}
+	getJSON(t, server.URL+"/v1/sandboxes?has_open_assignments=true", &list)
+	if len(list.Sandboxes) != 1 || list.Sandboxes[0].ID != "job-1" {
+		t.Fatalf("open assignment sandbox filter = %+v, want job-1", list)
+	}
+	getJSON(t, server.URL+"/v1/workers/worker-1/sandboxes?has_open_assignments=false", &list)
+	if len(list.Sandboxes) != 0 {
+		t.Fatalf("worker no-open sandbox filter = %+v, want none", list)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/sandboxes?has_open_assignments=bad", ""); code != http.StatusBadRequest {
+		t.Fatalf("bad open-assignment filter status = %d, want 400", code)
 	}
 	before := len(store.ListAssignments())
 	if code := postJSONStatus(t, server.URL+"/v1/sandboxes/job-1/exec", "", SandboxExecRequest{Command: []string{"true"}, Timeout: "bad"}); code != http.StatusBadRequest {

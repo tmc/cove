@@ -835,6 +835,11 @@ func sandboxListFilterFromRequest(r *http.Request, namespace string) (SandboxLis
 		WorkerID:  strings.TrimSpace(r.URL.Query().Get("worker_id")),
 		ImageRef:  strings.TrimSpace(r.URL.Query().Get("image_ref")),
 	}
+	hasOpen, err := sandboxListBoolFilterFromRequest(r, "sandbox")
+	if err != nil {
+		return SandboxListFilter{}, err
+	}
+	filter.HasOpenAssignments = hasOpen
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		limit, err := strconv.Atoi(raw)
 		if err != nil || limit < 0 {
@@ -1745,6 +1750,11 @@ func workerSandboxesFilterFromRequest(r *http.Request, namespace, id string) (Sa
 		WorkerID:  id,
 		ImageRef:  strings.TrimSpace(r.URL.Query().Get("image_ref")),
 	}
+	hasOpen, err := sandboxListBoolFilterFromRequest(r, "worker sandboxes")
+	if err != nil {
+		return SandboxListFilter{}, err
+	}
+	filter.HasOpenAssignments = hasOpen
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		limit, err := strconv.Atoi(raw)
 		if err != nil || limit < 0 {
@@ -1760,6 +1770,21 @@ func workerSandboxesFilterFromRequest(r *http.Request, namespace, id string) (Sa
 		filter.Offset = offset
 	}
 	return filter, nil
+}
+
+func sandboxListBoolFilterFromRequest(r *http.Request, name string) (*bool, error) {
+	raw := strings.TrimSpace(r.URL.Query().Get("has_open_assignments"))
+	if raw == "" {
+		raw = strings.TrimSpace(r.URL.Query().Get("open_assignments"))
+	}
+	if raw == "" {
+		return nil, nil
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return nil, fmt.Errorf("%s has_open_assignments must be true or false", name)
+	}
+	return &value, nil
 }
 
 func handleWorkerAssignments(w http.ResponseWriter, r *http.Request, store *Store, id string) {
