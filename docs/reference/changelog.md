@@ -142,6 +142,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `cove image bundle verify <dir> [-json]` now verifies saved manifest bundles
   without registry access, checking summary schema, file digests, index coverage,
   selected-child consistency, and parsed child manifest metadata.
+- `cove pull --dry-run --manifest-bundle <dir>` now consumes a verified offline
+  manifest bundle as a registry-free pull-planning source, including
+  `--platform` selection across saved index children.
 - `cove pull --platform <os/arch[/variant]>` and
   `cove image inspect -remote -platform <os/arch[/variant]>` now select an OCI
   image-index or Docker manifest-list child explicitly, and pull dry-runs report

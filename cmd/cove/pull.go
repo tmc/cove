@@ -35,6 +35,7 @@ type pullOptions struct {
 	AllPlatforms     bool
 	Resume           bool
 	ManifestPath     string
+	ManifestBundle   string
 	ManifestOut      string
 	IndexOut         string
 	ManifestDir      string
@@ -53,6 +54,7 @@ type pullPlan struct {
 	ManifestRaw          []byte
 	ManifestDigest       string
 	DigestRef            string
+	ManifestBundle       string
 	ManifestOut          string
 	IndexOut             string
 	ManifestDir          string
@@ -92,6 +94,7 @@ type pullDryRunOutput struct {
 	ManifestProvided  bool                       `json:"manifest_provided"`
 	ManifestDigest    string                     `json:"manifest_digest,omitempty"`
 	DigestRef         string                     `json:"digest_ref,omitempty"`
+	ManifestBundle    string                     `json:"manifest_bundle,omitempty"`
 	ManifestOut       string                     `json:"manifest_out,omitempty"`
 	IndexOut          string                     `json:"index_out,omitempty"`
 	ManifestDir       string                     `json:"manifest_dir,omitempty"`
@@ -162,32 +165,47 @@ func handlePull(env commandEnv, args []string) error {
 	if opts.FetchManifest && opts.ManifestPath != "" {
 		return fmt.Errorf("cove pull: --fetch-manifest cannot be used with --manifest")
 	}
+	if opts.ManifestBundle != "" && !opts.DryRun {
+		return fmt.Errorf("cove pull: --manifest-bundle requires --dry-run")
+	}
+	if opts.ManifestBundle != "" && opts.FetchManifest {
+		return fmt.Errorf("cove pull: --manifest-bundle cannot be used with --fetch-manifest")
+	}
+	if opts.ManifestBundle != "" && opts.ManifestPath != "" {
+		return fmt.Errorf("cove pull: --manifest-bundle cannot be used with --manifest")
+	}
 	if opts.VerifyBlobs && !opts.DryRun {
 		return fmt.Errorf("cove pull: --verify-blobs requires --dry-run")
 	}
-	if opts.VerifyBlobs && !opts.FetchManifest && opts.ManifestPath == "" {
-		return fmt.Errorf("cove pull: --verify-blobs requires --fetch-manifest or --manifest")
+	if opts.VerifyBlobs && opts.ManifestBundle != "" {
+		return fmt.Errorf("cove pull: --verify-blobs cannot be used with --manifest-bundle")
+	}
+	if opts.VerifyBlobs && !opts.FetchManifest && opts.ManifestPath == "" && opts.ManifestBundle == "" {
+		return fmt.Errorf("cove pull: --verify-blobs requires --fetch-manifest, --manifest, or --manifest-bundle")
 	}
 	if opts.AllPlatforms && !opts.DryRun {
 		return fmt.Errorf("cove pull: --all-platforms requires --dry-run")
 	}
-	if opts.AllPlatforms && !opts.FetchManifest {
-		return fmt.Errorf("cove pull: --all-platforms requires --fetch-manifest")
+	if opts.AllPlatforms && !opts.FetchManifest && opts.ManifestBundle == "" {
+		return fmt.Errorf("cove pull: --all-platforms requires --fetch-manifest or --manifest-bundle")
 	}
 	if opts.ManifestOut != "" && !opts.DryRun {
 		return fmt.Errorf("cove pull: --manifest-out requires --dry-run")
 	}
-	if opts.ManifestOut != "" && !opts.FetchManifest {
-		return fmt.Errorf("cove pull: --manifest-out requires --fetch-manifest")
+	if opts.ManifestOut != "" && !opts.FetchManifest && opts.ManifestBundle == "" {
+		return fmt.Errorf("cove pull: --manifest-out requires --fetch-manifest or --manifest-bundle")
 	}
 	if opts.IndexOut != "" && !opts.DryRun {
 		return fmt.Errorf("cove pull: --index-out requires --dry-run")
 	}
-	if opts.IndexOut != "" && !opts.FetchManifest {
-		return fmt.Errorf("cove pull: --index-out requires --fetch-manifest")
+	if opts.IndexOut != "" && !opts.FetchManifest && opts.ManifestBundle == "" {
+		return fmt.Errorf("cove pull: --index-out requires --fetch-manifest or --manifest-bundle")
 	}
 	if opts.ManifestDir != "" && !opts.DryRun {
 		return fmt.Errorf("cove pull: --manifest-dir requires --dry-run")
+	}
+	if opts.ManifestDir != "" && opts.ManifestBundle != "" {
+		return fmt.Errorf("cove pull: --manifest-dir cannot be used with --manifest-bundle")
 	}
 	if opts.ManifestDir != "" && !opts.FetchManifest {
 		return fmt.Errorf("cove pull: --manifest-dir requires --fetch-manifest")
@@ -248,6 +266,7 @@ func parsePullArgs(args []string, w io.Writer) (pullOptions, []string, error) {
 	fs.BoolVar(&opts.AllPlatforms, "all-platforms", false, "inspect every image-index child during dry-run")
 	fs.BoolVar(&opts.Resume, "resume", false, "continue an interrupted pull from disk.img.partial")
 	fs.StringVar(&opts.ManifestPath, "manifest", "", "local OCI manifest JSON instead of fetching the registry")
+	fs.StringVar(&opts.ManifestBundle, "manifest-bundle", "", "verified offline manifest bundle instead of fetching the registry")
 	fs.StringVar(&opts.ManifestOut, "manifest-out", "", "write fetched selected manifest JSON during dry-run")
 	fs.StringVar(&opts.IndexOut, "index-out", "", "write fetched index/list JSON during dry-run")
 	fs.StringVar(&opts.ManifestDir, "manifest-dir", "", "write fetched index, summary, and child manifest JSON files to directory")
@@ -264,18 +283,19 @@ func parsePullArgs(args []string, w io.Writer) (pullOptions, []string, error) {
 
 func movePullFlagsFirst(args []string) []string {
 	return moveKnownFlagsFirst(args, map[string]bool{
-		"as":             true,
-		"dry-run":        false,
-		"json":           false,
-		"fetch-manifest": false,
-		"verify-blobs":   false,
-		"all-platforms":  false,
-		"resume":         false,
-		"manifest":       true,
-		"manifest-out":   true,
-		"index-out":      true,
-		"manifest-dir":   true,
-		"platform":       true,
+		"as":              true,
+		"dry-run":         false,
+		"json":            false,
+		"fetch-manifest":  false,
+		"verify-blobs":    false,
+		"all-platforms":   false,
+		"resume":          false,
+		"manifest":        true,
+		"manifest-bundle": true,
+		"manifest-out":    true,
+		"index-out":       true,
+		"manifest-dir":    true,
+		"platform":        true,
 	})
 }
 
@@ -307,8 +327,16 @@ func buildPullPlan(refText string, opts pullOptions) (*pullPlan, error) {
 		manifestDigest     string
 		manifestRaw        []byte
 		manifestResolution ociimage.ManifestResolution
+		indexManifests     []ImageRemoteIndexManifest
+		blobAudit          *manifestBundleBlobAudit
 	)
-	if opts.ManifestPath != "" {
+	if opts.ManifestBundle != "" {
+		parsed, manifestResolution, manifestRaw, indexManifests, blobAudit, err = readPullManifestBundle(ref, opts)
+		if err != nil {
+			return nil, err
+		}
+		manifestDigest = manifestResolution.Digest
+	} else if opts.ManifestPath != "" {
 		parsed, manifestDigest, err = readPullManifest(opts.ManifestPath)
 		if err != nil {
 			return nil, err
@@ -335,11 +363,19 @@ func buildPullPlan(refText string, opts pullOptions) (*pullPlan, error) {
 		ManifestRaw:        manifestRaw,
 		ManifestDigest:     manifestDigest,
 		DigestRef:          registryDigestRef(ref, manifestDigest),
+		ManifestBundle:     opts.ManifestBundle,
 		ManifestOut:        opts.ManifestOut,
 		IndexOut:           opts.IndexOut,
 		ManifestDir:        opts.ManifestDir,
 		ManifestResolution: manifestResolution,
 		IndexDigestRef:     registryDigestRef(ref, manifestResolution.IndexDigest),
+		IndexManifests:     indexManifests,
+	}
+	if blobAudit != nil {
+		plan.BlobAudit = blobAudit.Status
+		plan.BlobDescriptors = blobAudit.Descriptors
+		plan.BlobBytes = blobAudit.Bytes
+		plan.MissingBlobs = append([]string(nil), blobAudit.Missing...)
 	}
 	if opts.DryRun {
 		if err := planPullDryRunReuse(plan, opts); err != nil {
@@ -504,6 +540,196 @@ func readPullManifest(path string) (ociimage.ParsedManifest, string, error) {
 	return out, digestData(data), nil
 }
 
+func readPullManifestBundle(ref ociimage.Reference, opts pullOptions) (ociimage.ParsedManifest, ociimage.ManifestResolution, []byte, []ImageRemoteIndexManifest, *manifestBundleBlobAudit, error) {
+	var out ociimage.ParsedManifest
+	dir := strings.TrimSpace(opts.ManifestBundle)
+	if dir == "" {
+		return out, ociimage.ManifestResolution{}, nil, nil, nil, fmt.Errorf("read manifest bundle: empty path")
+	}
+	report := VerifyImageBundle(dir)
+	if report.Verdict == imageVerifyFail {
+		return out, ociimage.ManifestResolution{}, nil, nil, nil, fmt.Errorf("read manifest bundle: verification failed: %s", imageBundleFirstFailure(report))
+	}
+	summary, err := readManifestBundleSummaryFile(dir)
+	if err != nil {
+		return out, ociimage.ManifestResolution{}, nil, nil, nil, fmt.Errorf("read manifest bundle: %w", err)
+	}
+	if err := validatePullManifestBundleRef(ref, summary); err != nil {
+		return out, ociimage.ManifestResolution{}, nil, nil, nil, err
+	}
+	indexData, index, err := readPullManifestBundleIndex(dir)
+	if err != nil {
+		return out, ociimage.ManifestResolution{}, nil, nil, nil, err
+	}
+	selected, err := selectPullManifestBundleChild(summary, opts)
+	if err != nil {
+		return out, ociimage.ManifestResolution{}, nil, nil, nil, err
+	}
+	manifestData, err := readManifestBundleData(dir, selected.Path)
+	if err != nil {
+		return out, ociimage.ManifestResolution{}, nil, nil, nil, fmt.Errorf("read manifest bundle: read selected child: %w", err)
+	}
+	var manifest ociimage.Manifest
+	if err := json.Unmarshal(manifestData, &manifest); err != nil {
+		return out, ociimage.ManifestResolution{}, nil, nil, nil, fmt.Errorf("read manifest bundle: parse selected manifest JSON: %w", err)
+	}
+	out, err = ociimage.ParseManifest(manifest)
+	if err != nil {
+		return out, ociimage.ManifestResolution{}, nil, nil, nil, fmt.Errorf("read manifest bundle: parse selected manifest: %w", err)
+	}
+	selectedDigest := strings.TrimSpace(selected.Digest)
+	if selectedDigest == "" {
+		selectedDigest = digestData(manifestData)
+	}
+	platform := parseManifestBundlePlatform(selected.Platform)
+	resolution := ociimage.ManifestResolution{
+		Digest:           selectedDigest,
+		MediaType:        manifest.MediaType,
+		ManifestData:     append([]byte(nil), manifestData...),
+		IndexDigest:      strings.TrimSpace(summary.IndexDigest),
+		IndexData:        append([]byte(nil), indexData...),
+		IndexMediaType:   index.MediaType,
+		SelectedDigest:   selectedDigest,
+		SelectedPlatform: platform,
+		IndexManifests:   index.Manifests,
+	}
+	children := manifestBundleIndexManifestSummaries(summary, selectedDigest, dir)
+	selectedAudit := summary.BlobAudit
+	if selectedDigest != strings.TrimSpace(summary.SelectedDigest) {
+		selectedAudit = selected.BlobAudit
+	}
+	if selectedAudit == nil {
+		selectedAudit = selected.BlobAudit
+	}
+	return out, resolution, manifestData, children, selectedAudit, nil
+}
+
+func imageBundleFirstFailure(report imageBundleVerifyReport) string {
+	for _, check := range report.Checks {
+		if check.Status == imageVerifyFail {
+			if check.Detail != "" {
+				return check.Name + ": " + check.Detail
+			}
+			return check.Name
+		}
+	}
+	return string(report.Verdict)
+}
+
+func validatePullManifestBundleRef(ref ociimage.Reference, summary manifestBundleSummary) error {
+	if strings.TrimSpace(summary.Ref) == "" {
+		return nil
+	}
+	source, err := ociimage.ParseReference(summary.Ref)
+	if err != nil {
+		return nil
+	}
+	if ref.Registry != source.Registry || ref.Repository != source.Repository {
+		return fmt.Errorf("read manifest bundle: ref %s does not match bundle source %s", ref.String(), summary.Ref)
+	}
+	return nil
+}
+
+func readPullManifestBundleIndex(dir string) ([]byte, ociimage.Index, error) {
+	data, err := readManifestBundleData(dir, "index.json")
+	if err != nil {
+		return nil, ociimage.Index{}, fmt.Errorf("read manifest bundle: read index: %w", err)
+	}
+	var index ociimage.Index
+	if err := json.Unmarshal(data, &index); err != nil {
+		return nil, index, fmt.Errorf("read manifest bundle: parse index: %w", err)
+	}
+	return data, index, nil
+}
+
+func readManifestBundleData(dir, rel string) ([]byte, error) {
+	clean, err := manifestBundleCleanRelPath(rel)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(filepath.Join(dir, filepath.FromSlash(clean)))
+}
+
+func selectPullManifestBundleChild(summary manifestBundleSummary, opts pullOptions) (manifestBundleChildSummary, error) {
+	wantPlatform := strings.TrimSpace(opts.Platform)
+	if opts.registryPlatform != nil {
+		wantPlatform = remotePlatformString(opts.registryPlatform)
+	}
+	if wantPlatform != "" {
+		for _, child := range summary.Children {
+			if child.Platform == wantPlatform {
+				return child, nil
+			}
+		}
+		return manifestBundleChildSummary{}, fmt.Errorf("read manifest bundle: platform %q not found", wantPlatform)
+	}
+	selectedDigest := strings.TrimSpace(summary.SelectedDigest)
+	for _, child := range summary.Children {
+		if child.Digest == selectedDigest || child.Selected {
+			return child, nil
+		}
+	}
+	return manifestBundleChildSummary{}, fmt.Errorf("read manifest bundle: selected child %q not found", selectedDigest)
+}
+
+func parseManifestBundlePlatform(value string) *ociimage.Platform {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.ContainsAny(value, " \t\n") {
+		return nil
+	}
+	platform, err := ociimage.ParsePlatform(value)
+	if err != nil {
+		return nil
+	}
+	return &platform
+}
+
+func manifestBundleIndexManifestSummaries(summary manifestBundleSummary, selectedDigest, dir string) []ImageRemoteIndexManifest {
+	if len(summary.Children) == 0 {
+		return nil
+	}
+	out := make([]ImageRemoteIndexManifest, 0, len(summary.Children))
+	for _, child := range summary.Children {
+		item := ImageRemoteIndexManifest{
+			Digest:              child.Digest,
+			MediaType:           child.MediaType,
+			Size:                child.Size,
+			Platform:            child.Platform,
+			Selected:            child.Digest != "" && child.Digest == selectedDigest,
+			Kind:                child.Kind,
+			Format:              child.Format,
+			PullPlan:            child.PullPlan,
+			DiskSize:            child.DiskSize,
+			DiskFormat:          child.DiskFormat,
+			CompressedDiskBytes: child.CompressedDiskBytes,
+			ChunkCount:          child.ChunkCount,
+			ZeroChunks:          child.ZeroChunks,
+			DiskLayerCount:      child.DiskLayerCount,
+			DiskPartCount:       child.DiskPartCount,
+			MetadataBlobs:       child.MetadataBlobs,
+			MetadataBytes:       child.MetadataBytes,
+			ConfigBytes:         child.ConfigBytes,
+			NVRAMBytes:          child.NVRAMBytes,
+			BaseManifest:        child.BaseManifest,
+			BaseChainAudit:      child.BaseChainAudit,
+			BaseChainDepth:      child.BaseChainDepth,
+			BaseChain:           append([]ImageRemoteBaseManifest(nil), child.BaseChain...),
+			Error:               child.Error,
+		}
+		if child.BlobAudit != nil {
+			item.BlobAudit = child.BlobAudit.Status
+			item.BlobDescriptors = child.BlobAudit.Descriptors
+			item.BlobBytes = child.BlobAudit.Bytes
+			item.MissingBlobs = append([]string(nil), child.BlobAudit.Missing...)
+		}
+		if data, err := readManifestBundleData(dir, child.Path); err == nil {
+			item.manifestRaw = data
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
 func fetchPullManifest(ctx context.Context, ref ociimage.Reference, opts pullOptions) (ociimage.ParsedManifest, ociimage.ManifestResolution, []byte, error) {
 	var out ociimage.ParsedManifest
 	client := pullRegistryClient(ref, opts)
@@ -594,6 +820,9 @@ func planPullDryRunBlobAudit(ctx context.Context, plan *pullPlan, opts pullOptio
 
 func planPullDryRunIndexManifests(ctx context.Context, plan *pullPlan, opts pullOptions) {
 	if plan == nil || !opts.AllPlatforms || len(plan.ManifestResolution.IndexManifests) == 0 {
+		return
+	}
+	if len(plan.IndexManifests) > 0 {
 		return
 	}
 	ctx, cancel := context.WithTimeout(ctx, pullManifestFetchTimeout)
@@ -927,6 +1156,9 @@ func printPullDryRun(w io.Writer, plan *pullPlan) {
 	if plan.DigestRef != "" {
 		fmt.Fprintf(w, "  digest ref: %s\n", plan.DigestRef)
 	}
+	if plan.ManifestBundle != "" {
+		fmt.Fprintf(w, "  manifest bundle: %s\n", plan.ManifestBundle)
+	}
 	if plan.ManifestOut != "" {
 		fmt.Fprintf(w, "  manifest out: %s\n", plan.ManifestOut)
 	}
@@ -1118,6 +1350,7 @@ func pullDryRunOutputFromPlan(plan *pullPlan) pullDryRunOutput {
 		ManifestProvided: pullPlanHasManifest(plan),
 		ManifestDigest:   plan.ManifestDigest,
 		DigestRef:        plan.DigestRef,
+		ManifestBundle:   plan.ManifestBundle,
 		ManifestOut:      plan.ManifestOut,
 		IndexOut:         plan.IndexOut,
 		ManifestDir:      plan.ManifestDir,
@@ -1282,6 +1515,8 @@ Flags:
   --all-platforms      Inspect every image-index child during dry-run
   --resume             Continue an interrupted pull from disk.img.partial
   --manifest <path>    Local OCI manifest JSON instead of fetching the registry
+  --manifest-bundle <dir>
+                       Verified offline manifest bundle instead of fetching the registry
   --manifest-out <path>
                        Write fetched selected manifest JSON during dry-run
   --index-out <path>   Write fetched index/list JSON during dry-run

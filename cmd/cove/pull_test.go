@@ -420,6 +420,88 @@ func TestBuildPullPlanDryRunFetchManifestPlatform(t *testing.T) {
 	}
 }
 
+func TestBuildPullPlanDryRunManifestBundlePlatform(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	bundleDir := writeTestManifestBundle(t)
+	summary, err := readManifestBundleSummaryFile(bundleDir)
+	if err != nil {
+		t.Fatalf("readManifestBundleSummaryFile: %v", err)
+	}
+	var darwin manifestBundleChildSummary
+	for _, child := range summary.Children {
+		if child.Platform == "darwin/arm64" {
+			darwin = child
+			break
+		}
+	}
+	if darwin.Digest == "" {
+		t.Fatalf("test bundle missing darwin child: %+v", summary.Children)
+	}
+	manifestOut := filepath.Join(t.TempDir(), "selected.json")
+	indexOut := filepath.Join(t.TempDir(), "index.json")
+
+	plan, err := buildPullPlan("ghcr.io/me/dev-vm:v1", pullOptions{
+		DryRun:         true,
+		AllPlatforms:   true,
+		ManifestBundle: bundleDir,
+		ManifestOut:    manifestOut,
+		IndexOut:       indexOut,
+		Platform:       "darwin/arm64",
+	})
+	if err != nil {
+		t.Fatalf("buildPullPlan(): %v", err)
+	}
+	if plan.ManifestDigest != darwin.Digest || plan.ManifestResolution.SelectedDigest != darwin.Digest {
+		t.Fatalf("digest = manifest:%q selected:%q, want darwin %q", plan.ManifestDigest, plan.ManifestResolution.SelectedDigest, darwin.Digest)
+	}
+	if plan.DigestRef != "ghcr.io/me/dev-vm@"+darwin.Digest {
+		t.Fatalf("digest ref = %q, want darwin digest ref", plan.DigestRef)
+	}
+	if plan.ManifestBundle != bundleDir {
+		t.Fatalf("manifest bundle = %q, want %q", plan.ManifestBundle, bundleDir)
+	}
+	if got := remotePlatformString(plan.ManifestResolution.SelectedPlatform); got != "darwin/arm64" {
+		t.Fatalf("selected platform = %q, want darwin/arm64", got)
+	}
+	if len(plan.ManifestResolution.IndexData) == 0 || len(plan.IndexManifests) != 2 {
+		t.Fatalf("bundle resolution index bytes=%d children=%d, want offline index and two children", len(plan.ManifestResolution.IndexData), len(plan.IndexManifests))
+	}
+	if plan.IndexManifests[0].Digest != darwin.Digest || !plan.IndexManifests[0].Selected || plan.IndexManifests[1].Selected {
+		t.Fatalf("bundle index manifests = %+v, want darwin selected", plan.IndexManifests)
+	}
+	if plan.Manifest.Annotations.UncompressedDiskSize != int64(len("darwin")) {
+		t.Fatalf("disk size = %d, want darwin child", plan.Manifest.Annotations.UncompressedDiskSize)
+	}
+	if err := writePullManifestOut(plan); err != nil {
+		t.Fatalf("writePullManifestOut: %v", err)
+	}
+	if err := writePullIndexOut(plan); err != nil {
+		t.Fatalf("writePullIndexOut: %v", err)
+	}
+	assertManifestBundleFile(t, manifestOut, mustReadFile(t, filepath.Join(bundleDir, filepath.FromSlash(darwin.Path))))
+	assertManifestBundleFile(t, indexOut, mustReadFile(t, filepath.Join(bundleDir, "index.json")))
+
+	var out strings.Builder
+	printPullDryRun(&out, plan)
+	for _, want := range []string{"manifest bundle: " + bundleDir, "platform: darwin/arm64", "* " + darwin.Digest, "disk size: 6 B"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("dry-run output %q missing %q", out.String(), want)
+		}
+	}
+	var jsonOut strings.Builder
+	if err := printPullDryRunJSON(&jsonOut, plan); err != nil {
+		t.Fatalf("printPullDryRunJSON: %v", err)
+	}
+	var got pullDryRunOutput
+	if err := json.Unmarshal([]byte(jsonOut.String()), &got); err != nil {
+		t.Fatalf("Unmarshal(JSON): %v\n%s", err, jsonOut.String())
+	}
+	if got.ManifestBundle != bundleDir || got.SelectedPlatform != "darwin/arm64" || got.SelectedDigest != darwin.Digest {
+		t.Fatalf("JSON bundle resolution = %+v, want darwin from bundle", got)
+	}
+}
+
 func TestBuildPullPlanDryRunFetchManifestAllPlatforms(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -1196,29 +1278,43 @@ func TestHandlePullVerifyBlobsRequiresDryRun(t *testing.T) {
 
 func TestHandlePullVerifyBlobsRequiresManifest(t *testing.T) {
 	err := handlePull(commandTestEnv(), []string{"--dry-run", "--verify-blobs", "ghcr.io/me/dev-vm:v1"})
-	if err == nil || !strings.Contains(err.Error(), "--verify-blobs requires --fetch-manifest or --manifest") {
+	if err == nil || !strings.Contains(err.Error(), "--verify-blobs requires --fetch-manifest, --manifest, or --manifest-bundle") {
 		t.Fatalf("handlePull() error = %v, want --verify-blobs requires manifest", err)
 	}
 }
 
 func TestHandlePullAllPlatformsRequiresFetchManifest(t *testing.T) {
 	err := handlePull(commandTestEnv(), []string{"--dry-run", "--all-platforms", "ghcr.io/me/dev-vm:v1"})
-	if err == nil || !strings.Contains(err.Error(), "--all-platforms requires --fetch-manifest") {
+	if err == nil || !strings.Contains(err.Error(), "--all-platforms requires --fetch-manifest or --manifest-bundle") {
 		t.Fatalf("handlePull() error = %v, want --all-platforms requires fetch-manifest", err)
 	}
 }
 
 func TestHandlePullManifestOutRequiresFetchManifest(t *testing.T) {
 	err := handlePull(commandTestEnv(), []string{"--dry-run", "--manifest-out", "manifest.json", "ghcr.io/me/dev-vm:v1"})
-	if err == nil || !strings.Contains(err.Error(), "--manifest-out requires --fetch-manifest") {
+	if err == nil || !strings.Contains(err.Error(), "--manifest-out requires --fetch-manifest or --manifest-bundle") {
 		t.Fatalf("handlePull() error = %v, want --manifest-out requires fetch-manifest", err)
 	}
 }
 
 func TestHandlePullIndexOutRequiresFetchManifest(t *testing.T) {
 	err := handlePull(commandTestEnv(), []string{"--dry-run", "--index-out", "index.json", "ghcr.io/me/dev-vm:v1"})
-	if err == nil || !strings.Contains(err.Error(), "--index-out requires --fetch-manifest") {
+	if err == nil || !strings.Contains(err.Error(), "--index-out requires --fetch-manifest or --manifest-bundle") {
 		t.Fatalf("handlePull() error = %v, want --index-out requires fetch-manifest", err)
+	}
+}
+
+func TestHandlePullManifestBundleRequiresDryRun(t *testing.T) {
+	err := handlePull(commandTestEnv(), []string{"--manifest-bundle", "bundle", "ghcr.io/me/dev-vm:v1"})
+	if err == nil || !strings.Contains(err.Error(), "--manifest-bundle requires --dry-run") {
+		t.Fatalf("handlePull() error = %v, want --manifest-bundle requires dry-run", err)
+	}
+}
+
+func TestHandlePullManifestBundleRejectsFetchManifest(t *testing.T) {
+	err := handlePull(commandTestEnv(), []string{"--dry-run", "--fetch-manifest", "--manifest-bundle", "bundle", "ghcr.io/me/dev-vm:v1"})
+	if err == nil || !strings.Contains(err.Error(), "--manifest-bundle cannot be used with --fetch-manifest") {
+		t.Fatalf("handlePull() error = %v, want manifest-bundle/fetch conflict", err)
 	}
 }
 
@@ -1276,7 +1372,7 @@ func TestParsePullArgsHelpReturnsNoError(t *testing.T) {
 	if pos != nil {
 		t.Fatalf("parsePullArgs(-h) pos = %#v, want nil", pos)
 	}
-	if opts.DryRun || opts.JSON || opts.FetchManifest || opts.VerifyBlobs || opts.AllPlatforms || opts.Resume || opts.As != "" || opts.ManifestPath != "" || opts.ManifestOut != "" || opts.IndexOut != "" || opts.ManifestDir != "" || opts.Platform != "" {
+	if opts.DryRun || opts.JSON || opts.FetchManifest || opts.VerifyBlobs || opts.AllPlatforms || opts.Resume || opts.As != "" || opts.ManifestPath != "" || opts.ManifestBundle != "" || opts.ManifestOut != "" || opts.IndexOut != "" || opts.ManifestDir != "" || opts.Platform != "" {
 		t.Fatalf("parsePullArgs(-h) opts = %#v, want zero", opts)
 	}
 }
@@ -1317,6 +1413,28 @@ func TestParsePullArgsFetchManifest(t *testing.T) {
 	}
 	if !opts.DryRun || !opts.FetchManifest || !opts.VerifyBlobs || !opts.AllPlatforms || !opts.JSON || opts.ManifestOut != "selected.json" || opts.IndexOut != "index.json" || opts.ManifestDir != "bundle" || opts.Platform != "linux/arm64" {
 		t.Fatalf("opts = %#v, want dry-run/fetch-manifest/verify-blobs/all-platforms/json/platform", opts)
+	}
+	if strings.Join(pos, ",") != "registry.example/cove/vm:latest" {
+		t.Fatalf("pos = %#v", pos)
+	}
+}
+
+func TestParsePullArgsManifestBundle(t *testing.T) {
+	opts, pos, err := parsePullArgs([]string{
+		"registry.example/cove/vm:latest",
+		"--dry-run",
+		"--manifest-bundle", "bundle",
+		"--all-platforms",
+		"--manifest-out", "selected.json",
+		"--index-out", "index.json",
+		"--json",
+		"--platform", "darwin/arm64",
+	}, ioDiscard{})
+	if err != nil {
+		t.Fatalf("parsePullArgs manifest bundle: %v", err)
+	}
+	if !opts.DryRun || !opts.AllPlatforms || !opts.JSON || opts.ManifestBundle != "bundle" || opts.ManifestOut != "selected.json" || opts.IndexOut != "index.json" || opts.Platform != "darwin/arm64" {
+		t.Fatalf("opts = %#v, want dry-run/manifest-bundle/all-platforms/json/platform", opts)
 	}
 	if strings.Join(pos, ",") != "registry.example/cove/vm:latest" {
 		t.Fatalf("pos = %#v", pos)
@@ -1564,6 +1682,15 @@ func writePullBaseVM(t *testing.T, home, name, provenance string, disk []byte) {
 	if err := os.WriteFile(filepath.Join(vmDir, "disk.provenance"), []byte(provenance+"\n"), 0644); err != nil {
 		t.Fatalf("WriteFile(base provenance): %v", err)
 	}
+}
+
+func mustReadFile(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return data
 }
 
 func pullTestManifestData(t *testing.T, manifest ociimage.Manifest) ([]byte, string) {

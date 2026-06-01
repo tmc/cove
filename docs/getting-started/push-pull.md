@@ -35,6 +35,7 @@ cove image inspect -remote <ref> -manifest-out manifest.json # save selected man
 cove image inspect -remote <ref> -index-out index.json # save index/list manifest
 cove image inspect -remote <ref> -all-platforms -manifest-dir manifests # save full manifest bundle
 cove image bundle verify manifests -json         # verify saved bundle offline
+cove pull <ref> --dry-run --manifest-bundle manifests --platform linux/arm64 --json # plan from saved bundle
 cove image inspect -remote <ref> -platform linux/arm64 -json # inspect one platform
 cove image inspect -remote <ref> -all-platforms -json # classify and audit every index child
 cove image inspect -remote -verify-blobs <ref>    # HEAD every referenced blob
@@ -86,7 +87,11 @@ every fetched child manifest under `manifests/<digest>.json`. `summary.json`
 records the pull target, selected digest, index digest, platform, format, disk
 size/format, base reuse, blob audit, and per-child audit summaries for offline
 CI or fleet policy checks. Run `cove image bundle verify <dir>` to validate the
-bundle later without registry access. When a cove-native manifest is available during
+bundle later without registry access, or pass
+`--manifest-bundle <dir>` to `cove pull --dry-run` to produce an offline pull
+plan from the saved bundle. The bundle path can be combined with `--platform` to
+select any saved child manifest without contacting the registry. When a
+cove-native manifest is available during
 `--dry-run`, cove also checks whether a compatible local or registry-cache base
 disk can be reused and prints the reusable chunks, bytes, disk format, and
 source path. Manifest-backed dry-runs that resolve an index also print the index

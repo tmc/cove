@@ -729,6 +729,7 @@ cove image inspect -remote registry.example/team/macos-runner:14.5 -manifest-out
 cove image inspect -remote registry.example/team/runner:latest -index-out index.json
 cove image inspect -remote registry.example/team/runner:latest -all-platforms -manifest-dir manifests
 cove image bundle verify manifests -json
+cove pull registry.example/team/runner:latest --dry-run --manifest-bundle manifests --platform linux/arm64 --json
 cove image inspect -remote registry.example/team/runner:latest -platform linux/arm64 -json
 cove image inspect -remote registry.example/team/runner:latest -all-platforms -json
 cove image inspect -remote registry.example/team/runner:latest -all-platforms -verify-blobs -json
@@ -1430,7 +1431,10 @@ selected/index digests, platform, format, disk size/format, base reuse, blob
 audit, and per-child audit status for offline CI or fleet policy checks. Verify
 that saved bundle later with `cove image bundle verify <dir> [-json]`; the
 verification stays offline and checks the summary, saved files, index coverage,
-selected child, and parsed child metadata.
+selected child, and parsed child metadata. Use
+`--manifest-bundle <dir>` on `cove pull --dry-run` to consume a verified bundle
+as a registry-free planning source, optionally with `--platform` to select any
+saved child manifest.
 Cove-native dry-runs also print the manifest's disk format and, when a
 compatible local or cached base disk is available, the reusable chunks, bytes,
 disk format, and source base path. Manifest-backed dry-runs that resolve an OCI
@@ -1466,6 +1470,7 @@ cove pull <ref> [flags]
 | `--all-platforms` | false | Inspect every OCI image-index or Docker manifest-list child during dry-run |
 | `--resume` | false | Continue an interrupted pull from `disk.img.partial` |
 | `--manifest <path>` | | Local OCI manifest JSON instead of fetching the registry |
+| `--manifest-bundle <dir>` | | Verified offline manifest bundle instead of fetching the registry |
 | `--manifest-out <path>` | | Write fetched selected manifest JSON during dry-run |
 | `--index-out <path>` | | Write fetched index/list JSON during dry-run |
 | `--manifest-dir <dir>` | | Write fetched index, summary, and child manifests to a directory |
@@ -1479,6 +1484,7 @@ cove pull ghcr.io/example/runner:latest --dry-run --fetch-manifest --all-platfor
 cove pull ghcr.io/example/runner:latest --dry-run --fetch-manifest --manifest-out selected-manifest.json
 cove pull ghcr.io/example/runner:latest --dry-run --fetch-manifest --index-out index.json
 cove pull ghcr.io/example/runner:latest --dry-run --fetch-manifest --all-platforms --manifest-dir manifests
+cove pull ghcr.io/example/runner:latest --dry-run --manifest-bundle manifests --platform linux/arm64 --json
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run --fetch-manifest --json
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run --fetch-manifest --verify-blobs --json
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run --json --manifest manifest.json
