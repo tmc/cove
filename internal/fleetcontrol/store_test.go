@@ -1719,6 +1719,85 @@ func TestStoreOperationsSummarySnapshotRetention(t *testing.T) {
 	}
 }
 
+func TestStoreOperationsTrend(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	firstTime := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	first := OperationsSummary{
+		Time:      firstTime,
+		Namespace: "team-a",
+		Workers: WorkerOperationsSummary{
+			Total:    3,
+			Ready:    3,
+			ByStatus: map[string]int{"ready": 3},
+		},
+		WarmPools: WarmPoolOperationsSummary{
+			Ready: 2,
+		},
+		ControllerRuns: ControllerRunOperationsSummary{
+			Attention:           1,
+			Skipped:             2,
+			BySkipReason:        map[string]int{"capability": 1},
+			ByMissingCapability: map[string]int{"ram-overlay": 1},
+		},
+	}
+	second := OperationsSummary{
+		Time:      firstTime.Add(time.Minute),
+		Namespace: "team-a",
+		Workers: WorkerOperationsSummary{
+			Total:       3,
+			Ready:       1,
+			Cordoned:    1,
+			Quarantined: 1,
+			Stale:       1,
+			ByStatus:    map[string]int{"ready": 1, "cordoned": 1, "quarantined": 1, "stale": 1},
+		},
+		WarmPools: WarmPoolOperationsSummary{
+			Ready: 0,
+		},
+		ControllerRuns: ControllerRunOperationsSummary{
+			Attention:           3,
+			Skipped:             5,
+			BySkipReason:        map[string]int{"capability": 4, "status": 1},
+			BySkipStatus:        map[string]int{"cordoned": 2},
+			ByMissingCapability: map[string]int{"asif": 1, "ram-overlay": 3},
+		},
+	}
+	if err := store.RecordOperationsSummary(first); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordOperationsSummary(OperationsSummary{Time: firstTime.Add(30 * time.Second), Namespace: "team-b", Workers: WorkerOperationsSummary{Ready: 10}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordOperationsSummary(second); err != nil {
+		t.Fatal(err)
+	}
+
+	trend := store.OperationsTrend(OperationsTrendFilter{Namespace: "team-a", Since: firstTime})
+	if trend.Namespace != "team-a" || trend.SampleCount != 2 || !trend.WindowStart.Equal(first.Time) || !trend.WindowEnd.Equal(second.Time) {
+		t.Fatalf("operations trend window = %+v, want two team-a samples", trend)
+	}
+	if trend.Workers.Ready.First != 3 || trend.Workers.Ready.Last != 1 || trend.Workers.Ready.Delta != -2 {
+		t.Fatalf("worker ready trend = %+v, want 3 to 1", trend.Workers.Ready)
+	}
+	if trend.Workers.Cordoned.Delta != 1 || trend.Workers.ByStatus["cordoned"].Delta != 1 {
+		t.Fatalf("worker cordoned trend = %+v by status %+v, want +1", trend.Workers.Cordoned, trend.Workers.ByStatus)
+	}
+	if trend.WarmPools.Ready.Delta != -2 {
+		t.Fatalf("warm ready trend = %+v, want -2", trend.WarmPools.Ready)
+	}
+	if trend.ControllerRuns.Attention.Delta != 2 || trend.ControllerRuns.Skipped.Delta != 3 || trend.ControllerRuns.ByMissingCapability["ram-overlay"].Delta != 2 || trend.ControllerRuns.ByMissingCapability["asif"].Delta != 1 {
+		t.Fatalf("controller trend = %+v, want attention/skips/capability gaps", trend.ControllerRuns)
+	}
+	if !hasOperationsRegression(trend.Regressions, "workers", "ready", "", -2) || !hasOperationsRegression(trend.Regressions, "controller_runs", "by_missing_capability", "asif", 1) {
+		t.Fatalf("regressions = %+v, want worker readiness and asif capability gap", trend.Regressions)
+	}
+
+	empty := store.OperationsTrend(OperationsTrendFilter{Namespace: "team-a", Since: second.Time.Add(time.Second)})
+	if empty.SampleCount != 0 || !empty.WindowStart.IsZero() {
+		t.Fatalf("empty operations trend = %+v, want no samples", empty)
+	}
+}
+
 func TestStoreSandboxExecQueuesSameWorkerShell(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
@@ -6621,14 +6700,29 @@ func TestHandlerOperationsSummary(t *testing.T) {
 	if history.Count != 1 || len(history.Snapshots) != 1 || history.Snapshots[0].Namespace != "team-a" || history.Snapshots[0].Workers.Total != 1 || history.Snapshots[0].Assignments.Total != 1 || history.Snapshots[0].Sandboxes.Total != 1 {
 		t.Fatalf("operations summary history = %+v, want retained team-a snapshot", history)
 	}
+	if _, err := store.CordonWorker("worker-1", "maintenance"); err != nil {
+		t.Fatal(err)
+	}
+	getJSON(t, server.URL+"/v1/operations/summary?namespace=team-a", &summary)
+	var trend OperationsTrendResult
+	getJSON(t, server.URL+"/v1/operations/summary/trend?namespace=team-a", &trend)
+	if trend.SampleCount != 2 || trend.Workers.Ready.Delta != -1 || trend.Workers.Cordoned.Delta != 1 || len(trend.Regressions) == 0 {
+		t.Fatalf("operations summary trend = %+v, want ready drop and cordoned regression", trend)
+	}
 	if code := getJSONStatus(t, server.URL+"/v1/operations/summary", "token-a"); code != http.StatusForbidden {
 		t.Fatalf("scoped operations summary status = %d, want %d", code, http.StatusForbidden)
 	}
 	if code := getJSONStatus(t, server.URL+"/v1/operations/summary/history", "token-a"); code != http.StatusForbidden {
 		t.Fatalf("scoped operations summary history status = %d, want %d", code, http.StatusForbidden)
 	}
+	if code := getJSONStatus(t, server.URL+"/v1/operations/summary/trend", "token-a"); code != http.StatusForbidden {
+		t.Fatalf("scoped operations summary trend status = %d, want %d", code, http.StatusForbidden)
+	}
 	if code := getJSONStatus(t, server.URL+"/v1/operations/summary/history?since=soon", ""); code != http.StatusBadRequest {
 		t.Fatalf("bad operations summary history since status = %d, want %d", code, http.StatusBadRequest)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/operations/summary/trend?since=soon", ""); code != http.StatusBadRequest {
+		t.Fatalf("bad operations summary trend since status = %d, want %d", code, http.StatusBadRequest)
 	}
 }
 
@@ -9099,6 +9193,15 @@ func equalStrings(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func hasOperationsRegression(regressions []OperationsTrendRegression, area, field, key string, delta int) bool {
+	for _, regression := range regressions {
+		if regression.Area == area && regression.Field == field && regression.Key == key && regression.Delta == delta {
+			return true
+		}
+	}
+	return false
 }
 
 func openAssignmentIDs(assignments []Assignment) []string {

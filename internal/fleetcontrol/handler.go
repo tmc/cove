@@ -106,6 +106,9 @@ func Handler(store *Store) http.Handler {
 	mux.HandleFunc("/v1/saml-bindings", func(w http.ResponseWriter, r *http.Request) {
 		handleSAMLBindings(w, r, store)
 	})
+	mux.HandleFunc("/v1/operations/summary/trend", func(w http.ResponseWriter, r *http.Request) {
+		handleOperationsSummaryTrend(w, r, store)
+	})
 	mux.HandleFunc("/v1/operations/summary/history", func(w http.ResponseWriter, r *http.Request) {
 		handleOperationsSummaryHistory(w, r, store)
 	})
@@ -329,6 +332,26 @@ func handleOperationsSummaryHistory(w http.ResponseWriter, r *http.Request, stor
 	writeJSON(w, http.StatusOK, store.ListOperationsSummarySnapshotsPage(filter))
 }
 
+func handleOperationsSummaryTrend(w http.ResponseWriter, r *http.Request, store *Store) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	if !requireUnscoped(w, r, store) {
+		return
+	}
+	filter, err := operationsTrendFilterFromRequest(r, namespaceFilterFromRequest(r, identity))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, store.OperationsTrend(filter))
+}
+
 func handleControllerRuns(w http.ResponseWriter, r *http.Request, store *Store) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -390,6 +413,18 @@ func operationsSummarySnapshotListFilterFromRequest(r *http.Request, namespace s
 			return OperationsSummarySnapshotListFilter{}, fmt.Errorf("operations summary history offset must be non-negative")
 		}
 		filter.Offset = offset
+	}
+	return filter, nil
+}
+
+func operationsTrendFilterFromRequest(r *http.Request, namespace string) (OperationsTrendFilter, error) {
+	filter := OperationsTrendFilter{Namespace: namespace}
+	var err error
+	if filter.Since, err = timeFilterFromRequest(r, "operations summary trend", "since"); err != nil {
+		return OperationsTrendFilter{}, err
+	}
+	if filter.Until, err = timeFilterFromRequest(r, "operations summary trend", "until"); err != nil {
+		return OperationsTrendFilter{}, err
 	}
 	return filter, nil
 }

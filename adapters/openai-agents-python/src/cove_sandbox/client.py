@@ -1151,6 +1151,44 @@ class CoveFleetClient:
         return page
 
     @classmethod
+    def get_operations_trend(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        since: str = "",
+        until: str = "",
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        seed = cls(
+            sandbox_id="operations-summary-trend",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        result = seed._request(
+            "GET",
+            _query_path(
+                "/v1/operations/summary/trend",
+                {
+                    "namespace": namespace or "",
+                    "since": since,
+                    "until": until,
+                },
+            ),
+            timeout=timeout,
+        )
+        regressions = result.get("regressions") or []
+        if not isinstance(regressions, list):
+            raise CoveError("GET /v1/operations/summary/trend: expected regressions list")
+        trend = dict(result)
+        trend["sample_count"] = int(trend.get("sample_count") or 0)
+        trend["regressions"] = [dict(item) for item in regressions if isinstance(item, dict)]
+        return trend
+
+    @classmethod
     def list_sandbox_metering(
         cls,
         *,

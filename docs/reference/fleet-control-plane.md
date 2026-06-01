@@ -78,6 +78,7 @@ curl http://127.0.0.1:9758/healthz
 curl http://127.0.0.1:9758/v1/operations/summary
 curl http://127.0.0.1:9758/v1/operations/summary?namespace=team-a
 curl 'http://127.0.0.1:9758/v1/operations/summary/history?namespace=team-a&limit=20'
+curl 'http://127.0.0.1:9758/v1/operations/summary/trend?namespace=team-a&since=2026-05-31T10:00:00Z'
 curl 'http://127.0.0.1:9758/v1/operations/runs?kind=storage.prune&limit=20'
 curl 'http://127.0.0.1:9758/v1/operations/runs?target_type=image&target_id=macos-runner:latest'
 curl 'http://127.0.0.1:9758/v1/operations/runs?image_manifest_digest=sha256:...&required_capability=ram-overlay&limit=20'
@@ -231,7 +232,11 @@ work. Each successful summary read records a compact sample, retaining the
 latest 1024 samples. `GET /v1/operations/summary/history` returns those
 retained samples with `namespace`, `since`, `until`, `offset`, and `limit`
 filters so dashboards can chart worker readiness, active hosted work, attention
-runs, and skipped fan-out over time.
+runs, and skipped fan-out over time. `GET /v1/operations/summary/trend`
+compares the first and last retained samples in the requested namespace/time
+window and returns first/last/delta values plus a regression digest for worker
+readiness drops, cordon/quarantine/stale growth, warm-pool ready drops,
+controller attention and skipped-run growth, and missing-capability growth.
 The optional `namespace` query filters assignment, sandbox, warm-pool, and
 metering counts; worker inventory stays fleet-global. Because the response
 includes fleet-global worker state, scoped service-account tokens cannot read
@@ -857,9 +862,9 @@ for read-only admission checks plus the retained placement history that records
 feasible candidates and skipped-worker diagnostics.
 Maintenance helpers include `PushImageGC`, `PushLifecyclePolicy`,
 `PushStorageBudget`, `PushStoragePrune`, their list/get run companions, and
-`GetOperationsSummary`, `ListOperationsSummarySnapshots`, plus
-`ListControllerRuns` for the aggregate operations dashboard, trends, and
-timeline. Reconcile helpers include `PlanReconcile` and
+`GetOperationsSummary`, `ListOperationsSummarySnapshots`, `GetOperationsTrend`,
+plus `ListControllerRuns` for the aggregate operations dashboard, retained
+samples, trend regressions, and timeline. Reconcile helpers include `PlanReconcile` and
 `Reconcile` for the same unscoped dry-run/apply repair path as
 `/v1/reconcile/plan` and `/v1/reconcile`. Assignment helpers include
 `CreateAssignment`, `ListAssignments`, and `GetAssignment`, with the same
@@ -942,6 +947,17 @@ if err != nil {
 	log.Fatal(err)
 }
 log.Printf("operations samples=%d", history.Count)
+
+trend, err := agentsandbox.GetOperationsTrend(ctx, agentsandbox.OperationsTrendOptions{
+	FleetURL:  "https://fleet.internal.example",
+	APIKey:    os.Getenv("COVE_API_KEY"),
+	Namespace: "team-a",
+	Since:     time.Now().Add(-30 * time.Minute),
+})
+if err != nil {
+	log.Fatal(err)
+}
+log.Printf("operations samples=%d regressions=%d", trend.SampleCount, len(trend.Regressions))
 
 reconcilePlan, err := agentsandbox.PlanReconcile(ctx, agentsandbox.ReconcileOptions{
 	FleetURL: "https://fleet.internal.example",

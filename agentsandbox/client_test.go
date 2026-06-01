@@ -793,6 +793,13 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 	if _, err := ListOperationsSummarySnapshots(ctx, OperationsSummaryHistoryOptions{FleetURL: server.URL, APIKey: "secret", Offset: -1, Timeout: time.Second}); err == nil || !strings.Contains(err.Error(), "offset must be non-negative") {
 		t.Fatalf("ListOperationsSummarySnapshots negative offset err = %v, want validation error", err)
 	}
+	trend, err := GetOperationsTrend(ctx, OperationsTrendOptions{FleetURL: server.URL, APIKey: "secret", Namespace: "team-a", Since: time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC), Until: time.Date(2026, 5, 31, 10, 10, 0, 0, time.UTC), Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("GetOperationsTrend: %v", err)
+	}
+	if trend.SampleCount != 2 || trend.Workers.Ready.Delta != -2 || trend.ControllerRuns.ByMissingCapability["ram-overlay"].Delta != 2 || len(trend.Regressions) != 2 {
+		t.Fatalf("GetOperationsTrend = %+v, want operations regressions", trend)
+	}
 
 	paths := make([]string, 0, len(server.requests))
 	for _, req := range server.requests {
@@ -820,6 +827,7 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 		"/v1/reconcile",
 		"/v1/operations/summary",
 		"/v1/operations/summary/history",
+		"/v1/operations/summary/trend",
 	}
 	if !equalStringSlices(paths, wantPaths) {
 		t.Fatalf("paths = %+v, want %+v", paths, wantPaths)
@@ -856,6 +864,9 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 	}
 	if query := server.requests[17].query; query.Get("namespace") != "team-a" || query.Get("since") != "2026-05-31T10:00:00Z" || query.Get("until") != "2026-05-31T10:10:00Z" || query.Get("offset") != "1" || query.Get("limit") != "2" {
 		t.Fatalf("operations summary history query = %q", query.Encode())
+	}
+	if query := server.requests[18].query; query.Get("namespace") != "team-a" || query.Get("since") != "2026-05-31T10:00:00Z" || query.Get("until") != "2026-05-31T10:10:00Z" {
+		t.Fatalf("operations trend query = %q", query.Encode())
 	}
 }
 
@@ -2277,6 +2288,8 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 				Offset:    atoiDefault(r.URL.Query().Get("offset"), 0),
 				Limit:     atoiDefault(r.URL.Query().Get("limit"), 0),
 			})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/operations/summary/trend":
+			writeSDKJSON(t, w, sdkOperationsTrend())
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/audit":
 			writeSDKJSON(t, w, AuditListResult{
 				Events: []AuditEvent{sdkAuditEvent()},
@@ -3018,6 +3031,34 @@ func sdkOperationsSummarySnapshot() OperationsSummarySnapshot {
 			ByMissingCapability: summary.ControllerRuns.ByMissingCapability,
 		},
 		Metering: summary.Metering,
+	}
+}
+
+func sdkOperationsTrend() OperationsTrendResult {
+	return OperationsTrendResult{
+		Namespace:   "team-a",
+		Since:       time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC),
+		Until:       time.Date(2026, 5, 31, 10, 10, 0, 0, time.UTC),
+		WindowStart: time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC),
+		WindowEnd:   time.Date(2026, 5, 31, 10, 5, 0, 0, time.UTC),
+		SampleCount: 2,
+		Workers: WorkerOperationsTrend{
+			Ready:    OperationsTrendValue{First: 3, Last: 1, Delta: -2},
+			Cordoned: OperationsTrendValue{First: 0, Last: 1, Delta: 1},
+			ByStatus: map[string]OperationsTrendValue{
+				"cordoned": {First: 0, Last: 1, Delta: 1},
+			},
+		},
+		ControllerRuns: ControllerRunOperationsTrend{
+			Attention: OperationsTrendValue{First: 0, Last: 1, Delta: 1},
+			ByMissingCapability: map[string]OperationsTrendValue{
+				"ram-overlay": {First: 0, Last: 2, Delta: 2},
+			},
+		},
+		Regressions: []OperationsTrendRegression{
+			{Area: "controller_runs", Field: "by_missing_capability", Key: "ram-overlay", First: 0, Last: 2, Delta: 2},
+			{Area: "workers", Field: "ready", First: 3, Last: 1, Delta: -2},
+		},
 	}
 }
 

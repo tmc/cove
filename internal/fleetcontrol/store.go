@@ -2353,6 +2353,52 @@ func (s *Store) ListOperationsSummarySnapshotsPage(filter OperationsSummarySnaps
 	return result
 }
 
+func (s *Store) OperationsTrend(filter OperationsTrendFilter) OperationsTrendResult {
+	filter.Namespace = normalizeNamespace(filter.Namespace)
+	if !filter.Since.IsZero() {
+		filter.Since = filter.Since.UTC()
+	}
+	if !filter.Until.IsZero() {
+		filter.Until = filter.Until.UTC()
+	}
+	result := OperationsTrendResult{
+		Namespace: filter.Namespace,
+		Since:     filter.Since,
+		Until:     filter.Until,
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	snapshots := s.sortedOperationsSummarySnapshotsLocked()
+	filtered := snapshots[:0]
+	for _, snapshot := range snapshots {
+		if normalizeNamespace(snapshot.Namespace) != filter.Namespace {
+			continue
+		}
+		if !filter.Since.IsZero() && snapshot.Time.Before(filter.Since) {
+			continue
+		}
+		if !filter.Until.IsZero() && snapshot.Time.After(filter.Until) {
+			continue
+		}
+		filtered = append(filtered, snapshot)
+	}
+	result.SampleCount = len(filtered)
+	if len(filtered) == 0 {
+		return result
+	}
+	first := filtered[0]
+	last := filtered[len(filtered)-1]
+	result.WindowStart = first.Time
+	result.WindowEnd = last.Time
+	result.Workers = workerOperationsTrend(first.Workers, last.Workers)
+	result.Assignments = assignmentOperationsTrend(first.Assignments, last.Assignments)
+	result.Sandboxes = sandboxOperationsTrend(first.Sandboxes, last.Sandboxes)
+	result.WarmPools = warmPoolOperationsTrend(first.WarmPools, last.WarmPools)
+	result.ControllerRuns = controllerRunOperationsTrend(first.ControllerRuns, last.ControllerRuns)
+	result.Regressions = operationsTrendRegressions(result)
+	return result
+}
+
 func operationsSummarySnapshot(summary OperationsSummary) OperationsSummarySnapshot {
 	return normalizeOperationsSummarySnapshot(OperationsSummarySnapshot{
 		Time:      summary.Time,
@@ -2419,6 +2465,147 @@ func normalizeOperationsSummarySnapshot(snapshot OperationsSummarySnapshot) Oper
 	snapshot.ControllerRuns.BySkipStatus = cloneIntMap(snapshot.ControllerRuns.BySkipStatus)
 	snapshot.ControllerRuns.ByMissingCapability = cloneIntMap(snapshot.ControllerRuns.ByMissingCapability)
 	return snapshot
+}
+
+func workerOperationsTrend(first, last WorkerOperationsSnapshot) WorkerOperationsTrend {
+	return WorkerOperationsTrend{
+		Total:       operationsTrendValue(first.Total, last.Total),
+		Ready:       operationsTrendValue(first.Ready, last.Ready),
+		Cordoned:    operationsTrendValue(first.Cordoned, last.Cordoned),
+		Quarantined: operationsTrendValue(first.Quarantined, last.Quarantined),
+		Stale:       operationsTrendValue(first.Stale, last.Stale),
+		ByStatus:    operationsTrendMap(first.ByStatus, last.ByStatus),
+	}
+}
+
+func assignmentOperationsTrend(first, last AssignmentOperationsSnapshot) AssignmentOperationsTrend {
+	return AssignmentOperationsTrend{
+		Total:    operationsTrendValue(first.Total, last.Total),
+		Active:   operationsTrendValue(first.Active, last.Active),
+		Terminal: operationsTrendValue(first.Terminal, last.Terminal),
+		ByStatus: operationsTrendMap(first.ByStatus, last.ByStatus),
+	}
+}
+
+func sandboxOperationsTrend(first, last SandboxOperationsSnapshot) SandboxOperationsTrend {
+	return SandboxOperationsTrend{
+		Total:    operationsTrendValue(first.Total, last.Total),
+		Active:   operationsTrendValue(first.Active, last.Active),
+		Terminal: operationsTrendValue(first.Terminal, last.Terminal),
+		ByStatus: operationsTrendMap(first.ByStatus, last.ByStatus),
+	}
+}
+
+func warmPoolOperationsTrend(first, last WarmPoolOperationsSnapshot) WarmPoolOperationsTrend {
+	return WarmPoolOperationsTrend{
+		Total:    operationsTrendValue(first.Total, last.Total),
+		Desired:  operationsTrendValue(first.Desired, last.Desired),
+		Slots:    operationsTrendValue(first.Slots, last.Slots),
+		Active:   operationsTrendValue(first.Active, last.Active),
+		Ready:    operationsTrendValue(first.Ready, last.Ready),
+		Claimed:  operationsTrendValue(first.Claimed, last.Claimed),
+		Draining: operationsTrendValue(first.Draining, last.Draining),
+		Terminal: operationsTrendValue(first.Terminal, last.Terminal),
+		ByStatus: operationsTrendMap(first.ByStatus, last.ByStatus),
+	}
+}
+
+func controllerRunOperationsTrend(first, last ControllerRunOperationsSnapshot) ControllerRunOperationsTrend {
+	return ControllerRunOperationsTrend{
+		Total:               operationsTrendValue(first.Total, last.Total),
+		AssignmentBacked:    operationsTrendValue(first.AssignmentBacked, last.AssignmentBacked),
+		Active:              operationsTrendValue(first.Active, last.Active),
+		Attention:           operationsTrendValue(first.Attention, last.Attention),
+		Skipped:             operationsTrendValue(first.Skipped, last.Skipped),
+		ByKind:              operationsTrendMap(first.ByKind, last.ByKind),
+		ByAssignmentStatus:  operationsTrendMap(first.ByAssignmentStatus, last.ByAssignmentStatus),
+		BySkipReason:        operationsTrendMap(first.BySkipReason, last.BySkipReason),
+		BySkipStatus:        operationsTrendMap(first.BySkipStatus, last.BySkipStatus),
+		ByMissingCapability: operationsTrendMap(first.ByMissingCapability, last.ByMissingCapability),
+	}
+}
+
+func operationsTrendValue(first, last int) OperationsTrendValue {
+	return OperationsTrendValue{First: first, Last: last, Delta: last - first}
+}
+
+func operationsTrendMap(first, last map[string]int) map[string]OperationsTrendValue {
+	if len(first) == 0 && len(last) == 0 {
+		return nil
+	}
+	keys := make(map[string]struct{}, len(first)+len(last))
+	for key := range first {
+		keys[key] = struct{}{}
+	}
+	for key := range last {
+		keys[key] = struct{}{}
+	}
+	out := make(map[string]OperationsTrendValue, len(keys))
+	for key := range keys {
+		out[key] = operationsTrendValue(first[key], last[key])
+	}
+	return out
+}
+
+func operationsTrendRegressions(result OperationsTrendResult) []OperationsTrendRegression {
+	var regressions []OperationsTrendRegression
+	regressions = appendNegativeRegression(regressions, "workers", "ready", "", result.Workers.Ready)
+	regressions = appendPositiveRegression(regressions, "workers", "cordoned", "", result.Workers.Cordoned)
+	regressions = appendPositiveRegression(regressions, "workers", "quarantined", "", result.Workers.Quarantined)
+	regressions = appendPositiveRegression(regressions, "workers", "stale", "", result.Workers.Stale)
+	regressions = appendNegativeRegression(regressions, "warm_pools", "ready", "", result.WarmPools.Ready)
+	regressions = appendPositiveRegression(regressions, "controller_runs", "attention", "", result.ControllerRuns.Attention)
+	regressions = appendPositiveRegression(regressions, "controller_runs", "skipped", "", result.ControllerRuns.Skipped)
+	regressions = appendPositiveMapRegressions(regressions, "controller_runs", "by_skip_reason", result.ControllerRuns.BySkipReason)
+	regressions = appendPositiveMapRegressions(regressions, "controller_runs", "by_skip_status", result.ControllerRuns.BySkipStatus)
+	regressions = appendPositiveMapRegressions(regressions, "controller_runs", "by_missing_capability", result.ControllerRuns.ByMissingCapability)
+	sort.Slice(regressions, func(i, j int) bool {
+		if regressions[i].Area != regressions[j].Area {
+			return regressions[i].Area < regressions[j].Area
+		}
+		if regressions[i].Field != regressions[j].Field {
+			return regressions[i].Field < regressions[j].Field
+		}
+		return regressions[i].Key < regressions[j].Key
+	})
+	return regressions
+}
+
+func appendPositiveMapRegressions(regressions []OperationsTrendRegression, area, field string, values map[string]OperationsTrendValue) []OperationsTrendRegression {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		regressions = appendPositiveRegression(regressions, area, field, key, values[key])
+	}
+	return regressions
+}
+
+func appendPositiveRegression(regressions []OperationsTrendRegression, area, field, key string, value OperationsTrendValue) []OperationsTrendRegression {
+	if value.Delta <= 0 {
+		return regressions
+	}
+	return append(regressions, operationsTrendRegression(area, field, key, value))
+}
+
+func appendNegativeRegression(regressions []OperationsTrendRegression, area, field, key string, value OperationsTrendValue) []OperationsTrendRegression {
+	if value.Delta >= 0 {
+		return regressions
+	}
+	return append(regressions, operationsTrendRegression(area, field, key, value))
+}
+
+func operationsTrendRegression(area, field, key string, value OperationsTrendValue) OperationsTrendRegression {
+	return OperationsTrendRegression{
+		Area:  area,
+		Field: field,
+		Key:   key,
+		First: value.First,
+		Last:  value.Last,
+		Delta: value.Delta,
+	}
 }
 
 func (s *Store) ExecSandbox(id string, req SandboxExecRequest) (SandboxExecResult, error) {

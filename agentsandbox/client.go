@@ -678,6 +678,16 @@ type OperationsSummaryHistoryOptions struct {
 	HTTP      *http.Client
 }
 
+type OperationsTrendOptions struct {
+	FleetURL  string
+	APIKey    string
+	Namespace string
+	Since     time.Time
+	Until     time.Time
+	Timeout   time.Duration
+	HTTP      *http.Client
+}
+
 type AuditListOptions struct {
 	FleetURL     string
 	APIKey       string
@@ -1321,6 +1331,84 @@ type OperationsSummarySnapshotListResult struct {
 	Offset     int                         `json:"offset,omitempty"`
 	Limit      int                         `json:"limit,omitempty"`
 	NextOffset int                         `json:"next_offset,omitempty"`
+}
+
+type OperationsTrendResult struct {
+	Namespace      string                       `json:"namespace,omitempty"`
+	Since          time.Time                    `json:"since,omitempty"`
+	Until          time.Time                    `json:"until,omitempty"`
+	WindowStart    time.Time                    `json:"window_start,omitempty"`
+	WindowEnd      time.Time                    `json:"window_end,omitempty"`
+	SampleCount    int                          `json:"sample_count"`
+	Workers        WorkerOperationsTrend        `json:"workers"`
+	Assignments    AssignmentOperationsTrend    `json:"assignments"`
+	Sandboxes      SandboxOperationsTrend       `json:"sandboxes"`
+	WarmPools      WarmPoolOperationsTrend      `json:"warm_pools"`
+	ControllerRuns ControllerRunOperationsTrend `json:"controller_runs"`
+	Regressions    []OperationsTrendRegression  `json:"regressions,omitempty"`
+}
+
+type OperationsTrendValue struct {
+	First int `json:"first"`
+	Last  int `json:"last"`
+	Delta int `json:"delta"`
+}
+
+type WorkerOperationsTrend struct {
+	Total       OperationsTrendValue            `json:"total"`
+	Ready       OperationsTrendValue            `json:"ready"`
+	Cordoned    OperationsTrendValue            `json:"cordoned"`
+	Quarantined OperationsTrendValue            `json:"quarantined"`
+	Stale       OperationsTrendValue            `json:"stale"`
+	ByStatus    map[string]OperationsTrendValue `json:"by_status,omitempty"`
+}
+
+type AssignmentOperationsTrend struct {
+	Total    OperationsTrendValue            `json:"total"`
+	Active   OperationsTrendValue            `json:"active"`
+	Terminal OperationsTrendValue            `json:"terminal"`
+	ByStatus map[string]OperationsTrendValue `json:"by_status,omitempty"`
+}
+
+type SandboxOperationsTrend struct {
+	Total    OperationsTrendValue            `json:"total"`
+	Active   OperationsTrendValue            `json:"active"`
+	Terminal OperationsTrendValue            `json:"terminal"`
+	ByStatus map[string]OperationsTrendValue `json:"by_status,omitempty"`
+}
+
+type WarmPoolOperationsTrend struct {
+	Total    OperationsTrendValue            `json:"total"`
+	Desired  OperationsTrendValue            `json:"desired"`
+	Slots    OperationsTrendValue            `json:"slots"`
+	Active   OperationsTrendValue            `json:"active"`
+	Ready    OperationsTrendValue            `json:"ready"`
+	Claimed  OperationsTrendValue            `json:"claimed"`
+	Draining OperationsTrendValue            `json:"draining"`
+	Terminal OperationsTrendValue            `json:"terminal"`
+	ByStatus map[string]OperationsTrendValue `json:"by_status,omitempty"`
+}
+
+type ControllerRunOperationsTrend struct {
+	Total               OperationsTrendValue            `json:"total"`
+	AssignmentBacked    OperationsTrendValue            `json:"assignment_backed"`
+	Active              OperationsTrendValue            `json:"active"`
+	Attention           OperationsTrendValue            `json:"attention"`
+	Skipped             OperationsTrendValue            `json:"skipped"`
+	ByKind              map[string]OperationsTrendValue `json:"by_kind,omitempty"`
+	ByAssignmentStatus  map[string]OperationsTrendValue `json:"by_assignment_status,omitempty"`
+	BySkipReason        map[string]OperationsTrendValue `json:"by_skip_reason,omitempty"`
+	BySkipStatus        map[string]OperationsTrendValue `json:"by_skip_status,omitempty"`
+	ByMissingCapability map[string]OperationsTrendValue `json:"by_missing_capability,omitempty"`
+}
+
+type OperationsTrendRegression struct {
+	Area  string `json:"area"`
+	Field string `json:"field"`
+	Key   string `json:"key,omitempty"`
+	First int    `json:"first"`
+	Last  int    `json:"last"`
+	Delta int    `json:"delta"`
 }
 
 type OperationsSummarySnapshot struct {
@@ -2591,6 +2679,25 @@ func ListOperationsSummarySnapshots(ctx context.Context, opts OperationsSummaryH
 	var result OperationsSummarySnapshotListResult
 	if err := c.request(ctx, http.MethodGet, c.queryPath("/v1/operations/summary/history", query), nil, &result, c.timeout); err != nil {
 		return OperationsSummarySnapshotListResult{}, err
+	}
+	return result, nil
+}
+
+func GetOperationsTrend(ctx context.Context, opts OperationsTrendOptions) (OperationsTrendResult, error) {
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "operations-summary-trend")
+	if err != nil {
+		return OperationsTrendResult{}, err
+	}
+	query := map[string]string{"namespace": opts.Namespace}
+	if !opts.Since.IsZero() {
+		query["since"] = opts.Since.UTC().Format(time.RFC3339Nano)
+	}
+	if !opts.Until.IsZero() {
+		query["until"] = opts.Until.UTC().Format(time.RFC3339Nano)
+	}
+	var result OperationsTrendResult
+	if err := c.request(ctx, http.MethodGet, c.queryPath("/v1/operations/summary/trend", query), nil, &result, c.timeout); err != nil {
+		return OperationsTrendResult{}, err
 	}
 	return result, nil
 }

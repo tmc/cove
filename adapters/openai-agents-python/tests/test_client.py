@@ -718,8 +718,19 @@ def test_fleet_client_maintenance_runs() -> None:
         assert history["snapshots"][0]["namespace"] == "team-a"
         assert history["snapshots"][0]["controller_runs"]["skipped"] == 4
         assert history["snapshots"][0]["workers"]["by_status"]["cordoned"] == 1
+        trend = CoveFleetClient.get_operations_trend(
+            fleet_url=server.url,
+            api_key="secret",
+            namespace="team-a",
+            since="2026-05-31T10:00:00Z",
+            until="2026-05-31T10:10:00Z",
+        )
+        assert trend["sample_count"] == 2
+        assert trend["workers"]["ready"]["delta"] == -2
+        assert trend["controller_runs"]["by_missing_capability"]["ram-overlay"]["delta"] == 2
+        assert len(trend["regressions"]) == 2
 
-        paths = [request["path"] for request in server.requests[-18:]]
+        paths = [request["path"] for request in server.requests[-19:]]
         assert paths == [
             "/v1/images/gc",
             "/v1/images/gc/runs",
@@ -739,42 +750,46 @@ def test_fleet_client_maintenance_runs() -> None:
             "/v1/reconcile",
             "/v1/operations/summary",
             "/v1/operations/summary/history",
+            "/v1/operations/summary/trend",
         ]
-        assert server.requests[-18]["body"]["required_capabilities"] == ["ram-overlay", "asif"]
-        assert server.requests[-18]["body"]["dry_run"] is True
-        assert server.requests[-17]["query"]["apply"] == ["true"]
-        assert server.requests[-15]["body"]["run_budget"] == 100
-        assert server.requests[-15]["body"]["dry_run"] is True
-        assert server.requests[-14]["query"]["clear"] == ["false"]
-        assert server.requests[-12]["body"]["warn_pct"] == 70
-        assert server.requests[-12]["body"]["dry_run"] is True
-        assert server.requests[-11]["query"]["target"] == ["750GB"]
-        assert server.requests[-9]["body"]["category"] == "build-scratch"
-        assert server.requests[-9]["body"]["dry_run"] is True
-        assert server.requests[-6]["query"]["kind"] == ["storage.prune"]
-        assert server.requests[-6]["query"]["source_ref"] == ["registry.example/base:v1"]
-        assert server.requests[-6]["query"]["image_ref"] == ["base:v1"]
-        assert server.requests[-6]["query"]["image_manifest_digest"] == ["sha256:base"]
-        assert server.requests[-6]["query"]["image_digest_ref"] == ["registry.example/base@sha256:base"]
-        assert server.requests[-6]["query"]["image_platform"] == ["darwin/arm64"]
-        assert server.requests[-6]["query"]["required_capability"] == ["ram-overlay"]
-        assert server.requests[-6]["query"]["assignment_id"] == ["assignment-storage-prune-1"]
-        assert server.requests[-6]["query"]["assignment_status"] == ["running"]
-        assert server.requests[-6]["query"]["has_active_assignments"] == ["true"]
-        assert server.requests[-6]["query"]["worker_id"] == ["worker-1"]
-        assert server.requests[-6]["query"]["candidate_worker_id"] == ["worker-1"]
-        assert server.requests[-6]["query"]["skipped_worker_id"] == ["worker-2"]
-        assert server.requests[-6]["query"]["skip_reason"] == ["capability"]
-        assert server.requests[-6]["query"]["skip_status"] == ["cordoned"]
-        assert server.requests[-6]["query"]["missing_capability"] == ["ram-overlay"]
-        assert server.requests[-6]["query"]["has_skips"] == ["true"]
-        assert server.requests[-3]["body"] == {}
+        assert server.requests[-19]["body"]["required_capabilities"] == ["ram-overlay", "asif"]
+        assert server.requests[-19]["body"]["dry_run"] is True
+        assert server.requests[-18]["query"]["apply"] == ["true"]
+        assert server.requests[-16]["body"]["run_budget"] == 100
+        assert server.requests[-16]["body"]["dry_run"] is True
+        assert server.requests[-15]["query"]["clear"] == ["false"]
+        assert server.requests[-13]["body"]["warn_pct"] == 70
+        assert server.requests[-13]["body"]["dry_run"] is True
+        assert server.requests[-12]["query"]["target"] == ["750GB"]
+        assert server.requests[-10]["body"]["category"] == "build-scratch"
+        assert server.requests[-10]["body"]["dry_run"] is True
+        assert server.requests[-7]["query"]["kind"] == ["storage.prune"]
+        assert server.requests[-7]["query"]["source_ref"] == ["registry.example/base:v1"]
+        assert server.requests[-7]["query"]["image_ref"] == ["base:v1"]
+        assert server.requests[-7]["query"]["image_manifest_digest"] == ["sha256:base"]
+        assert server.requests[-7]["query"]["image_digest_ref"] == ["registry.example/base@sha256:base"]
+        assert server.requests[-7]["query"]["image_platform"] == ["darwin/arm64"]
+        assert server.requests[-7]["query"]["required_capability"] == ["ram-overlay"]
+        assert server.requests[-7]["query"]["assignment_id"] == ["assignment-storage-prune-1"]
+        assert server.requests[-7]["query"]["assignment_status"] == ["running"]
+        assert server.requests[-7]["query"]["has_active_assignments"] == ["true"]
+        assert server.requests[-7]["query"]["worker_id"] == ["worker-1"]
+        assert server.requests[-7]["query"]["candidate_worker_id"] == ["worker-1"]
+        assert server.requests[-7]["query"]["skipped_worker_id"] == ["worker-2"]
+        assert server.requests[-7]["query"]["skip_reason"] == ["capability"]
+        assert server.requests[-7]["query"]["skip_status"] == ["cordoned"]
+        assert server.requests[-7]["query"]["missing_capability"] == ["ram-overlay"]
+        assert server.requests[-7]["query"]["has_skips"] == ["true"]
+        assert server.requests[-4]["body"] == {}
+        assert server.requests[-3]["query"]["namespace"] == ["team-a"]
         assert server.requests[-2]["query"]["namespace"] == ["team-a"]
+        assert server.requests[-2]["query"]["since"] == ["2026-05-31T10:00:00Z"]
+        assert server.requests[-2]["query"]["until"] == ["2026-05-31T10:10:00Z"]
+        assert server.requests[-2]["query"]["offset"] == ["1"]
+        assert server.requests[-2]["query"]["limit"] == ["2"]
         assert server.requests[-1]["query"]["namespace"] == ["team-a"]
         assert server.requests[-1]["query"]["since"] == ["2026-05-31T10:00:00Z"]
         assert server.requests[-1]["query"]["until"] == ["2026-05-31T10:10:00Z"]
-        assert server.requests[-1]["query"]["offset"] == ["1"]
-        assert server.requests[-1]["query"]["limit"] == ["2"]
     finally:
         server.stop()
 
@@ -2235,6 +2250,40 @@ def _operations_summary_snapshot() -> dict[str, object]:
     }
 
 
+def _operations_trend() -> dict[str, object]:
+    return {
+        "namespace": "team-a",
+        "since": "2026-05-31T10:00:00Z",
+        "until": "2026-05-31T10:10:00Z",
+        "window_start": "2026-05-31T10:00:00Z",
+        "window_end": "2026-05-31T10:05:00Z",
+        "sample_count": 2,
+        "workers": {
+            "ready": {"first": 3, "last": 1, "delta": -2},
+            "cordoned": {"first": 0, "last": 1, "delta": 1},
+            "by_status": {"cordoned": {"first": 0, "last": 1, "delta": 1}},
+        },
+        "assignments": {},
+        "sandboxes": {},
+        "warm_pools": {},
+        "controller_runs": {
+            "attention": {"first": 0, "last": 1, "delta": 1},
+            "by_missing_capability": {"ram-overlay": {"first": 0, "last": 2, "delta": 2}},
+        },
+        "regressions": [
+            {
+                "area": "controller_runs",
+                "field": "by_missing_capability",
+                "key": "ram-overlay",
+                "first": 0,
+                "last": 2,
+                "delta": 2,
+            },
+            {"area": "workers", "field": "ready", "first": 3, "last": 1, "delta": -2},
+        ],
+    }
+
+
 def _audit_event() -> dict[str, object]:
     return {
         "id": "audit-1",
@@ -2775,6 +2824,9 @@ class _FleetHTTPServer:
                             "limit": int(query.get("limit", ["0"])[0]),
                         }
                     )
+                    return
+                if path == "/v1/operations/summary/trend":
+                    self._write(_operations_trend())
                     return
                 if path == "/v1/placements/plans":
                     self._write(

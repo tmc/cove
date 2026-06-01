@@ -252,6 +252,8 @@ if runs["runs"]:
         run_id=runs["runs"][0]["id"],
     )
     print(detail["summary"]["kind"])
+    print(detail.get("assignment_ids", []))
+    print(detail.get("assignment_status_counts", {}))
 
 history = CoveFleetClient.list_operations_summary_snapshots(
     fleet_url="https://fleet.internal.example",
@@ -260,8 +262,14 @@ history = CoveFleetClient.list_operations_summary_snapshots(
     limit=20,
 )
 print(history["count"])
-    print(detail.get("assignment_ids", []))
-    print(detail.get("assignment_status_counts", {}))
+
+trend = CoveFleetClient.get_operations_trend(
+    fleet_url="https://fleet.internal.example",
+    api_key="cove_...",
+    namespace="team-a",
+    since="2026-05-31T10:00:00Z",
+)
+print(trend["sample_count"], trend.get("regressions", []))
 
 plan = CoveFleetClient.plan_sandbox(
     fleet_url="https://fleet.internal.example",
@@ -509,9 +517,9 @@ worker lifecycle helpers such as `cordon_worker`, `evacuate_worker`,
 `list_worker_sandboxes`, `list_worker_events`, `list_worker_reports`,
 `get_worker_metering`, `list_sandbox_metering`, `list_assignment_events`,
 `list_assignment_reports`, and `get_assignment_metering`, and
-`list_controller_runs` plus `list_operations_summary_snapshots` for the aggregate
-operations dashboard, inventory, maintenance controls, audit chain, and
-timeline.
+`list_controller_runs`, `list_operations_summary_snapshots`, and
+`get_operations_trend` for the aggregate operations dashboard, retained samples,
+regression digest, inventory, maintenance controls, audit chain, and timeline.
 Pass `dry_run=True` to maintenance pushes to inspect planned
 assignments and structured skipped-worker diagnostics without mutating the
 controller.

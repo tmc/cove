@@ -138,10 +138,10 @@ delegates the disk/runtime work to `tart` or `vetu`.
    worker status plus controller-run active/attention rollups by kind, live
    assignment status, skip reason, skip status, missing capability, and skipped
    worker with per-worker status counts, records compact historical dashboard
-   samples, so operators can see whether RAM-overlay capacity is ready and
-   whether preparation or maintenance fan-out is currently blocked by specific
-   cordoned, quarantined, or stale workers and how those blockers trend over
-   time;
+   samples, and computes first/last/delta trend regressions from those samples,
+   so operators can see whether RAM-overlay capacity is ready and whether
+   preparation or maintenance fan-out is currently blocked by specific cordoned,
+   quarantined, or stale workers and how those blockers trend over time;
    placement plans retain skipped-worker reasons for capability, capacity,
    label, status, and exact-image mismatches and can be filtered by immutable
    image provenance and required capability, and assignment, placement-plan,
@@ -210,7 +210,7 @@ The first `cove-fleetd` plus `coved -fleet-url` control-plane
 boundary is present with auto-detected host capability inventory for RAM-overlay, ASIF, and live quotas, priority-ordered assignment leases with queue-deadline expiry, per-assignment run timeouts, and bounded automatic retry, stale-worker and
 expired-lease reconciliation with non-mutating impact plans, audited direct assignment creation plus worker-observed command/control cancellation and retry/replan, filterable/paginated worker and assignment inventory, worker-scoped hosted sandbox inventory, worker- and assignment-scoped event history, worker/assignment report history, and worker- and assignment-scoped usage metering, controller-side worker cordon/quarantine/evacuate/drain/decommission
 with forced queued-work cancellation,
-operations summary with retained trend snapshots, aggregate retained controller-run feed, manifest-bundle-backed digest-aware fleet image preparation with dry-run skip diagnostics and retained history, fleet image-GC push with dry-run planning and retained history, lifecycle-policy push with dry-run planning and retained history, storage budget/prune
+operations summary with retained trend snapshots and server-side regression digests, aggregate retained controller-run feed, manifest-bundle-backed digest-aware fleet image preparation with dry-run skip diagnostics and retained history, fleet image-GC push with dry-run planning and retained history, lifecycle-policy push with dry-run planning and retained history, storage budget/prune
 push with dry-run planning and retained history, required-capability matching across hosted placement and maintenance fan-out, and worker-side `cove` assignment execution plus
 least-loaded/digest-exact image-affinity/bin-pack placement with anti-affinity hints and
 retained placement plan history with skipped-worker diagnostics and list/get filters, warm-pool quota replenishment, and agent-ready slot

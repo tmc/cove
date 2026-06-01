@@ -89,6 +89,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   `GET /v1/operations/summary/history` plus Go/Python hosted clients expose the
   latest retained trend samples with namespace, time-window, and pagination
   filters.
+- `GET /v1/operations/summary/trend` plus Go/Python hosted clients now compute
+  first/last/delta values and regression digests from retained operations
+  samples, surfacing worker readiness drops, skipped-run growth, and missing
+  capability regressions without client-side dashboard logic.
 - The public Go `agentsandbox` package and OpenAI Agents Python adapter now
   expose the hosted `/v1/operations/summary` dashboard so agent clients can
   inspect worker readiness, capability coverage, active work, warm pools, and
