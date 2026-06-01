@@ -33,6 +33,7 @@ func TestCloudClientCreateExecControlDelete(t *testing.T) {
 		MaxActiveSandboxes:   3,
 		Priority:             5,
 		QueueTTL:             45 * time.Second,
+		RunTimeout:           5 * time.Minute,
 		MaxAttempts:          3,
 		RetryDelay:           20 * time.Second,
 		Timeout:              time.Second,
@@ -178,6 +179,9 @@ func TestCloudClientCreateExecControlDelete(t *testing.T) {
 	if create["queue_ttl"] != "45s" {
 		t.Fatalf("create queue ttl = %+v, want 45s", create["queue_ttl"])
 	}
+	if create["run_timeout"] != "300s" {
+		t.Fatalf("create run timeout = %+v, want 300s", create["run_timeout"])
+	}
 	if create["max_attempts"] != float64(3) {
 		t.Fatalf("create max attempts = %+v, want 3", create["max_attempts"])
 	}
@@ -322,6 +326,15 @@ func TestCloudClientCreateAndPlanValidation(t *testing.T) {
 		QueueTTL: -time.Second,
 	}); err == nil || !strings.Contains(err.Error(), "queue ttl must not be negative") {
 		t.Fatalf("negative queue ttl err = %v, want validation error", err)
+	}
+	if _, err := Create(ctx, ClientOptions{
+		Provider:   ProviderCloud,
+		FleetURL:   "https://fleet.example",
+		APIKey:     "secret",
+		ImageRef:   "base:v1",
+		RunTimeout: -time.Second,
+	}); err == nil || !strings.Contains(err.Error(), "run timeout must not be negative") {
+		t.Fatalf("negative run timeout err = %v, want validation error", err)
 	}
 	if _, err := Create(ctx, ClientOptions{
 		Provider:    ProviderCloud,
@@ -1221,6 +1234,7 @@ func TestCloudClientInventory(t *testing.T) {
 		Resources:            Capacity{VMs: 1, CPUs: 4},
 		Priority:             8,
 		QueueTTL:             2 * time.Minute,
+		RunTimeout:           5 * time.Minute,
 		MaxAttempts:          4,
 		RetryDelay:           30 * time.Second,
 		Verb:                 "cove",
@@ -1306,6 +1320,9 @@ func TestCloudClientInventory(t *testing.T) {
 	if createBody["queue_ttl"] != "120s" {
 		t.Fatalf("create assignment queue ttl = %+v, want 120s", createBody["queue_ttl"])
 	}
+	if createBody["run_timeout"] != "300s" {
+		t.Fatalf("create assignment run timeout = %+v, want 300s", createBody["run_timeout"])
+	}
 	if createBody["max_attempts"] != float64(4) {
 		t.Fatalf("create assignment max attempts = %+v, want 4", createBody["max_attempts"])
 	}
@@ -1339,6 +1356,9 @@ func TestCloudClientInventoryValidation(t *testing.T) {
 	}
 	if _, err := CreateAssignment(ctx, AssignmentCreateOptions{FleetURL: "https://fleet.example", APIKey: "secret", Verb: "noop", QueueTTL: -time.Second}); err == nil || !strings.Contains(err.Error(), "queue ttl must not be negative") {
 		t.Fatalf("CreateAssignment negative queue ttl err = %v, want validation error", err)
+	}
+	if _, err := CreateAssignment(ctx, AssignmentCreateOptions{FleetURL: "https://fleet.example", APIKey: "secret", Verb: "noop", RunTimeout: -time.Second}); err == nil || !strings.Contains(err.Error(), "run timeout must not be negative") {
+		t.Fatalf("CreateAssignment negative run timeout err = %v, want validation error", err)
 	}
 	if _, err := CreateAssignment(ctx, AssignmentCreateOptions{FleetURL: "https://fleet.example", APIKey: "secret", Verb: "noop", MaxAttempts: -1}); err == nil || !strings.Contains(err.Error(), "max attempts must be non-negative") {
 		t.Fatalf("CreateAssignment negative max attempts err = %v, want validation error", err)

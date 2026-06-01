@@ -30,6 +30,11 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   controller records `retry_at` for delayed retries, and the Go
   `agentsandbox` package, OpenAI Agents Python adapter, and `SandboxRunConfig`
   cloud options expose the retry policy.
+- Controller assignments and hosted sandbox run assignments now accept optional
+  `run_timeout` duration policy. `coved` enforces it per leased `cove` or
+  control assignment before falling back to the worker-wide assignment timeout,
+  and the Go `agentsandbox` package, OpenAI Agents Python adapter, and
+  `SandboxRunConfig` cloud options expose the field.
 - The public Go `agentsandbox` package and OpenAI Agents Python adapter now
   expose hosted sandbox metering list helpers for `/v1/metering/sandboxes`, so
   SDK operators can query namespace or sandbox usage without first constructing

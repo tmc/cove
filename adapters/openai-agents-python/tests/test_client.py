@@ -106,6 +106,7 @@ def test_backend_options_round_trip_without_agents() -> None:
         max_active_sandboxes=3,
         priority=5,
         queue_ttl="45s",
+        run_timeout="5m",
         max_attempts=3,
         retry_delay="20s",
         fleet_url="http://127.0.0.1:9758",
@@ -123,6 +124,7 @@ def test_backend_options_round_trip_without_agents() -> None:
     assert opts.model_dump()["max_active_sandboxes"] == 3
     assert opts.model_dump()["priority"] == 5
     assert opts.model_dump()["queue_ttl"] == "45s"
+    assert opts.model_dump()["run_timeout"] == "5m"
     assert opts.model_dump()["max_attempts"] == 3
     assert opts.model_dump()["retry_delay"] == "20s"
     assert opts.model_dump()["fleet_url"] == "http://127.0.0.1:9758"
@@ -159,6 +161,7 @@ def test_fleet_client_create_wait_exec_and_delete() -> None:
             max_active_sandboxes=3,
             priority=5,
             queue_ttl="45s",
+            run_timeout="5m",
             max_attempts=3,
             retry_delay="20s",
         )
@@ -216,6 +219,7 @@ def test_fleet_client_create_wait_exec_and_delete() -> None:
         assert create["body"]["max_active_sandboxes"] == 3
         assert create["body"]["priority"] == 5
         assert create["body"]["queue_ttl"] == "45s"
+        assert create["body"]["run_timeout"] == "5m"
         assert create["body"]["max_attempts"] == 3
         assert create["body"]["retry_delay"] == "20s"
         assert create["body"]["namespace"] == "team-a"
@@ -1014,6 +1018,7 @@ def test_fleet_client_inventory() -> None:
             resources={"vms": 1, "cpus": 4},
             priority=8,
             queue_ttl="2m",
+            run_timeout="5m",
             max_attempts=4,
             retry_delay="30s",
             verb="cove",
@@ -1077,6 +1082,7 @@ def test_fleet_client_inventory() -> None:
         assert create_body["resources"] == {"vms": 1, "cpus": 4}
         assert create_body["priority"] == 8
         assert create_body["queue_ttl"] == "2m"
+        assert create_body["run_timeout"] == "5m"
         assert create_body["max_attempts"] == 4
         assert create_body["retry_delay"] == "30s"
         assert create_body["args"] == ["run", "-fork-from", "base:v1", "-ephemeral"]

@@ -302,6 +302,7 @@ class CoveFleetClient:
         max_active_sandboxes: int = 0,
         priority: int = 0,
         queue_ttl: str | None = "",
+        run_timeout: str | None = "",
         max_attempts: int = 0,
         retry_delay: str | None = "",
         api_key: str | None = None,
@@ -319,6 +320,7 @@ class CoveFleetClient:
         if max_attempts < 0:
             raise ValueError("max_attempts must be non-negative")
         queue_ttl = (queue_ttl or "").strip()
+        run_timeout = (run_timeout or "").strip()
         retry_delay = (retry_delay or "").strip()
         body: dict[str, object] = {"image_ref": image_ref}
         if sandbox_id:
@@ -347,6 +349,8 @@ class CoveFleetClient:
             body["priority"] = priority
         if queue_ttl:
             body["queue_ttl"] = queue_ttl
+        if run_timeout:
+            body["run_timeout"] = run_timeout
         if max_attempts:
             body["max_attempts"] = max_attempts
         if retry_delay:
@@ -1839,6 +1843,7 @@ class CoveFleetClient:
         resources: Mapping[str, object] | None = None,
         priority: int = 0,
         queue_ttl: str | None = "",
+        run_timeout: str | None = "",
         max_attempts: int = 0,
         retry_delay: str | None = "",
         args: Sequence[str] = (),
@@ -1852,6 +1857,7 @@ class CoveFleetClient:
         if max_attempts < 0:
             raise ValueError("assignment max_attempts must be non-negative")
         queue_ttl = (queue_ttl or "").strip()
+        run_timeout = (run_timeout or "").strip()
         retry_delay = (retry_delay or "").strip()
         seed = cls(
             sandbox_id="assignment-create",
@@ -1901,6 +1907,8 @@ class CoveFleetClient:
             body["priority"] = priority
         if queue_ttl:
             body["queue_ttl"] = queue_ttl
+        if run_timeout:
+            body["run_timeout"] = run_timeout
         if max_attempts:
             body["max_attempts"] = max_attempts
         if retry_delay:

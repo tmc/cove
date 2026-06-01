@@ -74,6 +74,7 @@ if _AGENTS_AVAILABLE:
         max_active_sandboxes: int = 0
         priority: int = 0
         queue_ttl: str = ""
+        run_timeout: str = ""
         max_attempts: int = 0
         retry_delay: str = ""
         sandbox_id: str | None = None
@@ -108,6 +109,7 @@ if _AGENTS_AVAILABLE:
             max_active_sandboxes: int = 0,
             priority: int = 0,
             queue_ttl: str = "",
+            run_timeout: str = "",
             max_attempts: int = 0,
             retry_delay: str = "",
             sandbox_id: str | None = None,
@@ -142,6 +144,7 @@ if _AGENTS_AVAILABLE:
                 max_active_sandboxes=max_active_sandboxes,
                 priority=priority,
                 queue_ttl=queue_ttl,
+                run_timeout=run_timeout,
                 max_attempts=max_attempts,
                 retry_delay=retry_delay,
                 sandbox_id=sandbox_id,
@@ -178,6 +181,7 @@ else:
         max_active_sandboxes: int = 0
         priority: int = 0
         queue_ttl: str = ""
+        run_timeout: str = ""
         max_attempts: int = 0
         retry_delay: str = ""
         sandbox_id: str | None = None
@@ -561,6 +565,7 @@ class CoveSandboxClient(BaseSandboxClient):
                 max_active_sandboxes=opts.max_active_sandboxes,
                 priority=opts.priority,
                 queue_ttl=opts.queue_ttl,
+                run_timeout=opts.run_timeout,
                 max_attempts=opts.max_attempts,
                 retry_delay=opts.retry_delay,
                 sandbox_id=sandbox_id or f"sandbox-{session_id.hex[:8]}",

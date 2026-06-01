@@ -259,13 +259,30 @@ func assignmentRefreshesImageRefs(assignment fleetcontrol.Assignment) bool {
 	return assignment.Verb == "cove" && len(assignment.Args) >= 2 && assignment.Args[0] == "image" && assignment.Args[1] == "gc"
 }
 
+func (w *FleetWorker) assignmentRunTimeout(assignment fleetcontrol.Assignment) (time.Duration, error) {
+	raw := strings.TrimSpace(assignment.RunTimeout)
+	if raw == "" {
+		return w.assignmentTimeout, nil
+	}
+	timeout, err := time.ParseDuration(raw)
+	if err != nil || timeout <= 0 {
+		return 0, fmt.Errorf("assignment run_timeout must be a positive duration")
+	}
+	return timeout, nil
+}
+
 func (w *FleetWorker) runCoveAssignment(ctx context.Context, assignment fleetcontrol.Assignment) fleetcontrol.WorkerReport {
 	report := fleetcontrol.WorkerReport{
 		AssignmentID: assignment.ID,
 		Status:       "failed",
 		ExitCode:     -1,
 	}
-	runCtx, cancel := context.WithTimeout(ctx, w.assignmentTimeout)
+	timeout, err := w.assignmentRunTimeout(assignment)
+	if err != nil {
+		report.Error = err.Error()
+		return report
+	}
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	var stdout, stderr bytes.Buffer
 	cmd := exec.CommandContext(runCtx, w.coveBin, assignment.Args...)
@@ -283,10 +300,10 @@ func (w *FleetWorker) runCoveAssignment(ctx context.Context, assignment fleetcon
 	}()
 	ticker := time.NewTicker(w.assignmentInterval)
 	defer ticker.Stop()
-	var err error
+	var waitErr error
 	for {
 		select {
-		case err = <-done:
+		case waitErr = <-done:
 			goto finished
 		case <-ticker.C:
 			if activeStatus != "ready" && assignmentNeedsReadyProbe(assignment) && w.warmPoolReady(runCtx, assignment) {
@@ -302,11 +319,11 @@ finished:
 		report.ExitCode = cmd.ProcessState.ExitCode()
 	}
 	if runCtx.Err() == context.DeadlineExceeded {
-		report.Error = fmt.Sprintf("assignment timed out after %s", w.assignmentTimeout)
+		report.Error = fmt.Sprintf("assignment timed out after %s", timeout)
 		return w.finishCoveAssignment(ctx, assignment, report)
 	}
-	if err != nil {
-		report.Error = err.Error()
+	if waitErr != nil {
+		report.Error = waitErr.Error()
 		return w.finishCoveAssignment(ctx, assignment, report)
 	}
 	report.Status = "complete"
@@ -334,13 +351,18 @@ func (w *FleetWorker) runControlAssignment(ctx context.Context, assignment fleet
 		report.Error = err.Error()
 		return report
 	}
-	runCtx, cancel := context.WithTimeout(ctx, w.assignmentTimeout)
+	timeout, err := w.assignmentRunTimeout(assignment)
+	if err != nil {
+		report.Error = err.Error()
+		return report
+	}
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	w.reportAssignmentStatus(runCtx, assignment.ID, "running")
 	response, err := w.sendControlRequest(runCtx, vmName, request)
 	if err != nil {
 		if runCtx.Err() == context.DeadlineExceeded {
-			report.Error = fmt.Sprintf("assignment timed out after %s", w.assignmentTimeout)
+			report.Error = fmt.Sprintf("assignment timed out after %s", timeout)
 		} else {
 			report.Error = err.Error()
 		}

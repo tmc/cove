@@ -217,6 +217,7 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		if !assignment.QueueExpires.IsZero() {
 			assignment.QueueExpires = assignment.QueueExpires.UTC()
 		}
+		assignment.RunTimeout = strings.TrimSpace(assignment.RunTimeout)
 		if assignment.MaxAttempts < 0 {
 			assignment.MaxAttempts = 0
 		}
@@ -1102,6 +1103,10 @@ func (s *Store) CreateAssignmentActor(actor string, a Assignment) (Assignment, e
 	if err != nil {
 		return Assignment{}, err
 	}
+	runTimeout, err := normalizeAssignmentRunTimeout(a.RunTimeout, "assignment")
+	if err != nil {
+		return Assignment{}, err
+	}
 	actor = normalizeActor(actor)
 
 	s.mu.Lock()
@@ -1151,6 +1156,7 @@ func (s *Store) CreateAssignmentActor(actor string, a Assignment) (Assignment, e
 	a.Args = cloneStrings(a.Args)
 	a.QueueTTL = ""
 	a.QueueExpires = queueExpires
+	a.RunTimeout = runTimeout
 	a.Attempt = 0
 	a.RetryDelay = retryDelay
 	a.RetryAt = time.Time{}
@@ -1171,6 +1177,9 @@ func (s *Store) CreateAssignmentActor(actor string, a Assignment) (Assignment, e
 	}
 	if !a.QueueExpires.IsZero() {
 		fields["queue_expires"] = a.QueueExpires.Format(time.RFC3339Nano)
+	}
+	if a.RunTimeout != "" {
+		fields["run_timeout"] = a.RunTimeout
 	}
 	if a.MaxAttempts > 0 {
 		fields["max_attempts"] = strconv.Itoa(a.MaxAttempts)
@@ -1679,6 +1688,10 @@ func (s *Store) CreateSandboxActor(actor string, req SandboxRequest) (SandboxSta
 	if err != nil {
 		return SandboxStatus{}, err
 	}
+	runTimeout, err := normalizeAssignmentRunTimeout(req.RunTimeout, "sandbox")
+	if err != nil {
+		return SandboxStatus{}, err
+	}
 	args := cloneStrings(req.Args)
 	if err := validateForkRunArgs(args, "sandbox"); err != nil {
 		return SandboxStatus{}, err
@@ -1696,6 +1709,7 @@ func (s *Store) CreateSandboxActor(actor string, req SandboxRequest) (SandboxSta
 		AntiAffinityKey:      strings.TrimSpace(req.AntiAffinityKey),
 		Resources:            req.Resources,
 		Priority:             req.Priority,
+		RunTimeout:           runTimeout,
 		MaxAttempts:          req.MaxAttempts,
 		RetryDelay:           retryDelay,
 	}
@@ -1760,6 +1774,7 @@ func (s *Store) CreateSandboxActor(actor string, req SandboxRequest) (SandboxSta
 		Resources:            normalizeResources(resources),
 		Priority:             req.Priority,
 		QueueExpires:         queueExpires,
+		RunTimeout:           runTimeout,
 		MaxAttempts:          req.MaxAttempts,
 		RetryDelay:           retryDelay,
 		Verb:                 "cove",
@@ -1779,6 +1794,9 @@ func (s *Store) CreateSandboxActor(actor string, req SandboxRequest) (SandboxSta
 	}
 	if !queueExpires.IsZero() {
 		fields["queue_expires"] = queueExpires.Format(time.RFC3339Nano)
+	}
+	if runTimeout != "" {
+		fields["run_timeout"] = runTimeout
 	}
 	if req.MaxAttempts > 0 {
 		fields["max_attempts"] = strconv.Itoa(req.MaxAttempts)
@@ -6349,6 +6367,18 @@ func normalizeAssignmentRetryPolicy(maxAttempts int, rawDelay string, name strin
 		return "", fmt.Errorf("%s retry_delay must be a positive duration", name)
 	}
 	return rawDelay, nil
+}
+
+func normalizeAssignmentRunTimeout(rawTimeout string, name string) (string, error) {
+	rawTimeout = strings.TrimSpace(rawTimeout)
+	if rawTimeout == "" {
+		return "", nil
+	}
+	timeout, err := time.ParseDuration(rawTimeout)
+	if err != nil || timeout <= 0 {
+		return "", fmt.Errorf("%s run_timeout must be a positive duration", name)
+	}
+	return rawTimeout, nil
 }
 
 func shouldRetryAssignment(assignment Assignment, status string) bool {

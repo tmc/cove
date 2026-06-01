@@ -30,6 +30,7 @@ def test_sandbox_run_config_factory(monkeypatch) -> None:
         parent="macos-base",
         name="eval-001",
         required_capabilities=("ram-overlay",),
+        run_timeout="5m",
         delete_on_close=True,
     )
     assert isinstance(cfg, FakeRunConfig)
@@ -37,5 +38,6 @@ def test_sandbox_run_config_factory(monkeypatch) -> None:
     assert cfg.sandbox.options.parent == "macos-base"
     assert cfg.sandbox.options.name == "eval-001"
     assert cfg.sandbox.options.required_capabilities == ("ram-overlay",)
+    assert cfg.sandbox.options.run_timeout == "5m"
     assert cfg.sandbox.options.delete_on_close is True
     assert cfg.sandbox.options.vm is None

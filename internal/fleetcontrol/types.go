@@ -832,6 +832,7 @@ type SandboxRequest struct {
 	Priority             int               `json:"priority,omitempty"`
 	QueueTTL             string            `json:"queue_ttl,omitempty"`
 	QueueExpires         time.Time         `json:"queue_expires,omitempty"`
+	RunTimeout           string            `json:"run_timeout,omitempty"`
 	MaxAttempts          int               `json:"max_attempts,omitempty"`
 	RetryDelay           string            `json:"retry_delay,omitempty"`
 }
@@ -1152,6 +1153,7 @@ type Assignment struct {
 	Priority             int               `json:"priority,omitempty"`
 	QueueTTL             string            `json:"queue_ttl,omitempty"`
 	QueueExpires         time.Time         `json:"queue_expires,omitempty"`
+	RunTimeout           string            `json:"run_timeout,omitempty"`
 	MaxAttempts          int               `json:"max_attempts,omitempty"`
 	Attempt              int               `json:"attempt,omitempty"`
 	RetryDelay           string            `json:"retry_delay,omitempty"`

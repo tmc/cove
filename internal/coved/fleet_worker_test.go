@@ -241,6 +241,50 @@ exit 0
 	}
 }
 
+func TestFleetWorkerUsesAssignmentRunTimeout(t *testing.T) {
+	store := fleetcontrol.NewMemoryStore(time.Minute)
+	server := httptest.NewServer(fleetcontrol.Handler(store))
+	defer server.Close()
+	coveBin := writeExecutable(t, `#!/bin/sh
+sleep 1
+exit 0
+`)
+
+	worker, err := NewFleetWorker(FleetWorkerConfig{
+		ControllerURL:      server.URL,
+		ID:                 "worker-1",
+		CoveBin:            coveBin,
+		AssignmentTimeout:  time.Second,
+		AssignmentInterval: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := worker.Register(ctx); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if _, err := store.CreateAssignment(fleetcontrol.Assignment{
+		ID:         "assignment-1",
+		WorkerID:   "worker-1",
+		Verb:       "cove",
+		RunTimeout: "50ms",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := worker.PollAssignment(ctx); err != nil {
+		t.Fatalf("PollAssignment: %v", err)
+	}
+	assignment, ok := store.GetAssignment("assignment-1")
+	if !ok {
+		t.Fatal("assignment missing")
+	}
+	report := assignment.LastReport
+	if assignment.Status != "failed" || report == nil || !strings.Contains(report.Error, "assignment timed out after 50ms") {
+		t.Fatalf("assignment = %+v", assignment)
+	}
+}
+
 func TestFleetWorkerRunsControlAssignment(t *testing.T) {
 	vmRoot := shortTempDir(t)
 	vmName := "cove-sandbox-job-1"

@@ -390,9 +390,10 @@ func TestStoreCreateSandbox(t *testing.T) {
 	}
 	now = now.Add(time.Second)
 	sandbox, err := store.CreateSandbox(SandboxRequest{
-		ID:       "job-1",
-		ImageRef: "base:v1",
-		Args:     []string{"--net", "nat"},
+		ID:         "job-1",
+		ImageRef:   "base:v1",
+		RunTimeout: "15m",
+		Args:       []string{"--net", "nat"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -403,6 +404,9 @@ func TestStoreCreateSandbox(t *testing.T) {
 	wantArgs := []string{"run", "-fork-from", "base:v1", "-fork-name", "cove-sandbox-job-1", "-ephemeral", "-keep", "-headless", "--net", "nat"}
 	if !equalStrings(sandbox.Assignment.Args, wantArgs) || sandbox.Assignment.SandboxID != "job-1" || sandbox.Assignment.SandboxRole != "run" {
 		t.Fatalf("sandbox assignment = %+v, want args %+v", sandbox.Assignment, wantArgs)
+	}
+	if sandbox.Assignment.RunTimeout != "15m" {
+		t.Fatalf("sandbox run timeout = %q, want 15m", sandbox.Assignment.RunTimeout)
 	}
 	if got, ok := store.GetSandbox("job-1"); !ok || got.ID != sandbox.ID {
 		t.Fatalf("GetSandbox = %+v, %v", got, ok)
@@ -736,6 +740,8 @@ func TestStoreSandboxQueueTTLExpiresAndReleasesCap(t *testing.T) {
 		want string
 	}{
 		{name: "bad ttl", req: SandboxRequest{ID: "bad-ttl", ImageRef: "base:v1", QueueTTL: "bad"}, want: "queue_ttl must be a positive duration"},
+		{name: "bad run timeout", req: SandboxRequest{ID: "bad-timeout", ImageRef: "base:v1", RunTimeout: "bad"}, want: "run_timeout must be a positive duration"},
+		{name: "zero run timeout", req: SandboxRequest{ID: "zero-timeout", ImageRef: "base:v1", RunTimeout: "0s"}, want: "run_timeout must be a positive duration"},
 		{name: "past expires", req: SandboxRequest{ID: "past", ImageRef: "base:v1", QueueExpires: now.Add(-time.Second)}, want: "queue_expires must be in the future"},
 		{name: "both", req: SandboxRequest{ID: "both", ImageRef: "base:v1", QueueTTL: "1s", QueueExpires: now.Add(time.Minute)}, want: "mutually exclusive"},
 	} {
@@ -2259,11 +2265,11 @@ func TestStoreAssignmentsExpireByQueueTTL(t *testing.T) {
 	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1"}); err != nil {
 		t.Fatal(err)
 	}
-	created, err := store.CreateAssignment(Assignment{ID: "assignment-1", WorkerID: "worker-1", Verb: "noop", QueueTTL: "2s"})
+	created, err := store.CreateAssignment(Assignment{ID: "assignment-1", WorkerID: "worker-1", Verb: "noop", QueueTTL: "2s", RunTimeout: "30s"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !created.QueueExpires.Equal(now.Add(2*time.Second)) || created.QueueTTL != "" {
+	if !created.QueueExpires.Equal(now.Add(2*time.Second)) || created.QueueTTL != "" || created.RunTimeout != "30s" {
 		t.Fatalf("created queue deadline = ttl %q expires %v, want cleared ttl and +2s", created.QueueTTL, created.QueueExpires)
 	}
 	if plan := store.ReconcilePlan(); len(plan.ExpiredAssignments) != 0 {
@@ -2303,6 +2309,8 @@ func TestStoreAssignmentsExpireByQueueTTL(t *testing.T) {
 	}{
 		{name: "bad ttl", in: Assignment{ID: "bad-ttl", Verb: "noop", QueueTTL: "bad"}, want: "queue_ttl must be a positive duration"},
 		{name: "zero ttl", in: Assignment{ID: "zero-ttl", Verb: "noop", QueueTTL: "0s"}, want: "queue_ttl must be a positive duration"},
+		{name: "bad run timeout", in: Assignment{ID: "bad-timeout", Verb: "noop", RunTimeout: "bad"}, want: "run_timeout must be a positive duration"},
+		{name: "zero run timeout", in: Assignment{ID: "zero-timeout", Verb: "noop", RunTimeout: "0s"}, want: "run_timeout must be a positive duration"},
 		{name: "past expires", in: Assignment{ID: "past", Verb: "noop", QueueExpires: now.Add(-time.Second)}, want: "queue_expires must be in the future"},
 		{name: "both", in: Assignment{ID: "both", Verb: "noop", QueueTTL: "1s", QueueExpires: now.Add(time.Minute)}, want: "mutually exclusive"},
 	} {

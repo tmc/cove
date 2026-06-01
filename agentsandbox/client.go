@@ -47,6 +47,7 @@ type ClientOptions struct {
 	MaxActiveSandboxes   int
 	Priority             int
 	QueueTTL             time.Duration
+	RunTimeout           time.Duration
 	MaxAttempts          int
 	RetryDelay           time.Duration
 	VMName               string
@@ -199,6 +200,7 @@ type Assignment struct {
 	Resources            Capacity          `json:"resources,omitempty"`
 	Priority             int               `json:"priority,omitempty"`
 	QueueExpires         time.Time         `json:"queue_expires,omitempty"`
+	RunTimeout           string            `json:"run_timeout,omitempty"`
 	MaxAttempts          int               `json:"max_attempts,omitempty"`
 	Attempt              int               `json:"attempt,omitempty"`
 	RetryDelay           string            `json:"retry_delay,omitempty"`
@@ -1051,6 +1053,7 @@ type AssignmentCreateOptions struct {
 	Resources            Capacity
 	Priority             int
 	QueueTTL             time.Duration
+	RunTimeout           time.Duration
 	MaxAttempts          int
 	RetryDelay           time.Duration
 	Verb                 string
@@ -1622,6 +1625,9 @@ func Create(ctx context.Context, opts ClientOptions) (*Client, error) {
 	if opts.QueueTTL < 0 {
 		return nil, errors.New("agentsandbox: queue ttl must not be negative")
 	}
+	if opts.RunTimeout < 0 {
+		return nil, errors.New("agentsandbox: run timeout must not be negative")
+	}
 	if opts.MaxAttempts < 0 {
 		return nil, errors.New("agentsandbox: max attempts must be non-negative")
 	}
@@ -1670,6 +1676,9 @@ func Create(ctx context.Context, opts ClientOptions) (*Client, error) {
 	}
 	if opts.QueueTTL > 0 {
 		body["queue_ttl"] = formatSeconds(opts.QueueTTL)
+	}
+	if opts.RunTimeout > 0 {
+		body["run_timeout"] = formatSeconds(opts.RunTimeout)
 	}
 	if opts.MaxAttempts > 0 {
 		body["max_attempts"] = opts.MaxAttempts
@@ -2906,6 +2915,9 @@ func CreateAssignment(ctx context.Context, opts AssignmentCreateOptions) (Assign
 	if opts.QueueTTL < 0 {
 		return Assignment{}, errors.New("agentsandbox: assignment queue ttl must not be negative")
 	}
+	if opts.RunTimeout < 0 {
+		return Assignment{}, errors.New("agentsandbox: assignment run timeout must not be negative")
+	}
 	if opts.MaxAttempts < 0 {
 		return Assignment{}, errors.New("agentsandbox: assignment max attempts must be non-negative")
 	}
@@ -2961,6 +2973,9 @@ func CreateAssignment(ctx context.Context, opts AssignmentCreateOptions) (Assign
 	}
 	if opts.QueueTTL > 0 {
 		body["queue_ttl"] = formatSeconds(opts.QueueTTL)
+	}
+	if opts.RunTimeout > 0 {
+		body["run_timeout"] = formatSeconds(opts.RunTimeout)
 	}
 	if opts.MaxAttempts > 0 {
 		body["max_attempts"] = opts.MaxAttempts
