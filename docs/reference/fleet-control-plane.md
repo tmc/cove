@@ -72,6 +72,7 @@ curl http://127.0.0.1:9758/v1/workers/mini-1
 curl 'http://127.0.0.1:9758/v1/workers/mini-1/events?limit=50'
 curl 'http://127.0.0.1:9758/v1/workers/mini-1/reports?limit=50'
 curl 'http://127.0.0.1:9758/v1/workers/mini-1/metering?status=running'
+curl 'http://127.0.0.1:9758/v1/workers/mini-1/sandboxes?status=ready&limit=50'
 curl -X POST http://127.0.0.1:9758/v1/workers/mini-1/cordon \
   -H 'content-type: application/json' \
   -d '{"reason":"maintenance"}'
@@ -133,6 +134,12 @@ metering records for a worker plus the aggregate duration, VM, CPU, and memory
 summary. It accepts `namespace`, `sandbox_id` or `sandbox`, and `status`; the
 endpoint is fleet-global and requires an unscoped viewer/operator/admin
 identity.
+
+`GET /v1/workers/{id}/sandboxes` returns hosted sandbox handles placed on that
+worker using the same paginated response shape as `GET /v1/sandboxes`. It
+accepts `namespace`, `status`, `image_ref`, `offset`, and `limit`, and is
+fleet-global like worker inventory, so scoped service-account tokens cannot
+read it.
 
 `POST /v1/workers/{id}/drain` is the controller maintenance path for hosted
 sandbox workloads. It cordons the worker to prevent new placement, then walks

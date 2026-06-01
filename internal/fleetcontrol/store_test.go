@@ -4271,6 +4271,42 @@ func TestHandlerWorkerReports(t *testing.T) {
 	}
 }
 
+func TestHandlerWorkerSandboxes(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var account ServiceAccountResult
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-a", Namespace: "team-a", Token: "token-a"}, &account)
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", Labels: map[string]string{"zone": "one"}, ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 4}}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-2", Labels: map[string]string{"zone": "two"}, ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 4}}, &record)
+	var sandbox SandboxStatus
+	postJSON(t, server.URL+"/v1/sandboxes", SandboxRequest{ID: "job-1", Namespace: "team-a", ImageRef: "base:v1", RequiredLabels: map[string]string{"zone": "one"}}, &sandbox)
+	postJSON(t, server.URL+"/v1/sandboxes", SandboxRequest{ID: "job-2", Namespace: "team-a", ImageRef: "base:v1", RequiredLabels: map[string]string{"zone": "one"}}, &sandbox)
+	postJSON(t, server.URL+"/v1/sandboxes", SandboxRequest{ID: "job-3", Namespace: "team-a", ImageRef: "base:v1", RequiredLabels: map[string]string{"zone": "two"}}, &sandbox)
+
+	var list SandboxListResult
+	getJSON(t, server.URL+"/v1/workers/worker-1/sandboxes?namespace=team-a&image_ref=base:v1&limit=1", &list)
+	if list.Count != 1 || list.Limit != 1 || list.NextOffset != 1 || len(list.Sandboxes) != 1 || list.Sandboxes[0].WorkerID != "worker-1" || list.Sandboxes[0].ID != "job-1" {
+		t.Fatalf("worker sandboxes = %+v, want first worker-1 sandbox with next offset", list)
+	}
+	list = SandboxListResult{}
+	getJSON(t, server.URL+"/v1/workers/worker-1/sandboxes?namespace=team-a&offset=1&limit=1", &list)
+	if list.Count != 1 || list.Offset != 1 || list.NextOffset != 0 || len(list.Sandboxes) != 1 || list.Sandboxes[0].ID != "job-2" {
+		t.Fatalf("worker offset sandboxes = %+v, want second worker-1 sandbox", list)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/workers/missing/sandboxes", ""); code != http.StatusNotFound {
+		t.Fatalf("missing worker sandboxes status = %d, want %d", code, http.StatusNotFound)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/workers/worker-1/sandboxes?limit=-1", ""); code != http.StatusBadRequest {
+		t.Fatalf("bad worker sandboxes limit status = %d, want %d", code, http.StatusBadRequest)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/workers/worker-1/sandboxes", "token-a"); code != http.StatusForbidden {
+		t.Fatalf("scoped worker sandboxes status = %d, want %d", code, http.StatusForbidden)
+	}
+}
+
 func TestHandlerAssignmentProtocol(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	server := httptest.NewServer(Handler(store))

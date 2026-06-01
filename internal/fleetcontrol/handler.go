@@ -1443,6 +1443,8 @@ func handleWorker(w http.ResponseWriter, r *http.Request, store *Store) {
 		handleWorkerReports(w, r, store, id)
 	case "metering":
 		handleWorkerMetering(w, r, store, id)
+	case "sandboxes":
+		handleWorkerSandboxes(w, r, store, id)
 	case "uncordon":
 		identity := identityFromRequest(r, store)
 		if !requireRole(w, identity, ServiceAccountRoleOperator) {
@@ -1548,6 +1550,57 @@ func handleWorkerMetering(w http.ResponseWriter, r *http.Request, store *Store, 
 	}
 	status := strings.TrimSpace(r.URL.Query().Get("status"))
 	writeJSON(w, http.StatusOK, store.ListWorkerMetering(namespace, id, sandboxID, status))
+}
+
+func handleWorkerSandboxes(w http.ResponseWriter, r *http.Request, store *Store, id string) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	if !requireUnscoped(w, r, store) {
+		return
+	}
+	filter, err := workerSandboxesFilterFromRequest(r, namespaceFilterFromRequest(r, identity), id)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !reconcile(w, store) {
+		return
+	}
+	if _, ok := store.Get(id); !ok {
+		writeError(w, http.StatusNotFound, "worker not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, store.ListSandboxesPage(filter))
+}
+
+func workerSandboxesFilterFromRequest(r *http.Request, namespace, id string) (SandboxListFilter, error) {
+	filter := SandboxListFilter{
+		Namespace: namespace,
+		Status:    strings.TrimSpace(r.URL.Query().Get("status")),
+		WorkerID:  id,
+		ImageRef:  strings.TrimSpace(r.URL.Query().Get("image_ref")),
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 0 {
+			return SandboxListFilter{}, fmt.Errorf("worker sandboxes limit must be non-negative")
+		}
+		filter.Limit = limit
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		offset, err := strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			return SandboxListFilter{}, fmt.Errorf("worker sandboxes offset must be non-negative")
+		}
+		filter.Offset = offset
+	}
+	return filter, nil
 }
 
 func handleWorkerAssignments(w http.ResponseWriter, r *http.Request, store *Store, id string) {
