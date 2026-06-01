@@ -971,9 +971,11 @@ func (s *Store) Report(r WorkerReport) (HostRecord, error) {
 	if r.AssignmentID != "" {
 		if assignment, ok := s.assignments[r.AssignmentID]; ok {
 			if assignment.LeasedTo == "" {
-				return HostRecord{}, fmt.Errorf("assignment %q is not leased to %q", r.AssignmentID, id)
+				if !canceledAssignmentReportAllowed(assignment, status, id) {
+					return HostRecord{}, fmt.Errorf("assignment %q is not leased to %q", r.AssignmentID, id)
+				}
 			}
-			if assignment.LeasedTo != id {
+			if assignment.LeasedTo != "" && assignment.LeasedTo != id {
 				return HostRecord{}, fmt.Errorf("assignment %q leased to %q", r.AssignmentID, assignment.LeasedTo)
 			}
 		}
@@ -1236,6 +1238,9 @@ func (s *Store) CancelAssignmentActor(actor, id string, req AssignmentCancelRequ
 	workerID := assignment.WorkerID
 	if workerID == "" {
 		workerID = assignment.LeasedTo
+	}
+	if assignment.WorkerID == "" {
+		assignment.WorkerID = workerID
 	}
 	assignment.Status = "canceled"
 	assignment.LeasedTo = ""
@@ -4486,6 +4491,12 @@ func assignmentLeaseStatus(status string) bool {
 	default:
 		return false
 	}
+}
+
+func canceledAssignmentReportAllowed(assignment Assignment, status, workerID string) bool {
+	return normalizeOperationStatus(assignment.Status) == "canceled" &&
+		normalizeOperationStatus(status) == "canceled" &&
+		strings.TrimSpace(assignment.WorkerID) == strings.TrimSpace(workerID)
 }
 
 func decommissionBlocksWorker(status string) bool {

@@ -285,6 +285,62 @@ exit 0
 	}
 }
 
+func TestFleetWorkerStopsCanceledAssignment(t *testing.T) {
+	store := fleetcontrol.NewMemoryStore(time.Minute)
+	server := httptest.NewServer(fleetcontrol.Handler(store))
+	defer server.Close()
+	coveBin := writeExecutable(t, `#!/bin/sh
+while true; do
+  sleep 0.02
+done
+`)
+
+	worker, err := NewFleetWorker(FleetWorkerConfig{
+		ControllerURL:      server.URL,
+		ID:                 "worker-1",
+		CoveBin:            coveBin,
+		AssignmentInterval: 20 * time.Millisecond,
+		AssignmentTimeout:  time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := worker.Register(ctx); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if _, err := store.CreateAssignment(fleetcontrol.Assignment{ID: "assignment-1", WorkerID: "worker-1", Verb: "cove"}); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- worker.PollAssignment(ctx)
+	}()
+	waitUntil(t, fleetWorkerTestTimeout, func() bool {
+		assignment, ok := store.GetAssignment("assignment-1")
+		return ok && assignment.Status == "running"
+	})
+	if _, err := store.CancelAssignment("assignment-1", fleetcontrol.AssignmentCancelRequest{Reason: "bad input", Force: true}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("PollAssignment: %v", err)
+		}
+	case <-time.After(fleetWorkerTestTimeout):
+		t.Fatal("PollAssignment did not finish")
+	}
+	assignment, ok := store.GetAssignment("assignment-1")
+	if !ok {
+		t.Fatal("assignment missing")
+	}
+	report := assignment.LastReport
+	if assignment.Status != "canceled" || report == nil || report.Status != "canceled" || report.Error != "assignment canceled" {
+		t.Fatalf("assignment = %+v, want canceled report", assignment)
+	}
+}
+
 func TestFleetWorkerRunsControlAssignment(t *testing.T) {
 	vmRoot := shortTempDir(t)
 	vmName := "cove-sandbox-job-1"

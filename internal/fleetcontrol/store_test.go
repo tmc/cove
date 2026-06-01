@@ -2443,8 +2443,15 @@ func TestStoreCancelAssignmentRequiresForceForLeased(t *testing.T) {
 	if !ok {
 		t.Fatal("assignment missing")
 	}
-	if assignment.Status != "canceled" || assignment.LeasedTo != "" || !assignment.LeaseExpires.IsZero() {
+	if assignment.Status != "canceled" || assignment.WorkerID != "worker-1" || assignment.LeasedTo != "" || !assignment.LeaseExpires.IsZero() {
 		t.Fatalf("forced canceled assignment = %+v", assignment)
+	}
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: "assignment-1", Status: "canceled", Error: "assignment canceled"}); err != nil {
+		t.Fatalf("Report canceled after forced cancel: %v", err)
+	}
+	assignment, ok = store.GetAssignment("assignment-1")
+	if !ok || assignment.Status != "canceled" || assignment.LastReport == nil || assignment.LastReport.Status != "canceled" {
+		t.Fatalf("assignment after canceled report = %+v, %v", assignment, ok)
 	}
 	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: "assignment-1", Status: "complete"}); err == nil {
 		t.Fatal("Report after forced cancel error = nil, want lease error")

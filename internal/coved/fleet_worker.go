@@ -205,6 +205,30 @@ func (w *FleetWorker) AwaitAssignment(ctx context.Context) (*fleetcontrol.Assign
 	}
 }
 
+func (w *FleetWorker) Assignment(ctx context.Context, id string) (fleetcontrol.Assignment, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fleetcontrol.Assignment{}, fmt.Errorf("assignment id required")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, w.endpoint("/v1/assignments/"+url.PathEscape(id)), nil)
+	if err != nil {
+		return fleetcontrol.Assignment{}, fmt.Errorf("create assignment request: %w", err)
+	}
+	resp, err := w.httpClient.Do(req)
+	if err != nil {
+		return fleetcontrol.Assignment{}, fmt.Errorf("get assignment: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fleetcontrol.Assignment{}, responseError("get assignment", resp)
+	}
+	var assignment fleetcontrol.Assignment
+	if err := json.NewDecoder(resp.Body).Decode(&assignment); err != nil {
+		return fleetcontrol.Assignment{}, fmt.Errorf("decode assignment: %w", err)
+	}
+	return assignment, nil
+}
+
 func (w *FleetWorker) PollAssignment(ctx context.Context) error {
 	assignment, err := w.AwaitAssignment(ctx)
 	if err != nil || assignment == nil {
@@ -301,11 +325,17 @@ func (w *FleetWorker) runCoveAssignment(ctx context.Context, assignment fleetcon
 	ticker := time.NewTicker(w.assignmentInterval)
 	defer ticker.Stop()
 	var waitErr error
+	canceled := false
 	for {
 		select {
 		case waitErr = <-done:
 			goto finished
 		case <-ticker.C:
+			if w.assignmentCanceled(runCtx, assignment.ID) {
+				canceled = true
+				cancel()
+				continue
+			}
 			if activeStatus != "ready" && assignmentNeedsReadyProbe(assignment) && w.warmPoolReady(runCtx, assignment) {
 				activeStatus = "ready"
 			}
@@ -318,6 +348,11 @@ finished:
 	if cmd.ProcessState != nil {
 		report.ExitCode = cmd.ProcessState.ExitCode()
 	}
+	if canceled {
+		report.Status = "canceled"
+		report.Error = "assignment canceled"
+		return w.finishCoveAssignment(ctx, assignment, report)
+	}
 	if runCtx.Err() == context.DeadlineExceeded {
 		report.Error = fmt.Sprintf("assignment timed out after %s", timeout)
 		return w.finishCoveAssignment(ctx, assignment, report)
@@ -329,6 +364,15 @@ finished:
 	report.Status = "complete"
 	report.Error = ""
 	return w.finishCoveAssignment(ctx, assignment, report)
+}
+
+func (w *FleetWorker) assignmentCanceled(ctx context.Context, id string) bool {
+	assignment, err := w.Assignment(ctx, id)
+	if err != nil {
+		w.warn("fleet assignment cancellation check", err)
+		return false
+	}
+	return strings.TrimSpace(assignment.Status) == "canceled"
 }
 
 func (w *FleetWorker) runControlAssignment(ctx context.Context, assignment fleetcontrol.Assignment) fleetcontrol.WorkerReport {
