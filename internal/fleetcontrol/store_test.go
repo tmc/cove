@@ -3373,8 +3373,14 @@ func TestStorePrepareImageCreatesMissingWorkerAssignments(t *testing.T) {
 	if !equalStrings(assignment.Args, wantArgs) {
 		t.Fatalf("args = %+v, want %+v", assignment.Args, wantArgs)
 	}
-	if skipReason(result.Skipped, "warm") != "present" || skipReason(result.Skipped, "drain") != "cordoned" || skipReason(result.Skipped, "plain") != "" || skipReason(result.Skipped, "rack") != "" {
+	if skipReason(result.Skipped, "warm") != "present" || skipReason(result.Skipped, "drain") != "status" || skipStatus(result.Skipped, "drain") != "cordoned" || skipReason(result.Skipped, "plain") != "capability" || skipReason(result.Skipped, "rack") != "label" {
 		t.Fatalf("skipped = %+v", result.Skipped)
+	}
+	if missing := skipMissingCapabilities(result.Skipped, "plain"); !equalStrings(missing, []string{"ram-overlay"}) {
+		t.Fatalf("plain missing capabilities = %+v, want ram-overlay", missing)
+	}
+	if missing := skipMissingLabels(result.Skipped, "rack"); missing["zone"] != "desk" {
+		t.Fatalf("rack missing labels = %+v, want zone=desk", missing)
 	}
 
 	result, err = store.PrepareImage(ImagePrepareRequest{
@@ -7335,6 +7341,33 @@ func skipReason(skipped []ImagePrepareSkip, workerID string) string {
 		}
 	}
 	return ""
+}
+
+func skipStatus(skipped []ImagePrepareSkip, workerID string) string {
+	for _, skip := range skipped {
+		if skip.WorkerID == workerID {
+			return skip.Status
+		}
+	}
+	return ""
+}
+
+func skipMissingLabels(skipped []ImagePrepareSkip, workerID string) map[string]string {
+	for _, skip := range skipped {
+		if skip.WorkerID == workerID {
+			return skip.MissingLabels
+		}
+	}
+	return nil
+}
+
+func skipMissingCapabilities(skipped []ImagePrepareSkip, workerID string) []string {
+	for _, skip := range skipped {
+		if skip.WorkerID == workerID {
+			return skip.MissingCapabilities
+		}
+	}
+	return nil
 }
 
 func skipImageGCReason(skipped []ImageGCSkip, workerID string) string {

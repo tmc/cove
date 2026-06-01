@@ -437,8 +437,11 @@ type ImagePrepareListResult struct {
 }
 
 type ImagePrepareSkip struct {
-	WorkerID string `json:"worker_id"`
-	Reason   string `json:"reason"`
+	WorkerID            string            `json:"worker_id"`
+	Reason              string            `json:"reason"`
+	Status              string            `json:"status,omitempty"`
+	MissingLabels       map[string]string `json:"missing_labels,omitempty"`
+	MissingCapabilities []string          `json:"missing_capabilities,omitempty"`
 }
 
 type ImageGCRequest struct {

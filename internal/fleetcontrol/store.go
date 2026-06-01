@@ -2492,14 +2492,24 @@ func (s *Store) PrepareImageActor(actor string, req ImagePrepareRequest) (ImageP
 	}
 	for _, host := range s.sortedHostsLocked() {
 		host = s.statusLocked(host)
-		if !labelsMatch(host.Labels, labels) {
+		if missing := missingLabels(host.Labels, labels); len(missing) > 0 {
+			result.Skipped = append(result.Skipped, ImagePrepareSkip{
+				WorkerID:      host.ID,
+				Reason:        "label",
+				MissingLabels: missing,
+			})
 			continue
 		}
-		if !capabilitiesMatch(host.Capabilities, capabilities) {
+		if missing := missingCapabilities(host.Capabilities, capabilities); len(missing) > 0 {
+			result.Skipped = append(result.Skipped, ImagePrepareSkip{
+				WorkerID:            host.ID,
+				Reason:              "capability",
+				MissingCapabilities: missing,
+			})
 			continue
 		}
 		if host.Status != "ready" {
-			result.Skipped = append(result.Skipped, ImagePrepareSkip{WorkerID: host.ID, Reason: host.Status})
+			result.Skipped = append(result.Skipped, ImagePrepareSkip{WorkerID: host.ID, Reason: "status", Status: host.Status})
 			continue
 		}
 		if workerHasImage(host, imageRef, result.ImageManifestDigest) {
@@ -4805,7 +4815,11 @@ func cloneImagePrepareSkips(in []ImagePrepareSkip) []ImagePrepareSkip {
 		return nil
 	}
 	out := make([]ImagePrepareSkip, len(in))
-	copy(out, in)
+	for i := range in {
+		out[i] = in[i]
+		out[i].MissingLabels = cloneLabels(in[i].MissingLabels)
+		out[i].MissingCapabilities = cloneStrings(in[i].MissingCapabilities)
+	}
 	return out
 }
 
@@ -6547,6 +6561,9 @@ func normalizeImagePrepareResult(result ImagePrepareResult) ImagePrepareResult {
 	for i := range result.Skipped {
 		result.Skipped[i].WorkerID = strings.TrimSpace(result.Skipped[i].WorkerID)
 		result.Skipped[i].Reason = strings.TrimSpace(result.Skipped[i].Reason)
+		result.Skipped[i].Status = strings.TrimSpace(result.Skipped[i].Status)
+		result.Skipped[i].MissingLabels = cloneLabels(result.Skipped[i].MissingLabels)
+		result.Skipped[i].MissingCapabilities = sortedUniqueStrings(result.Skipped[i].MissingCapabilities)
 	}
 	return result
 }

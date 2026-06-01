@@ -270,6 +270,16 @@ def test_fleet_client_image_preparation() -> None:
         assert result["dry_run"] is True
         assert result["assignments"][0]["worker_id"] == "worker-1"
         assert result["skipped"][0] == {"worker_id": "worker-2", "reason": "present"}
+        assert result["skipped"][1] == {
+            "worker_id": "worker-3",
+            "reason": "label",
+            "missing_labels": {"zone": "desk"},
+        }
+        assert result["skipped"][2] == {
+            "worker_id": "worker-4",
+            "reason": "capability",
+            "missing_capabilities": ["asif"],
+        }
 
         page = CoveFleetClient.list_image_preparations(
             fleet_url=server.url,
@@ -632,7 +642,11 @@ def _image_prepare_result(*, dry_run: bool = False) -> dict[str, object]:
         "required_capabilities": ["ram-overlay", "asif"],
         "dry_run": dry_run,
         "assignments": [assignment],
-        "skipped": [{"worker_id": "worker-2", "reason": "present"}],
+        "skipped": [
+            {"worker_id": "worker-2", "reason": "present"},
+            {"worker_id": "worker-3", "reason": "label", "missing_labels": {"zone": "desk"}},
+            {"worker_id": "worker-4", "reason": "capability", "missing_capabilities": ["asif"]},
+        ],
     }
 
 

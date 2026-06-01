@@ -277,8 +277,17 @@ func TestCloudClientImagePreparation(t *testing.T) {
 	if !result.DryRun || result.ID != "image-prepare-1" || len(result.Assignments) != 1 || result.Assignments[0].WorkerID != "worker-1" {
 		t.Fatalf("PrepareImage = %+v, want image-prepare-1 worker-1", result)
 	}
-	if len(result.Skipped) != 1 || result.Skipped[0].WorkerID != "worker-2" || result.Skipped[0].Reason != "present" {
-		t.Fatalf("PrepareImage skipped = %+v, want worker-2 present", result.Skipped)
+	if len(result.Skipped) != 3 {
+		t.Fatalf("PrepareImage skipped = %+v, want present/label/capability skips", result.Skipped)
+	}
+	if skip := result.Skipped[0]; skip.WorkerID != "worker-2" || skip.Reason != "present" {
+		t.Fatalf("PrepareImage first skip = %+v, want worker-2 present", skip)
+	}
+	if skip := result.Skipped[1]; skip.WorkerID != "worker-3" || skip.Reason != "label" || skip.MissingLabels["zone"] != "desk" {
+		t.Fatalf("PrepareImage label skip = %+v, want worker-3 missing zone", skip)
+	}
+	if skip := result.Skipped[2]; skip.WorkerID != "worker-4" || skip.Reason != "capability" || !equalStringSlices(skip.MissingCapabilities, []string{"asif"}) {
+		t.Fatalf("PrepareImage capability skip = %+v, want worker-4 missing asif", skip)
 	}
 	page, err := ListImagePreparations(ctx, ImagePrepareListOptions{
 		FleetURL:            server.URL,
@@ -921,7 +930,11 @@ func sdkImagePrepareResult(dryRun bool) ImagePrepareResult {
 			Args:   []string{"image", "pull", "-tag", "base:v1", "-force", digestRef},
 			Status: "pending",
 		}},
-		Skipped: []ImagePrepareSkip{{WorkerID: "worker-2", Reason: "present"}},
+		Skipped: []ImagePrepareSkip{
+			{WorkerID: "worker-2", Reason: "present"},
+			{WorkerID: "worker-3", Reason: "label", MissingLabels: map[string]string{"zone": "desk"}},
+			{WorkerID: "worker-4", Reason: "capability", MissingCapabilities: []string{"asif"}},
+		},
 	}
 }
 

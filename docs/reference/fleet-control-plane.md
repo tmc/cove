@@ -378,11 +378,12 @@ curl http://127.0.0.1:9758/v1/images/preparations/image-prepare-...
 
 Image preparation creates one `cove image pull -tag <image_ref> <source_ref>`
 assignment for each non-cordoned ready worker that matches `required_labels` and
-`required_capabilities`, and does not already report `image_ref`. Workers that
-already have the image, are cordoned or stale, or already have an active
-preparation assignment are returned in `skipped`. After a successful image
-preparation assignment, `coved` sends an extra heartbeat so the controller can
-place later `image-affinity` work against fresh image refs.
+`required_capabilities`, and does not already report `image_ref`. The
+`skipped` list includes structured reasons for status, label, capability,
+present-image, or active-prepare mismatches; label skips include
+`missing_labels`, and capability skips include `missing_capabilities`. After a
+successful image preparation assignment, `coved` sends an extra heartbeat so
+the controller can place later `image-affinity` work against fresh image refs.
 When `image_manifest_digest` is supplied, a worker counts as already prepared
 only if its heartbeat reports the same `image_ref` and
 `source_manifest_digest`; a stale mutable ref is refreshed with a forced pull.
