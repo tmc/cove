@@ -174,7 +174,8 @@ provenance. Pass `required_labels` for operator-defined selectors and
 `required_capabilities` to restrict hosted placement to workers that advertise
 runtime traits such as `ram-overlay`.
 
-For direct fleet-client code, `CoveFleetClient` covers the hosted lifecycle:
+For direct fleet-client code, `CoveFleetClient` covers hosted sandbox and
+warm-pool lifecycles:
 
 ```python
 from cove_sandbox import CoveFleetClient
@@ -191,6 +192,29 @@ plan = CoveFleetClient.plan_sandbox(
     limit=5,
 )
 print(len(plan["candidates"]), len(plan["skipped"]))
+
+pool = CoveFleetClient.ensure_warm_pool(
+    fleet_url="https://fleet.internal.example",
+    api_key="cove_...",
+    namespace="team-a",
+    name="runner-14",
+    image_ref="macos-base:latest",
+    manifest_bundle="manifests",
+    image_platform="darwin/arm64",
+    size=3,
+    required_labels={"zone": "desk"},
+    required_capabilities=("ram-overlay",),
+    resources={"vms": 1},
+)
+print(pool["pool"]["ready"], pool["pool"]["active"])
+claim = CoveFleetClient.claim_warm_pool(
+    fleet_url="https://fleet.internal.example",
+    api_key="cove_...",
+    namespace="team-a",
+    name="runner-14",
+    command=("/bin/sh", "-lc", "make test"),
+)
+print(claim["vm_name"], claim["assignment"]["worker_id"])
 
 client = CoveFleetClient.create_sandbox(
     fleet_url="https://fleet.internal.example",

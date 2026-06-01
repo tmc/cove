@@ -406,6 +406,223 @@ class CoveFleetClient:
         return plan
 
     @classmethod
+    def ensure_warm_pool(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        image_ref: str,
+        size: int,
+        name: str = "",
+        manifest_bundle: str | None = None,
+        image_manifest_digest: str | None = None,
+        image_digest_ref: str | None = None,
+        image_platform: str | None = None,
+        policy: str | None = None,
+        required_labels: Mapping[str, str] | None = None,
+        required_capabilities: Sequence[str] | str | None = None,
+        resources: Mapping[str, object] | None = None,
+        args: Sequence[str] | None = None,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        name = name.strip()
+        image_ref = image_ref.strip()
+        if not image_ref:
+            raise ValueError("image_ref is required")
+        if size < 0:
+            raise ValueError("size must be non-negative")
+        body: dict[str, object] = {"image_ref": image_ref, "size": size}
+        if name:
+            body["name"] = name
+        if namespace:
+            body["namespace"] = namespace
+        if manifest_bundle and manifest_bundle.strip():
+            body["manifest_bundle"] = manifest_bundle.strip()
+        if image_manifest_digest and image_manifest_digest.strip():
+            body["image_manifest_digest"] = image_manifest_digest.strip()
+        if image_digest_ref and image_digest_ref.strip():
+            body["image_digest_ref"] = image_digest_ref.strip()
+        if image_platform and image_platform.strip():
+            body["image_platform"] = image_platform.strip()
+        if policy and policy.strip():
+            body["policy"] = policy.strip()
+        labels = _clean_string_map(required_labels)
+        if labels:
+            body["required_labels"] = labels
+        capabilities = _clean_string_list(required_capabilities)
+        if capabilities:
+            body["required_capabilities"] = capabilities
+        if resources:
+            body["resources"] = dict(resources)
+        if args:
+            body["args"] = list(args)
+        seed = cls(
+            sandbox_id="warm-pool",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        result = seed._request("POST", "/v1/warm-pools", body, timeout=timeout)
+        return _normalize_warm_pool_result(result, "POST /v1/warm-pools")
+
+    @classmethod
+    def list_warm_pools(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        timeout: float = 30.0,
+    ) -> list[dict[str, Any]]:
+        seed = cls(
+            sandbox_id="warm-pools",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        data = seed._request("GET", _query_path("/v1/warm-pools", {"namespace": namespace or ""}), timeout=timeout)
+        pools = data.get("warm_pools") or []
+        if not isinstance(pools, list):
+            raise CoveError("GET /v1/warm-pools: expected warm_pools list")
+        return [dict(item) for item in pools if isinstance(item, dict)]
+
+    @classmethod
+    def get_warm_pool(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        name: str,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        name = name.strip()
+        if not name:
+            raise ValueError("warm pool name is required")
+        seed = cls(
+            sandbox_id="warm-pool",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        return seed._request("GET", _warm_pool_path(name), timeout=timeout)
+
+    @classmethod
+    def delete_warm_pool(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        name: str,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        name = name.strip()
+        if not name:
+            raise ValueError("warm pool name is required")
+        seed = cls(
+            sandbox_id="warm-pool",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        result = seed._request("DELETE", _warm_pool_path(name), timeout=timeout)
+        _normalize_dict_list(result, "cleanup", "DELETE /v1/warm-pools")
+        _normalize_string_list(result, "canceled", "DELETE /v1/warm-pools")
+        _normalize_string_list(result, "deferred", "DELETE /v1/warm-pools")
+        return result
+
+    @classmethod
+    def claim_warm_pool(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        name: str,
+        command: str | Sequence[str],
+        env: Mapping[str, str] | None = None,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        name = name.strip()
+        if not name:
+            raise ValueError("warm pool name is required")
+        command_list = ["/bin/zsh", "-lc", command] if isinstance(command, str) else list(command)
+        if not command_list or not str(command_list[0]).strip():
+            raise ValueError("command is required")
+        body: dict[str, object] = {"name": name, "command": command_list}
+        if namespace:
+            body["namespace"] = namespace
+        if env:
+            body["env"] = dict(env)
+        seed = cls(
+            sandbox_id="warm-pool",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        data = seed._request("POST", "/v1/warm-pools/claim", body, timeout=timeout)
+        for key in ("slot", "assignment"):
+            value = data.get(key) or {}
+            if not isinstance(value, dict):
+                raise CoveError(f"POST /v1/warm-pools/claim: expected {key} object")
+            data[key] = dict(value)
+        return data
+
+    @classmethod
+    def warm_pool_events(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        name: str,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        actor: str = "",
+        action: str = "",
+        worker_id: str = "",
+        assignment_id: str = "",
+        offset: int = 0,
+        limit: int = 0,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        name = name.strip()
+        if not name:
+            raise ValueError("warm pool name is required")
+        if offset < 0:
+            raise ValueError("warm pool events offset must be non-negative")
+        if limit < 0:
+            raise ValueError("warm pool events limit must be non-negative")
+        seed = cls(
+            sandbox_id="warm-pool",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        query = {
+            "actor": actor,
+            "action": action,
+            "worker_id": worker_id,
+            "assignment_id": assignment_id,
+            "offset": str(offset) if offset else "",
+            "limit": str(limit) if limit else "",
+        }
+        data = seed._request("GET", _query_path(_warm_pool_path(name, "events"), query), timeout=timeout)
+        events = data.get("events") or []
+        if not isinstance(events, list):
+            raise CoveError("GET warm pool events: expected events list")
+        page = dict(data)
+        page["events"] = [dict(item) for item in events if isinstance(item, dict)]
+        page["count"] = int(page.get("count") or len(page["events"]))
+        return page
+
+    @classmethod
     def list_sandboxes(
         cls,
         *,
@@ -859,6 +1076,39 @@ def _clean_string_map(values: Mapping[str, str] | None) -> dict[str, str]:
             continue
         out[key] = str(value).strip()
     return out
+
+
+def _normalize_warm_pool_result(data: dict[str, Any], endpoint: str) -> dict[str, Any]:
+    result = dict(data)
+    pool = result.get("pool") or {}
+    if not isinstance(pool, dict):
+        raise CoveError(f"{endpoint}: expected pool object")
+    result["pool"] = dict(pool)
+    _normalize_dict_list(result, "created", endpoint)
+    _normalize_dict_list(result, "cleanup", endpoint)
+    _normalize_string_list(result, "canceled", endpoint)
+    return result
+
+
+def _normalize_dict_list(data: dict[str, Any], key: str, endpoint: str) -> None:
+    items = data.get(key) or []
+    if not isinstance(items, list):
+        raise CoveError(f"{endpoint}: expected {key} list")
+    data[key] = [dict(item) for item in items if isinstance(item, dict)]
+
+
+def _normalize_string_list(data: dict[str, Any], key: str, endpoint: str) -> None:
+    items = data.get(key) or []
+    if not isinstance(items, list):
+        raise CoveError(f"{endpoint}: expected {key} list")
+    data[key] = [str(item) for item in items]
+
+
+def _warm_pool_path(name: str, action: str = "") -> str:
+    path = "/v1/warm-pools/" + urllib.parse.quote(name, safe="")
+    if action:
+        path += "/" + urllib.parse.quote(action, safe="")
+    return path
 
 
 def _query_path(path: str, values: Mapping[str, str]) -> str:

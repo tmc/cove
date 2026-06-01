@@ -733,12 +733,33 @@ pass `required_capabilities`/`RequiredCapabilities` to target workers that
 advertise runtime traits such as `ram-overlay`, `asif`, or `apfs-quota`. The
 same SDKs can dry-run hosted placement before creating a sandbox:
 `agentsandbox.Plan` in Go and `CoveFleetClient.plan_sandbox` in Python return
-the controller's feasible candidates and skipped-worker reasons.
+the controller's feasible candidates and skipped-worker reasons. They also
+expose fork warm-pool lifecycle controls, so hosted agent clients can prewarm
+RAM-overlay slots, claim a ready slot for a guest command, read pool events,
+and delete the pool through the same fleet credentials.
 
 Go SDK example:
 
 ```go
 ctx := context.Background()
+pool, err := agentsandbox.EnsureWarmPool(ctx, agentsandbox.WarmPoolOptions{
+	FleetURL:             "https://fleet.internal.example",
+	APIKey:               os.Getenv("COVE_API_KEY"),
+	Namespace:            "team-a",
+	Name:                 "runner-14",
+	ImageRef:             "macos-base:latest",
+	ManifestBundle:       "manifests",
+	ImagePlatform:        "darwin/arm64",
+	Size:                 3,
+	RequiredLabels:       map[string]string{"zone": "desk"},
+	RequiredCapabilities: []string{"ram-overlay"},
+	Resources:            agentsandbox.Capacity{VMs: 1},
+})
+if err != nil {
+	log.Fatal(err)
+}
+log.Printf("warm pool ready=%d active=%d", pool.Pool.Ready, pool.Pool.Active)
+
 plan, err := agentsandbox.Plan(ctx, agentsandbox.ClientOptions{
 	Provider:             agentsandbox.ProviderCloud,
 	FleetURL:             "https://fleet.internal.example",
@@ -754,6 +775,17 @@ if err != nil {
 	log.Fatal(err)
 }
 log.Printf("placement candidates=%d skipped=%d", len(plan.Candidates), len(plan.Skipped))
+claim, err := agentsandbox.ClaimWarmPool(ctx, agentsandbox.WarmPoolClaimOptions{
+	FleetURL:  "https://fleet.internal.example",
+	APIKey:    os.Getenv("COVE_API_KEY"),
+	Namespace: "team-a",
+	Name:      "runner-14",
+	Command:   []string{"/bin/sh", "-lc", "make test"},
+})
+if err != nil {
+	log.Fatal(err)
+}
+log.Printf("claimed warm vm %s on %s", claim.VMName, claim.Assignment.WorkerID)
 
 sb, err := agentsandbox.Create(ctx, agentsandbox.ClientOptions{
 	Provider: agentsandbox.ProviderCloud,

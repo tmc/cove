@@ -253,6 +253,161 @@ func TestCloudClientRejectsNegativePlacementLimit(t *testing.T) {
 	}
 }
 
+func TestCloudClientWarmPools(t *testing.T) {
+	server := newSDKFleetServer(t)
+	ctx := context.Background()
+	result, err := EnsureWarmPool(ctx, WarmPoolOptions{
+		FleetURL:             server.URL,
+		APIKey:               "secret",
+		Namespace:            "team-a",
+		Name:                 "runner",
+		ImageRef:             "base:v1",
+		ManifestBundle:       "manifests",
+		ImagePlatform:        "darwin/arm64",
+		Size:                 2,
+		Policy:               "bin-pack",
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay", "asif", ""},
+		Resources:            Capacity{VMs: 1, CPUs: 4},
+		Args:                 []string{"-memory", "8G"},
+		Timeout:              time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Pool.Name != "runner" || result.Pool.Ready != 1 || len(result.Created) != 1 {
+		t.Fatalf("EnsureWarmPool = %+v, want runner with created slot", result)
+	}
+	pools, err := ListWarmPools(ctx, WarmPoolListOptions{FleetURL: server.URL, APIKey: "secret", Namespace: "team-a", Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("ListWarmPools: %v", err)
+	}
+	if len(pools) != 1 || pools[0].Name != "runner" {
+		t.Fatalf("ListWarmPools = %+v, want runner", pools)
+	}
+	status, err := GetWarmPool(ctx, WarmPoolGetOptions{FleetURL: server.URL, APIKey: "secret", Name: "runner", Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("GetWarmPool: %v", err)
+	}
+	if status.Name != "runner" || len(status.Assignments) != 1 || status.Assignments[0].Status != "ready" {
+		t.Fatalf("GetWarmPool = %+v, want ready runner slot", status)
+	}
+	claim, err := ClaimWarmPool(ctx, WarmPoolClaimOptions{
+		FleetURL:  server.URL,
+		APIKey:    "secret",
+		Namespace: "team-a",
+		Name:      "runner",
+		Command:   []string{"/bin/sh", "-lc", "make test"},
+		Env:       map[string]string{"CI": "1"},
+		Timeout:   time.Second,
+	})
+	if err != nil {
+		t.Fatalf("ClaimWarmPool: %v", err)
+	}
+	if claim.Pool != "runner" || claim.Slot.ID != "warm-slot-1" || claim.Assignment.WarmPoolSlot != "warm-slot-1" {
+		t.Fatalf("ClaimWarmPool = %+v, want claimed warm-slot-1", claim)
+	}
+	events, err := WarmPoolEvents(ctx, WarmPoolEventListOptions{
+		FleetURL:     server.URL,
+		APIKey:       "secret",
+		Name:         "runner",
+		Actor:        "service-account:ci",
+		Action:       "warm_pool.claim",
+		WorkerID:     "worker-1",
+		AssignmentID: "claim-1",
+		Offset:       1,
+		Limit:        2,
+		Timeout:      time.Second,
+	})
+	if err != nil {
+		t.Fatalf("WarmPoolEvents: %v", err)
+	}
+	if events.Count != 1 || len(events.Events) != 1 || events.Events[0].Action != "warm_pool.claim" {
+		t.Fatalf("WarmPoolEvents = %+v, want warm_pool.claim", events)
+	}
+	deleted, err := DeleteWarmPool(ctx, WarmPoolGetOptions{FleetURL: server.URL, APIKey: "secret", Name: "runner", Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("DeleteWarmPool: %v", err)
+	}
+	if deleted.Pool != "runner" || len(deleted.Cleanup) != 1 {
+		t.Fatalf("DeleteWarmPool = %+v, want runner cleanup", deleted)
+	}
+
+	paths := make([]string, 0, len(server.requests))
+	for _, req := range server.requests {
+		paths = append(paths, req.path)
+		if req.authorization != "Bearer secret" {
+			t.Fatalf("authorization for %s = %q, want bearer token", req.path, req.authorization)
+		}
+	}
+	wantPaths := []string{
+		"/v1/warm-pools",
+		"/v1/warm-pools",
+		"/v1/warm-pools/runner",
+		"/v1/warm-pools/claim",
+		"/v1/warm-pools/runner/events",
+		"/v1/warm-pools/runner",
+	}
+	if !equalStringSlices(paths, wantPaths) {
+		t.Fatalf("paths = %+v, want %+v", paths, wantPaths)
+	}
+	ensure := server.requests[0].body
+	if ensure["namespace"] != "team-a" || ensure["name"] != "runner" || ensure["image_ref"] != "base:v1" || ensure["size"] != float64(2) || ensure["policy"] != "bin-pack" {
+		t.Fatalf("warm pool body = %+v, want identity and size", ensure)
+	}
+	if ensure["manifest_bundle"] != "manifests" || ensure["image_platform"] != "darwin/arm64" {
+		t.Fatalf("warm pool image identity = %+v, want manifest bundle fields", ensure)
+	}
+	labels, ok := ensure["required_labels"].(map[string]any)
+	if !ok || labels["zone"] != "desk" {
+		t.Fatalf("warm pool labels = %+v, want zone=desk", ensure["required_labels"])
+	}
+	if !equalAnyStringSlice(ensure["required_capabilities"], []string{"ram-overlay", "asif"}) {
+		t.Fatalf("warm pool capabilities = %+v, want ram-overlay/asif", ensure["required_capabilities"])
+	}
+	resources, ok := ensure["resources"].(map[string]any)
+	if !ok || resources["vms"] != float64(1) || resources["cpus"] != float64(4) {
+		t.Fatalf("warm pool resources = %+v, want vms/cpus", ensure["resources"])
+	}
+	if !equalAnyStringSlice(ensure["args"], []string{"-memory", "8G"}) {
+		t.Fatalf("warm pool args = %+v, want memory arg", ensure["args"])
+	}
+	if server.requests[1].query.Get("namespace") != "team-a" {
+		t.Fatalf("warm pool list query = %q, want namespace", server.requests[1].query.Encode())
+	}
+	claimBody := server.requests[3].body
+	if claimBody["namespace"] != "team-a" || claimBody["name"] != "runner" {
+		t.Fatalf("claim body = %+v, want namespace/name", claimBody)
+	}
+	if !equalAnyStringSlice(claimBody["command"], []string{"/bin/sh", "-lc", "make test"}) {
+		t.Fatalf("claim command = %+v, want shell command", claimBody["command"])
+	}
+	env, ok := claimBody["env"].(map[string]any)
+	if !ok || env["CI"] != "1" {
+		t.Fatalf("claim env = %+v, want CI=1", claimBody["env"])
+	}
+	eventQuery := server.requests[4].query
+	if eventQuery.Get("actor") != "service-account:ci" || eventQuery.Get("action") != "warm_pool.claim" || eventQuery.Get("worker_id") != "worker-1" || eventQuery.Get("assignment_id") != "claim-1" || eventQuery.Get("offset") != "1" || eventQuery.Get("limit") != "2" {
+		t.Fatalf("warm pool event query = %q", eventQuery.Encode())
+	}
+}
+
+func TestCloudClientWarmPoolValidation(t *testing.T) {
+	ctx := context.Background()
+	if _, err := EnsureWarmPool(ctx, WarmPoolOptions{FleetURL: "https://fleet.example", APIKey: "secret", Name: "runner", Size: 1}); err == nil || !strings.Contains(err.Error(), "image ref required") {
+		t.Fatalf("EnsureWarmPool missing image err = %v, want validation error", err)
+	}
+	if _, err := EnsureWarmPool(ctx, WarmPoolOptions{FleetURL: "https://fleet.example", APIKey: "secret", Name: "runner", ImageRef: "base:v1", Size: -1}); err == nil || !strings.Contains(err.Error(), "size must be non-negative") {
+		t.Fatalf("EnsureWarmPool negative size err = %v, want validation error", err)
+	}
+	if _, err := ClaimWarmPool(ctx, WarmPoolClaimOptions{FleetURL: "https://fleet.example", APIKey: "secret", Name: "runner"}); err == nil || !strings.Contains(err.Error(), "claim command required") {
+		t.Fatalf("ClaimWarmPool missing command err = %v, want validation error", err)
+	}
+	if _, err := WarmPoolEvents(ctx, WarmPoolEventListOptions{FleetURL: "https://fleet.example", APIKey: "secret", Name: "runner", Limit: -1}); err == nil || !strings.Contains(err.Error(), "limit must be non-negative") {
+		t.Fatalf("WarmPoolEvents negative limit err = %v, want validation error", err)
+	}
+}
+
 func TestCloudClientPassesLeaseHolderToMutations(t *testing.T) {
 	server := newSDKFleetServer(t)
 	ctx := context.Background()
@@ -477,6 +632,48 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 		}
 		server.requests = append(server.requests, req)
 		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/warm-pools":
+			status := sdkWarmPoolStatus()
+			writeSDKJSON(t, w, WarmPoolResult{
+				Pool:    status,
+				Created: []Assignment{status.Assignments[0]},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/warm-pools":
+			writeSDKJSON(t, w, WarmPoolListResult{WarmPools: []WarmPoolStatus{sdkWarmPoolStatus()}})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/warm-pools/runner/events":
+			writeSDKJSON(t, w, SandboxEventListResult{
+				Events: []SandboxEvent{{
+					ID:           "audit-warm-1",
+					Time:         time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC),
+					Namespace:    "team-a",
+					Actor:        "service-account:ci",
+					Action:       "warm_pool.claim",
+					TargetType:   "warm_pool",
+					TargetID:     "runner",
+					WorkerID:     "worker-1",
+					AssignmentID: "claim-1",
+				}},
+				Count:  1,
+				Offset: atoiDefault(r.URL.Query().Get("offset"), 0),
+				Limit:  atoiDefault(r.URL.Query().Get("limit"), 0),
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/warm-pools/runner":
+			writeSDKJSON(t, w, sdkWarmPoolStatus())
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/warm-pools/claim":
+			status := sdkWarmPoolStatus()
+			writeSDKJSON(t, w, WarmPoolClaimResult{
+				Namespace:  "team-a",
+				Pool:       "runner",
+				VMName:     "cove-warm-runner",
+				Slot:       status.Assignments[0],
+				Assignment: Assignment{ID: "claim-1", Namespace: "team-a", WorkerID: "worker-1", WarmPoolSlot: "warm-slot-1", Verb: "cove", Args: []string{"shell"}, Status: "pending"},
+			})
+		case r.Method == http.MethodDelete && r.URL.Path == "/v1/warm-pools/runner":
+			writeSDKJSON(t, w, WarmPoolDeleteResult{
+				Namespace: "team-a",
+				Pool:      "runner",
+				Cleanup:   []Assignment{{ID: "cleanup-1", Namespace: "team-a", WorkerID: "worker-1", WarmPoolSlot: "warm-slot-1", Verb: "cove", Args: []string{"ctl", "stop"}, Status: "pending"}},
+			})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/placements/plan":
 			writeSDKJSON(t, w, PlacementPlan{
 				ID:                   "placement-plan-1",
@@ -568,6 +765,40 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 	server.Server = httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 	return server
+}
+
+func sdkWarmPoolStatus() WarmPoolStatus {
+	return WarmPoolStatus{
+		WarmPool: WarmPool{
+			Namespace:            "team-a",
+			Name:                 "runner",
+			ImageRef:             "base:v1",
+			ImagePlatform:        "darwin/arm64",
+			Size:                 2,
+			Policy:               "bin-pack",
+			RequiredLabels:       map[string]string{"zone": "desk"},
+			RequiredCapabilities: []string{"ram-overlay", "asif"},
+			Resources:            Capacity{VMs: 1, CPUs: 4},
+			Args:                 []string{"-memory", "8G"},
+		},
+		Slots:    1,
+		Active:   1,
+		Ready:    1,
+		ByStatus: map[string]int{"ready": 1},
+		Assignments: []Assignment{{
+			ID:                   "warm-slot-1",
+			Namespace:            "team-a",
+			WorkerID:             "worker-1",
+			WarmPool:             "runner",
+			Policy:               "bin-pack",
+			ImageRef:             "base:v1",
+			RequiredCapabilities: []string{"ram-overlay", "asif"},
+			Resources:            Capacity{VMs: 1, CPUs: 4},
+			Verb:                 "cove",
+			Args:                 []string{"run", "-fork-from", "base:v1"},
+			Status:               "ready",
+		}},
+	}
 }
 
 func (s *sdkFleetServer) controlRequests() []sdkRequest {

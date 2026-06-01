@@ -246,6 +246,113 @@ def test_fleet_client_plan_sandbox() -> None:
         server.stop()
 
 
+def test_fleet_client_warm_pools() -> None:
+    server = _FleetHTTPServer()
+    server.start()
+    try:
+        result = CoveFleetClient.ensure_warm_pool(
+            fleet_url=server.url,
+            api_key="secret",
+            namespace="team-a",
+            name="runner",
+            image_ref="base:v1",
+            manifest_bundle="manifests",
+            image_platform="darwin/arm64",
+            size=2,
+            policy="bin-pack",
+            required_labels={"zone": "desk"},
+            required_capabilities=("ram-overlay", "asif", ""),
+            resources={"vms": 1, "cpus": 4},
+            args=("-memory", "8G"),
+        )
+        assert result["pool"]["name"] == "runner"
+        assert result["pool"]["ready"] == 1
+        assert result["created"][0]["id"] == "warm-slot-1"
+
+        pools = CoveFleetClient.list_warm_pools(
+            fleet_url=server.url,
+            api_key="secret",
+            namespace="team-a",
+        )
+        assert pools[0]["name"] == "runner"
+
+        status = CoveFleetClient.get_warm_pool(
+            fleet_url=server.url,
+            api_key="secret",
+            name="runner",
+        )
+        assert status["assignments"][0]["status"] == "ready"
+
+        claim = CoveFleetClient.claim_warm_pool(
+            fleet_url=server.url,
+            api_key="secret",
+            namespace="team-a",
+            name="runner",
+            command=("/bin/sh", "-lc", "make test"),
+            env={"CI": "1"},
+        )
+        assert claim["pool"] == "runner"
+        assert claim["slot"]["id"] == "warm-slot-1"
+        assert claim["assignment"]["warm_pool_slot"] == "warm-slot-1"
+
+        events = CoveFleetClient.warm_pool_events(
+            fleet_url=server.url,
+            api_key="secret",
+            name="runner",
+            actor="service-account:ci",
+            action="warm_pool.claim",
+            worker_id="worker-1",
+            assignment_id="claim-1",
+            offset=1,
+            limit=2,
+        )
+        assert events["events"][0]["action"] == "warm_pool.claim"
+
+        deleted = CoveFleetClient.delete_warm_pool(
+            fleet_url=server.url,
+            api_key="secret",
+            name="runner",
+        )
+        assert deleted["pool"] == "runner"
+        assert deleted["cleanup"][0]["id"] == "cleanup-1"
+
+        paths = [request["path"] for request in server.requests[-6:]]
+        assert paths == [
+            "/v1/warm-pools",
+            "/v1/warm-pools",
+            "/v1/warm-pools/runner",
+            "/v1/warm-pools/claim",
+            "/v1/warm-pools/runner/events",
+            "/v1/warm-pools/runner",
+        ]
+        ensure = server.requests[-6]["body"]
+        assert ensure["namespace"] == "team-a"
+        assert ensure["name"] == "runner"
+        assert ensure["image_ref"] == "base:v1"
+        assert ensure["manifest_bundle"] == "manifests"
+        assert ensure["image_platform"] == "darwin/arm64"
+        assert ensure["size"] == 2
+        assert ensure["policy"] == "bin-pack"
+        assert ensure["required_labels"] == {"zone": "desk"}
+        assert ensure["required_capabilities"] == ["ram-overlay", "asif"]
+        assert ensure["resources"] == {"vms": 1, "cpus": 4}
+        assert ensure["args"] == ["-memory", "8G"]
+        assert server.requests[-5]["query"]["namespace"] == ["team-a"]
+        claim_body = server.requests[-3]["body"]
+        assert claim_body["namespace"] == "team-a"
+        assert claim_body["command"] == ["/bin/sh", "-lc", "make test"]
+        assert claim_body["env"] == {"CI": "1"}
+        event_query = server.requests[-2]["query"]
+        assert event_query["actor"] == ["service-account:ci"]
+        assert event_query["action"] == ["warm_pool.claim"]
+        assert event_query["worker_id"] == ["worker-1"]
+        assert event_query["assignment_id"] == ["claim-1"]
+        assert event_query["offset"] == ["1"]
+        assert event_query["limit"] == ["2"]
+    finally:
+        server.stop()
+
+
 def test_fleet_client_list_filters() -> None:
     server = _FleetHTTPServer()
     server.start()
@@ -418,6 +525,39 @@ def _metering(sandbox_id: str) -> dict[str, object]:
     }
 
 
+def _warm_pool_status() -> dict[str, object]:
+    assignment = {
+        "id": "warm-slot-1",
+        "namespace": "team-a",
+        "worker_id": "worker-1",
+        "warm_pool": "runner",
+        "policy": "bin-pack",
+        "image_ref": "base:v1",
+        "required_capabilities": ["ram-overlay", "asif"],
+        "resources": {"vms": 1, "cpus": 4},
+        "verb": "cove",
+        "args": ["run", "-fork-from", "base:v1"],
+        "status": "ready",
+    }
+    return {
+        "namespace": "team-a",
+        "name": "runner",
+        "image_ref": "base:v1",
+        "image_platform": "darwin/arm64",
+        "size": 2,
+        "policy": "bin-pack",
+        "required_labels": {"zone": "desk"},
+        "required_capabilities": ["ram-overlay", "asif"],
+        "resources": {"vms": 1, "cpus": 4},
+        "args": ["-memory", "8G"],
+        "slots": 1,
+        "active": 1,
+        "ready": 1,
+        "by_status": {"ready": 1},
+        "assignments": [assignment],
+    }
+
+
 def _short_socket_path() -> Path:
     return Path(f"/tmp/cove-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock")
 
@@ -489,6 +629,34 @@ class _FleetHTTPServer:
                         "body": {},
                     }
                 )
+                if path == "/v1/warm-pools":
+                    self._write({"warm_pools": [_warm_pool_status()]})
+                    return
+                if path == "/v1/warm-pools/runner/events":
+                    self._write(
+                        {
+                            "events": [
+                                {
+                                    "id": "audit-warm-1",
+                                    "time": "2026-05-31T10:00:00Z",
+                                    "namespace": "team-a",
+                                    "actor": "service-account:ci",
+                                    "action": "warm_pool.claim",
+                                    "target_type": "warm_pool",
+                                    "target_id": "runner",
+                                    "worker_id": "worker-1",
+                                    "assignment_id": "claim-1",
+                                }
+                            ],
+                            "count": 1,
+                            "offset": int(query.get("offset", ["0"])[0]),
+                            "limit": int(query.get("limit", ["0"])[0]),
+                        }
+                    )
+                    return
+                if path == "/v1/warm-pools/runner":
+                    self._write(_warm_pool_status())
+                    return
                 if path == "/v1/sandboxes":
                     self._write(
                         {
@@ -588,6 +756,30 @@ class _FleetHTTPServer:
                 if path == "/v1/sandboxes":
                     self._write({"id": "job-1", "vm_name": "cove-sandbox-job-1", "status": "pending"})
                     return
+                if path == "/v1/warm-pools":
+                    status = _warm_pool_status()
+                    self._write({"pool": status, "created": [status["assignments"][0]]})
+                    return
+                if path == "/v1/warm-pools/claim":
+                    status = _warm_pool_status()
+                    self._write(
+                        {
+                            "namespace": "team-a",
+                            "pool": "runner",
+                            "vm_name": "cove-warm-runner",
+                            "slot": status["assignments"][0],
+                            "assignment": {
+                                "id": "claim-1",
+                                "namespace": "team-a",
+                                "worker_id": "worker-1",
+                                "warm_pool_slot": "warm-slot-1",
+                                "verb": "cove",
+                                "args": ["shell"],
+                                "status": "pending",
+                            },
+                        }
+                    )
+                    return
                 if path == "/v1/placements/plan":
                     self._write(
                         {
@@ -676,6 +868,25 @@ class _FleetHTTPServer:
                     return
                 if path == "/v1/sandboxes/job-1":
                     self._write({"id": "job-1", "status": "draining"})
+                    return
+                if path == "/v1/warm-pools/runner":
+                    self._write(
+                        {
+                            "namespace": "team-a",
+                            "pool": "runner",
+                            "cleanup": [
+                                {
+                                    "id": "cleanup-1",
+                                    "namespace": "team-a",
+                                    "worker_id": "worker-1",
+                                    "warm_pool_slot": "warm-slot-1",
+                                    "verb": "cove",
+                                    "args": ["ctl", "stop"],
+                                    "status": "pending",
+                                }
+                            ],
+                        }
+                    )
                     return
                 self.send_error(404)
 

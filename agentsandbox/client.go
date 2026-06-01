@@ -96,6 +96,14 @@ type SandboxListResult struct {
 	NextOffset int             `json:"next_offset,omitempty"`
 }
 
+type Capacity struct {
+	CPUs        int    `json:"cpus,omitempty"`
+	MemoryBytes uint64 `json:"memory_bytes,omitempty"`
+	VMs         int    `json:"vms,omitempty"`
+	MaxVMs      int    `json:"max_vms,omitempty"`
+	Images      int    `json:"images,omitempty"`
+}
+
 type PlacementPlan struct {
 	ID                   string               `json:"id,omitempty"`
 	Created              time.Time            `json:"created,omitempty"`
@@ -133,6 +141,158 @@ type PlacementSkip struct {
 	RequestedVMs        int               `json:"requested_vms,omitempty"`
 	ImageRef            string            `json:"image_ref,omitempty"`
 	ImageManifestDigest string            `json:"image_manifest_digest,omitempty"`
+}
+
+type Assignment struct {
+	ID                   string            `json:"id"`
+	Namespace            string            `json:"namespace,omitempty"`
+	WorkerID             string            `json:"worker_id,omitempty"`
+	WarmPool             string            `json:"warm_pool,omitempty"`
+	WarmPoolSlot         string            `json:"warm_pool_slot,omitempty"`
+	SandboxID            string            `json:"sandbox_id,omitempty"`
+	SandboxRole          string            `json:"sandbox_role,omitempty"`
+	SandboxLeaseHolder   string            `json:"sandbox_lease_holder,omitempty"`
+	SandboxLeaseExpires  time.Time         `json:"sandbox_lease_expires,omitempty"`
+	Policy               string            `json:"policy,omitempty"`
+	ImageRef             string            `json:"image_ref,omitempty"`
+	ManifestBundle       string            `json:"manifest_bundle,omitempty"`
+	ImageManifestDigest  string            `json:"image_manifest_digest,omitempty"`
+	ImageDigestRef       string            `json:"image_digest_ref,omitempty"`
+	ImagePlatform        string            `json:"image_platform,omitempty"`
+	RequiredLabels       map[string]string `json:"required_labels,omitempty"`
+	RequiredCapabilities []string          `json:"required_capabilities,omitempty"`
+	AntiAffinityKey      string            `json:"anti_affinity_key,omitempty"`
+	Resources            Capacity          `json:"resources,omitempty"`
+	Verb                 string            `json:"verb"`
+	Args                 []string          `json:"args,omitempty"`
+	Status               string            `json:"status,omitempty"`
+	Created              time.Time         `json:"created,omitempty"`
+	Updated              time.Time         `json:"updated,omitempty"`
+	LeasedTo             string            `json:"leased_to,omitempty"`
+	LeaseExpires         time.Time         `json:"lease_expires,omitempty"`
+	LastReport           *WorkerReport     `json:"last_report,omitempty"`
+}
+
+type WarmPoolOptions struct {
+	FleetURL             string
+	APIKey               string
+	Namespace            string
+	Name                 string
+	ImageRef             string
+	ManifestBundle       string
+	ImageManifestDigest  string
+	ImageDigestRef       string
+	ImagePlatform        string
+	Size                 int
+	Policy               string
+	RequiredLabels       map[string]string
+	RequiredCapabilities []string
+	Resources            Capacity
+	Args                 []string
+	Timeout              time.Duration
+	HTTP                 *http.Client
+}
+
+type WarmPoolListOptions struct {
+	FleetURL  string
+	APIKey    string
+	Namespace string
+	Timeout   time.Duration
+	HTTP      *http.Client
+}
+
+type WarmPoolGetOptions struct {
+	FleetURL  string
+	APIKey    string
+	Namespace string
+	Name      string
+	Timeout   time.Duration
+	HTTP      *http.Client
+}
+
+type WarmPoolClaimOptions struct {
+	FleetURL  string
+	APIKey    string
+	Namespace string
+	Name      string
+	Command   []string
+	Env       map[string]string
+	Timeout   time.Duration
+	HTTP      *http.Client
+}
+
+type WarmPoolEventListOptions struct {
+	FleetURL     string
+	APIKey       string
+	Namespace    string
+	Name         string
+	Actor        string
+	Action       string
+	WorkerID     string
+	AssignmentID string
+	Offset       int
+	Limit        int
+	Timeout      time.Duration
+	HTTP         *http.Client
+}
+
+type WarmPool struct {
+	Namespace            string            `json:"namespace,omitempty"`
+	Name                 string            `json:"name"`
+	ImageRef             string            `json:"image_ref"`
+	ImageManifestDigest  string            `json:"image_manifest_digest,omitempty"`
+	ImageDigestRef       string            `json:"image_digest_ref,omitempty"`
+	ImagePlatform        string            `json:"image_platform,omitempty"`
+	Size                 int               `json:"size"`
+	Policy               string            `json:"policy,omitempty"`
+	RequiredLabels       map[string]string `json:"required_labels,omitempty"`
+	RequiredCapabilities []string          `json:"required_capabilities,omitempty"`
+	Resources            Capacity          `json:"resources,omitempty"`
+	Args                 []string          `json:"args,omitempty"`
+	Created              time.Time         `json:"created,omitempty"`
+	Updated              time.Time         `json:"updated,omitempty"`
+}
+
+type WarmPoolStatus struct {
+	WarmPool
+	Slots       int            `json:"slots"`
+	Active      int            `json:"active"`
+	Pending     int            `json:"pending"`
+	Leased      int            `json:"leased"`
+	Running     int            `json:"running"`
+	Ready       int            `json:"ready"`
+	Claimed     int            `json:"claimed"`
+	Draining    int            `json:"draining"`
+	Terminal    int            `json:"terminal"`
+	ByStatus    map[string]int `json:"by_status,omitempty"`
+	Assignments []Assignment   `json:"assignments,omitempty"`
+}
+
+type WarmPoolResult struct {
+	Pool     WarmPoolStatus `json:"pool"`
+	Created  []Assignment   `json:"created,omitempty"`
+	Canceled []string       `json:"canceled,omitempty"`
+	Cleanup  []Assignment   `json:"cleanup,omitempty"`
+}
+
+type WarmPoolListResult struct {
+	WarmPools []WarmPoolStatus `json:"warm_pools"`
+}
+
+type WarmPoolDeleteResult struct {
+	Namespace string       `json:"namespace,omitempty"`
+	Pool      string       `json:"pool"`
+	Canceled  []string     `json:"canceled,omitempty"`
+	Cleanup   []Assignment `json:"cleanup,omitempty"`
+	Deferred  []string     `json:"deferred,omitempty"`
+}
+
+type WarmPoolClaimResult struct {
+	Namespace  string     `json:"namespace,omitempty"`
+	Pool       string     `json:"pool"`
+	VMName     string     `json:"vm_name"`
+	Slot       Assignment `json:"slot"`
+	Assignment Assignment `json:"assignment"`
 }
 
 type Lease struct {
@@ -460,6 +620,174 @@ func Plan(ctx context.Context, opts ClientOptions) (PlacementPlan, error) {
 		return PlacementPlan{}, err
 	}
 	return plan, nil
+}
+
+func EnsureWarmPool(ctx context.Context, opts WarmPoolOptions) (WarmPoolResult, error) {
+	name := strings.TrimSpace(opts.Name)
+	imageRef := strings.TrimSpace(opts.ImageRef)
+	if imageRef == "" {
+		return WarmPoolResult{}, errors.New("agentsandbox: warm pool image ref required")
+	}
+	if opts.Size < 0 {
+		return WarmPoolResult{}, errors.New("agentsandbox: warm pool size must be non-negative")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "warm-pool")
+	if err != nil {
+		return WarmPoolResult{}, err
+	}
+	body := map[string]any{
+		"image_ref": imageRef,
+		"size":      opts.Size,
+	}
+	if name != "" {
+		body["name"] = name
+	}
+	if ns := strings.TrimSpace(opts.Namespace); ns != "" {
+		body["namespace"] = ns
+	}
+	if bundle := strings.TrimSpace(opts.ManifestBundle); bundle != "" {
+		body["manifest_bundle"] = bundle
+	}
+	if digest := strings.TrimSpace(opts.ImageManifestDigest); digest != "" {
+		body["image_manifest_digest"] = digest
+	}
+	if digestRef := strings.TrimSpace(opts.ImageDigestRef); digestRef != "" {
+		body["image_digest_ref"] = digestRef
+	}
+	if platform := strings.TrimSpace(opts.ImagePlatform); platform != "" {
+		body["image_platform"] = platform
+	}
+	if policy := strings.TrimSpace(opts.Policy); policy != "" {
+		body["policy"] = policy
+	}
+	if labels := cleanStringMap(opts.RequiredLabels); len(labels) > 0 {
+		body["required_labels"] = labels
+	}
+	if capabilities := cleanStrings(opts.RequiredCapabilities); len(capabilities) > 0 {
+		body["required_capabilities"] = capabilities
+	}
+	if nonzeroCapacity(opts.Resources) {
+		body["resources"] = opts.Resources
+	}
+	if len(opts.Args) > 0 {
+		body["args"] = cloneStrings(opts.Args)
+	}
+	var result WarmPoolResult
+	if err := c.request(ctx, http.MethodPost, "/v1/warm-pools", body, &result, c.timeout); err != nil {
+		return WarmPoolResult{}, err
+	}
+	return result, nil
+}
+
+func ListWarmPools(ctx context.Context, opts WarmPoolListOptions) ([]WarmPoolStatus, error) {
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "warm-pools")
+	if err != nil {
+		return nil, err
+	}
+	query := map[string]string{"namespace": opts.Namespace}
+	var result WarmPoolListResult
+	if err := c.request(ctx, http.MethodGet, c.queryPath("/v1/warm-pools", query), nil, &result, c.timeout); err != nil {
+		return nil, err
+	}
+	return result.WarmPools, nil
+}
+
+func GetWarmPool(ctx context.Context, opts WarmPoolGetOptions) (WarmPoolStatus, error) {
+	name := strings.TrimSpace(opts.Name)
+	if name == "" {
+		return WarmPoolStatus{}, errors.New("agentsandbox: warm pool name required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "warm-pool")
+	if err != nil {
+		return WarmPoolStatus{}, err
+	}
+	var status WarmPoolStatus
+	if err := c.request(ctx, http.MethodGet, warmPoolPath(name, ""), nil, &status, c.timeout); err != nil {
+		return WarmPoolStatus{}, err
+	}
+	return status, nil
+}
+
+func DeleteWarmPool(ctx context.Context, opts WarmPoolGetOptions) (WarmPoolDeleteResult, error) {
+	name := strings.TrimSpace(opts.Name)
+	if name == "" {
+		return WarmPoolDeleteResult{}, errors.New("agentsandbox: warm pool name required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "warm-pool")
+	if err != nil {
+		return WarmPoolDeleteResult{}, err
+	}
+	var result WarmPoolDeleteResult
+	if err := c.request(ctx, http.MethodDelete, warmPoolPath(name, ""), nil, &result, c.timeout); err != nil {
+		return WarmPoolDeleteResult{}, err
+	}
+	return result, nil
+}
+
+func ClaimWarmPool(ctx context.Context, opts WarmPoolClaimOptions) (WarmPoolClaimResult, error) {
+	name := strings.TrimSpace(opts.Name)
+	if name == "" {
+		return WarmPoolClaimResult{}, errors.New("agentsandbox: warm pool name required")
+	}
+	if len(opts.Command) == 0 || strings.TrimSpace(opts.Command[0]) == "" {
+		return WarmPoolClaimResult{}, errors.New("agentsandbox: warm pool claim command required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "warm-pool")
+	if err != nil {
+		return WarmPoolClaimResult{}, err
+	}
+	body := map[string]any{
+		"name":    name,
+		"command": cloneStrings(opts.Command),
+	}
+	if ns := strings.TrimSpace(opts.Namespace); ns != "" {
+		body["namespace"] = ns
+	}
+	if env := cloneStringMap(opts.Env); len(env) > 0 {
+		body["env"] = env
+	}
+	var result WarmPoolClaimResult
+	if err := c.request(ctx, http.MethodPost, "/v1/warm-pools/claim", body, &result, c.timeout); err != nil {
+		return WarmPoolClaimResult{}, err
+	}
+	return result, nil
+}
+
+func WarmPoolEvents(ctx context.Context, opts WarmPoolEventListOptions) (SandboxEventListResult, error) {
+	name := strings.TrimSpace(opts.Name)
+	if name == "" {
+		return SandboxEventListResult{}, errors.New("agentsandbox: warm pool name required")
+	}
+	if opts.Limit < 0 {
+		return SandboxEventListResult{}, errors.New("agentsandbox: warm pool events limit must be non-negative")
+	}
+	if opts.Offset < 0 {
+		return SandboxEventListResult{}, errors.New("agentsandbox: warm pool events offset must be non-negative")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "warm-pool")
+	if err != nil {
+		return SandboxEventListResult{}, err
+	}
+	query := map[string]string{
+		"actor":         opts.Actor,
+		"action":        opts.Action,
+		"worker_id":     opts.WorkerID,
+		"assignment_id": opts.AssignmentID,
+	}
+	if opts.Offset > 0 {
+		query["offset"] = strconv.Itoa(opts.Offset)
+	}
+	if opts.Limit > 0 {
+		query["limit"] = strconv.Itoa(opts.Limit)
+	}
+	var result SandboxEventListResult
+	if err := c.request(ctx, http.MethodGet, c.queryPath(warmPoolPath(name, "events"), query), nil, &result, c.timeout); err != nil {
+		return SandboxEventListResult{}, err
+	}
+	if result.Count == 0 && len(result.Events) > 0 {
+		result.Count = len(result.Events)
+	}
+	return result, nil
 }
 
 func (c *Client) Provider() string {
@@ -1305,6 +1633,14 @@ func (c *Client) sandboxPath(action string) string {
 	return path
 }
 
+func warmPoolPath(name, action string) string {
+	path := "/v1/warm-pools/" + url.PathEscape(name)
+	if action != "" {
+		path += "/" + url.PathEscape(action)
+	}
+	return path
+}
+
 func (c *Client) queryPath(path string, values map[string]string) string {
 	query := make(url.Values)
 	for key, value := range values {
@@ -1327,6 +1663,18 @@ func (c *Client) ready() error {
 		return errors.New("agentsandbox: provider required")
 	}
 	return nil
+}
+
+func newFleetClient(fleetURL, apiKey, namespace string, timeout time.Duration, h *http.Client, id string) (*Client, error) {
+	return NewClient(ClientOptions{
+		Provider:  ProviderCloud,
+		FleetURL:  fleetURL,
+		APIKey:    apiKey,
+		Namespace: namespace,
+		SandboxID: id,
+		Timeout:   timeout,
+		HTTP:      h,
+	})
 }
 
 func normalizeProvider(opts ClientOptions) string {
@@ -1385,6 +1733,10 @@ func cloneStrings(in []string) []string {
 	out := make([]string, len(in))
 	copy(out, in)
 	return out
+}
+
+func nonzeroCapacity(c Capacity) bool {
+	return c.CPUs != 0 || c.MemoryBytes != 0 || c.VMs != 0 || c.MaxVMs != 0 || c.Images != 0
 }
 
 func cleanStrings(in []string) []string {
