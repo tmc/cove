@@ -1588,6 +1588,10 @@ func TestStoreOperationsSummaryControllerRuns(t *testing.T) {
 	if skipReasonFilter.Count != 2 || len(skipReasonFilter.Runs) != 2 {
 		t.Fatalf("skip reason controller runs = %+v, want prepare and prune", skipReasonFilter)
 	}
+	missingCapabilityFilter := store.ListControllerRunsPage(ControllerRunListFilter{Namespace: "team-a", MissingCapability: "ram-overlay"})
+	if missingCapabilityFilter.Count != 2 || len(missingCapabilityFilter.Runs) != 2 {
+		t.Fatalf("missing capability controller runs = %+v, want prepare and prune", missingCapabilityFilter)
+	}
 	hasSkips := true
 	hasSkipsFilter := store.ListControllerRunsPage(ControllerRunListFilter{Namespace: "team-a", HasSkips: &hasSkips})
 	if hasSkipsFilter.Count != 2 || len(hasSkipsFilter.Runs) != 2 {
@@ -1606,6 +1610,9 @@ func TestStoreOperationsSummaryControllerRuns(t *testing.T) {
 	}
 	if runs.Skipped != 2 || runs.BySkipReason["capability"] != 2 {
 		t.Fatalf("controller run skips = total %d reasons %+v, want two capability skips", runs.Skipped, runs.BySkipReason)
+	}
+	if runs.ByMissingCapability["ram-overlay"] != 2 {
+		t.Fatalf("controller run missing capabilities = %+v, want two ram-overlay skips", runs.ByMissingCapability)
 	}
 	if len(runs.SkippedWorkers) != 1 || runs.SkippedWorkers[0].WorkerID != "worker-2" || runs.SkippedWorkers[0].Total != 2 || runs.SkippedWorkers[0].ByReason["capability"] != 2 {
 		t.Fatalf("controller run skipped workers = %+v, want worker-2 capability skips", runs.SkippedWorkers)
@@ -6608,6 +6615,11 @@ func TestHandlerControllerRuns(t *testing.T) {
 	getJSONAuth(t, server.URL+"/v1/operations/runs?skip_reason=capability&limit=10", "token-a", &page)
 	if page.Count != 2 || len(page.Runs) != 2 {
 		t.Fatalf("skip reason controller runs = %+v, want prune and prepare", page)
+	}
+	page = ControllerRunListResult{}
+	getJSONAuth(t, server.URL+"/v1/operations/runs?missing_capability=ram-overlay&limit=10", "token-a", &page)
+	if page.Count != 2 || len(page.Runs) != 2 {
+		t.Fatalf("missing capability controller runs = %+v, want prune and prepare", page)
 	}
 	page = ControllerRunListResult{}
 	getJSONAuth(t, server.URL+"/v1/operations/runs?has_skips=true&limit=10", "token-a", &page)

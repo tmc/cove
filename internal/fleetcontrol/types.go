@@ -668,6 +668,7 @@ type ControllerRunListFilter struct {
 	CandidateWorkerID    string `json:"candidate_worker_id,omitempty"`
 	SkippedWorkerID      string `json:"skipped_worker_id,omitempty"`
 	SkipReason           string `json:"skip_reason,omitempty"`
+	MissingCapability    string `json:"missing_capability,omitempty"`
 	HasSkips             *bool  `json:"has_skips,omitempty"`
 	Offset               int    `json:"offset,omitempty"`
 	Limit                int    `json:"limit,omitempty"`
@@ -1101,17 +1102,18 @@ type OperationsSummary struct {
 }
 
 type ControllerRunOperationsSummary struct {
-	Total              int                                 `json:"total"`
-	AssignmentBacked   int                                 `json:"assignment_backed"`
-	Active             int                                 `json:"active"`
-	Attention          int                                 `json:"attention"`
-	Skipped            int                                 `json:"skipped"`
-	ByKind             map[string]int                      `json:"by_kind,omitempty"`
-	ByAssignmentStatus map[string]int                      `json:"by_assignment_status,omitempty"`
-	BySkipReason       map[string]int                      `json:"by_skip_reason,omitempty"`
-	ActiveRuns         []ControllerRunSummary              `json:"active_runs,omitempty"`
-	AttentionRuns      []ControllerRunSummary              `json:"attention_runs,omitempty"`
-	SkippedWorkers     []ControllerRunSkippedWorkerSummary `json:"skipped_workers,omitempty"`
+	Total               int                                 `json:"total"`
+	AssignmentBacked    int                                 `json:"assignment_backed"`
+	Active              int                                 `json:"active"`
+	Attention           int                                 `json:"attention"`
+	Skipped             int                                 `json:"skipped"`
+	ByKind              map[string]int                      `json:"by_kind,omitempty"`
+	ByAssignmentStatus  map[string]int                      `json:"by_assignment_status,omitempty"`
+	BySkipReason        map[string]int                      `json:"by_skip_reason,omitempty"`
+	ByMissingCapability map[string]int                      `json:"by_missing_capability,omitempty"`
+	ActiveRuns          []ControllerRunSummary              `json:"active_runs,omitempty"`
+	AttentionRuns       []ControllerRunSummary              `json:"attention_runs,omitempty"`
+	SkippedWorkers      []ControllerRunSkippedWorkerSummary `json:"skipped_workers,omitempty"`
 }
 
 type ControllerRunSkippedWorkerSummary struct {

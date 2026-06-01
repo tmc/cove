@@ -642,6 +642,7 @@ def test_fleet_client_maintenance_runs() -> None:
             candidate_worker_id="worker-1",
             skipped_worker_id="worker-2",
             skip_reason="capability",
+            missing_capability="ram-overlay",
             has_skips=True,
             offset=1,
             limit=2,
@@ -696,6 +697,7 @@ def test_fleet_client_maintenance_runs() -> None:
         assert summary["controller_runs"]["by_kind"]["storage.prune"] == 1
         assert summary["controller_runs"]["by_assignment_status"]["running"] == 1
         assert summary["controller_runs"]["by_skip_reason"]["capability"] == 2
+        assert summary["controller_runs"]["by_missing_capability"]["ram-overlay"] == 2
         assert summary["controller_runs"]["skipped_workers"][0]["worker_id"] == "worker-2"
         assert summary["metering"]["records"] == 2
 
@@ -744,6 +746,7 @@ def test_fleet_client_maintenance_runs() -> None:
         assert server.requests[-5]["query"]["candidate_worker_id"] == ["worker-1"]
         assert server.requests[-5]["query"]["skipped_worker_id"] == ["worker-2"]
         assert server.requests[-5]["query"]["skip_reason"] == ["capability"]
+        assert server.requests[-5]["query"]["missing_capability"] == ["ram-overlay"]
         assert server.requests[-5]["query"]["has_skips"] == ["true"]
         assert server.requests[-2]["body"] == {}
         assert server.requests[-1]["query"]["namespace"] == ["team-a"]
@@ -2116,6 +2119,7 @@ def _operations_summary() -> dict[str, object]:
             "by_kind": {"storage.prune": 1, "image.gc": 1},
             "by_assignment_status": {"running": 1, "failed": 1},
             "by_skip_reason": {"capability": 2},
+            "by_missing_capability": {"ram-overlay": 2},
             "active_runs": [
                 {
                     "id": "storage-prune-1",

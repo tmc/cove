@@ -585,6 +585,7 @@ type ControllerRunListOptions struct {
 	CandidateWorkerID    string
 	SkippedWorkerID      string
 	SkipReason           string
+	MissingCapability    string
 	HasSkips             *bool
 	Offset               int
 	Limit                int
@@ -1302,17 +1303,18 @@ type OperationsSummary struct {
 }
 
 type ControllerRunOperationsSummary struct {
-	Total              int                                 `json:"total"`
-	AssignmentBacked   int                                 `json:"assignment_backed"`
-	Active             int                                 `json:"active"`
-	Attention          int                                 `json:"attention"`
-	Skipped            int                                 `json:"skipped"`
-	ByKind             map[string]int                      `json:"by_kind,omitempty"`
-	ByAssignmentStatus map[string]int                      `json:"by_assignment_status,omitempty"`
-	BySkipReason       map[string]int                      `json:"by_skip_reason,omitempty"`
-	ActiveRuns         []ControllerRunSummary              `json:"active_runs,omitempty"`
-	AttentionRuns      []ControllerRunSummary              `json:"attention_runs,omitempty"`
-	SkippedWorkers     []ControllerRunSkippedWorkerSummary `json:"skipped_workers,omitempty"`
+	Total               int                                 `json:"total"`
+	AssignmentBacked    int                                 `json:"assignment_backed"`
+	Active              int                                 `json:"active"`
+	Attention           int                                 `json:"attention"`
+	Skipped             int                                 `json:"skipped"`
+	ByKind              map[string]int                      `json:"by_kind,omitempty"`
+	ByAssignmentStatus  map[string]int                      `json:"by_assignment_status,omitempty"`
+	BySkipReason        map[string]int                      `json:"by_skip_reason,omitempty"`
+	ByMissingCapability map[string]int                      `json:"by_missing_capability,omitempty"`
+	ActiveRuns          []ControllerRunSummary              `json:"active_runs,omitempty"`
+	AttentionRuns       []ControllerRunSummary              `json:"attention_runs,omitempty"`
+	SkippedWorkers      []ControllerRunSkippedWorkerSummary `json:"skipped_workers,omitempty"`
 }
 
 type ControllerRunSkippedWorkerSummary struct {
@@ -2402,6 +2404,7 @@ func ListControllerRuns(ctx context.Context, opts ControllerRunListOptions) (Con
 		"candidate_worker_id":   opts.CandidateWorkerID,
 		"skipped_worker_id":     opts.SkippedWorkerID,
 		"skip_reason":           opts.SkipReason,
+		"missing_capability":    opts.MissingCapability,
 	}
 	if opts.HasActiveAssignments != nil {
 		query["has_active_assignments"] = strconv.FormatBool(*opts.HasActiveAssignments)

@@ -358,6 +358,7 @@ func controllerRunListFilterFromRequest(r *http.Request, namespace string) (Cont
 		CandidateWorkerID:   strings.TrimSpace(r.URL.Query().Get("candidate_worker_id")),
 		SkippedWorkerID:     strings.TrimSpace(r.URL.Query().Get("skipped_worker_id")),
 		SkipReason:          strings.TrimSpace(r.URL.Query().Get("skip_reason")),
+		MissingCapability:   strings.TrimSpace(r.URL.Query().Get("missing_capability")),
 	}
 	hasActiveAssignments, err := boolFilterFromRequest(r, "controller runs", "has_active_assignments")
 	if err != nil {
