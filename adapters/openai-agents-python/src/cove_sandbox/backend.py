@@ -69,6 +69,7 @@ if _AGENTS_AVAILABLE:
         image_manifest_digest: str | None = None
         image_digest_ref: str | None = None
         image_platform: str | None = None
+        required_capabilities: tuple[str, ...] = ()
         sandbox_id: str | None = None
         cove: str = "cove"
         token: str | None = None
@@ -96,6 +97,7 @@ if _AGENTS_AVAILABLE:
             image_manifest_digest: str | None = None,
             image_digest_ref: str | None = None,
             image_platform: str | None = None,
+            required_capabilities: tuple[str, ...] = (),
             sandbox_id: str | None = None,
             cove: str = "cove",
             token: str | None = None,
@@ -123,6 +125,7 @@ if _AGENTS_AVAILABLE:
                 image_manifest_digest=image_manifest_digest,
                 image_digest_ref=image_digest_ref,
                 image_platform=image_platform,
+                required_capabilities=required_capabilities,
                 sandbox_id=sandbox_id,
                 cove=cove,
                 token=token,
@@ -152,6 +155,7 @@ else:
         image_manifest_digest: str | None = None
         image_digest_ref: str | None = None
         image_platform: str | None = None
+        required_capabilities: tuple[str, ...] = ()
         sandbox_id: str | None = None
         cove: str = "cove"
         token: str | None = None
@@ -528,6 +532,7 @@ class CoveSandboxClient(BaseSandboxClient):
                 image_manifest_digest=opts.image_manifest_digest,
                 image_digest_ref=opts.image_digest_ref,
                 image_platform=opts.image_platform,
+                required_capabilities=opts.required_capabilities,
                 sandbox_id=sandbox_id or f"sandbox-{session_id.hex[:8]}",
                 api_key=opts.api_key,
                 namespace=opts.namespace,

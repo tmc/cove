@@ -352,6 +352,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   `image_manifest_digest`, `image_digest_ref`, and `image_platform`) on create,
   so SDK callers can request the same controller-verified registry identity as
   the raw REST API.
+- The public Go `agentsandbox` client and OpenAI Agents Python adapter now
+  expose hosted sandbox `required_capabilities` on create, so SDK callers can
+  request RAM-overlay or GUI-capable workers through the same controller
+  placement contract as the raw REST API.
 - SAML bindings now accept signed SAML bearer assertions: the controller
   verifies XML signatures against the stored X.509 certificate, enforces
   issuer, audience, optional subject, and assertion time bounds, and maps the

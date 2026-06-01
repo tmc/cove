@@ -26,10 +26,16 @@ def test_sandbox_run_config_factory(monkeypatch) -> None:
     monkeypatch.setitem(sys.modules, "agents.sandbox", fake_sandbox)
     monkeypatch.setattr(backend, "_AGENTS_AVAILABLE", True)
 
-    cfg = sandbox_run_config(parent="macos-base", name="eval-001", delete_on_close=True)
+    cfg = sandbox_run_config(
+        parent="macos-base",
+        name="eval-001",
+        required_capabilities=("ram-overlay",),
+        delete_on_close=True,
+    )
     assert isinstance(cfg, FakeRunConfig)
     assert isinstance(cfg.sandbox, FakeSandboxRunConfig)
     assert cfg.sandbox.options.parent == "macos-base"
     assert cfg.sandbox.options.name == "eval-001"
+    assert cfg.sandbox.options.required_capabilities == ("ram-overlay",)
     assert cfg.sandbox.options.delete_on_close is True
     assert cfg.sandbox.options.vm is None

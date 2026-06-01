@@ -710,7 +710,9 @@ screenshot/key/text/mouse events. Both SDKs remember the holder returned by
 `lease` and include it on later hosted sandbox mutations until
 `release_lease`/`ReleaseLease` succeeds. Hosted create helpers expose the same
 exact-image fields as the REST API: pass `manifest_bundle`/`ManifestBundle` or
-the resolved digest fields to request a registry-verified mutable image ref.
+the resolved digest fields to request a registry-verified mutable image ref,
+and pass `required_capabilities`/`RequiredCapabilities` to target workers that
+advertise runtime traits such as `ram-overlay`.
 
 Go SDK example:
 
@@ -723,6 +725,7 @@ sb, err := agentsandbox.Create(ctx, agentsandbox.ClientOptions{
 	ImageRef: "macos-base:latest",
 	ManifestBundle: "manifests",
 	ImagePlatform:  "darwin/arm64",
+	RequiredCapabilities: []string{"ram-overlay"},
 })
 if err != nil {
 	log.Fatal(err)

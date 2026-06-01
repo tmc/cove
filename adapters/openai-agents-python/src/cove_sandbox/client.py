@@ -296,6 +296,7 @@ class CoveFleetClient:
         image_manifest_digest: str | None = None,
         image_digest_ref: str | None = None,
         image_platform: str | None = None,
+        required_capabilities: Sequence[str] | str | None = None,
         sandbox_id: str | None = None,
         api_key: str | None = None,
         namespace: str | None = None,
@@ -320,6 +321,9 @@ class CoveFleetClient:
             body["image_digest_ref"] = image_digest_ref.strip()
         if image_platform and image_platform.strip():
             body["image_platform"] = image_platform.strip()
+        capabilities = _clean_string_list(required_capabilities)
+        if capabilities:
+            body["required_capabilities"] = capabilities
         seed = cls(
             sandbox_id=sandbox_id or "pending",
             fleet_url=fleet_url,
@@ -766,6 +770,22 @@ class CoveFleetClient:
 
 def _fleet_api_key_from_env() -> str:
     return (os.environ.get("COVE_API_KEY") or os.environ.get("COVE_FLEET_TOKEN") or "").strip()
+
+
+def _clean_string_list(values: Sequence[str] | str | None) -> list[str]:
+    if not values:
+        return []
+    if isinstance(values, str):
+        values = (values,)
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in values:
+        value = str(item).strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        out.append(value)
+    return out
 
 
 def _query_path(path: str, values: Mapping[str, str]) -> str:

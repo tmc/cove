@@ -27,22 +27,23 @@ const (
 )
 
 type ClientOptions struct {
-	Provider            string
-	VM                  string
-	Socket              string
-	CoveBin             string
-	FleetURL            string
-	APIKey              string
-	Namespace           string
-	SandboxID           string
-	ImageRef            string
-	ManifestBundle      string
-	ImageManifestDigest string
-	ImageDigestRef      string
-	ImagePlatform       string
-	VMName              string
-	Timeout             time.Duration
-	HTTP                *http.Client
+	Provider             string
+	VM                   string
+	Socket               string
+	CoveBin              string
+	FleetURL             string
+	APIKey               string
+	Namespace            string
+	SandboxID            string
+	ImageRef             string
+	ManifestBundle       string
+	ImageManifestDigest  string
+	ImageDigestRef       string
+	ImagePlatform        string
+	RequiredCapabilities []string
+	VMName               string
+	Timeout              time.Duration
+	HTTP                 *http.Client
 }
 
 type Client struct {
@@ -61,18 +62,19 @@ type Client struct {
 }
 
 type SandboxStatus struct {
-	Namespace           string    `json:"namespace,omitempty"`
-	ID                  string    `json:"id"`
-	VMName              string    `json:"vm_name,omitempty"`
-	ImageRef            string    `json:"image_ref,omitempty"`
-	ImageManifestDigest string    `json:"image_manifest_digest,omitempty"`
-	ImageDigestRef      string    `json:"image_digest_ref,omitempty"`
-	ImagePlatform       string    `json:"image_platform,omitempty"`
-	Status              string    `json:"status,omitempty"`
-	WorkerID            string    `json:"worker_id,omitempty"`
-	Lease               *Lease    `json:"lease,omitempty"`
-	Created             time.Time `json:"created,omitempty"`
-	Updated             time.Time `json:"updated,omitempty"`
+	Namespace            string    `json:"namespace,omitempty"`
+	ID                   string    `json:"id"`
+	VMName               string    `json:"vm_name,omitempty"`
+	ImageRef             string    `json:"image_ref,omitempty"`
+	ImageManifestDigest  string    `json:"image_manifest_digest,omitempty"`
+	ImageDigestRef       string    `json:"image_digest_ref,omitempty"`
+	ImagePlatform        string    `json:"image_platform,omitempty"`
+	RequiredCapabilities []string  `json:"required_capabilities,omitempty"`
+	Status               string    `json:"status,omitempty"`
+	WorkerID             string    `json:"worker_id,omitempty"`
+	Lease                *Lease    `json:"lease,omitempty"`
+	Created              time.Time `json:"created,omitempty"`
+	Updated              time.Time `json:"updated,omitempty"`
 }
 
 type SandboxListOptions struct {
@@ -349,6 +351,9 @@ func Create(ctx context.Context, opts ClientOptions) (*Client, error) {
 	}
 	if platform := strings.TrimSpace(opts.ImagePlatform); platform != "" {
 		body["image_platform"] = platform
+	}
+	if capabilities := cleanStrings(opts.RequiredCapabilities); len(capabilities) > 0 {
+		body["required_capabilities"] = capabilities
 	}
 	var status SandboxStatus
 	if err := c.request(ctx, http.MethodPost, "/v1/sandboxes", body, &status, c.timeout); err != nil {
@@ -1285,6 +1290,26 @@ func cloneStrings(in []string) []string {
 	}
 	out := make([]string, len(in))
 	copy(out, in)
+	return out
+}
+
+func cleanStrings(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool, len(in))
+	out := make([]string, 0, len(in))
+	for _, value := range in {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	if len(out) == 0 {
+		return nil
+	}
 	return out
 }
 

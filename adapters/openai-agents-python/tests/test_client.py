@@ -101,6 +101,7 @@ def test_backend_options_round_trip_without_agents() -> None:
         name="eval-001",
         manifest_bundle="manifests",
         image_platform="darwin/arm64",
+        required_capabilities=("ram-overlay", "gui"),
         fleet_url="http://127.0.0.1:9758",
         workspace_root="/tmp/work",
         gui=True,
@@ -111,6 +112,7 @@ def test_backend_options_round_trip_without_agents() -> None:
     assert opts.model_dump()["parent"] == "base"
     assert opts.model_dump()["manifest_bundle"] == "manifests"
     assert opts.model_dump()["image_platform"] == "darwin/arm64"
+    assert opts.model_dump()["required_capabilities"] == ("ram-overlay", "gui")
     assert opts.model_dump()["fleet_url"] == "http://127.0.0.1:9758"
     assert opts.model_dump()["extra_run_args"] == ("-disposable",)
 
@@ -138,12 +140,14 @@ def test_fleet_client_create_wait_exec_and_delete() -> None:
             image_manifest_digest="sha256:1111111111111111111111111111111111111111111111111111111111111111",
             image_digest_ref="ghcr.io/me/dev-vm@sha256:1111111111111111111111111111111111111111111111111111111111111111",
             image_platform="darwin/arm64",
+            required_capabilities=("ram-overlay", "gui", "ram-overlay", ""),
             sandbox_id="job-1",
             namespace="team-a",
         )
         sandboxes = client.list()
         assert sandboxes[0]["id"] == "job-1"
         assert sandboxes[0]["image_ref"] == "base:v1"
+        assert sandboxes[0]["required_capabilities"] == ["ram-overlay"]
         listed = CoveFleetClient.list_sandboxes(fleet_url=server.url, api_key="secret", namespace="team-a")
         assert listed[0]["id"] == "job-1"
         status = client.status()
@@ -189,6 +193,7 @@ def test_fleet_client_create_wait_exec_and_delete() -> None:
         assert create["body"]["image_manifest_digest"].startswith("sha256:")
         assert create["body"]["image_digest_ref"].startswith("ghcr.io/me/dev-vm@sha256:")
         assert create["body"]["image_platform"] == "darwin/arm64"
+        assert create["body"]["required_capabilities"] == ["ram-overlay", "gui"]
         assert create["body"]["namespace"] == "team-a"
         assert server.requests[1]["query"]["namespace"] == ["team-a"]
         assert server.requests[2]["query"]["namespace"] == ["team-a"]
@@ -456,6 +461,7 @@ class _FleetHTTPServer:
                                     "id": "job-1",
                                     "vm_name": "cove-sandbox-job-1",
                                     "image_ref": "base:v1",
+                                    "required_capabilities": ["ram-overlay"],
                                     "status": "ready",
                                 }
                             ],
@@ -466,7 +472,14 @@ class _FleetHTTPServer:
                     )
                     return
                 if path == "/v1/sandboxes/job-1":
-                    self._write({"id": "job-1", "vm_name": "cove-sandbox-job-1", "status": "ready"})
+                    self._write(
+                        {
+                            "id": "job-1",
+                            "vm_name": "cove-sandbox-job-1",
+                            "required_capabilities": ["ram-overlay"],
+                            "status": "ready",
+                        }
+                    )
                     return
                 if path == "/v1/sandboxes/job-1/metering":
                     self._write(_metering("job-1"))

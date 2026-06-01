@@ -151,6 +151,7 @@ run_config = RunConfig(
             image_ref="macos-base:latest",
             manifest_bundle="manifests",
             image_platform="darwin/arm64",
+            required_capabilities=("ram-overlay",),
             name="eval-001",
             delete_on_close=True,
         ),
@@ -169,7 +170,8 @@ handle on close when `delete_on_close=True`. Set
 `fleet_url` and `api_key` directly. For registry-audited hosted sandboxes, pass
 `manifest_bundle` plus optional `image_platform`; the controller verifies the
 offline bundle and admits the sandbox only on workers with matching image
-provenance.
+provenance. Pass `required_capabilities` to restrict hosted placement to
+workers that advertise runtime traits such as `ram-overlay`.
 
 For direct fleet-client code, `CoveFleetClient` covers the hosted lifecycle:
 
@@ -183,6 +185,7 @@ client = CoveFleetClient.create_sandbox(
     image_ref="macos-base:latest",
     manifest_bundle="manifests",
     image_platform="darwin/arm64",
+    required_capabilities=("ram-overlay",),
     sandbox_id="eval-001",
 )
 ready = client.list_page(status="ready", image_ref="macos-base:latest", offset=0, limit=10)
