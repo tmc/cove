@@ -532,6 +532,387 @@ class CoveFleetClient:
         return result
 
     @classmethod
+    def push_image_gc(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        required_labels: Mapping[str, str] | None = None,
+        required_capabilities: Sequence[str] | str | None = None,
+        older_than: str = "",
+        apply: bool = False,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        body = _selector_body(namespace, required_labels, required_capabilities)
+        if older_than.strip():
+            body["older_than"] = older_than.strip()
+        if apply:
+            body["apply"] = True
+        seed = cls(
+            sandbox_id="image-gc",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        result = seed._request("POST", "/v1/images/gc", body, timeout=timeout)
+        return _normalize_run_result(result, "POST /v1/images/gc")
+
+    @classmethod
+    def list_image_gc_runs(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        older_than: str = "",
+        apply: bool | None = None,
+        offset: int = 0,
+        limit: int = 0,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        if offset < 0:
+            raise ValueError("image gc run offset must be non-negative")
+        if limit < 0:
+            raise ValueError("image gc run limit must be non-negative")
+        seed = cls(
+            sandbox_id="image-gc-runs",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        query = {
+            "namespace": namespace or "",
+            "older_than": older_than,
+            "apply": _bool_query(apply),
+            "offset": str(offset) if offset else "",
+            "limit": str(limit) if limit else "",
+        }
+        result = seed._request("GET", _query_path("/v1/images/gc/runs", query), timeout=timeout)
+        return _normalize_run_page(result, "GET /v1/images/gc/runs")
+
+    @classmethod
+    def get_image_gc_run(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        run_id: str,
+        api_key: str | None = None,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        run_id = run_id.strip()
+        if not run_id:
+            raise ValueError("image gc run id is required")
+        seed = cls(sandbox_id="image-gc-run", fleet_url=fleet_url, api_key=api_key, timeout=timeout)
+        result = seed._request("GET", _image_gc_run_path(run_id), timeout=timeout)
+        return _normalize_run_result(result, "GET /v1/images/gc/runs")
+
+    @classmethod
+    def push_lifecycle_policy(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        vm_name: str,
+        required_labels: Mapping[str, str] | None = None,
+        required_capabilities: Sequence[str] | str | None = None,
+        clear: bool = False,
+        idle_timeout: str = "",
+        max_age: str = "",
+        run_budget: int = 0,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        vm_name = vm_name.strip()
+        if not vm_name:
+            raise ValueError("vm_name is required")
+        if run_budget < 0:
+            raise ValueError("run_budget must be non-negative")
+        if clear and (idle_timeout.strip() or max_age.strip() or run_budget):
+            raise ValueError("clear cannot include thresholds")
+        if not clear and not idle_timeout.strip() and not max_age.strip() and not run_budget:
+            raise ValueError("threshold is required")
+        body = _selector_body(namespace, required_labels, required_capabilities)
+        body["vm_name"] = vm_name
+        if clear:
+            body["clear"] = True
+        if idle_timeout.strip():
+            body["idle_timeout"] = idle_timeout.strip()
+        if max_age.strip():
+            body["max_age"] = max_age.strip()
+        if run_budget:
+            body["run_budget"] = run_budget
+        seed = cls(
+            sandbox_id="lifecycle-policy",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        result = seed._request("POST", "/v1/policies/lifecycle", body, timeout=timeout)
+        return _normalize_run_result(result, "POST /v1/policies/lifecycle")
+
+    @classmethod
+    def list_lifecycle_policy_runs(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        vm_name: str = "",
+        clear: bool | None = None,
+        offset: int = 0,
+        limit: int = 0,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        if offset < 0:
+            raise ValueError("lifecycle policy run offset must be non-negative")
+        if limit < 0:
+            raise ValueError("lifecycle policy run limit must be non-negative")
+        seed = cls(
+            sandbox_id="lifecycle-policy-runs",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        query = {
+            "namespace": namespace or "",
+            "vm_name": vm_name,
+            "clear": _bool_query(clear),
+            "offset": str(offset) if offset else "",
+            "limit": str(limit) if limit else "",
+        }
+        result = seed._request("GET", _query_path("/v1/policies/lifecycle/runs", query), timeout=timeout)
+        return _normalize_run_page(result, "GET /v1/policies/lifecycle/runs")
+
+    @classmethod
+    def get_lifecycle_policy_run(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        run_id: str,
+        api_key: str | None = None,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        run_id = run_id.strip()
+        if not run_id:
+            raise ValueError("lifecycle policy run id is required")
+        seed = cls(sandbox_id="lifecycle-policy-run", fleet_url=fleet_url, api_key=api_key, timeout=timeout)
+        result = seed._request("GET", _lifecycle_policy_run_path(run_id), timeout=timeout)
+        return _normalize_run_result(result, "GET /v1/policies/lifecycle/runs")
+
+    @classmethod
+    def push_storage_budget(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        required_labels: Mapping[str, str] | None = None,
+        required_capabilities: Sequence[str] | str | None = None,
+        clear: bool = False,
+        target: str = "",
+        warn_pct: int | None = None,
+        hard_pct: int | None = None,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        target = target.strip()
+        if clear and (target or warn_pct is not None or hard_pct is not None):
+            raise ValueError("clear cannot include thresholds")
+        if not clear and not target:
+            raise ValueError("target is required")
+        body = _selector_body(namespace, required_labels, required_capabilities)
+        if clear:
+            body["clear"] = True
+        if target:
+            body["target"] = target
+        if warn_pct is not None:
+            body["warn_pct"] = warn_pct
+        if hard_pct is not None:
+            body["hard_pct"] = hard_pct
+        seed = cls(
+            sandbox_id="storage-budget",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        result = seed._request("POST", "/v1/storage/budget", body, timeout=timeout)
+        return _normalize_run_result(result, "POST /v1/storage/budget")
+
+    @classmethod
+    def list_storage_budget_runs(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        target: str = "",
+        clear: bool | None = None,
+        offset: int = 0,
+        limit: int = 0,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        if offset < 0:
+            raise ValueError("storage budget run offset must be non-negative")
+        if limit < 0:
+            raise ValueError("storage budget run limit must be non-negative")
+        seed = cls(
+            sandbox_id="storage-budget-runs",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        query = {
+            "namespace": namespace or "",
+            "target": target,
+            "clear": _bool_query(clear),
+            "offset": str(offset) if offset else "",
+            "limit": str(limit) if limit else "",
+        }
+        result = seed._request("GET", _query_path("/v1/storage/budget/runs", query), timeout=timeout)
+        return _normalize_run_page(result, "GET /v1/storage/budget/runs")
+
+    @classmethod
+    def get_storage_budget_run(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        run_id: str,
+        api_key: str | None = None,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        run_id = run_id.strip()
+        if not run_id:
+            raise ValueError("storage budget run id is required")
+        seed = cls(sandbox_id="storage-budget-run", fleet_url=fleet_url, api_key=api_key, timeout=timeout)
+        result = seed._request("GET", _storage_budget_run_path(run_id), timeout=timeout)
+        return _normalize_run_result(result, "GET /v1/storage/budget/runs")
+
+    @classmethod
+    def push_storage_prune(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        required_labels: Mapping[str, str] | None = None,
+        required_capabilities: Sequence[str] | str | None = None,
+        category: str = "",
+        older_than: str = "",
+        apply: bool = False,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        body = _selector_body(namespace, required_labels, required_capabilities)
+        if category.strip():
+            body["category"] = category.strip()
+        if older_than.strip():
+            body["older_than"] = older_than.strip()
+        if apply:
+            body["apply"] = True
+        seed = cls(
+            sandbox_id="storage-prune",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        result = seed._request("POST", "/v1/storage/prune", body, timeout=timeout)
+        return _normalize_run_result(result, "POST /v1/storage/prune")
+
+    @classmethod
+    def list_storage_prune_runs(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        category: str = "",
+        older_than: str = "",
+        apply: bool | None = None,
+        offset: int = 0,
+        limit: int = 0,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        if offset < 0:
+            raise ValueError("storage prune run offset must be non-negative")
+        if limit < 0:
+            raise ValueError("storage prune run limit must be non-negative")
+        seed = cls(
+            sandbox_id="storage-prune-runs",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        query = {
+            "namespace": namespace or "",
+            "category": category,
+            "older_than": older_than,
+            "apply": _bool_query(apply),
+            "offset": str(offset) if offset else "",
+            "limit": str(limit) if limit else "",
+        }
+        result = seed._request("GET", _query_path("/v1/storage/prune/runs", query), timeout=timeout)
+        return _normalize_run_page(result, "GET /v1/storage/prune/runs")
+
+    @classmethod
+    def get_storage_prune_run(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        run_id: str,
+        api_key: str | None = None,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        run_id = run_id.strip()
+        if not run_id:
+            raise ValueError("storage prune run id is required")
+        seed = cls(sandbox_id="storage-prune-run", fleet_url=fleet_url, api_key=api_key, timeout=timeout)
+        result = seed._request("GET", _storage_prune_run_path(run_id), timeout=timeout)
+        return _normalize_run_result(result, "GET /v1/storage/prune/runs")
+
+    @classmethod
+    def list_controller_runs(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        kind: str = "",
+        target_type: str = "",
+        target_id: str = "",
+        offset: int = 0,
+        limit: int = 0,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        if offset < 0:
+            raise ValueError("controller run offset must be non-negative")
+        if limit < 0:
+            raise ValueError("controller run limit must be non-negative")
+        seed = cls(
+            sandbox_id="controller-runs",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        query = {
+            "namespace": namespace or "",
+            "kind": kind,
+            "target_type": target_type,
+            "target_id": target_id,
+            "offset": str(offset) if offset else "",
+            "limit": str(limit) if limit else "",
+        }
+        result = seed._request("GET", _query_path("/v1/operations/runs", query), timeout=timeout)
+        return _normalize_run_page(result, "GET /v1/operations/runs")
+
+    @classmethod
     def ensure_warm_pool(
         cls,
         *,
@@ -1216,6 +1597,20 @@ def _normalize_warm_pool_result(data: dict[str, Any], endpoint: str) -> dict[str
     return result
 
 
+def _normalize_run_result(data: dict[str, Any], endpoint: str) -> dict[str, Any]:
+    result = dict(data)
+    _normalize_dict_list(result, "assignments", endpoint)
+    _normalize_dict_list(result, "skipped", endpoint)
+    return result
+
+
+def _normalize_run_page(data: dict[str, Any], endpoint: str) -> dict[str, Any]:
+    page = dict(data)
+    _normalize_dict_list(page, "runs", endpoint)
+    page["count"] = int(page.get("count") or len(page["runs"]))
+    return page
+
+
 def _normalize_dict_list(data: dict[str, Any], key: str, endpoint: str) -> None:
     items = data.get(key) or []
     if not isinstance(items, list):
@@ -1239,6 +1634,45 @@ def _warm_pool_path(name: str, action: str = "") -> str:
 
 def _image_preparation_path(preparation_id: str) -> str:
     return "/v1/images/preparations/" + urllib.parse.quote(preparation_id, safe="")
+
+
+def _image_gc_run_path(run_id: str) -> str:
+    return "/v1/images/gc/runs/" + urllib.parse.quote(run_id, safe="")
+
+
+def _lifecycle_policy_run_path(run_id: str) -> str:
+    return "/v1/policies/lifecycle/runs/" + urllib.parse.quote(run_id, safe="")
+
+
+def _storage_budget_run_path(run_id: str) -> str:
+    return "/v1/storage/budget/runs/" + urllib.parse.quote(run_id, safe="")
+
+
+def _storage_prune_run_path(run_id: str) -> str:
+    return "/v1/storage/prune/runs/" + urllib.parse.quote(run_id, safe="")
+
+
+def _selector_body(
+    namespace: str | None,
+    required_labels: Mapping[str, str] | None,
+    required_capabilities: Sequence[str] | str | None,
+) -> dict[str, object]:
+    body: dict[str, object] = {}
+    if namespace:
+        body["namespace"] = namespace
+    labels = _clean_string_map(required_labels)
+    if labels:
+        body["required_labels"] = labels
+    capabilities = _clean_string_list(required_capabilities)
+    if capabilities:
+        body["required_capabilities"] = capabilities
+    return body
+
+
+def _bool_query(value: bool | None) -> str:
+    if value is None:
+        return ""
+    return "true" if value else "false"
 
 
 def _query_path(path: str, values: Mapping[str, str]) -> str:

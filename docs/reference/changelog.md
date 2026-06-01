@@ -8,6 +8,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 ## Unreleased
 
 ### Added
+- The public Go `agentsandbox` package and OpenAI Agents Python adapter now
+  expose hosted maintenance controls for image GC, lifecycle-policy pushes,
+  storage budget/prune fan-out, and the retained `/v1/operations/runs`
+  controller timeline.
 - `POST /v1/images/prepare` now accepts `dry_run:true`, returning the same
   planned pull assignments and structured skipped-worker reasons for status,
   label, capability, present-image, or active-prepare mismatches without

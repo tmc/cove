@@ -371,6 +371,225 @@ func TestCloudClientImagePreparationValidation(t *testing.T) {
 	}
 }
 
+func TestCloudClientMaintenanceRuns(t *testing.T) {
+	server := newSDKFleetServer(t)
+	ctx := context.Background()
+	apply := true
+	clear := false
+	warn := 70
+	hard := 90
+
+	gc, err := PushImageGC(ctx, ImageGCOptions{
+		FleetURL:             server.URL,
+		APIKey:               "secret",
+		Namespace:            "team-a",
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay", "asif", ""},
+		OlderThan:            "168h",
+		Apply:                true,
+		Timeout:              time.Second,
+	})
+	if err != nil {
+		t.Fatalf("PushImageGC: %v", err)
+	}
+	if gc.ID != "image-gc-1" || !gc.Apply || gc.Assignments[0].WorkerID != "worker-1" || gc.Skipped[0].Reason != "cordoned" {
+		t.Fatalf("PushImageGC = %+v, want applied run", gc)
+	}
+	gcPage, err := ListImageGCRuns(ctx, ImageGCListOptions{FleetURL: server.URL, APIKey: "secret", Namespace: "team-a", OlderThan: "168h", Apply: &apply, Offset: 1, Limit: 2, Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("ListImageGCRuns: %v", err)
+	}
+	if gcPage.Count != 1 || gcPage.Runs[0].ID != "image-gc-1" {
+		t.Fatalf("ListImageGCRuns = %+v, want image-gc-1", gcPage)
+	}
+	gotGC, err := GetImageGCRun(ctx, ImageGCGetOptions{FleetURL: server.URL, APIKey: "secret", ID: "image-gc-1", Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("GetImageGCRun: %v", err)
+	}
+	if gotGC.ID != "image-gc-1" || gotGC.OlderThan != "168h" {
+		t.Fatalf("GetImageGCRun = %+v, want image-gc-1", gotGC)
+	}
+
+	policy, err := PushLifecyclePolicy(ctx, LifecyclePolicyOptions{
+		FleetURL:             server.URL,
+		APIKey:               "secret",
+		Namespace:            "team-a",
+		VMName:               "ci-runner",
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay", "asif"},
+		IdleTimeout:          "30m",
+		RunBudget:            100,
+		Timeout:              time.Second,
+	})
+	if err != nil {
+		t.Fatalf("PushLifecyclePolicy: %v", err)
+	}
+	if policy.ID != "lifecycle-policy-1" || policy.VMName != "ci-runner" || policy.RunBudget != 100 {
+		t.Fatalf("PushLifecyclePolicy = %+v, want ci-runner policy", policy)
+	}
+	policyPage, err := ListLifecyclePolicyRuns(ctx, LifecyclePolicyListOptions{FleetURL: server.URL, APIKey: "secret", Namespace: "team-a", VMName: "ci-runner", Clear: &clear, Offset: 1, Limit: 2, Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("ListLifecyclePolicyRuns: %v", err)
+	}
+	if policyPage.Count != 1 || policyPage.Runs[0].ID != "lifecycle-policy-1" {
+		t.Fatalf("ListLifecyclePolicyRuns = %+v, want lifecycle-policy-1", policyPage)
+	}
+	gotPolicy, err := GetLifecyclePolicyRun(ctx, LifecyclePolicyGetOptions{FleetURL: server.URL, APIKey: "secret", ID: "lifecycle-policy-1", Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("GetLifecyclePolicyRun: %v", err)
+	}
+	if gotPolicy.ID != "lifecycle-policy-1" || gotPolicy.IdleTimeout != "30m" {
+		t.Fatalf("GetLifecyclePolicyRun = %+v, want lifecycle-policy-1", gotPolicy)
+	}
+
+	budget, err := PushStorageBudget(ctx, StorageBudgetOptions{
+		FleetURL:             server.URL,
+		APIKey:               "secret",
+		Namespace:            "team-a",
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay"},
+		Target:               "750GB",
+		WarnPct:              &warn,
+		HardPct:              &hard,
+		Timeout:              time.Second,
+	})
+	if err != nil {
+		t.Fatalf("PushStorageBudget: %v", err)
+	}
+	if budget.ID != "storage-budget-1" || budget.Target != "750GB" || budget.WarnPct == nil || *budget.WarnPct != 70 {
+		t.Fatalf("PushStorageBudget = %+v, want storage-budget-1", budget)
+	}
+	budgetPage, err := ListStorageBudgetRuns(ctx, StorageBudgetListOptions{FleetURL: server.URL, APIKey: "secret", Namespace: "team-a", Target: "750GB", Clear: &clear, Offset: 1, Limit: 2, Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("ListStorageBudgetRuns: %v", err)
+	}
+	if budgetPage.Count != 1 || budgetPage.Runs[0].ID != "storage-budget-1" {
+		t.Fatalf("ListStorageBudgetRuns = %+v, want storage-budget-1", budgetPage)
+	}
+	gotBudget, err := GetStorageBudgetRun(ctx, StorageBudgetGetOptions{FleetURL: server.URL, APIKey: "secret", ID: "storage-budget-1", Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("GetStorageBudgetRun: %v", err)
+	}
+	if gotBudget.ID != "storage-budget-1" || gotBudget.HardPct == nil || *gotBudget.HardPct != 90 {
+		t.Fatalf("GetStorageBudgetRun = %+v, want storage-budget-1", gotBudget)
+	}
+
+	prune, err := PushStoragePrune(ctx, StoragePruneOptions{
+		FleetURL:             server.URL,
+		APIKey:               "secret",
+		Namespace:            "team-a",
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay"},
+		Category:             "build-scratch",
+		OlderThan:            "48h",
+		Apply:                true,
+		Timeout:              time.Second,
+	})
+	if err != nil {
+		t.Fatalf("PushStoragePrune: %v", err)
+	}
+	if prune.ID != "storage-prune-1" || !prune.Apply || prune.Category != "build-scratch" {
+		t.Fatalf("PushStoragePrune = %+v, want storage-prune-1", prune)
+	}
+	prunePage, err := ListStoragePruneRuns(ctx, StoragePruneListOptions{FleetURL: server.URL, APIKey: "secret", Namespace: "team-a", Category: "build-scratch", OlderThan: "48h", Apply: &apply, Offset: 1, Limit: 2, Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("ListStoragePruneRuns: %v", err)
+	}
+	if prunePage.Count != 1 || prunePage.Runs[0].ID != "storage-prune-1" {
+		t.Fatalf("ListStoragePruneRuns = %+v, want storage-prune-1", prunePage)
+	}
+	gotPrune, err := GetStoragePruneRun(ctx, StoragePruneGetOptions{FleetURL: server.URL, APIKey: "secret", ID: "storage-prune-1", Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("GetStoragePruneRun: %v", err)
+	}
+	if gotPrune.ID != "storage-prune-1" || gotPrune.OlderThan != "48h" {
+		t.Fatalf("GetStoragePruneRun = %+v, want storage-prune-1", gotPrune)
+	}
+
+	runs, err := ListControllerRuns(ctx, ControllerRunListOptions{FleetURL: server.URL, APIKey: "secret", Namespace: "team-a", Kind: "storage.prune", TargetType: "storage", Offset: 1, Limit: 2, Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("ListControllerRuns: %v", err)
+	}
+	if runs.Count != 1 || runs.Runs[0].Kind != "storage.prune" || runs.Runs[0].AssignmentCount != 1 {
+		t.Fatalf("ListControllerRuns = %+v, want storage prune summary", runs)
+	}
+
+	paths := make([]string, 0, len(server.requests))
+	for _, req := range server.requests {
+		paths = append(paths, req.path)
+		if req.authorization != "Bearer secret" {
+			t.Fatalf("authorization for %s = %q, want bearer token", req.path, req.authorization)
+		}
+	}
+	wantPaths := []string{
+		"/v1/images/gc",
+		"/v1/images/gc/runs",
+		"/v1/images/gc/runs/image-gc-1",
+		"/v1/policies/lifecycle",
+		"/v1/policies/lifecycle/runs",
+		"/v1/policies/lifecycle/runs/lifecycle-policy-1",
+		"/v1/storage/budget",
+		"/v1/storage/budget/runs",
+		"/v1/storage/budget/runs/storage-budget-1",
+		"/v1/storage/prune",
+		"/v1/storage/prune/runs",
+		"/v1/storage/prune/runs/storage-prune-1",
+		"/v1/operations/runs",
+	}
+	if !equalStringSlices(paths, wantPaths) {
+		t.Fatalf("paths = %+v, want %+v", paths, wantPaths)
+	}
+	if body := server.requests[0].body; body["namespace"] != "team-a" || body["older_than"] != "168h" || body["apply"] != true || !equalAnyStringSlice(body["required_capabilities"], []string{"ram-overlay", "asif"}) {
+		t.Fatalf("image gc body = %+v", body)
+	}
+	if query := server.requests[1].query; query.Get("namespace") != "team-a" || query.Get("older_than") != "168h" || query.Get("apply") != "true" || query.Get("offset") != "1" || query.Get("limit") != "2" {
+		t.Fatalf("image gc query = %q", query.Encode())
+	}
+	if body := server.requests[3].body; body["vm_name"] != "ci-runner" || body["idle_timeout"] != "30m" || body["run_budget"] != float64(100) {
+		t.Fatalf("lifecycle body = %+v", body)
+	}
+	if query := server.requests[4].query; query.Get("vm_name") != "ci-runner" || query.Get("clear") != "false" {
+		t.Fatalf("lifecycle query = %q", query.Encode())
+	}
+	if body := server.requests[6].body; body["target"] != "750GB" || body["warn_pct"] != float64(70) || body["hard_pct"] != float64(90) {
+		t.Fatalf("storage budget body = %+v", body)
+	}
+	if query := server.requests[7].query; query.Get("target") != "750GB" || query.Get("clear") != "false" {
+		t.Fatalf("storage budget query = %q", query.Encode())
+	}
+	if body := server.requests[9].body; body["category"] != "build-scratch" || body["older_than"] != "48h" || body["apply"] != true {
+		t.Fatalf("storage prune body = %+v", body)
+	}
+	if query := server.requests[12].query; query.Get("kind") != "storage.prune" || query.Get("target_type") != "storage" || query.Get("namespace") != "team-a" {
+		t.Fatalf("controller runs query = %q", query.Encode())
+	}
+}
+
+func TestCloudClientMaintenanceValidation(t *testing.T) {
+	ctx := context.Background()
+	if _, err := ListImageGCRuns(ctx, ImageGCListOptions{FleetURL: "https://fleet.example", APIKey: "secret", Limit: -1}); err == nil || !strings.Contains(err.Error(), "limit must be non-negative") {
+		t.Fatalf("ListImageGCRuns negative limit err = %v, want validation error", err)
+	}
+	if _, err := GetImageGCRun(ctx, ImageGCGetOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "id required") {
+		t.Fatalf("GetImageGCRun missing id err = %v, want validation error", err)
+	}
+	if _, err := PushLifecyclePolicy(ctx, LifecyclePolicyOptions{FleetURL: "https://fleet.example", APIKey: "secret", IdleTimeout: "1m"}); err == nil || !strings.Contains(err.Error(), "vm name required") {
+		t.Fatalf("PushLifecyclePolicy missing vm err = %v, want validation error", err)
+	}
+	if _, err := PushLifecyclePolicy(ctx, LifecyclePolicyOptions{FleetURL: "https://fleet.example", APIKey: "secret", VMName: "vm"}); err == nil || !strings.Contains(err.Error(), "threshold required") {
+		t.Fatalf("PushLifecyclePolicy missing threshold err = %v, want validation error", err)
+	}
+	if _, err := PushStorageBudget(ctx, StorageBudgetOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "target required") {
+		t.Fatalf("PushStorageBudget missing target err = %v, want validation error", err)
+	}
+	if _, err := PushStorageBudget(ctx, StorageBudgetOptions{FleetURL: "https://fleet.example", APIKey: "secret", Clear: true, Target: "1GB"}); err == nil || !strings.Contains(err.Error(), "clear cannot include thresholds") {
+		t.Fatalf("PushStorageBudget clear thresholds err = %v, want validation error", err)
+	}
+	if _, err := ListControllerRuns(ctx, ControllerRunListOptions{FleetURL: "https://fleet.example", APIKey: "secret", Offset: -1}); err == nil || !strings.Contains(err.Error(), "offset must be non-negative") {
+		t.Fatalf("ListControllerRuns negative offset err = %v, want validation error", err)
+	}
+}
+
 func TestCloudClientWarmPools(t *testing.T) {
 	server := newSDKFleetServer(t)
 	ctx := context.Background()
@@ -761,6 +980,67 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/images/preparations/image-prepare-1":
 			writeSDKJSON(t, w, sdkImagePrepareResult(false))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/images/gc":
+			writeSDKJSON(t, w, sdkImageGCResult())
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/images/gc/runs":
+			writeSDKJSON(t, w, ImageGCListResult{
+				Runs:   []ImageGCResult{sdkImageGCResult()},
+				Count:  1,
+				Offset: atoiDefault(r.URL.Query().Get("offset"), 0),
+				Limit:  atoiDefault(r.URL.Query().Get("limit"), 0),
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/images/gc/runs/image-gc-1":
+			writeSDKJSON(t, w, sdkImageGCResult())
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/policies/lifecycle":
+			writeSDKJSON(t, w, sdkLifecyclePolicyResult())
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/policies/lifecycle/runs":
+			writeSDKJSON(t, w, LifecyclePolicyListResult{
+				Runs:   []LifecyclePolicyResult{sdkLifecyclePolicyResult()},
+				Count:  1,
+				Offset: atoiDefault(r.URL.Query().Get("offset"), 0),
+				Limit:  atoiDefault(r.URL.Query().Get("limit"), 0),
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/policies/lifecycle/runs/lifecycle-policy-1":
+			writeSDKJSON(t, w, sdkLifecyclePolicyResult())
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/storage/budget":
+			writeSDKJSON(t, w, sdkStorageBudgetResult())
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/storage/budget/runs":
+			writeSDKJSON(t, w, StorageBudgetListResult{
+				Runs:   []StorageBudgetResult{sdkStorageBudgetResult()},
+				Count:  1,
+				Offset: atoiDefault(r.URL.Query().Get("offset"), 0),
+				Limit:  atoiDefault(r.URL.Query().Get("limit"), 0),
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/storage/budget/runs/storage-budget-1":
+			writeSDKJSON(t, w, sdkStorageBudgetResult())
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/storage/prune":
+			writeSDKJSON(t, w, sdkStoragePruneResult())
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/storage/prune/runs":
+			writeSDKJSON(t, w, StoragePruneListResult{
+				Runs:   []StoragePruneResult{sdkStoragePruneResult()},
+				Count:  1,
+				Offset: atoiDefault(r.URL.Query().Get("offset"), 0),
+				Limit:  atoiDefault(r.URL.Query().Get("limit"), 0),
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/storage/prune/runs/storage-prune-1":
+			writeSDKJSON(t, w, sdkStoragePruneResult())
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/operations/runs":
+			writeSDKJSON(t, w, ControllerRunListResult{
+				Runs: []ControllerRunSummary{{
+					ID:              "storage-prune-1",
+					Created:         time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC),
+					Namespace:       "team-a",
+					Kind:            "storage.prune",
+					TargetType:      "storage",
+					TargetID:        "build-scratch",
+					AssignmentCount: 1,
+					SkipCount:       1,
+					Fields:          map[string]string{"older_than": "48h", "apply": "true"},
+				}},
+				Count:  1,
+				Offset: atoiDefault(r.URL.Query().Get("offset"), 0),
+				Limit:  atoiDefault(r.URL.Query().Get("limit"), 0),
+			})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/warm-pools":
 			status := sdkWarmPoolStatus()
 			writeSDKJSON(t, w, WarmPoolResult{
@@ -935,6 +1215,80 @@ func sdkImagePrepareResult(dryRun bool) ImagePrepareResult {
 			{WorkerID: "worker-3", Reason: "label", MissingLabels: map[string]string{"zone": "desk"}},
 			{WorkerID: "worker-4", Reason: "capability", MissingCapabilities: []string{"asif"}},
 		},
+	}
+}
+
+func sdkImageGCResult() ImageGCResult {
+	return ImageGCResult{
+		ID:                   "image-gc-1",
+		Created:              time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC),
+		Namespace:            "team-a",
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay", "asif"},
+		OlderThan:            "168h",
+		Apply:                true,
+		Assignments:          []Assignment{sdkMaintenanceAssignment("assignment-image-gc-1", "image", "gc", "-yes", "-older-than", "168h")},
+		Skipped:              []ImageGCSkip{{WorkerID: "worker-2", Reason: "cordoned"}},
+	}
+}
+
+func sdkLifecyclePolicyResult() LifecyclePolicyResult {
+	return LifecyclePolicyResult{
+		ID:                   "lifecycle-policy-1",
+		Created:              time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC),
+		Namespace:            "team-a",
+		VMName:               "ci-runner",
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay", "asif"},
+		IdleTimeout:          "30m",
+		RunBudget:            100,
+		Assignments:          []Assignment{sdkMaintenanceAssignment("assignment-lifecycle-policy-1", "policy", "ci-runner", "set", "-idle-timeout", "30m", "-run-budget", "100")},
+		Skipped:              []LifecyclePolicySkip{{WorkerID: "worker-2", Reason: "cordoned"}},
+	}
+}
+
+func sdkStorageBudgetResult() StorageBudgetResult {
+	warn := 70
+	hard := 90
+	return StorageBudgetResult{
+		ID:                   "storage-budget-1",
+		Created:              time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC),
+		Namespace:            "team-a",
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay"},
+		Target:               "750GB",
+		WarnPct:              &warn,
+		HardPct:              &hard,
+		Assignments:          []Assignment{sdkMaintenanceAssignment("assignment-storage-budget-1", "storage", "budget", "set", "-target", "750GB", "-warn", "70", "-hard", "90")},
+		Skipped:              []StoragePolicySkip{{WorkerID: "worker-2", Reason: "cordoned"}},
+	}
+}
+
+func sdkStoragePruneResult() StoragePruneResult {
+	return StoragePruneResult{
+		ID:                   "storage-prune-1",
+		Created:              time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC),
+		Namespace:            "team-a",
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay"},
+		Category:             "build-scratch",
+		OlderThan:            "48h",
+		Apply:                true,
+		Assignments:          []Assignment{sdkMaintenanceAssignment("assignment-storage-prune-1", "storage", "prune", "build-scratch", "-apply", "-older-than", "48h")},
+		Skipped:              []StoragePolicySkip{{WorkerID: "worker-2", Reason: "cordoned"}},
+	}
+}
+
+func sdkMaintenanceAssignment(id string, args ...string) Assignment {
+	return Assignment{
+		ID:                   id,
+		Namespace:            "team-a",
+		WorkerID:             "worker-1",
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay"},
+		Verb:                 "cove",
+		Args:                 args,
+		Status:               "pending",
 	}
 }
 

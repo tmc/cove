@@ -334,6 +334,182 @@ def test_fleet_client_image_preparation() -> None:
         server.stop()
 
 
+def test_fleet_client_maintenance_runs() -> None:
+    server = _FleetHTTPServer()
+    server.start()
+    try:
+        gc = CoveFleetClient.push_image_gc(
+            fleet_url=server.url,
+            api_key="secret",
+            namespace="team-a",
+            required_labels={"zone": "desk"},
+            required_capabilities=("ram-overlay", "asif", ""),
+            older_than="168h",
+            apply=True,
+        )
+        assert gc["id"] == "image-gc-1"
+        assert gc["apply"] is True
+        assert gc["assignments"][0]["worker_id"] == "worker-1"
+        assert gc["skipped"][0]["reason"] == "cordoned"
+        gc_page = CoveFleetClient.list_image_gc_runs(
+            fleet_url=server.url,
+            api_key="secret",
+            namespace="team-a",
+            older_than="168h",
+            apply=True,
+            offset=1,
+            limit=2,
+        )
+        assert gc_page["runs"][0]["id"] == "image-gc-1"
+        assert gc_page["count"] == 1
+        got_gc = CoveFleetClient.get_image_gc_run(fleet_url=server.url, api_key="secret", run_id="image-gc-1")
+        assert got_gc["older_than"] == "168h"
+
+        policy = CoveFleetClient.push_lifecycle_policy(
+            fleet_url=server.url,
+            api_key="secret",
+            namespace="team-a",
+            vm_name="ci-runner",
+            required_labels={"zone": "desk"},
+            required_capabilities=("ram-overlay", "asif"),
+            idle_timeout="30m",
+            run_budget=100,
+        )
+        assert policy["id"] == "lifecycle-policy-1"
+        assert policy["vm_name"] == "ci-runner"
+        policy_page = CoveFleetClient.list_lifecycle_policy_runs(
+            fleet_url=server.url,
+            api_key="secret",
+            namespace="team-a",
+            vm_name="ci-runner",
+            clear=False,
+            offset=1,
+            limit=2,
+        )
+        assert policy_page["runs"][0]["id"] == "lifecycle-policy-1"
+        got_policy = CoveFleetClient.get_lifecycle_policy_run(
+            fleet_url=server.url,
+            api_key="secret",
+            run_id="lifecycle-policy-1",
+        )
+        assert got_policy["idle_timeout"] == "30m"
+
+        budget = CoveFleetClient.push_storage_budget(
+            fleet_url=server.url,
+            api_key="secret",
+            namespace="team-a",
+            required_labels={"zone": "desk"},
+            required_capabilities=("ram-overlay",),
+            target="750GB",
+            warn_pct=70,
+            hard_pct=90,
+        )
+        assert budget["id"] == "storage-budget-1"
+        assert budget["target"] == "750GB"
+        budget_page = CoveFleetClient.list_storage_budget_runs(
+            fleet_url=server.url,
+            api_key="secret",
+            namespace="team-a",
+            target="750GB",
+            clear=False,
+            offset=1,
+            limit=2,
+        )
+        assert budget_page["runs"][0]["id"] == "storage-budget-1"
+        got_budget = CoveFleetClient.get_storage_budget_run(
+            fleet_url=server.url,
+            api_key="secret",
+            run_id="storage-budget-1",
+        )
+        assert got_budget["hard_pct"] == 90
+
+        prune = CoveFleetClient.push_storage_prune(
+            fleet_url=server.url,
+            api_key="secret",
+            namespace="team-a",
+            required_labels={"zone": "desk"},
+            required_capabilities=("ram-overlay",),
+            category="build-scratch",
+            older_than="48h",
+            apply=True,
+        )
+        assert prune["id"] == "storage-prune-1"
+        assert prune["category"] == "build-scratch"
+        prune_page = CoveFleetClient.list_storage_prune_runs(
+            fleet_url=server.url,
+            api_key="secret",
+            namespace="team-a",
+            category="build-scratch",
+            older_than="48h",
+            apply=True,
+            offset=1,
+            limit=2,
+        )
+        assert prune_page["runs"][0]["id"] == "storage-prune-1"
+        got_prune = CoveFleetClient.get_storage_prune_run(
+            fleet_url=server.url,
+            api_key="secret",
+            run_id="storage-prune-1",
+        )
+        assert got_prune["older_than"] == "48h"
+
+        runs = CoveFleetClient.list_controller_runs(
+            fleet_url=server.url,
+            api_key="secret",
+            namespace="team-a",
+            kind="storage.prune",
+            target_type="storage",
+            offset=1,
+            limit=2,
+        )
+        assert runs["runs"][0]["kind"] == "storage.prune"
+        assert runs["runs"][0]["assignment_count"] == 1
+
+        paths = [request["path"] for request in server.requests[-13:]]
+        assert paths == [
+            "/v1/images/gc",
+            "/v1/images/gc/runs",
+            "/v1/images/gc/runs/image-gc-1",
+            "/v1/policies/lifecycle",
+            "/v1/policies/lifecycle/runs",
+            "/v1/policies/lifecycle/runs/lifecycle-policy-1",
+            "/v1/storage/budget",
+            "/v1/storage/budget/runs",
+            "/v1/storage/budget/runs/storage-budget-1",
+            "/v1/storage/prune",
+            "/v1/storage/prune/runs",
+            "/v1/storage/prune/runs/storage-prune-1",
+            "/v1/operations/runs",
+        ]
+        assert server.requests[-13]["body"]["required_capabilities"] == ["ram-overlay", "asif"]
+        assert server.requests[-12]["query"]["apply"] == ["true"]
+        assert server.requests[-10]["body"]["run_budget"] == 100
+        assert server.requests[-9]["query"]["clear"] == ["false"]
+        assert server.requests[-7]["body"]["warn_pct"] == 70
+        assert server.requests[-6]["query"]["target"] == ["750GB"]
+        assert server.requests[-4]["body"]["category"] == "build-scratch"
+        assert server.requests[-1]["query"]["kind"] == ["storage.prune"]
+    finally:
+        server.stop()
+
+
+def test_fleet_client_maintenance_validation() -> None:
+    with pytest.raises(ValueError, match="image gc run limit must be non-negative"):
+        CoveFleetClient.list_image_gc_runs(fleet_url="https://fleet.example", api_key="secret", limit=-1)
+    with pytest.raises(ValueError, match="image gc run id is required"):
+        CoveFleetClient.get_image_gc_run(fleet_url="https://fleet.example", api_key="secret", run_id="")
+    with pytest.raises(ValueError, match="vm_name is required"):
+        CoveFleetClient.push_lifecycle_policy(fleet_url="https://fleet.example", api_key="secret", vm_name="", idle_timeout="1m")
+    with pytest.raises(ValueError, match="threshold is required"):
+        CoveFleetClient.push_lifecycle_policy(fleet_url="https://fleet.example", api_key="secret", vm_name="vm")
+    with pytest.raises(ValueError, match="target is required"):
+        CoveFleetClient.push_storage_budget(fleet_url="https://fleet.example", api_key="secret")
+    with pytest.raises(ValueError, match="clear cannot include thresholds"):
+        CoveFleetClient.push_storage_budget(fleet_url="https://fleet.example", api_key="secret", clear=True, target="1GB")
+    with pytest.raises(ValueError, match="controller run offset must be non-negative"):
+        CoveFleetClient.list_controller_runs(fleet_url="https://fleet.example", api_key="secret", offset=-1)
+
+
 def test_fleet_client_warm_pools() -> None:
     server = _FleetHTTPServer()
     server.start()
@@ -650,6 +826,93 @@ def _image_prepare_result(*, dry_run: bool = False) -> dict[str, object]:
     }
 
 
+def _image_gc_result() -> dict[str, object]:
+    return {
+        "id": "image-gc-1",
+        "created": "2026-05-31T10:00:00Z",
+        "namespace": "team-a",
+        "required_labels": {"zone": "desk"},
+        "required_capabilities": ["ram-overlay", "asif"],
+        "older_than": "168h",
+        "apply": True,
+        "assignments": [_maintenance_assignment("assignment-image-gc-1", ["image", "gc", "-yes", "-older-than", "168h"])],
+        "skipped": [{"worker_id": "worker-2", "reason": "cordoned"}],
+    }
+
+
+def _lifecycle_policy_result() -> dict[str, object]:
+    return {
+        "id": "lifecycle-policy-1",
+        "created": "2026-05-31T10:00:00Z",
+        "namespace": "team-a",
+        "vm_name": "ci-runner",
+        "required_labels": {"zone": "desk"},
+        "required_capabilities": ["ram-overlay", "asif"],
+        "idle_timeout": "30m",
+        "run_budget": 100,
+        "assignments": [
+            _maintenance_assignment(
+                "assignment-lifecycle-policy-1",
+                ["policy", "ci-runner", "set", "-idle-timeout", "30m", "-run-budget", "100"],
+            )
+        ],
+        "skipped": [{"worker_id": "worker-2", "reason": "cordoned"}],
+    }
+
+
+def _storage_budget_result() -> dict[str, object]:
+    return {
+        "id": "storage-budget-1",
+        "created": "2026-05-31T10:00:00Z",
+        "namespace": "team-a",
+        "required_labels": {"zone": "desk"},
+        "required_capabilities": ["ram-overlay"],
+        "target": "750GB",
+        "warn_pct": 70,
+        "hard_pct": 90,
+        "assignments": [
+            _maintenance_assignment(
+                "assignment-storage-budget-1",
+                ["storage", "budget", "set", "-target", "750GB", "-warn", "70", "-hard", "90"],
+            )
+        ],
+        "skipped": [{"worker_id": "worker-2", "reason": "cordoned"}],
+    }
+
+
+def _storage_prune_result() -> dict[str, object]:
+    return {
+        "id": "storage-prune-1",
+        "created": "2026-05-31T10:00:00Z",
+        "namespace": "team-a",
+        "required_labels": {"zone": "desk"},
+        "required_capabilities": ["ram-overlay"],
+        "category": "build-scratch",
+        "older_than": "48h",
+        "apply": True,
+        "assignments": [
+            _maintenance_assignment(
+                "assignment-storage-prune-1",
+                ["storage", "prune", "build-scratch", "-apply", "-older-than", "48h"],
+            )
+        ],
+        "skipped": [{"worker_id": "worker-2", "reason": "cordoned"}],
+    }
+
+
+def _maintenance_assignment(assignment_id: str, args: list[str]) -> dict[str, object]:
+    return {
+        "id": assignment_id,
+        "namespace": "team-a",
+        "worker_id": "worker-1",
+        "required_labels": {"zone": "desk"},
+        "required_capabilities": ["ram-overlay"],
+        "verb": "cove",
+        "args": args,
+        "status": "pending",
+    }
+
+
 def _warm_pool_status() -> dict[str, object]:
     assignment = {
         "id": "warm-slot-1",
@@ -795,6 +1058,80 @@ class _FleetHTTPServer:
                 if path == "/v1/images/preparations/image-prepare-1":
                     self._write(_image_prepare_result())
                     return
+                if path == "/v1/images/gc/runs":
+                    self._write(
+                        {
+                            "runs": [_image_gc_result()],
+                            "count": 1,
+                            "offset": int(query.get("offset", ["0"])[0]),
+                            "limit": int(query.get("limit", ["0"])[0]),
+                        }
+                    )
+                    return
+                if path == "/v1/images/gc/runs/image-gc-1":
+                    self._write(_image_gc_result())
+                    return
+                if path == "/v1/policies/lifecycle/runs":
+                    self._write(
+                        {
+                            "runs": [_lifecycle_policy_result()],
+                            "count": 1,
+                            "offset": int(query.get("offset", ["0"])[0]),
+                            "limit": int(query.get("limit", ["0"])[0]),
+                        }
+                    )
+                    return
+                if path == "/v1/policies/lifecycle/runs/lifecycle-policy-1":
+                    self._write(_lifecycle_policy_result())
+                    return
+                if path == "/v1/storage/budget/runs":
+                    self._write(
+                        {
+                            "runs": [_storage_budget_result()],
+                            "count": 1,
+                            "offset": int(query.get("offset", ["0"])[0]),
+                            "limit": int(query.get("limit", ["0"])[0]),
+                        }
+                    )
+                    return
+                if path == "/v1/storage/budget/runs/storage-budget-1":
+                    self._write(_storage_budget_result())
+                    return
+                if path == "/v1/storage/prune/runs":
+                    self._write(
+                        {
+                            "runs": [_storage_prune_result()],
+                            "count": 1,
+                            "offset": int(query.get("offset", ["0"])[0]),
+                            "limit": int(query.get("limit", ["0"])[0]),
+                        }
+                    )
+                    return
+                if path == "/v1/storage/prune/runs/storage-prune-1":
+                    self._write(_storage_prune_result())
+                    return
+                if path == "/v1/operations/runs":
+                    self._write(
+                        {
+                            "runs": [
+                                {
+                                    "id": "storage-prune-1",
+                                    "created": "2026-05-31T10:00:00Z",
+                                    "namespace": "team-a",
+                                    "kind": "storage.prune",
+                                    "target_type": "storage",
+                                    "target_id": "build-scratch",
+                                    "assignment_count": 1,
+                                    "skip_count": 1,
+                                    "fields": {"older_than": "48h", "apply": "true"},
+                                }
+                            ],
+                            "count": 1,
+                            "offset": int(query.get("offset", ["0"])[0]),
+                            "limit": int(query.get("limit", ["0"])[0]),
+                        }
+                    )
+                    return
                 if path == "/v1/sandboxes":
                     self._write(
                         {
@@ -920,6 +1257,18 @@ class _FleetHTTPServer:
                     return
                 if path == "/v1/images/prepare":
                     self._write(_image_prepare_result(dry_run=body.get("dry_run") is True))
+                    return
+                if path == "/v1/images/gc":
+                    self._write(_image_gc_result())
+                    return
+                if path == "/v1/policies/lifecycle":
+                    self._write(_lifecycle_policy_result())
+                    return
+                if path == "/v1/storage/budget":
+                    self._write(_storage_budget_result())
+                    return
+                if path == "/v1/storage/prune":
+                    self._write(_storage_prune_result())
                     return
                 if path == "/v1/placements/plan":
                     self._write(

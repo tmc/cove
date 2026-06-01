@@ -173,10 +173,12 @@ offline bundle and admits the sandbox only on workers with matching image
 provenance. Pass `required_labels` for operator-defined selectors and
 `required_capabilities` to restrict hosted placement to workers that advertise
 runtime traits such as `ram-overlay`. The direct fleet client can also queue
-image preparation before placement or warm-pool replenishment.
+image preparation before placement or warm-pool replenishment, push image
+GC/lifecycle/storage maintenance work, and read the retained controller-run
+timeline.
 
 For direct fleet-client code, `CoveFleetClient` covers hosted sandbox and
-warm-pool lifecycles:
+warm-pool lifecycles plus maintenance controls:
 
 ```python
 from cove_sandbox import CoveFleetClient
@@ -193,6 +195,28 @@ prepare = CoveFleetClient.prepare_image(
     dry_run=True,
 )
 print(len(prepare["assignments"]), len(prepare["skipped"]))
+
+prune = CoveFleetClient.push_storage_prune(
+    fleet_url="https://fleet.internal.example",
+    api_key="cove_...",
+    namespace="team-a",
+    required_labels={"zone": "desk"},
+    required_capabilities=("ram-overlay",),
+    category="build-scratch",
+    older_than="168h",
+    apply=True,
+)
+print(len(prune["assignments"]), len(prune["skipped"]))
+
+runs = CoveFleetClient.list_controller_runs(
+    fleet_url="https://fleet.internal.example",
+    api_key="cove_...",
+    namespace="team-a",
+    kind="storage.prune",
+    target_type="storage",
+    limit=20,
+)
+print(runs["count"])
 
 plan = CoveFleetClient.plan_sandbox(
     fleet_url="https://fleet.internal.example",
@@ -252,6 +276,11 @@ print(client.reports(role="exec", limit=20)["count"])
 client.release_lease(holder=lease["lease"]["holder"])
 client.delete_vm()
 ```
+
+Maintenance helpers include `push_image_gc`, `push_lifecycle_policy`,
+`push_storage_budget`, `push_storage_prune`, the matching `list_*_runs` /
+`get_*_run` methods, and `list_controller_runs` for the aggregate operations
+timeline.
 
 For a copy-paste helper that returns the SDK `RunConfig` wrapper directly,
 import `sandbox_run_config` from `cove_sandbox`.

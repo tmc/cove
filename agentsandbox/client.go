@@ -244,6 +244,276 @@ type ImagePrepareListResult struct {
 	NextOffset   int                  `json:"next_offset,omitempty"`
 }
 
+type ImageGCOptions struct {
+	FleetURL             string
+	APIKey               string
+	Namespace            string
+	RequiredLabels       map[string]string
+	RequiredCapabilities []string
+	OlderThan            string
+	Apply                bool
+	Timeout              time.Duration
+	HTTP                 *http.Client
+}
+
+type ImageGCListOptions struct {
+	FleetURL  string
+	APIKey    string
+	Namespace string
+	OlderThan string
+	Apply     *bool
+	Offset    int
+	Limit     int
+	Timeout   time.Duration
+	HTTP      *http.Client
+}
+
+type ImageGCGetOptions struct {
+	FleetURL string
+	APIKey   string
+	ID       string
+	Timeout  time.Duration
+	HTTP     *http.Client
+}
+
+type ImageGCResult struct {
+	ID                   string            `json:"id,omitempty"`
+	Created              time.Time         `json:"created,omitempty"`
+	Namespace            string            `json:"namespace,omitempty"`
+	RequiredLabels       map[string]string `json:"required_labels,omitempty"`
+	RequiredCapabilities []string          `json:"required_capabilities,omitempty"`
+	OlderThan            string            `json:"older_than,omitempty"`
+	Apply                bool              `json:"apply"`
+	Assignments          []Assignment      `json:"assignments,omitempty"`
+	Skipped              []ImageGCSkip     `json:"skipped,omitempty"`
+}
+
+type ImageGCSkip struct {
+	WorkerID string `json:"worker_id"`
+	Reason   string `json:"reason"`
+}
+
+type ImageGCListResult struct {
+	Runs       []ImageGCResult `json:"runs"`
+	Count      int             `json:"count"`
+	Offset     int             `json:"offset,omitempty"`
+	Limit      int             `json:"limit,omitempty"`
+	NextOffset int             `json:"next_offset,omitempty"`
+}
+
+type LifecyclePolicyOptions struct {
+	FleetURL             string
+	APIKey               string
+	Namespace            string
+	VMName               string
+	RequiredLabels       map[string]string
+	RequiredCapabilities []string
+	Clear                bool
+	IdleTimeout          string
+	MaxAge               string
+	RunBudget            int
+	Timeout              time.Duration
+	HTTP                 *http.Client
+}
+
+type LifecyclePolicyListOptions struct {
+	FleetURL  string
+	APIKey    string
+	Namespace string
+	VMName    string
+	Clear     *bool
+	Offset    int
+	Limit     int
+	Timeout   time.Duration
+	HTTP      *http.Client
+}
+
+type LifecyclePolicyGetOptions struct {
+	FleetURL string
+	APIKey   string
+	ID       string
+	Timeout  time.Duration
+	HTTP     *http.Client
+}
+
+type LifecyclePolicyResult struct {
+	ID                   string                `json:"id,omitempty"`
+	Created              time.Time             `json:"created,omitempty"`
+	Namespace            string                `json:"namespace,omitempty"`
+	VMName               string                `json:"vm_name"`
+	RequiredLabels       map[string]string     `json:"required_labels,omitempty"`
+	RequiredCapabilities []string              `json:"required_capabilities,omitempty"`
+	Clear                bool                  `json:"clear"`
+	IdleTimeout          string                `json:"idle_timeout,omitempty"`
+	MaxAge               string                `json:"max_age,omitempty"`
+	RunBudget            int                   `json:"run_budget,omitempty"`
+	Assignments          []Assignment          `json:"assignments,omitempty"`
+	Skipped              []LifecyclePolicySkip `json:"skipped,omitempty"`
+}
+
+type LifecyclePolicySkip struct {
+	WorkerID string `json:"worker_id"`
+	Reason   string `json:"reason"`
+}
+
+type LifecyclePolicyListResult struct {
+	Runs       []LifecyclePolicyResult `json:"runs"`
+	Count      int                     `json:"count"`
+	Offset     int                     `json:"offset,omitempty"`
+	Limit      int                     `json:"limit,omitempty"`
+	NextOffset int                     `json:"next_offset,omitempty"`
+}
+
+type StorageBudgetOptions struct {
+	FleetURL             string
+	APIKey               string
+	Namespace            string
+	RequiredLabels       map[string]string
+	RequiredCapabilities []string
+	Clear                bool
+	Target               string
+	WarnPct              *int
+	HardPct              *int
+	Timeout              time.Duration
+	HTTP                 *http.Client
+}
+
+type StorageBudgetListOptions struct {
+	FleetURL  string
+	APIKey    string
+	Namespace string
+	Target    string
+	Clear     *bool
+	Offset    int
+	Limit     int
+	Timeout   time.Duration
+	HTTP      *http.Client
+}
+
+type StorageBudgetGetOptions struct {
+	FleetURL string
+	APIKey   string
+	ID       string
+	Timeout  time.Duration
+	HTTP     *http.Client
+}
+
+type StorageBudgetResult struct {
+	ID                   string              `json:"id,omitempty"`
+	Created              time.Time           `json:"created,omitempty"`
+	Namespace            string              `json:"namespace,omitempty"`
+	RequiredLabels       map[string]string   `json:"required_labels,omitempty"`
+	RequiredCapabilities []string            `json:"required_capabilities,omitempty"`
+	Clear                bool                `json:"clear"`
+	Target               string              `json:"target,omitempty"`
+	WarnPct              *int                `json:"warn_pct,omitempty"`
+	HardPct              *int                `json:"hard_pct,omitempty"`
+	Assignments          []Assignment        `json:"assignments,omitempty"`
+	Skipped              []StoragePolicySkip `json:"skipped,omitempty"`
+}
+
+type StorageBudgetListResult struct {
+	Runs       []StorageBudgetResult `json:"runs"`
+	Count      int                   `json:"count"`
+	Offset     int                   `json:"offset,omitempty"`
+	Limit      int                   `json:"limit,omitempty"`
+	NextOffset int                   `json:"next_offset,omitempty"`
+}
+
+type StoragePruneOptions struct {
+	FleetURL             string
+	APIKey               string
+	Namespace            string
+	RequiredLabels       map[string]string
+	RequiredCapabilities []string
+	Category             string
+	OlderThan            string
+	Apply                bool
+	Timeout              time.Duration
+	HTTP                 *http.Client
+}
+
+type StoragePruneListOptions struct {
+	FleetURL  string
+	APIKey    string
+	Namespace string
+	Category  string
+	OlderThan string
+	Apply     *bool
+	Offset    int
+	Limit     int
+	Timeout   time.Duration
+	HTTP      *http.Client
+}
+
+type StoragePruneGetOptions struct {
+	FleetURL string
+	APIKey   string
+	ID       string
+	Timeout  time.Duration
+	HTTP     *http.Client
+}
+
+type StoragePruneResult struct {
+	ID                   string              `json:"id,omitempty"`
+	Created              time.Time           `json:"created,omitempty"`
+	Namespace            string              `json:"namespace,omitempty"`
+	RequiredLabels       map[string]string   `json:"required_labels,omitempty"`
+	RequiredCapabilities []string            `json:"required_capabilities,omitempty"`
+	Category             string              `json:"category,omitempty"`
+	OlderThan            string              `json:"older_than,omitempty"`
+	Apply                bool                `json:"apply"`
+	Assignments          []Assignment        `json:"assignments,omitempty"`
+	Skipped              []StoragePolicySkip `json:"skipped,omitempty"`
+}
+
+type StoragePolicySkip struct {
+	WorkerID string `json:"worker_id"`
+	Reason   string `json:"reason"`
+}
+
+type StoragePruneListResult struct {
+	Runs       []StoragePruneResult `json:"runs"`
+	Count      int                  `json:"count"`
+	Offset     int                  `json:"offset,omitempty"`
+	Limit      int                  `json:"limit,omitempty"`
+	NextOffset int                  `json:"next_offset,omitempty"`
+}
+
+type ControllerRunListOptions struct {
+	FleetURL   string
+	APIKey     string
+	Namespace  string
+	Kind       string
+	TargetType string
+	TargetID   string
+	Offset     int
+	Limit      int
+	Timeout    time.Duration
+	HTTP       *http.Client
+}
+
+type ControllerRunListResult struct {
+	Runs       []ControllerRunSummary `json:"runs"`
+	Count      int                    `json:"count"`
+	Offset     int                    `json:"offset,omitempty"`
+	Limit      int                    `json:"limit,omitempty"`
+	NextOffset int                    `json:"next_offset,omitempty"`
+}
+
+type ControllerRunSummary struct {
+	ID              string            `json:"id"`
+	Created         time.Time         `json:"created"`
+	Namespace       string            `json:"namespace,omitempty"`
+	Kind            string            `json:"kind"`
+	TargetType      string            `json:"target_type,omitempty"`
+	TargetID        string            `json:"target_id,omitempty"`
+	AssignmentCount int               `json:"assignment_count,omitempty"`
+	SkipCount       int               `json:"skip_count,omitempty"`
+	CandidateCount  int               `json:"candidate_count,omitempty"`
+	Fields          map[string]string `json:"fields,omitempty"`
+}
+
 type WarmPoolOptions struct {
 	FleetURL             string
 	APIKey               string
@@ -790,6 +1060,352 @@ func GetImagePreparation(ctx context.Context, opts ImagePrepareGetOptions) (Imag
 	var result ImagePrepareResult
 	if err := c.request(ctx, http.MethodGet, imagePreparationPath(id), nil, &result, c.timeout); err != nil {
 		return ImagePrepareResult{}, err
+	}
+	return result, nil
+}
+
+func PushImageGC(ctx context.Context, opts ImageGCOptions) (ImageGCResult, error) {
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "image-gc")
+	if err != nil {
+		return ImageGCResult{}, err
+	}
+	body := selectorBody(opts.Namespace, opts.RequiredLabels, opts.RequiredCapabilities)
+	if olderThan := strings.TrimSpace(opts.OlderThan); olderThan != "" {
+		body["older_than"] = olderThan
+	}
+	if opts.Apply {
+		body["apply"] = true
+	}
+	var result ImageGCResult
+	if err := c.request(ctx, http.MethodPost, "/v1/images/gc", body, &result, c.timeout); err != nil {
+		return ImageGCResult{}, err
+	}
+	return result, nil
+}
+
+func ListImageGCRuns(ctx context.Context, opts ImageGCListOptions) (ImageGCListResult, error) {
+	if opts.Limit < 0 {
+		return ImageGCListResult{}, errors.New("agentsandbox: image gc run limit must be non-negative")
+	}
+	if opts.Offset < 0 {
+		return ImageGCListResult{}, errors.New("agentsandbox: image gc run offset must be non-negative")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "image-gc-runs")
+	if err != nil {
+		return ImageGCListResult{}, err
+	}
+	query := map[string]string{
+		"namespace":  opts.Namespace,
+		"older_than": opts.OlderThan,
+	}
+	if opts.Apply != nil {
+		query["apply"] = strconv.FormatBool(*opts.Apply)
+	}
+	if opts.Offset > 0 {
+		query["offset"] = strconv.Itoa(opts.Offset)
+	}
+	if opts.Limit > 0 {
+		query["limit"] = strconv.Itoa(opts.Limit)
+	}
+	var result ImageGCListResult
+	if err := c.request(ctx, http.MethodGet, c.queryPath("/v1/images/gc/runs", query), nil, &result, c.timeout); err != nil {
+		return ImageGCListResult{}, err
+	}
+	if result.Count == 0 && len(result.Runs) > 0 {
+		result.Count = len(result.Runs)
+	}
+	return result, nil
+}
+
+func GetImageGCRun(ctx context.Context, opts ImageGCGetOptions) (ImageGCResult, error) {
+	id := strings.TrimSpace(opts.ID)
+	if id == "" {
+		return ImageGCResult{}, errors.New("agentsandbox: image gc run id required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "image-gc-run")
+	if err != nil {
+		return ImageGCResult{}, err
+	}
+	var result ImageGCResult
+	if err := c.request(ctx, http.MethodGet, imageGCRunPath(id), nil, &result, c.timeout); err != nil {
+		return ImageGCResult{}, err
+	}
+	return result, nil
+}
+
+func PushLifecyclePolicy(ctx context.Context, opts LifecyclePolicyOptions) (LifecyclePolicyResult, error) {
+	vmName := strings.TrimSpace(opts.VMName)
+	if vmName == "" {
+		return LifecyclePolicyResult{}, errors.New("agentsandbox: lifecycle policy vm name required")
+	}
+	if opts.RunBudget < 0 {
+		return LifecyclePolicyResult{}, errors.New("agentsandbox: lifecycle policy run budget must be non-negative")
+	}
+	if opts.Clear && (strings.TrimSpace(opts.IdleTimeout) != "" || strings.TrimSpace(opts.MaxAge) != "" || opts.RunBudget != 0) {
+		return LifecyclePolicyResult{}, errors.New("agentsandbox: lifecycle policy clear cannot include thresholds")
+	}
+	if !opts.Clear && strings.TrimSpace(opts.IdleTimeout) == "" && strings.TrimSpace(opts.MaxAge) == "" && opts.RunBudget == 0 {
+		return LifecyclePolicyResult{}, errors.New("agentsandbox: lifecycle policy threshold required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "lifecycle-policy")
+	if err != nil {
+		return LifecyclePolicyResult{}, err
+	}
+	body := selectorBody(opts.Namespace, opts.RequiredLabels, opts.RequiredCapabilities)
+	body["vm_name"] = vmName
+	if opts.Clear {
+		body["clear"] = true
+	}
+	if idle := strings.TrimSpace(opts.IdleTimeout); idle != "" {
+		body["idle_timeout"] = idle
+	}
+	if maxAge := strings.TrimSpace(opts.MaxAge); maxAge != "" {
+		body["max_age"] = maxAge
+	}
+	if opts.RunBudget > 0 {
+		body["run_budget"] = opts.RunBudget
+	}
+	var result LifecyclePolicyResult
+	if err := c.request(ctx, http.MethodPost, "/v1/policies/lifecycle", body, &result, c.timeout); err != nil {
+		return LifecyclePolicyResult{}, err
+	}
+	return result, nil
+}
+
+func ListLifecyclePolicyRuns(ctx context.Context, opts LifecyclePolicyListOptions) (LifecyclePolicyListResult, error) {
+	if opts.Limit < 0 {
+		return LifecyclePolicyListResult{}, errors.New("agentsandbox: lifecycle policy run limit must be non-negative")
+	}
+	if opts.Offset < 0 {
+		return LifecyclePolicyListResult{}, errors.New("agentsandbox: lifecycle policy run offset must be non-negative")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "lifecycle-policy-runs")
+	if err != nil {
+		return LifecyclePolicyListResult{}, err
+	}
+	query := map[string]string{
+		"namespace": opts.Namespace,
+		"vm_name":   opts.VMName,
+	}
+	if opts.Clear != nil {
+		query["clear"] = strconv.FormatBool(*opts.Clear)
+	}
+	if opts.Offset > 0 {
+		query["offset"] = strconv.Itoa(opts.Offset)
+	}
+	if opts.Limit > 0 {
+		query["limit"] = strconv.Itoa(opts.Limit)
+	}
+	var result LifecyclePolicyListResult
+	if err := c.request(ctx, http.MethodGet, c.queryPath("/v1/policies/lifecycle/runs", query), nil, &result, c.timeout); err != nil {
+		return LifecyclePolicyListResult{}, err
+	}
+	if result.Count == 0 && len(result.Runs) > 0 {
+		result.Count = len(result.Runs)
+	}
+	return result, nil
+}
+
+func GetLifecyclePolicyRun(ctx context.Context, opts LifecyclePolicyGetOptions) (LifecyclePolicyResult, error) {
+	id := strings.TrimSpace(opts.ID)
+	if id == "" {
+		return LifecyclePolicyResult{}, errors.New("agentsandbox: lifecycle policy run id required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "lifecycle-policy-run")
+	if err != nil {
+		return LifecyclePolicyResult{}, err
+	}
+	var result LifecyclePolicyResult
+	if err := c.request(ctx, http.MethodGet, lifecyclePolicyRunPath(id), nil, &result, c.timeout); err != nil {
+		return LifecyclePolicyResult{}, err
+	}
+	return result, nil
+}
+
+func PushStorageBudget(ctx context.Context, opts StorageBudgetOptions) (StorageBudgetResult, error) {
+	target := strings.TrimSpace(opts.Target)
+	if opts.Clear && (target != "" || opts.WarnPct != nil || opts.HardPct != nil) {
+		return StorageBudgetResult{}, errors.New("agentsandbox: storage budget clear cannot include thresholds")
+	}
+	if !opts.Clear && target == "" {
+		return StorageBudgetResult{}, errors.New("agentsandbox: storage budget target required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "storage-budget")
+	if err != nil {
+		return StorageBudgetResult{}, err
+	}
+	body := selectorBody(opts.Namespace, opts.RequiredLabels, opts.RequiredCapabilities)
+	if opts.Clear {
+		body["clear"] = true
+	}
+	if target != "" {
+		body["target"] = target
+	}
+	if opts.WarnPct != nil {
+		body["warn_pct"] = *opts.WarnPct
+	}
+	if opts.HardPct != nil {
+		body["hard_pct"] = *opts.HardPct
+	}
+	var result StorageBudgetResult
+	if err := c.request(ctx, http.MethodPost, "/v1/storage/budget", body, &result, c.timeout); err != nil {
+		return StorageBudgetResult{}, err
+	}
+	return result, nil
+}
+
+func ListStorageBudgetRuns(ctx context.Context, opts StorageBudgetListOptions) (StorageBudgetListResult, error) {
+	if opts.Limit < 0 {
+		return StorageBudgetListResult{}, errors.New("agentsandbox: storage budget run limit must be non-negative")
+	}
+	if opts.Offset < 0 {
+		return StorageBudgetListResult{}, errors.New("agentsandbox: storage budget run offset must be non-negative")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "storage-budget-runs")
+	if err != nil {
+		return StorageBudgetListResult{}, err
+	}
+	query := map[string]string{
+		"namespace": opts.Namespace,
+		"target":    opts.Target,
+	}
+	if opts.Clear != nil {
+		query["clear"] = strconv.FormatBool(*opts.Clear)
+	}
+	if opts.Offset > 0 {
+		query["offset"] = strconv.Itoa(opts.Offset)
+	}
+	if opts.Limit > 0 {
+		query["limit"] = strconv.Itoa(opts.Limit)
+	}
+	var result StorageBudgetListResult
+	if err := c.request(ctx, http.MethodGet, c.queryPath("/v1/storage/budget/runs", query), nil, &result, c.timeout); err != nil {
+		return StorageBudgetListResult{}, err
+	}
+	if result.Count == 0 && len(result.Runs) > 0 {
+		result.Count = len(result.Runs)
+	}
+	return result, nil
+}
+
+func GetStorageBudgetRun(ctx context.Context, opts StorageBudgetGetOptions) (StorageBudgetResult, error) {
+	id := strings.TrimSpace(opts.ID)
+	if id == "" {
+		return StorageBudgetResult{}, errors.New("agentsandbox: storage budget run id required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "storage-budget-run")
+	if err != nil {
+		return StorageBudgetResult{}, err
+	}
+	var result StorageBudgetResult
+	if err := c.request(ctx, http.MethodGet, storageBudgetRunPath(id), nil, &result, c.timeout); err != nil {
+		return StorageBudgetResult{}, err
+	}
+	return result, nil
+}
+
+func PushStoragePrune(ctx context.Context, opts StoragePruneOptions) (StoragePruneResult, error) {
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "storage-prune")
+	if err != nil {
+		return StoragePruneResult{}, err
+	}
+	body := selectorBody(opts.Namespace, opts.RequiredLabels, opts.RequiredCapabilities)
+	if category := strings.TrimSpace(opts.Category); category != "" {
+		body["category"] = category
+	}
+	if olderThan := strings.TrimSpace(opts.OlderThan); olderThan != "" {
+		body["older_than"] = olderThan
+	}
+	if opts.Apply {
+		body["apply"] = true
+	}
+	var result StoragePruneResult
+	if err := c.request(ctx, http.MethodPost, "/v1/storage/prune", body, &result, c.timeout); err != nil {
+		return StoragePruneResult{}, err
+	}
+	return result, nil
+}
+
+func ListStoragePruneRuns(ctx context.Context, opts StoragePruneListOptions) (StoragePruneListResult, error) {
+	if opts.Limit < 0 {
+		return StoragePruneListResult{}, errors.New("agentsandbox: storage prune run limit must be non-negative")
+	}
+	if opts.Offset < 0 {
+		return StoragePruneListResult{}, errors.New("agentsandbox: storage prune run offset must be non-negative")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "storage-prune-runs")
+	if err != nil {
+		return StoragePruneListResult{}, err
+	}
+	query := map[string]string{
+		"namespace":  opts.Namespace,
+		"category":   opts.Category,
+		"older_than": opts.OlderThan,
+	}
+	if opts.Apply != nil {
+		query["apply"] = strconv.FormatBool(*opts.Apply)
+	}
+	if opts.Offset > 0 {
+		query["offset"] = strconv.Itoa(opts.Offset)
+	}
+	if opts.Limit > 0 {
+		query["limit"] = strconv.Itoa(opts.Limit)
+	}
+	var result StoragePruneListResult
+	if err := c.request(ctx, http.MethodGet, c.queryPath("/v1/storage/prune/runs", query), nil, &result, c.timeout); err != nil {
+		return StoragePruneListResult{}, err
+	}
+	if result.Count == 0 && len(result.Runs) > 0 {
+		result.Count = len(result.Runs)
+	}
+	return result, nil
+}
+
+func GetStoragePruneRun(ctx context.Context, opts StoragePruneGetOptions) (StoragePruneResult, error) {
+	id := strings.TrimSpace(opts.ID)
+	if id == "" {
+		return StoragePruneResult{}, errors.New("agentsandbox: storage prune run id required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "storage-prune-run")
+	if err != nil {
+		return StoragePruneResult{}, err
+	}
+	var result StoragePruneResult
+	if err := c.request(ctx, http.MethodGet, storagePruneRunPath(id), nil, &result, c.timeout); err != nil {
+		return StoragePruneResult{}, err
+	}
+	return result, nil
+}
+
+func ListControllerRuns(ctx context.Context, opts ControllerRunListOptions) (ControllerRunListResult, error) {
+	if opts.Limit < 0 {
+		return ControllerRunListResult{}, errors.New("agentsandbox: controller run limit must be non-negative")
+	}
+	if opts.Offset < 0 {
+		return ControllerRunListResult{}, errors.New("agentsandbox: controller run offset must be non-negative")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "controller-runs")
+	if err != nil {
+		return ControllerRunListResult{}, err
+	}
+	query := map[string]string{
+		"namespace":   opts.Namespace,
+		"kind":        opts.Kind,
+		"target_type": opts.TargetType,
+		"target_id":   opts.TargetID,
+	}
+	if opts.Offset > 0 {
+		query["offset"] = strconv.Itoa(opts.Offset)
+	}
+	if opts.Limit > 0 {
+		query["limit"] = strconv.Itoa(opts.Limit)
+	}
+	var result ControllerRunListResult
+	if err := c.request(ctx, http.MethodGet, c.queryPath("/v1/operations/runs", query), nil, &result, c.timeout); err != nil {
+		return ControllerRunListResult{}, err
+	}
+	if result.Count == 0 && len(result.Runs) > 0 {
+		result.Count = len(result.Runs)
 	}
 	return result, nil
 }
@@ -1817,6 +2433,22 @@ func imagePreparationPath(id string) string {
 	return "/v1/images/preparations/" + url.PathEscape(id)
 }
 
+func imageGCRunPath(id string) string {
+	return "/v1/images/gc/runs/" + url.PathEscape(id)
+}
+
+func lifecyclePolicyRunPath(id string) string {
+	return "/v1/policies/lifecycle/runs/" + url.PathEscape(id)
+}
+
+func storageBudgetRunPath(id string) string {
+	return "/v1/storage/budget/runs/" + url.PathEscape(id)
+}
+
+func storagePruneRunPath(id string) string {
+	return "/v1/storage/prune/runs/" + url.PathEscape(id)
+}
+
 func (c *Client) queryPath(path string, values map[string]string) string {
 	query := make(url.Values)
 	for key, value := range values {
@@ -1951,6 +2583,20 @@ func cleanStringMap(in map[string]string) map[string]string {
 		return nil
 	}
 	return out
+}
+
+func selectorBody(namespace string, labels map[string]string, capabilities []string) map[string]any {
+	body := make(map[string]any)
+	if ns := strings.TrimSpace(namespace); ns != "" {
+		body["namespace"] = ns
+	}
+	if labels := cleanStringMap(labels); len(labels) > 0 {
+		body["required_labels"] = labels
+	}
+	if capabilities := cleanStrings(capabilities); len(capabilities) > 0 {
+		body["required_capabilities"] = capabilities
+	}
+	return body
 }
 
 func cloneStringMap(in map[string]string) map[string]string {

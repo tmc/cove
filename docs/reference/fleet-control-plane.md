@@ -741,10 +741,14 @@ advertise runtime traits such as `ram-overlay`, `asif`, or `apfs-quota`. The
 same SDKs can dry-run hosted placement before creating a sandbox:
 `agentsandbox.Plan` in Go and `CoveFleetClient.plan_sandbox` in Python return
 the controller's feasible candidates and skipped-worker reasons. They also
-expose image-preparation and fork warm-pool lifecycle controls, so hosted
-agent clients can pre-stage exact images, prewarm RAM-overlay slots, claim a
-ready slot for a guest command, read pool events, and delete the pool through
-the same fleet credentials.
+expose image-preparation, maintenance fan-out, retained controller-run history,
+and fork warm-pool lifecycle controls, so hosted agent clients can pre-stage
+exact images, push image GC/lifecycle/storage policy work, inspect operations
+history, prewarm RAM-overlay slots, claim a ready slot for a guest command,
+read pool events, and delete the pool through the same fleet credentials.
+Maintenance helpers include `PushImageGC`, `PushLifecyclePolicy`,
+`PushStorageBudget`, `PushStoragePrune`, their list/get run companions, and
+`ListControllerRuns` for the aggregate operations timeline.
 
 Go SDK example:
 
@@ -765,6 +769,34 @@ if err != nil {
 	log.Fatal(err)
 }
 log.Printf("image prepare assignments=%d skipped=%d", len(prep.Assignments), len(prep.Skipped))
+
+prune, err := agentsandbox.PushStoragePrune(ctx, agentsandbox.StoragePruneOptions{
+	FleetURL:             "https://fleet.internal.example",
+	APIKey:               os.Getenv("COVE_API_KEY"),
+	Namespace:            "team-a",
+	RequiredLabels:       map[string]string{"zone": "desk"},
+	RequiredCapabilities: []string{"ram-overlay"},
+	Category:             "build-scratch",
+	OlderThan:            "168h",
+	Apply:                true,
+})
+if err != nil {
+	log.Fatal(err)
+}
+log.Printf("storage prune assignments=%d skipped=%d", len(prune.Assignments), len(prune.Skipped))
+
+runs, err := agentsandbox.ListControllerRuns(ctx, agentsandbox.ControllerRunListOptions{
+	FleetURL:   "https://fleet.internal.example",
+	APIKey:     os.Getenv("COVE_API_KEY"),
+	Namespace:  "team-a",
+	Kind:       "storage.prune",
+	TargetType: "storage",
+	Limit:      20,
+})
+if err != nil {
+	log.Fatal(err)
+}
+log.Printf("controller runs=%d", runs.Count)
 
 pool, err := agentsandbox.EnsureWarmPool(ctx, agentsandbox.WarmPoolOptions{
 	FleetURL:             "https://fleet.internal.example",
