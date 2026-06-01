@@ -14,6 +14,7 @@ import (
 )
 
 type samlAssertionClaims struct {
+	ID           string
 	Issuer       string
 	Subject      string
 	Audiences    []string
@@ -41,6 +42,9 @@ func (s *Store) authenticateSAMLBearer(token string) (authenticatedPrincipal, bo
 		for _, assertion := range assertions {
 			claims, err := samlAssertionClaimsFromElement(assertion)
 			if err != nil || !samlClaimsMatch(binding, claims, now) {
+				continue
+			}
+			if !s.acceptSAMLAssertion(binding, claims, now) {
 				continue
 			}
 			return authenticatedPrincipal{
@@ -171,6 +175,7 @@ func parseSAMLCertificatePEM(certPEM string) (*x509.Certificate, error) {
 
 func samlAssertionClaimsFromElement(assertion *etree.Element) (samlAssertionClaims, error) {
 	var claims samlAssertionClaims
+	claims.ID = samlAttr(assertion, "ID")
 	claims.Issuer = samlChildText(assertion, "Issuer")
 	subject := samlFirstChild(assertion, "Subject")
 	if subject != nil {
@@ -204,6 +209,9 @@ func samlAssertionClaimsFromElement(assertion *etree.Element) (samlAssertionClai
 }
 
 func samlClaimsMatch(binding samlBindingRecord, claims samlAssertionClaims, now time.Time) bool {
+	if strings.TrimSpace(claims.ID) == "" {
+		return false
+	}
 	if binding.EntityID != strings.TrimSpace(claims.Issuer) {
 		return false
 	}
@@ -224,6 +232,45 @@ func samlClaimsMatch(binding samlBindingRecord, claims samlAssertionClaims, now 
 		return false
 	}
 	return now.Before(claims.NotOnOrAfter.Add(skew))
+}
+
+func (s *Store) acceptSAMLAssertion(binding samlBindingRecord, claims samlAssertionClaims, now time.Time) bool {
+	bindingName := strings.TrimSpace(binding.Name)
+	assertionID := strings.TrimSpace(claims.ID)
+	if bindingName == "" || assertionID == "" || claims.NotOnOrAfter.IsZero() {
+		return false
+	}
+	record := samlReplayRecord{
+		Binding:     bindingName,
+		AssertionID: assertionID,
+		Expires:     claims.NotOnOrAfter.Add(time.Minute).UTC(),
+	}
+	key := samlReplayKey(record.Binding, record.AssertionID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pruneSAMLReplaysLocked(now)
+	if _, ok := s.samlReplays[key]; ok {
+		return false
+	}
+	s.samlReplays[key] = record
+	if err := s.persistLocked(); err != nil {
+		return false
+	}
+	return true
+}
+
+func (s *Store) pruneSAMLReplaysLocked(now time.Time) {
+	now = now.UTC()
+	for key, record := range s.samlReplays {
+		record = normalizeSAMLReplayRecord(record)
+		if record.Binding == "" || record.AssertionID == "" || record.Expires.IsZero() || !now.Before(record.Expires) {
+			delete(s.samlReplays, key)
+		}
+	}
+}
+
+func samlReplayKey(binding, assertionID string) string {
+	return strings.TrimSpace(binding) + "\x00" + strings.TrimSpace(assertionID)
 }
 
 func parseSAMLTime(raw string) (time.Time, error) {

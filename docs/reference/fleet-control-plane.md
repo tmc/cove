@@ -179,8 +179,10 @@ SAML response or assertion whose XML signature verifies against the binding
 certificate, issuer matches `entity_id`, audience matches `audience`, optional
 subject matches, and assertion conditions are currently valid. Matching
 assertions record audit actor `saml:<binding-name>` and inherit the binding's
-namespace and role. Keep assertions short lived; the controller verifies
-signatures and time bounds but does not keep a replay cache yet.
+namespace and role. The controller records accepted assertion IDs until their
+time window expires and rejects replayed assertions across process restarts.
+Keep assertions short lived; SP-initiated login flows and IdP metadata
+management are still out of scope for this private controller surface.
 If a service account has `namespace` set, assignment, warm-pool, sandbox,
 service-account, and audit list/read/mutation requests through that bearer token
 are scoped to that namespace; attempts to write another namespace are rejected.

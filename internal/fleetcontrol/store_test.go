@@ -1583,6 +1583,58 @@ func TestStoreSAMLBindingAuthenticatesSignedAssertion(t *testing.T) {
 	}
 }
 
+func TestStoreSAMLBindingRejectsReplayAcrossRestart(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	key, cert, certPEM := testSAMLKeyCertificate(t)
+	path := filepath.Join(t.TempDir(), "fleet.json")
+	store, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.now = func() time.Time { return now }
+	_, err = store.UpsertSAMLBinding(SAMLBindingRequest{
+		Name:           "okta",
+		EntityID:       "https://idp.example/saml",
+		Subject:        "alice@example.com",
+		SSOURL:         "https://idp.example/sso",
+		Audience:       "https://fleet.example/saml/acs",
+		Namespace:      "team-a",
+		Role:           ServiceAccountRoleOperator,
+		CertificatePEM: certPEM,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := "saml:" + base64.StdEncoding.EncodeToString(signedSAMLAssertionWithID(t, key, cert, "_assertion-replay", "https://idp.example/saml", "alice@example.com", "https://fleet.example/saml/acs", now.Add(-time.Minute), now.Add(5*time.Minute)))
+	if _, ok := store.AuthenticateBearer(token); !ok {
+		t.Fatal("first AuthenticateBearer(saml assertion) = false")
+	}
+	if _, ok := store.AuthenticateBearer(token); ok {
+		t.Fatal("second AuthenticateBearer(saml assertion) = true, want replay rejection")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(data, []byte(`"saml_replays"`)) || !bytes.Contains(data, []byte("_assertion-replay")) {
+		t.Fatalf("store file missing saml replay record:\n%s", data)
+	}
+
+	reopened, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened.now = func() time.Time { return now }
+	if _, ok := reopened.AuthenticateBearer(token); ok {
+		t.Fatal("reopened AuthenticateBearer(replayed assertion) = true")
+	}
+	now = now.Add(7 * time.Minute)
+	freshToken := "saml:" + base64.StdEncoding.EncodeToString(signedSAMLAssertionWithID(t, key, cert, "_assertion-replay", "https://idp.example/saml", "alice@example.com", "https://fleet.example/saml/acs", now.Add(-time.Minute), now.Add(5*time.Minute)))
+	if _, ok := reopened.AuthenticateBearer(freshToken); !ok {
+		t.Fatal("AuthenticateBearer(reused assertion id after replay expiry) = false")
+	}
+}
+
 func TestStoreMarksStaleAfterTTL(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
 	store := NewMemoryStore(time.Minute)
@@ -4373,7 +4425,8 @@ func TestHandlerSAMLBindingRBACScopes(t *testing.T) {
 	if created.Namespace != "team-a" || created.ID != "job-1" {
 		t.Fatalf("created sandbox = %+v, want team-a job-1", created)
 	}
-	if code := postJSONStatus(t, server.URL+"/v1/service-accounts", token, ServiceAccountRequest{Name: "denied", Token: "denied"}); code != http.StatusForbidden {
+	operatorToken := "saml:" + base64.StdEncoding.EncodeToString(signedSAMLAssertionWithID(t, key, cert, "_assertion-operator", "https://idp.example/saml", "alice@example.com", "https://fleet.example/saml/acs", now.Add(-time.Minute), now.Add(5*time.Minute)))
+	if code := postJSONStatus(t, server.URL+"/v1/service-accounts", operatorToken, ServiceAccountRequest{Name: "denied", Token: "denied"}); code != http.StatusForbidden {
 		t.Fatalf("saml operator service-account POST status = %d, want 403", code)
 	}
 	var audit struct {
@@ -4726,7 +4779,12 @@ func testSAMLKeyCertificate(t *testing.T) (*rsa.PrivateKey, *x509.Certificate, s
 
 func signedSAMLAssertion(t *testing.T, key *rsa.PrivateKey, cert *x509.Certificate, issuer, subject, audience string, notBefore, notOnOrAfter time.Time) []byte {
 	t.Helper()
-	return signedSAMLElement(t, key, cert, testSAMLAssertionElement(issuer, subject, audience, notBefore, notOnOrAfter))
+	return signedSAMLAssertionWithID(t, key, cert, "_assertion-1", issuer, subject, audience, notBefore, notOnOrAfter)
+}
+
+func signedSAMLAssertionWithID(t *testing.T, key *rsa.PrivateKey, cert *x509.Certificate, id, issuer, subject, audience string, notBefore, notOnOrAfter time.Time) []byte {
+	t.Helper()
+	return signedSAMLElement(t, key, cert, testSAMLAssertionElement(id, issuer, subject, audience, notBefore, notOnOrAfter))
 }
 
 func signedSAMLResponse(t *testing.T, key *rsa.PrivateKey, cert *x509.Certificate, issuer, subject, audience string, notBefore, notOnOrAfter time.Time) []byte {
@@ -4738,14 +4796,14 @@ func signedSAMLResponse(t *testing.T, key *rsa.PrivateKey, cert *x509.Certificat
 	response.CreateAttr("Version", "2.0")
 	response.CreateAttr("IssueInstant", notBefore.UTC().Format(time.RFC3339Nano))
 	response.CreateElement("saml:Issuer").SetText(issuer)
-	response.AddChild(testSAMLAssertionElement(issuer, subject, audience, notBefore, notOnOrAfter))
+	response.AddChild(testSAMLAssertionElement("_assertion-response", issuer, subject, audience, notBefore, notOnOrAfter))
 	return signedSAMLElement(t, key, cert, response)
 }
 
-func testSAMLAssertionElement(issuer, subject, audience string, notBefore, notOnOrAfter time.Time) *etree.Element {
+func testSAMLAssertionElement(id, issuer, subject, audience string, notBefore, notOnOrAfter time.Time) *etree.Element {
 	assertion := etree.NewElement("saml:Assertion")
 	assertion.CreateAttr("xmlns:saml", "urn:oasis:names:tc:SAML:2.0:assertion")
-	assertion.CreateAttr("ID", "_assertion-1")
+	assertion.CreateAttr("ID", id)
 	assertion.CreateAttr("Version", "2.0")
 	assertion.CreateAttr("IssueInstant", notBefore.UTC().Format(time.RFC3339Nano))
 	assertion.CreateElement("saml:Issuer").SetText(issuer)

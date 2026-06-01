@@ -259,6 +259,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   verifies XML signatures against the stored X.509 certificate, enforces
   issuer, audience, optional subject, and assertion time bounds, and maps the
   request to the binding's namespace-scoped role.
+- SAML bearer authentication now persists accepted assertion IDs until their
+  validity window expires, rejects replayed assertions across controller
+  restarts, and caches resolved request identity so one-use assertions survive
+  middleware plus handler authorization.
 - `cove-fleetd` now reconciles stale workers and expired assignment leases,
   exposes `POST /v1/reconcile`, and `coved` renews active `cove` assignments
   with `running` reports so long jobs do not get reclaimed while still alive.

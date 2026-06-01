@@ -1,6 +1,7 @@
 package fleetcontrol
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -1465,11 +1466,16 @@ type requestIdentity struct {
 	Invalid   bool
 }
 
+type requestIdentityKey struct{}
+
 func actorFromRequest(r *http.Request, store *Store) string {
 	return identityFromRequest(r, store).Actor
 }
 
 func identityFromRequest(r *http.Request, store *Store) requestIdentity {
+	if identity, ok := r.Context().Value(requestIdentityKey{}).(requestIdentity); ok {
+		return identity
+	}
 	auth := strings.TrimSpace(r.Header.Get("Authorization"))
 	const prefix = "bearer "
 	if len(auth) >= len(prefix) && strings.EqualFold(auth[:len(prefix)], prefix) {
@@ -1490,11 +1496,13 @@ func identityFromRequest(r *http.Request, store *Store) requestIdentity {
 
 func rejectInvalidAuth(next http.Handler, store *Store) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if identityFromRequest(r, store).Invalid {
+		identity := identityFromRequest(r, store)
+		if identity.Invalid {
 			writeError(w, http.StatusUnauthorized, "invalid bearer token")
 			return
 		}
-		next.ServeHTTP(w, r)
+		ctx := context.WithValue(r.Context(), requestIdentityKey{}, identity)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 

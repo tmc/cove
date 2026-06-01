@@ -39,6 +39,7 @@ type Store struct {
 	accounts      map[string]serviceAccountRecord
 	oidcBindings  map[string]oidcBindingRecord
 	samlBindings  map[string]samlBindingRecord
+	samlReplays   map[string]samlReplayRecord
 }
 
 type storeFile struct {
@@ -50,6 +51,7 @@ type storeFile struct {
 	ServiceAccounts []serviceAccountRecord  `json:"service_accounts,omitempty"`
 	OIDCBindings    []oidcBindingRecord     `json:"oidc_bindings,omitempty"`
 	SAMLBindings    []samlBindingRecord     `json:"saml_bindings,omitempty"`
+	SAMLReplays     []samlReplayRecord      `json:"saml_replays,omitempty"`
 }
 
 type serviceAccountRecord struct {
@@ -94,6 +96,12 @@ type samlBindingRecord struct {
 	Updated        time.Time `json:"updated,omitempty"`
 }
 
+type samlReplayRecord struct {
+	Binding     string    `json:"binding"`
+	AssertionID string    `json:"assertion_id"`
+	Expires     time.Time `json:"expires"`
+}
+
 const (
 	sandboxRoleRun     = "run"
 	sandboxRoleStop    = "stop"
@@ -118,6 +126,7 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		accounts:      make(map[string]serviceAccountRecord),
 		oidcBindings:  make(map[string]oidcBindingRecord),
 		samlBindings:  make(map[string]samlBindingRecord),
+		samlReplays:   make(map[string]samlReplayRecord),
 	}
 	if s.path == "" {
 		return s, nil
@@ -211,6 +220,13 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 			continue
 		}
 		s.samlBindings[binding.Name] = binding
+	}
+	for _, replay := range file.SAMLReplays {
+		replay = normalizeSAMLReplayRecord(replay)
+		if replay.Binding == "" || replay.AssertionID == "" || replay.Expires.IsZero() {
+			continue
+		}
+		s.samlReplays[samlReplayKey(replay.Binding, replay.AssertionID)] = replay
 	}
 	return s, nil
 }
@@ -2743,7 +2759,8 @@ func (s *Store) persistLocked() error {
 	accounts := s.sortedServiceAccountsLocked()
 	oidcBindings := s.sortedOIDCBindingsLocked()
 	samlBindings := s.sortedSAMLBindingsLocked()
-	data, err := json.MarshalIndent(storeFile{Hosts: hosts, Assignments: assignments, WarmPools: warmPools, AuditEvents: audit, MeteringRecords: metering, ServiceAccounts: accounts, OIDCBindings: oidcBindings, SAMLBindings: samlBindings}, "", "  ")
+	samlReplays := s.sortedSAMLReplaysLocked()
+	data, err := json.MarshalIndent(storeFile{Hosts: hosts, Assignments: assignments, WarmPools: warmPools, AuditEvents: audit, MeteringRecords: metering, ServiceAccounts: accounts, OIDCBindings: oidcBindings, SAMLBindings: samlBindings, SAMLReplays: samlReplays}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode fleet store: %w", err)
 	}
@@ -2845,6 +2862,20 @@ func (s *Store) sortedSAMLBindingsLocked() []samlBindingRecord {
 	}
 	sort.Slice(records, func(i, j int) bool {
 		return records[i].Name < records[j].Name
+	})
+	return records
+}
+
+func (s *Store) sortedSAMLReplaysLocked() []samlReplayRecord {
+	records := make([]samlReplayRecord, 0, len(s.samlReplays))
+	for _, record := range s.samlReplays {
+		records = append(records, record)
+	}
+	sort.Slice(records, func(i, j int) bool {
+		if records[i].Binding != records[j].Binding {
+			return records[i].Binding < records[j].Binding
+		}
+		return records[i].AssertionID < records[j].AssertionID
 	})
 	return records
 }
@@ -4617,6 +4648,15 @@ func normalizeSAMLBindingRecord(record samlBindingRecord) (samlBindingRecord, er
 		record.Updated = record.Updated.UTC()
 	}
 	return record, nil
+}
+
+func normalizeSAMLReplayRecord(record samlReplayRecord) samlReplayRecord {
+	record.Binding = strings.TrimSpace(record.Binding)
+	record.AssertionID = strings.TrimSpace(record.AssertionID)
+	if !record.Expires.IsZero() {
+		record.Expires = record.Expires.UTC()
+	}
+	return record
 }
 
 func normalizeSAMLCertificatePEM(raw string) (string, error) {
