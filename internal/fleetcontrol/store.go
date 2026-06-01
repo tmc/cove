@@ -2204,6 +2204,10 @@ func (s *Store) ExecSandboxActor(actor, id string, req SandboxExecRequest) (Sand
 	if err != nil {
 		return SandboxExecResult{}, err
 	}
+	runTimeout, err := normalizeAssignmentRunTimeout(req.Timeout, "sandbox exec")
+	if err != nil {
+		return SandboxExecResult{}, err
+	}
 	now := s.now().UTC()
 	actor = normalizeActor(actor)
 
@@ -2231,6 +2235,7 @@ func (s *Store) ExecSandboxActor(actor, id string, req SandboxExecRequest) (Sand
 		SandboxID:   id,
 		SandboxRole: sandboxRoleExec,
 		Priority:    sandbox.Priority,
+		RunTimeout:  runTimeout,
 		Verb:        "cove",
 		Args:        sandboxExecArgs(vmName, command, env),
 		Status:      "pending",
@@ -2238,6 +2243,13 @@ func (s *Store) ExecSandboxActor(actor, id string, req SandboxExecRequest) (Sand
 		Updated:     now,
 	}
 	s.assignments[assignment.ID] = assignment
+	fields := map[string]string{
+		"vm_name": vmName,
+		"argc":    strconv.Itoa(len(command)),
+	}
+	if runTimeout != "" {
+		fields["run_timeout"] = runTimeout
+	}
 	s.appendAuditLocked(now, AuditEvent{
 		Actor:        actor,
 		Namespace:    sandbox.Namespace,
@@ -2246,10 +2258,7 @@ func (s *Store) ExecSandboxActor(actor, id string, req SandboxExecRequest) (Sand
 		TargetID:     id,
 		WorkerID:     sandbox.WorkerID,
 		AssignmentID: assignment.ID,
-		Fields: map[string]string{
-			"vm_name": vmName,
-			"argc":    strconv.Itoa(len(command)),
-		},
+		Fields:       fields,
 	})
 	if err := s.persistLocked(); err != nil {
 		return SandboxExecResult{}, err
@@ -2267,6 +2276,10 @@ func (s *Store) ControlSandboxActor(actor, id string, req SandboxControlRequest)
 		return SandboxControlResult{}, fmt.Errorf("sandbox id required")
 	}
 	payload, typ, err := sandboxControlPayload(req)
+	if err != nil {
+		return SandboxControlResult{}, err
+	}
+	runTimeout, err := normalizeAssignmentRunTimeout(req.Timeout, "sandbox control")
 	if err != nil {
 		return SandboxControlResult{}, err
 	}
@@ -2297,6 +2310,7 @@ func (s *Store) ControlSandboxActor(actor, id string, req SandboxControlRequest)
 		SandboxID:   id,
 		SandboxRole: sandboxRoleControl,
 		Priority:    sandbox.Priority,
+		RunTimeout:  runTimeout,
 		Verb:        "cove-control",
 		Args:        []string{vmName, string(payload)},
 		Status:      "pending",
@@ -2304,6 +2318,13 @@ func (s *Store) ControlSandboxActor(actor, id string, req SandboxControlRequest)
 		Updated:     now,
 	}
 	s.assignments[assignment.ID] = assignment
+	fields := map[string]string{
+		"vm_name": vmName,
+		"type":    typ,
+	}
+	if runTimeout != "" {
+		fields["run_timeout"] = runTimeout
+	}
 	s.appendAuditLocked(now, AuditEvent{
 		Actor:        actor,
 		Namespace:    sandbox.Namespace,
@@ -2312,10 +2333,7 @@ func (s *Store) ControlSandboxActor(actor, id string, req SandboxControlRequest)
 		TargetID:     id,
 		WorkerID:     sandbox.WorkerID,
 		AssignmentID: assignment.ID,
-		Fields: map[string]string{
-			"vm_name": vmName,
-			"type":    typ,
-		},
+		Fields:       fields,
 	})
 	if err := s.persistLocked(); err != nil {
 		return SandboxControlResult{}, err

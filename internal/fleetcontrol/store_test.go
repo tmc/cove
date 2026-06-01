@@ -1306,6 +1306,7 @@ func TestStoreSandboxExecQueuesSameWorkerShell(t *testing.T) {
 	result, err := store.ExecSandbox("job-1", SandboxExecRequest{
 		Command: []string{"/bin/echo", "ok"},
 		Env:     map[string]string{"B": "2", "A": "1"},
+		Timeout: "2s",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1315,6 +1316,9 @@ func TestStoreSandboxExecQueuesSameWorkerShell(t *testing.T) {
 	}
 	if result.Assignment.WorkerID != "worker-1" || result.Assignment.SandboxID != "job-1" || result.Assignment.SandboxRole != sandboxRoleExec {
 		t.Fatalf("exec assignment = %+v, want same-worker sandbox exec", result.Assignment)
+	}
+	if result.Assignment.RunTimeout != "2s" {
+		t.Fatalf("exec run timeout = %q, want 2s", result.Assignment.RunTimeout)
 	}
 	wantArgs := []string{"shell", "--env", "A=1", "--env", "B=2", "cove-sandbox-job-1", "--", "/bin/echo", "ok"}
 	if got := strings.Join(result.Assignment.Args, " "); got != strings.Join(wantArgs, " ") {
@@ -1326,6 +1330,9 @@ func TestStoreSandboxExecQueuesSameWorkerShell(t *testing.T) {
 	}
 	if leased.ID != result.Assignment.ID {
 		t.Fatalf("leased exec assignment = %+v, want %s", leased, result.Assignment.ID)
+	}
+	if leased.RunTimeout != "2s" {
+		t.Fatalf("leased exec run timeout = %q, want 2s", leased.RunTimeout)
 	}
 	now = now.Add(time.Second)
 	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: result.Assignment.ID, Status: "complete", ExitCode: 0, Stdout: "ok\n"}); err != nil {
@@ -1462,6 +1469,7 @@ func TestStoreSandboxControlQueuesSameWorkerControl(t *testing.T) {
 	}
 	result, err := store.ControlSandbox("job-1", SandboxControlRequest{
 		Type:       "screenshot",
+		Timeout:    "3s",
 		Screenshot: map[string]any{"format": "png"},
 	})
 	if err != nil {
@@ -1472,6 +1480,9 @@ func TestStoreSandboxControlQueuesSameWorkerControl(t *testing.T) {
 	}
 	if result.Assignment.WorkerID != "worker-1" || result.Assignment.SandboxID != "job-1" || result.Assignment.SandboxRole != sandboxRoleControl || result.Assignment.Verb != "cove-control" {
 		t.Fatalf("control assignment = %+v, want same-worker sandbox control", result.Assignment)
+	}
+	if result.Assignment.RunTimeout != "3s" {
+		t.Fatalf("control run timeout = %q, want 3s", result.Assignment.RunTimeout)
 	}
 	if len(result.Assignment.Args) != 2 || result.Assignment.Args[0] != "cove-sandbox-job-1" {
 		t.Fatalf("control args = %+v, want vm name and json payload", result.Assignment.Args)
@@ -1494,6 +1505,9 @@ func TestStoreSandboxControlQueuesSameWorkerControl(t *testing.T) {
 	if leased.ID != result.Assignment.ID {
 		t.Fatalf("leased control assignment = %+v, want %s", leased, result.Assignment.ID)
 	}
+	if leased.RunTimeout != "3s" {
+		t.Fatalf("leased control run timeout = %q, want 3s", leased.RunTimeout)
+	}
 	now = now.Add(time.Second)
 	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: result.Assignment.ID, Status: "complete", ExitCode: 0, Stdout: `{"success":true,"screenshot_result":{"image_data":"cG5n"}}`}); err != nil {
 		t.Fatal(err)
@@ -1505,6 +1519,32 @@ func TestStoreSandboxControlQueuesSameWorkerControl(t *testing.T) {
 	done := sandboxControlResult("job-1", "cove-sandbox-job-1", "screenshot", finished)
 	if !done.Done || done.ExitCode != 0 || done.Data != "cG5n" {
 		t.Fatalf("finished control = %+v, want done image data", done)
+	}
+}
+
+func TestStoreSandboxWorkTimeoutValidation(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}}); err != nil {
+		t.Fatal(err)
+	}
+	sandbox, err := store.CreateSandbox(SandboxRequest{ID: "job-1", ImageRef: "base:v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AwaitAssignment("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: sandbox.Assignment.ID, Status: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ExecSandbox("job-1", SandboxExecRequest{Command: []string{"true"}, Timeout: "bad"}); err == nil || !strings.Contains(err.Error(), "sandbox exec run_timeout") {
+		t.Fatalf("bad exec timeout err = %v, want sandbox exec run_timeout", err)
+	}
+	if _, err := store.ControlSandbox("job-1", SandboxControlRequest{Type: "text", Text: map[string]any{"text": "hi"}, Timeout: "0s"}); err == nil || !strings.Contains(err.Error(), "sandbox control run_timeout") {
+		t.Fatalf("zero control timeout err = %v, want sandbox control run_timeout", err)
+	}
+	if assignments := store.ListAssignments(); len(assignments) != 1 || assignments[0].ID != sandbox.Assignment.ID {
+		t.Fatalf("assignments after bad timeouts = %+v, want only sandbox run", assignments)
 	}
 }
 
@@ -6716,6 +6756,42 @@ func TestHandlerSandboxLeaseGuardsMutations(t *testing.T) {
 	deleteJSON(t, server.URL+"/v1/sandboxes/job-1?holder=client-a", &deleted)
 	if deleted.Cleanup == nil || deleted.ID != "job-1" {
 		t.Fatalf("leased delete with holder = %+v, want cleanup", deleted)
+	}
+}
+
+func TestHandlerSandboxWorkTimeoutBecomesRunTimeout(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 4}}, &record)
+	var created SandboxStatus
+	postJSON(t, server.URL+"/v1/sandboxes", SandboxRequest{ID: "job-1", ImageRef: "base:v1"}, &created)
+	var leased Assignment
+	getJSON(t, server.URL+"/v1/workers/worker-1/assignments", &leased)
+	postJSON(t, server.URL+"/v1/workers/worker-1/reports", WorkerReport{AssignmentID: leased.ID, Status: "ready"}, &record)
+
+	var execResult SandboxExecResult
+	postJSON(t, server.URL+"/v1/sandboxes/job-1/exec", SandboxExecRequest{Command: []string{"sleep", "60"}, Timeout: "1ns"}, &execResult)
+	if execResult.Done || execResult.Assignment.RunTimeout != "1ns" {
+		t.Fatalf("exec result = %+v, want pending assignment with 1ns run timeout", execResult)
+	}
+	var controlResult SandboxControlResult
+	postJSON(t, server.URL+"/v1/sandboxes/job-1/control", SandboxControlRequest{
+		Type:    "text",
+		Text:    map[string]any{"text": "hi"},
+		Timeout: "2ns",
+	}, &controlResult)
+	if controlResult.Done || controlResult.Assignment.RunTimeout != "2ns" {
+		t.Fatalf("control result = %+v, want pending assignment with 2ns run timeout", controlResult)
+	}
+	before := len(store.ListAssignments())
+	if code := postJSONStatus(t, server.URL+"/v1/sandboxes/job-1/exec", "", SandboxExecRequest{Command: []string{"true"}, Timeout: "bad"}); code != http.StatusBadRequest {
+		t.Fatalf("bad exec timeout status = %d, want 400", code)
+	}
+	if assignments := store.ListAssignments(); len(assignments) != before {
+		t.Fatalf("assignments after bad timeout = %+v, want %d assignments", assignments, before)
 	}
 }
 

@@ -1038,14 +1038,15 @@ func handleSandboxExec(w http.ResponseWriter, r *http.Request, store *Store, id 
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode sandbox exec: %v", err))
 		return
 	}
-	result, err := store.ExecSandboxActor(identity.Actor, id, req)
-	if err != nil {
-		writeError(w, sandboxLifecycleErrorStatus(err), err.Error())
-		return
-	}
 	timeout, err := sandboxExecTimeout(r, req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	req.Timeout = sandboxRunTimeout(timeout)
+	result, err := store.ExecSandboxActor(identity.Actor, id, req)
+	if err != nil {
+		writeError(w, sandboxLifecycleErrorStatus(err), err.Error())
 		return
 	}
 	result, ok := waitSandboxExec(r, store, result, timeout)
@@ -1072,14 +1073,15 @@ func handleSandboxControl(w http.ResponseWriter, r *http.Request, store *Store, 
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode sandbox control: %v", err))
 		return
 	}
-	result, err := store.ControlSandboxActor(identity.Actor, id, req)
-	if err != nil {
-		writeError(w, sandboxLifecycleErrorStatus(err), err.Error())
-		return
-	}
 	timeout, err := sandboxControlTimeout(r, req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	req.Timeout = sandboxRunTimeout(timeout)
+	result, err := store.ControlSandboxActor(identity.Actor, id, req)
+	if err != nil {
+		writeError(w, sandboxLifecycleErrorStatus(err), err.Error())
 		return
 	}
 	result, ok := waitSandboxControl(r, store, result, timeout)
@@ -1379,6 +1381,13 @@ func sandboxControlTimeout(r *http.Request, req SandboxControlRequest) (time.Dur
 		return 0, fmt.Errorf("sandbox control timeout must be a non-negative duration")
 	}
 	return timeout, nil
+}
+
+func sandboxRunTimeout(timeout time.Duration) string {
+	if timeout <= 0 {
+		return ""
+	}
+	return timeout.String()
 }
 
 func waitSandboxExec(r *http.Request, store *Store, result SandboxExecResult, timeout time.Duration) (SandboxExecResult, bool) {
