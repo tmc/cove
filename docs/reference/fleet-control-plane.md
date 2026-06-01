@@ -671,6 +671,9 @@ curl http://127.0.0.1:9758/v1/assignments/probe-1
 curl -X POST http://127.0.0.1:9758/v1/assignments/probe-1/cancel \
   -H 'content-type: application/json' \
   -d '{"reason":"bad input"}'
+curl -X POST http://127.0.0.1:9758/v1/assignments/probe-1/retry \
+  -H 'content-type: application/json' \
+  -d '{"reason":"transient host issue","replan":true}'
 ```
 
 Assignments are stored with `pending`, `leased`, `running`, `ready`, `claimed`,
@@ -693,6 +696,13 @@ Hosted sandbox run assignments are rejected by this endpoint; use sandbox
 stop/delete so the controller can create the required cleanup assignment.
 Cancellation is audited as `assignment.cancel` and scoped service-account
 tokens can only cancel assignments in their namespace.
+`POST /v1/assignments/{id}/retry` requeues a terminal generic assignment with
+the same assignment id, clears stale lease/report state, and records
+`assignment.retry`. It preserves the previous worker by default; set
+`replan:true` to run the normal placement policy again, or set `worker_id` to
+pin the retry to a registered worker. Hosted sandbox and warm-pool assignments
+are rejected because their retry semantics are owned by sandbox
+start/restart/delete and warm-pool reconciliation.
 
 Cordoned workers keep heartbeating and reporting, but controller placement
 skips them for unbound and policy-placed assignments. Explicit `worker_id`

@@ -1091,6 +1091,102 @@ func (s *Store) CancelAssignmentActor(actor, id string, req AssignmentCancelRequ
 	}, nil
 }
 
+func (s *Store) RetryAssignment(id string, req AssignmentRetryRequest) (AssignmentRetryResult, error) {
+	return s.RetryAssignmentActor("controller", id, req)
+}
+
+func (s *Store) RetryAssignmentActor(actor, id string, req AssignmentRetryRequest) (AssignmentRetryResult, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return AssignmentRetryResult{}, fmt.Errorf("assignment id required")
+	}
+	now := s.now().UTC()
+	actor = normalizeActor(actor)
+	reason := strings.TrimSpace(req.Reason)
+	requestedWorkerID := strings.TrimSpace(req.WorkerID)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	assignment, ok := s.assignments[id]
+	if !ok {
+		return AssignmentRetryResult{}, fmt.Errorf("assignment %q not found", id)
+	}
+	status := normalizeOperationStatus(assignment.Status)
+	if openAssignmentStatus(status) {
+		return AssignmentRetryResult{}, fmt.Errorf("assignment %q is %s", id, status)
+	}
+	if assignment.SandboxID != "" || assignment.SandboxRole != "" {
+		return AssignmentRetryResult{}, fmt.Errorf("assignment %q belongs to hosted sandbox %q; use sandbox start or restart", id, assignment.SandboxID)
+	}
+	if assignment.WarmPool != "" || assignment.WarmPoolSlot != "" {
+		return AssignmentRetryResult{}, fmt.Errorf("assignment %q belongs to warm pool; use warm-pool reconcile", id)
+	}
+
+	previousWorkerID := assignment.WorkerID
+	replanned := false
+	switch {
+	case requestedWorkerID != "":
+		if _, ok := s.hosts[requestedWorkerID]; !ok {
+			return AssignmentRetryResult{}, fmt.Errorf("worker %q not registered", requestedWorkerID)
+		}
+		assignment.WorkerID = requestedWorkerID
+		replanned = requestedWorkerID != previousWorkerID
+	case req.Replan:
+		if !assignmentCanPlace(assignment) {
+			return AssignmentRetryResult{}, fmt.Errorf("assignment %q cannot be replanned", id)
+		}
+		selected, err := s.selectWorkerLocked(assignmentPolicy(assignment), assignment.ImageRef, assignment.ImageManifestDigest, assignment.RequiredLabels, assignment.AntiAffinityKey, assignment.Resources)
+		if err != nil {
+			return AssignmentRetryResult{}, err
+		}
+		assignment.WorkerID = selected
+		replanned = selected != previousWorkerID
+	case assignment.WorkerID != "":
+		if _, ok := s.hosts[assignment.WorkerID]; !ok {
+			return AssignmentRetryResult{}, fmt.Errorf("worker %q not registered; set replan or worker_id", assignment.WorkerID)
+		}
+	}
+
+	assignment.Status = "pending"
+	assignment.LeasedTo = ""
+	assignment.LeaseExpires = time.Time{}
+	assignment.LastReport = nil
+	assignment.Updated = now
+	s.assignments[id] = assignment
+	fields := map[string]string{
+		"reason":          reason,
+		"previous_status": status,
+		"replan":          strconv.FormatBool(req.Replan),
+	}
+	if previousWorkerID != "" {
+		fields["previous_worker_id"] = previousWorkerID
+	}
+	if assignment.WorkerID != "" {
+		fields["worker_id"] = assignment.WorkerID
+	}
+	s.appendAuditLocked(now, AuditEvent{
+		Actor:        actor,
+		Namespace:    assignment.Namespace,
+		Action:       "assignment.retry",
+		TargetType:   "assignment",
+		TargetID:     id,
+		WorkerID:     assignment.WorkerID,
+		AssignmentID: id,
+		Status:       assignment.Status,
+		Fields:       fields,
+	})
+	if err := s.persistLocked(); err != nil {
+		return AssignmentRetryResult{}, err
+	}
+	return AssignmentRetryResult{
+		Assignment:       cloneAssignment(assignment),
+		Reason:           reason,
+		PreviousStatus:   status,
+		PreviousWorkerID: previousWorkerID,
+		Replanned:        replanned,
+	}, nil
+}
+
 func (s *Store) PlanAssignment(a Assignment, limit int) (PlacementPlan, error) {
 	policy, imageRef, imageManifestDigest, antiAffinityKey, requiredLabels, resources, err := normalizePlacementFields(a)
 	if err != nil {

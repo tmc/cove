@@ -1942,6 +1942,105 @@ func TestStoreCancelAssignmentRejectsHostedSandboxRun(t *testing.T) {
 	}
 }
 
+func TestStoreRetryAssignmentTerminal(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAssignment(Assignment{ID: "assignment-1", WorkerID: "worker-1", Verb: "noop"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AwaitAssignment("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: "assignment-1", Status: "complete", ExitCode: 7}); err != nil {
+		t.Fatal(err)
+	}
+
+	now = now.Add(time.Second)
+	result, err := store.RetryAssignment("assignment-1", AssignmentRetryRequest{Reason: "transient"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.PreviousStatus != "complete" || result.PreviousWorkerID != "worker-1" || result.Replanned || result.Reason != "transient" {
+		t.Fatalf("retry result = %+v", result)
+	}
+	assignment := result.Assignment
+	if assignment.Status != "pending" || assignment.LeasedTo != "" || !assignment.LeaseExpires.IsZero() || assignment.LastReport != nil {
+		t.Fatalf("retried assignment = %+v, want clean pending", assignment)
+	}
+	if event := auditAction(store.ListAudit(0), "assignment.retry"); event == nil || event.AssignmentID != "assignment-1" || event.Fields["previous_status"] != "complete" || event.Fields["reason"] != "transient" {
+		t.Fatalf("assignment retry audit = %+v", event)
+	}
+	leased, err := store.AwaitAssignment("worker-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leased == nil || leased.ID != "assignment-1" || leased.Status != "leased" {
+		t.Fatalf("retried lease = %+v", leased)
+	}
+}
+
+func TestStoreRetryAssignmentReplans(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "old"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "spare"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAssignment(Assignment{ID: "assignment-1", WorkerID: "old", Policy: PolicyLeastLoaded, Verb: "noop"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AwaitAssignment("old"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Report(WorkerReport{ID: "old", AssignmentID: "assignment-1", Status: "failed"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CordonWorker("old", "maintenance"); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.RetryAssignment("assignment-1", AssignmentRetryRequest{Reason: "host issue", Replan: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Replanned || result.PreviousWorkerID != "old" || result.Assignment.WorkerID != "spare" || result.Assignment.Status != "pending" {
+		t.Fatalf("retry replan = %+v, want spare pending", result)
+	}
+}
+
+func TestStoreRetryAssignmentRejectsOpenAndOwned(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	if _, err := store.CreateAssignment(Assignment{ID: "active", Verb: "noop"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RetryAssignment("active", AssignmentRetryRequest{}); err == nil {
+		t.Fatal("RetryAssignment active error = nil")
+	}
+
+	store = NewMemoryStore(time.Minute)
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAssignment(Assignment{ID: "sandbox-run", WorkerID: "worker-1", Verb: "cove", SandboxID: "job-1", SandboxRole: sandboxRoleRun}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AwaitAssignment("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: "sandbox-run", Status: "failed"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RetryAssignment("sandbox-run", AssignmentRetryRequest{}); err == nil {
+		t.Fatal("RetryAssignment sandbox-run error = nil")
+	}
+}
+
 func TestStoreReportRenewsRunningAssignment(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
 	store := NewMemoryStore(time.Minute)
@@ -3924,6 +4023,38 @@ func TestHandlerAssignmentCancel(t *testing.T) {
 	}
 	if code := getJSONStatus(t, server.URL+"/v1/assignments/assignment-1/cancel", "token-a"); code != http.StatusMethodNotAllowed {
 		t.Fatalf("GET cancel status = %d, want %d", code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestHandlerAssignmentRetry(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var account ServiceAccountResult
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-a", Namespace: "team-a", Role: ServiceAccountRoleOperator, Token: "token-a"}, &account)
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-b", Namespace: "team-b", Role: ServiceAccountRoleOperator, Token: "token-b"}, &account)
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1"}, &record)
+	var created Assignment
+	postJSONAuth(t, server.URL+"/v1/assignments", "token-a", Assignment{ID: "assignment-1", WorkerID: "worker-1", Verb: "noop"}, &created)
+	var leased Assignment
+	getJSON(t, server.URL+"/v1/workers/worker-1/assignments", &leased)
+	if leased.ID != "assignment-1" {
+		t.Fatalf("leased = %+v, want assignment-1", leased)
+	}
+	postJSON(t, server.URL+"/v1/workers/worker-1/reports", WorkerReport{AssignmentID: "assignment-1", Status: "failed"}, &record)
+	if code := postJSONStatus(t, server.URL+"/v1/assignments/assignment-1/retry", "token-b", AssignmentRetryRequest{Reason: "wrong team"}); code != http.StatusNotFound {
+		t.Fatalf("cross-namespace retry status = %d, want %d", code, http.StatusNotFound)
+	}
+
+	var retried AssignmentRetryResult
+	postJSONAuth(t, server.URL+"/v1/assignments/assignment-1/retry", "token-a", AssignmentRetryRequest{Reason: "transient"}, &retried)
+	if retried.PreviousStatus != "failed" || retried.Assignment.Status != "pending" || retried.Assignment.LastReport != nil || retried.Reason != "transient" {
+		t.Fatalf("retry response = %+v", retried)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/assignments/assignment-1/retry", "token-a"); code != http.StatusMethodNotAllowed {
+		t.Fatalf("GET retry status = %d, want %d", code, http.StatusMethodNotAllowed)
 	}
 }
 

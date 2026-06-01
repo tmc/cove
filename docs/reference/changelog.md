@@ -8,6 +8,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 ## Unreleased
 
 ### Added
+- `cove-fleetd` now exposes `POST /v1/assignments/{id}/retry` to requeue
+  terminal generic assignments, optionally replan placement, and preserve an
+  audited retry trail without bypassing sandbox or warm-pool lifecycle controls.
 - `cove-fleetd` now exposes `POST /v1/assignments/{id}/cancel` so operators can
   cancel pending assignments directly, force-clear active controller leases when
   needed, and get an audited `assignment.cancel` event with namespace scoping.

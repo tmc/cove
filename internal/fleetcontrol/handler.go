@@ -2016,9 +2016,15 @@ func handleAssignments(w http.ResponseWriter, r *http.Request, store *Store) {
 func handleAssignment(w http.ResponseWriter, r *http.Request, store *Store) {
 	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/v1/assignments/"), "/")
 	parts := strings.Split(path, "/")
-	if len(parts) == 2 && parts[1] == "cancel" {
-		handleAssignmentCancel(w, r, store, parts[0])
-		return
+	if len(parts) == 2 {
+		switch parts[1] {
+		case "cancel":
+			handleAssignmentCancel(w, r, store, parts[0])
+			return
+		case "retry":
+			handleAssignmentRetry(w, r, store, parts[0])
+			return
+		}
 	}
 	if path == "" || len(parts) != 1 {
 		writeError(w, http.StatusNotFound, "assignment not found")
@@ -2064,6 +2070,33 @@ func handleAssignmentCancel(w http.ResponseWriter, r *http.Request, store *Store
 		return
 	}
 	result, err := store.CancelAssignmentActor(identity.Actor, id, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func handleAssignmentRetry(w http.ResponseWriter, r *http.Request, store *Store, id string) {
+	if id == "" || r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleOperator) {
+		return
+	}
+	var req AssignmentRetryRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode assignment retry: %v", err))
+		return
+	}
+	assignment, ok := store.GetAssignment(id)
+	if !ok || !canAccessNamespace(identity, assignment.Namespace) {
+		writeError(w, http.StatusNotFound, "assignment not found")
+		return
+	}
+	result, err := store.RetryAssignmentActor(identity.Actor, id, req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

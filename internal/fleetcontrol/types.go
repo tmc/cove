@@ -324,6 +324,20 @@ type AssignmentCancelResult struct {
 	PreviousStatus string     `json:"previous_status,omitempty"`
 }
 
+type AssignmentRetryRequest struct {
+	Reason   string `json:"reason,omitempty"`
+	WorkerID string `json:"worker_id,omitempty"`
+	Replan   bool   `json:"replan,omitempty"`
+}
+
+type AssignmentRetryResult struct {
+	Assignment       Assignment `json:"assignment"`
+	Reason           string     `json:"reason,omitempty"`
+	PreviousStatus   string     `json:"previous_status,omitempty"`
+	PreviousWorkerID string     `json:"previous_worker_id,omitempty"`
+	Replanned        bool       `json:"replanned,omitempty"`
+}
+
 type WorkerDrainSkip struct {
 	SandboxID string `json:"sandbox_id"`
 	Status    string `json:"status,omitempty"`
