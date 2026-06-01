@@ -354,18 +354,18 @@ Image preparation endpoint:
 ```bash
 curl -X POST http://127.0.0.1:9758/v1/images/prepare \
   -H 'content-type: application/json' \
-  -d '{"manifest_bundle":"manifests","image_ref":"macos-runner:latest","image_platform":"darwin/arm64","required_labels":{"zone":"desk"}}'
+  -d '{"manifest_bundle":"manifests","image_ref":"macos-runner:latest","image_platform":"darwin/arm64","required_labels":{"zone":"desk"},"required_capabilities":["ram-overlay"]}'
 curl 'http://127.0.0.1:9758/v1/images/preparations?image_ref=macos-runner:latest&limit=20'
 curl http://127.0.0.1:9758/v1/images/preparations/image-prepare-...
 ```
 
 Image preparation creates one `cove image pull -tag <image_ref> <source_ref>`
 assignment for each non-cordoned ready worker that matches `required_labels` and
-does not already report `image_ref`. Workers that already have the image, are
-cordoned or stale, or already have an active preparation assignment are returned
-in `skipped`. After a successful image preparation assignment, `coved` sends an
-extra heartbeat so the controller can place later `image-affinity` work against
-fresh image refs.
+`required_capabilities`, and does not already report `image_ref`. Workers that
+already have the image, are cordoned or stale, or already have an active
+preparation assignment are returned in `skipped`. After a successful image
+preparation assignment, `coved` sends an extra heartbeat so the controller can
+place later `image-affinity` work against fresh image refs.
 When `image_manifest_digest` is supplied, a worker counts as already prepared
 only if its heartbeat reports the same `image_ref` and
 `source_manifest_digest`; a stale mutable ref is refreshed with a forced pull.
@@ -377,8 +377,9 @@ audits.
 controller verifies the bundle, selects `image_platform` when supplied,
 populates the digest fields, and queues the pull from the selected digest ref
 instead of the mutable source tag.
-Each successful preparation response is persisted with `id` and `created`,
-including skipped-only no-op runs. `GET /v1/images/preparations` returns
+Each successful preparation response is persisted with `id`, `created`, label
+selector, and required-capability selector, including skipped-only no-op runs.
+`GET /v1/images/preparations` returns
 paginated preparation history with `source_ref`, `image_ref`,
 `image_manifest_digest`, `offset`, and `limit` filters; scoped service-account
 tokens only see preparations in their namespace. The `GET
@@ -390,21 +391,23 @@ Image GC endpoint:
 ```bash
 curl -X POST http://127.0.0.1:9758/v1/images/gc \
   -H 'content-type: application/json' \
-  -d '{"required_labels":{"zone":"desk"},"older_than":"168h","apply":true}'
+  -d '{"required_labels":{"zone":"desk"},"required_capabilities":["ram-overlay"],"older_than":"168h","apply":true}'
 curl 'http://127.0.0.1:9758/v1/images/gc/runs?older_than=168h&apply=true&limit=20'
 curl http://127.0.0.1:9758/v1/images/gc/runs/image-gc-...
 ```
 
 Image GC creates one `cove image gc` assignment for each non-cordoned ready
-worker that matches `required_labels`. `apply` defaults to false, which queues
-`cove image gc -dry-run`; set `apply:true` to queue `cove image gc -yes`.
+worker that matches `required_labels` and `required_capabilities`. `apply`
+defaults to false, which queues `cove image gc -dry-run`; set `apply:true` to
+queue `cove image gc -yes`.
 `older_than` is an optional Go duration string passed through as `-older-than`.
 Workers that are cordoned or stale, or already have an active image-GC
 assignment, are returned in `skipped`. After a successful image-GC assignment,
 `coved` sends an extra heartbeat so the controller's image refs reflect the
 post-GC store.
 Each successful image-GC response is persisted with `id`, `created`, label
-selector, `older_than`, and `apply`, including skipped-only no-op runs. `GET
+selector, required-capability selector, `older_than`, and `apply`, including
+skipped-only no-op runs. `GET
 /v1/images/gc/runs` returns paginated GC history with `older_than`, `apply`,
 `offset`, and `limit` filters; scoped service-account tokens only see runs in
 their namespace. The `GET /v1/images/gc/runs/{id}` endpoint returns one
@@ -415,24 +418,24 @@ Lifecycle policy endpoint:
 ```bash
 curl -X POST http://127.0.0.1:9758/v1/policies/lifecycle \
   -H 'content-type: application/json' \
-  -d '{"vm_name":"ci-runner","required_labels":{"zone":"desk"},"idle_timeout":"30m","max_age":"24h","run_budget":100}'
+  -d '{"vm_name":"ci-runner","required_labels":{"zone":"desk"},"required_capabilities":["ram-overlay"],"idle_timeout":"30m","max_age":"24h","run_budget":100}'
 curl -X POST http://127.0.0.1:9758/v1/policies/lifecycle \
   -H 'content-type: application/json' \
-  -d '{"vm_name":"ci-runner","required_labels":{"zone":"desk"},"clear":true}'
+  -d '{"vm_name":"ci-runner","required_labels":{"zone":"desk"},"required_capabilities":["ram-overlay"],"clear":true}'
 curl 'http://127.0.0.1:9758/v1/policies/lifecycle/runs?vm_name=ci-runner&clear=false&limit=20'
 curl http://127.0.0.1:9758/v1/policies/lifecycle/runs/lifecycle-policy-...
 ```
 
 Lifecycle policy push creates one `cove policy <vm> set ...` assignment for
-each non-cordoned ready worker that matches `required_labels`. The controller
-passes `idle_timeout` and `max_age` as Go duration strings and `run_budget` as
-the guest exec count. `clear:true` queues `cove policy <vm> clear` and cannot be
-combined with thresholds. Workers that are cordoned or stale, or already have
-an active lifecycle-policy assignment for the same VM, are returned in
-`skipped`.
+each non-cordoned ready worker that matches `required_labels` and
+`required_capabilities`. The controller passes `idle_timeout` and `max_age` as
+Go duration strings and `run_budget` as the guest exec count. `clear:true`
+queues `cove policy <vm> clear` and cannot be combined with thresholds. Workers
+that are cordoned or stale, or already have an active lifecycle-policy
+assignment for the same VM, are returned in `skipped`.
 Each successful lifecycle-policy response is persisted with `id`, `created`,
-the VM name, label selector, clear/set mode, thresholds, and queued assignment
-or skip details, including skipped-only no-op runs. `GET
+the VM name, label selector, required-capability selector, clear/set mode,
+thresholds, and queued assignment or skip details, including skipped-only no-op runs. `GET
 /v1/policies/lifecycle/runs` returns paginated policy history with `vm_name`,
 `clear`, `offset`, and `limit` filters; scoped service-account tokens only see
 runs in their namespace. The `GET /v1/policies/lifecycle/runs/{id}` endpoint
@@ -443,13 +446,13 @@ Storage policy endpoints:
 ```bash
 curl -X POST http://127.0.0.1:9758/v1/storage/budget \
   -H 'content-type: application/json' \
-  -d '{"required_labels":{"zone":"desk"},"target":"750GB","warn_pct":80,"hard_pct":95}'
+  -d '{"required_labels":{"zone":"desk"},"required_capabilities":["ram-overlay"],"target":"750GB","warn_pct":80,"hard_pct":95}'
 curl -X POST http://127.0.0.1:9758/v1/storage/budget \
   -H 'content-type: application/json' \
-  -d '{"required_labels":{"zone":"desk"},"clear":true}'
+  -d '{"required_labels":{"zone":"desk"},"required_capabilities":["ram-overlay"],"clear":true}'
 curl -X POST http://127.0.0.1:9758/v1/storage/prune \
   -H 'content-type: application/json' \
-  -d '{"required_labels":{"zone":"desk"},"older_than":"168h","apply":true}'
+  -d '{"required_labels":{"zone":"desk"},"required_capabilities":["ram-overlay"],"older_than":"168h","apply":true}'
 curl 'http://127.0.0.1:9758/v1/storage/budget/runs?target=750GB&clear=false&limit=20'
 curl http://127.0.0.1:9758/v1/storage/budget/runs/storage-budget-...
 curl 'http://127.0.0.1:9758/v1/storage/prune/runs?older_than=168h&apply=true&limit=20'
@@ -457,8 +460,9 @@ curl http://127.0.0.1:9758/v1/storage/prune/runs/storage-prune-...
 ```
 
 Storage budget push creates one `cove storage budget set -target <target>`
-assignment per matching ready worker. `warn_pct` and `hard_pct` are optional
-and default to the local CLI defaults when omitted. `clear:true` queues
+assignment per ready worker matching the requested labels and capabilities.
+`warn_pct` and `hard_pct` are optional and default to the local CLI defaults
+when omitted. `clear:true` queues
 `cove storage budget clear` and cannot be combined with thresholds.
 Storage prune push creates one `cove storage prune` assignment per matching
 ready worker. It is dry-run by default; `apply:true` adds `-apply`, and
@@ -467,15 +471,15 @@ Set `category:"build-scratch"` to target `cove storage prune build-scratch`.
 Workers that are cordoned or stale, or already have an active storage
 budget/prune assignment for the same operation, are returned in `skipped`.
 Each successful storage budget response is persisted with `id`, `created`,
-label selector, clear/set mode, target, warn and hard percentages, and queued
-assignment or skip details, including skipped-only no-op runs. `GET
+label selector, required-capability selector, clear/set mode, target, warn and
+hard percentages, and queued assignment or skip details, including skipped-only no-op runs. `GET
 /v1/storage/budget/runs` returns paginated budget history with `target`,
 `clear`, `offset`, and `limit` filters; scoped service-account tokens only see
 runs in their namespace. The `GET /v1/storage/budget/runs/{id}` endpoint
 returns one retained budget result or `404` across namespace boundaries.
 Each successful storage prune response is persisted with `id`, `created`, label
-selector, category, `older_than`, `apply`, and queued assignment or skip
-details, including skipped-only no-op runs. `GET /v1/storage/prune/runs`
+selector, required-capability selector, category, `older_than`, `apply`, and
+queued assignment or skip details, including skipped-only no-op runs. `GET /v1/storage/prune/runs`
 returns paginated prune history with `category`, `older_than`, `apply`,
 `offset`, and `limit` filters; scoped service-account tokens only see runs in
 their namespace. The `GET /v1/storage/prune/runs/{id}` endpoint returns one

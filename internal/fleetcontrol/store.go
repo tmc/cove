@@ -2464,6 +2464,7 @@ func (s *Store) PrepareImageActor(actor string, req ImagePrepareRequest) (ImageP
 	}
 	namespace := normalizeNamespace(req.Namespace)
 	labels := cloneLabels(req.RequiredLabels)
+	capabilities := sortedUniqueStrings(req.RequiredCapabilities)
 	now := s.now().UTC()
 	actor = normalizeActor(actor)
 
@@ -2471,18 +2472,23 @@ func (s *Store) PrepareImageActor(actor string, req ImagePrepareRequest) (ImageP
 	defer s.mu.Unlock()
 	s.reconcileLocked(now)
 	result := ImagePrepareResult{
-		ID:                  s.nextImagePrepareIDLocked(now),
-		Created:             now,
-		Namespace:           namespace,
-		SourceRef:           sourceRef,
-		ImageRef:            imageRef,
-		ImageManifestDigest: strings.TrimSpace(req.ImageManifestDigest),
-		ImageDigestRef:      strings.TrimSpace(req.ImageDigestRef),
-		ImagePlatform:       strings.TrimSpace(req.ImagePlatform),
+		ID:                   s.nextImagePrepareIDLocked(now),
+		Created:              now,
+		Namespace:            namespace,
+		SourceRef:            sourceRef,
+		ImageRef:             imageRef,
+		ImageManifestDigest:  strings.TrimSpace(req.ImageManifestDigest),
+		ImageDigestRef:       strings.TrimSpace(req.ImageDigestRef),
+		ImagePlatform:        strings.TrimSpace(req.ImagePlatform),
+		RequiredLabels:       labels,
+		RequiredCapabilities: capabilities,
 	}
 	for _, host := range s.sortedHostsLocked() {
 		host = s.statusLocked(host)
 		if !labelsMatch(host.Labels, labels) {
+			continue
+		}
+		if !capabilitiesMatch(host.Capabilities, capabilities) {
 			continue
 		}
 		if host.Status != "ready" {
@@ -2499,19 +2505,20 @@ func (s *Store) PrepareImageActor(actor string, req ImagePrepareRequest) (ImageP
 		}
 		force := req.Force || (result.ImageManifestDigest != "" && containsString(host.ImageRefs, imageRef))
 		assignment := Assignment{
-			ID:                  s.nextAssignmentIDLocked(now),
-			Namespace:           namespace,
-			WorkerID:            host.ID,
-			ImageRef:            imageRef,
-			ImageManifestDigest: result.ImageManifestDigest,
-			ImageDigestRef:      result.ImageDigestRef,
-			ImagePlatform:       result.ImagePlatform,
-			RequiredLabels:      labels,
-			Verb:                "cove",
-			Args:                imagePrepareArgs(sourceRef, imageRef, force),
-			Status:              "pending",
-			Created:             now,
-			Updated:             now,
+			ID:                   s.nextAssignmentIDLocked(now),
+			Namespace:            namespace,
+			WorkerID:             host.ID,
+			ImageRef:             imageRef,
+			ImageManifestDigest:  result.ImageManifestDigest,
+			ImageDigestRef:       result.ImageDigestRef,
+			ImagePlatform:        result.ImagePlatform,
+			RequiredLabels:       labels,
+			RequiredCapabilities: capabilities,
+			Verb:                 "cove",
+			Args:                 imagePrepareArgs(sourceRef, imageRef, force),
+			Status:               "pending",
+			Created:              now,
+			Updated:              now,
 		}
 		s.assignments[assignment.ID] = assignment
 		result.Assignments = append(result.Assignments, cloneAssignment(assignment))
@@ -2611,6 +2618,7 @@ func (s *Store) PushImageGC(req ImageGCRequest) (ImageGCResult, error) {
 func (s *Store) PushImageGCActor(actor string, req ImageGCRequest) (ImageGCResult, error) {
 	namespace := normalizeNamespace(req.Namespace)
 	labels := cloneLabels(req.RequiredLabels)
+	capabilities := sortedUniqueStrings(req.RequiredCapabilities)
 	olderThan, err := normalizeDurationString(req.OlderThan, "image gc older_than")
 	if err != nil {
 		return ImageGCResult{}, err
@@ -2622,16 +2630,20 @@ func (s *Store) PushImageGCActor(actor string, req ImageGCRequest) (ImageGCResul
 	defer s.mu.Unlock()
 	s.reconcileLocked(now)
 	result := ImageGCResult{
-		ID:             s.nextImageGCIDLocked(now),
-		Created:        now,
-		Namespace:      namespace,
-		RequiredLabels: labels,
-		OlderThan:      olderThan,
-		Apply:          req.Apply,
+		ID:                   s.nextImageGCIDLocked(now),
+		Created:              now,
+		Namespace:            namespace,
+		RequiredLabels:       labels,
+		RequiredCapabilities: capabilities,
+		OlderThan:            olderThan,
+		Apply:                req.Apply,
 	}
 	for _, host := range s.sortedHostsLocked() {
 		host = s.statusLocked(host)
 		if !labelsMatch(host.Labels, labels) {
+			continue
+		}
+		if !capabilitiesMatch(host.Capabilities, capabilities) {
 			continue
 		}
 		if host.Status != "ready" {
@@ -2643,15 +2655,16 @@ func (s *Store) PushImageGCActor(actor string, req ImageGCRequest) (ImageGCResul
 			continue
 		}
 		assignment := Assignment{
-			ID:             s.nextAssignmentIDLocked(now),
-			Namespace:      namespace,
-			WorkerID:       host.ID,
-			RequiredLabels: labels,
-			Verb:           "cove",
-			Args:           imageGCArgs(olderThan, req.Apply),
-			Status:         "pending",
-			Created:        now,
-			Updated:        now,
+			ID:                   s.nextAssignmentIDLocked(now),
+			Namespace:            namespace,
+			WorkerID:             host.ID,
+			RequiredLabels:       labels,
+			RequiredCapabilities: capabilities,
+			Verb:                 "cove",
+			Args:                 imageGCArgs(olderThan, req.Apply),
+			Status:               "pending",
+			Created:              now,
+			Updated:              now,
 		}
 		s.assignments[assignment.ID] = assignment
 		result.Assignments = append(result.Assignments, cloneAssignment(assignment))
@@ -2746,6 +2759,7 @@ func (s *Store) PushLifecyclePolicyActor(actor string, req LifecyclePolicyReques
 	}
 	namespace := normalizeNamespace(req.Namespace)
 	labels := cloneLabels(req.RequiredLabels)
+	capabilities := sortedUniqueStrings(req.RequiredCapabilities)
 	idleTimeout := strings.TrimSpace(req.IdleTimeout)
 	maxAge := strings.TrimSpace(req.MaxAge)
 	now := s.now().UTC()
@@ -2755,19 +2769,23 @@ func (s *Store) PushLifecyclePolicyActor(actor string, req LifecyclePolicyReques
 	defer s.mu.Unlock()
 	s.reconcileLocked(now)
 	result := LifecyclePolicyResult{
-		ID:             s.nextLifecyclePolicyIDLocked(now),
-		Created:        now,
-		Namespace:      namespace,
-		VMName:         vmName,
-		RequiredLabels: labels,
-		Clear:          req.Clear,
-		IdleTimeout:    idleTimeout,
-		MaxAge:         maxAge,
-		RunBudget:      req.RunBudget,
+		ID:                   s.nextLifecyclePolicyIDLocked(now),
+		Created:              now,
+		Namespace:            namespace,
+		VMName:               vmName,
+		RequiredLabels:       labels,
+		RequiredCapabilities: capabilities,
+		Clear:                req.Clear,
+		IdleTimeout:          idleTimeout,
+		MaxAge:               maxAge,
+		RunBudget:            req.RunBudget,
 	}
 	for _, host := range s.sortedHostsLocked() {
 		host = s.statusLocked(host)
 		if !labelsMatch(host.Labels, labels) {
+			continue
+		}
+		if !capabilitiesMatch(host.Capabilities, capabilities) {
 			continue
 		}
 		if host.Status != "ready" {
@@ -2779,15 +2797,16 @@ func (s *Store) PushLifecyclePolicyActor(actor string, req LifecyclePolicyReques
 			continue
 		}
 		assignment := Assignment{
-			ID:             s.nextAssignmentIDLocked(now),
-			Namespace:      namespace,
-			WorkerID:       host.ID,
-			RequiredLabels: labels,
-			Verb:           "cove",
-			Args:           cloneStrings(args),
-			Status:         "pending",
-			Created:        now,
-			Updated:        now,
+			ID:                   s.nextAssignmentIDLocked(now),
+			Namespace:            namespace,
+			WorkerID:             host.ID,
+			RequiredLabels:       labels,
+			RequiredCapabilities: capabilities,
+			Verb:                 "cove",
+			Args:                 cloneStrings(args),
+			Status:               "pending",
+			Created:              now,
+			Updated:              now,
 		}
 		s.assignments[assignment.ID] = assignment
 		result.Assignments = append(result.Assignments, cloneAssignment(assignment))
@@ -2882,6 +2901,7 @@ func (s *Store) PushStorageBudgetActor(actor string, req StorageBudgetRequest) (
 	}
 	namespace := normalizeNamespace(req.Namespace)
 	labels := cloneLabels(req.RequiredLabels)
+	capabilities := sortedUniqueStrings(req.RequiredCapabilities)
 	target := strings.TrimSpace(req.Target)
 	warnPct := cloneIntPtr(req.WarnPct)
 	hardPct := cloneIntPtr(req.HardPct)
@@ -2892,18 +2912,22 @@ func (s *Store) PushStorageBudgetActor(actor string, req StorageBudgetRequest) (
 	defer s.mu.Unlock()
 	s.reconcileLocked(now)
 	result := StorageBudgetResult{
-		ID:             s.nextStorageBudgetIDLocked(now),
-		Created:        now,
-		Namespace:      namespace,
-		RequiredLabels: labels,
-		Clear:          req.Clear,
-		Target:         target,
-		WarnPct:        warnPct,
-		HardPct:        hardPct,
+		ID:                   s.nextStorageBudgetIDLocked(now),
+		Created:              now,
+		Namespace:            namespace,
+		RequiredLabels:       labels,
+		RequiredCapabilities: capabilities,
+		Clear:                req.Clear,
+		Target:               target,
+		WarnPct:              warnPct,
+		HardPct:              hardPct,
 	}
 	for _, host := range s.sortedHostsLocked() {
 		host = s.statusLocked(host)
 		if !labelsMatch(host.Labels, labels) {
+			continue
+		}
+		if !capabilitiesMatch(host.Capabilities, capabilities) {
 			continue
 		}
 		if host.Status != "ready" {
@@ -2915,15 +2939,16 @@ func (s *Store) PushStorageBudgetActor(actor string, req StorageBudgetRequest) (
 			continue
 		}
 		assignment := Assignment{
-			ID:             s.nextAssignmentIDLocked(now),
-			Namespace:      namespace,
-			WorkerID:       host.ID,
-			RequiredLabels: labels,
-			Verb:           "cove",
-			Args:           cloneStrings(args),
-			Status:         "pending",
-			Created:        now,
-			Updated:        now,
+			ID:                   s.nextAssignmentIDLocked(now),
+			Namespace:            namespace,
+			WorkerID:             host.ID,
+			RequiredLabels:       labels,
+			RequiredCapabilities: capabilities,
+			Verb:                 "cove",
+			Args:                 cloneStrings(args),
+			Status:               "pending",
+			Created:              now,
+			Updated:              now,
 		}
 		s.assignments[assignment.ID] = assignment
 		result.Assignments = append(result.Assignments, cloneAssignment(assignment))
@@ -3018,6 +3043,7 @@ func (s *Store) PushStoragePruneActor(actor string, req StoragePruneRequest) (St
 	}
 	namespace := normalizeNamespace(req.Namespace)
 	labels := cloneLabels(req.RequiredLabels)
+	capabilities := sortedUniqueStrings(req.RequiredCapabilities)
 	category := strings.TrimSpace(req.Category)
 	olderThan := strings.TrimSpace(req.OlderThan)
 	now := s.now().UTC()
@@ -3027,17 +3053,21 @@ func (s *Store) PushStoragePruneActor(actor string, req StoragePruneRequest) (St
 	defer s.mu.Unlock()
 	s.reconcileLocked(now)
 	result := StoragePruneResult{
-		ID:             s.nextStoragePruneIDLocked(now),
-		Created:        now,
-		Namespace:      namespace,
-		RequiredLabels: labels,
-		Category:       category,
-		OlderThan:      olderThan,
-		Apply:          req.Apply,
+		ID:                   s.nextStoragePruneIDLocked(now),
+		Created:              now,
+		Namespace:            namespace,
+		RequiredLabels:       labels,
+		RequiredCapabilities: capabilities,
+		Category:             category,
+		OlderThan:            olderThan,
+		Apply:                req.Apply,
 	}
 	for _, host := range s.sortedHostsLocked() {
 		host = s.statusLocked(host)
 		if !labelsMatch(host.Labels, labels) {
+			continue
+		}
+		if !capabilitiesMatch(host.Capabilities, capabilities) {
 			continue
 		}
 		if host.Status != "ready" {
@@ -3049,15 +3079,16 @@ func (s *Store) PushStoragePruneActor(actor string, req StoragePruneRequest) (St
 			continue
 		}
 		assignment := Assignment{
-			ID:             s.nextAssignmentIDLocked(now),
-			Namespace:      namespace,
-			WorkerID:       host.ID,
-			RequiredLabels: labels,
-			Verb:           "cove",
-			Args:           cloneStrings(args),
-			Status:         "pending",
-			Created:        now,
-			Updated:        now,
+			ID:                   s.nextAssignmentIDLocked(now),
+			Namespace:            namespace,
+			WorkerID:             host.ID,
+			RequiredLabels:       labels,
+			RequiredCapabilities: capabilities,
+			Verb:                 "cove",
+			Args:                 cloneStrings(args),
+			Status:               "pending",
+			Created:              now,
+			Updated:              now,
 		}
 		s.assignments[assignment.ID] = assignment
 		result.Assignments = append(result.Assignments, cloneAssignment(assignment))
@@ -4690,6 +4721,8 @@ func cloneImagePrepareResult(in ImagePrepareResult) ImagePrepareResult {
 	if !out.Created.IsZero() {
 		out.Created = out.Created.UTC()
 	}
+	out.RequiredLabels = cloneLabels(in.RequiredLabels)
+	out.RequiredCapabilities = cloneStrings(in.RequiredCapabilities)
 	out.Assignments = cloneAssignments(in.Assignments)
 	out.Skipped = cloneImagePrepareSkips(in.Skipped)
 	return out
@@ -4721,6 +4754,7 @@ func cloneImageGCResult(in ImageGCResult) ImageGCResult {
 		out.Created = out.Created.UTC()
 	}
 	out.RequiredLabels = cloneLabels(in.RequiredLabels)
+	out.RequiredCapabilities = cloneStrings(in.RequiredCapabilities)
 	out.Assignments = cloneAssignments(in.Assignments)
 	out.Skipped = cloneImageGCSkips(in.Skipped)
 	return out
@@ -4752,6 +4786,7 @@ func cloneLifecyclePolicyResult(in LifecyclePolicyResult) LifecyclePolicyResult 
 		out.Created = out.Created.UTC()
 	}
 	out.RequiredLabels = cloneLabels(in.RequiredLabels)
+	out.RequiredCapabilities = cloneStrings(in.RequiredCapabilities)
 	out.Assignments = cloneAssignments(in.Assignments)
 	out.Skipped = cloneLifecyclePolicySkips(in.Skipped)
 	return out
@@ -4783,6 +4818,7 @@ func cloneStorageBudgetResult(in StorageBudgetResult) StorageBudgetResult {
 		out.Created = out.Created.UTC()
 	}
 	out.RequiredLabels = cloneLabels(in.RequiredLabels)
+	out.RequiredCapabilities = cloneStrings(in.RequiredCapabilities)
 	out.WarnPct = cloneIntPtr(in.WarnPct)
 	out.HardPct = cloneIntPtr(in.HardPct)
 	out.Assignments = cloneAssignments(in.Assignments)
@@ -4807,6 +4843,7 @@ func cloneStoragePruneResult(in StoragePruneResult) StoragePruneResult {
 		out.Created = out.Created.UTC()
 	}
 	out.RequiredLabels = cloneLabels(in.RequiredLabels)
+	out.RequiredCapabilities = cloneStrings(in.RequiredCapabilities)
 	out.Assignments = cloneAssignments(in.Assignments)
 	out.Skipped = cloneStoragePolicySkips(in.Skipped)
 	return out
@@ -6370,6 +6407,8 @@ func normalizeImagePrepareResult(result ImagePrepareResult) ImagePrepareResult {
 	result.ImageManifestDigest = strings.TrimSpace(result.ImageManifestDigest)
 	result.ImageDigestRef = strings.TrimSpace(result.ImageDigestRef)
 	result.ImagePlatform = strings.TrimSpace(result.ImagePlatform)
+	result.RequiredLabels = cloneLabels(result.RequiredLabels)
+	result.RequiredCapabilities = sortedUniqueStrings(result.RequiredCapabilities)
 	if !result.Created.IsZero() {
 		result.Created = result.Created.UTC()
 	}
@@ -6386,6 +6425,7 @@ func normalizeImageGCResult(result ImageGCResult) ImageGCResult {
 	result.ID = strings.TrimSpace(result.ID)
 	result.Namespace = normalizeNamespace(result.Namespace)
 	result.RequiredLabels = cloneLabels(result.RequiredLabels)
+	result.RequiredCapabilities = sortedUniqueStrings(result.RequiredCapabilities)
 	result.OlderThan = strings.TrimSpace(result.OlderThan)
 	if !result.Created.IsZero() {
 		result.Created = result.Created.UTC()
@@ -6404,6 +6444,7 @@ func normalizeLifecyclePolicyResult(result LifecyclePolicyResult) LifecyclePolic
 	result.Namespace = normalizeNamespace(result.Namespace)
 	result.VMName = strings.TrimSpace(result.VMName)
 	result.RequiredLabels = cloneLabels(result.RequiredLabels)
+	result.RequiredCapabilities = sortedUniqueStrings(result.RequiredCapabilities)
 	result.IdleTimeout = strings.TrimSpace(result.IdleTimeout)
 	result.MaxAge = strings.TrimSpace(result.MaxAge)
 	if result.RunBudget < 0 {
@@ -6425,6 +6466,7 @@ func normalizeStorageBudgetResult(result StorageBudgetResult) StorageBudgetResul
 	result.ID = strings.TrimSpace(result.ID)
 	result.Namespace = normalizeNamespace(result.Namespace)
 	result.RequiredLabels = cloneLabels(result.RequiredLabels)
+	result.RequiredCapabilities = sortedUniqueStrings(result.RequiredCapabilities)
 	result.Target = strings.TrimSpace(result.Target)
 	result.WarnPct = cloneIntPtr(result.WarnPct)
 	result.HardPct = cloneIntPtr(result.HardPct)
@@ -6450,6 +6492,7 @@ func normalizeStoragePruneResult(result StoragePruneResult) StoragePruneResult {
 	result.ID = strings.TrimSpace(result.ID)
 	result.Namespace = normalizeNamespace(result.Namespace)
 	result.RequiredLabels = cloneLabels(result.RequiredLabels)
+	result.RequiredCapabilities = sortedUniqueStrings(result.RequiredCapabilities)
 	result.Category = strings.TrimSpace(result.Category)
 	result.OlderThan = strings.TrimSpace(result.OlderThan)
 	if !result.Created.IsZero() {
@@ -6518,6 +6561,9 @@ func controllerRunFromImagePrepare(prep ImagePrepareResult) ControllerRunSummary
 	if prep.ImagePlatform != "" {
 		fields["image_platform"] = prep.ImagePlatform
 	}
+	if len(prep.RequiredCapabilities) > 0 {
+		fields["required_capabilities"] = strings.Join(prep.RequiredCapabilities, ",")
+	}
 	return ControllerRunSummary{
 		ID:              prep.ID,
 		Created:         prep.Created.UTC(),
@@ -6532,6 +6578,13 @@ func controllerRunFromImagePrepare(prep ImagePrepareResult) ControllerRunSummary
 }
 
 func controllerRunFromImageGC(run ImageGCResult) ControllerRunSummary {
+	fields := map[string]string{
+		"apply":      strconv.FormatBool(run.Apply),
+		"older_than": run.OlderThan,
+	}
+	if len(run.RequiredCapabilities) > 0 {
+		fields["required_capabilities"] = strings.Join(run.RequiredCapabilities, ",")
+	}
 	return ControllerRunSummary{
 		ID:              run.ID,
 		Created:         run.Created.UTC(),
@@ -6540,10 +6593,7 @@ func controllerRunFromImageGC(run ImageGCResult) ControllerRunSummary {
 		TargetType:      "image",
 		AssignmentCount: len(run.Assignments),
 		SkipCount:       len(run.Skipped),
-		Fields: map[string]string{
-			"apply":      strconv.FormatBool(run.Apply),
-			"older_than": run.OlderThan,
-		},
+		Fields:          fields,
 	}
 }
 
@@ -6559,6 +6609,9 @@ func controllerRunFromLifecyclePolicy(run LifecyclePolicyResult) ControllerRunSu
 	}
 	if run.RunBudget > 0 {
 		fields["run_budget"] = strconv.Itoa(run.RunBudget)
+	}
+	if len(run.RequiredCapabilities) > 0 {
+		fields["required_capabilities"] = strings.Join(run.RequiredCapabilities, ",")
 	}
 	return ControllerRunSummary{
 		ID:              run.ID,
@@ -6586,6 +6639,9 @@ func controllerRunFromStorageBudget(run StorageBudgetResult) ControllerRunSummar
 	if run.HardPct != nil {
 		fields["hard_pct"] = strconv.Itoa(*run.HardPct)
 	}
+	if len(run.RequiredCapabilities) > 0 {
+		fields["required_capabilities"] = strings.Join(run.RequiredCapabilities, ",")
+	}
 	return ControllerRunSummary{
 		ID:              run.ID,
 		Created:         run.Created.UTC(),
@@ -6607,6 +6663,9 @@ func controllerRunFromStoragePrune(run StoragePruneResult) ControllerRunSummary 
 	}
 	if run.OlderThan != "" {
 		fields["older_than"] = run.OlderThan
+	}
+	if len(run.RequiredCapabilities) > 0 {
+		fields["required_capabilities"] = strings.Join(run.RequiredCapabilities, ",")
 	}
 	return ControllerRunSummary{
 		ID:              run.ID,

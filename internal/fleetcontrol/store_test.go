@@ -3293,9 +3293,10 @@ func TestStorePrepareImageCreatesMissingWorkerAssignments(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, hb := range []WorkerHeartbeat{
-		{ID: "warm", Labels: map[string]string{"zone": "desk"}, ImageRefs: []string{"macos-runner:latest"}},
-		{ID: "cold", Labels: map[string]string{"zone": "desk"}},
-		{ID: "drain", Labels: map[string]string{"zone": "desk"}},
+		{ID: "warm", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}, ImageRefs: []string{"macos-runner:latest"}},
+		{ID: "cold", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}},
+		{ID: "plain", Labels: map[string]string{"zone": "desk"}},
+		{ID: "drain", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}},
 		{ID: "rack", Labels: map[string]string{"zone": "rack"}},
 	} {
 		if _, err := store.UpsertHeartbeat(hb); err != nil {
@@ -3306,9 +3307,10 @@ func TestStorePrepareImageCreatesMissingWorkerAssignments(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err := store.PrepareImage(ImagePrepareRequest{
-		SourceRef:      "registry.example/cove/macos-runner:latest",
-		ImageRef:       "macos-runner:latest",
-		RequiredLabels: map[string]string{"zone": "desk"},
+		SourceRef:            "registry.example/cove/macos-runner:latest",
+		ImageRef:             "macos-runner:latest",
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -3319,22 +3321,29 @@ func TestStorePrepareImageCreatesMissingWorkerAssignments(t *testing.T) {
 	if len(result.Assignments) != 1 {
 		t.Fatalf("assignments = %+v, want 1", result.Assignments)
 	}
+	if result.RequiredLabels["zone"] != "desk" || !equalStrings(result.RequiredCapabilities, []string{"ram-overlay"}) {
+		t.Fatalf("prepare selectors = labels %+v capabilities %+v, want zone=desk ram-overlay", result.RequiredLabels, result.RequiredCapabilities)
+	}
 	assignment := result.Assignments[0]
 	if assignment.WorkerID != "cold" || assignment.Verb != "cove" || assignment.ImageRef != "macos-runner:latest" {
 		t.Fatalf("assignment = %+v", assignment)
+	}
+	if !equalStrings(assignment.RequiredCapabilities, []string{"ram-overlay"}) {
+		t.Fatalf("assignment required capabilities = %+v, want ram-overlay", assignment.RequiredCapabilities)
 	}
 	wantArgs := []string{"image", "pull", "-tag", "macos-runner:latest", "registry.example/cove/macos-runner:latest"}
 	if !equalStrings(assignment.Args, wantArgs) {
 		t.Fatalf("args = %+v, want %+v", assignment.Args, wantArgs)
 	}
-	if skipReason(result.Skipped, "warm") != "present" || skipReason(result.Skipped, "drain") != "cordoned" || skipReason(result.Skipped, "rack") != "" {
+	if skipReason(result.Skipped, "warm") != "present" || skipReason(result.Skipped, "drain") != "cordoned" || skipReason(result.Skipped, "plain") != "" || skipReason(result.Skipped, "rack") != "" {
 		t.Fatalf("skipped = %+v", result.Skipped)
 	}
 
 	result, err = store.PrepareImage(ImagePrepareRequest{
-		SourceRef:      "registry.example/cove/macos-runner:latest",
-		ImageRef:       "macos-runner:latest",
-		RequiredLabels: map[string]string{"zone": "desk"},
+		SourceRef:            "registry.example/cove/macos-runner:latest",
+		ImageRef:             "macos-runner:latest",
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -3351,7 +3360,7 @@ func TestStorePrepareImageCreatesMissingWorkerAssignments(t *testing.T) {
 		t.Fatal(err)
 	}
 	persisted, ok := reopened.GetImagePreparation(result.ID)
-	if !ok || persisted.ID != result.ID || skipReason(persisted.Skipped, "cold") != "active" {
+	if !ok || persisted.ID != result.ID || skipReason(persisted.Skipped, "cold") != "active" || !equalStrings(persisted.RequiredCapabilities, []string{"ram-overlay"}) {
 		t.Fatalf("reopened prepare = %+v ok=%v, want active skip history", persisted, ok)
 	}
 }
@@ -3414,10 +3423,11 @@ func TestStorePushesImageGCAssignments(t *testing.T) {
 	}
 	store.now = func() time.Time { return now }
 	for _, hb := range []WorkerHeartbeat{
-		{ID: "desk", Labels: map[string]string{"zone": "desk"}},
+		{ID: "desk", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}},
+		{ID: "plain", Labels: map[string]string{"zone": "desk"}},
 		{ID: "rack", Labels: map[string]string{"zone": "rack"}},
-		{ID: "drain", Labels: map[string]string{"zone": "desk"}},
-		{ID: "stale", Labels: map[string]string{"zone": "desk"}},
+		{ID: "drain", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}},
+		{ID: "stale", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}},
 	} {
 		if _, err := store.UpsertHeartbeat(hb); err != nil {
 			t.Fatal(err)
@@ -3427,18 +3437,22 @@ func TestStorePushesImageGCAssignments(t *testing.T) {
 		t.Fatal(err)
 	}
 	now = now.Add(2 * time.Minute)
-	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "desk", Labels: map[string]string{"zone": "desk"}}); err != nil {
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "desk", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "plain", Labels: map[string]string{"zone": "desk"}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "rack", Labels: map[string]string{"zone": "rack"}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "drain", Labels: map[string]string{"zone": "desk"}}); err != nil {
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "drain", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}}); err != nil {
 		t.Fatal(err)
 	}
 	result, err := store.PushImageGC(ImageGCRequest{
-		RequiredLabels: map[string]string{"zone": "desk"},
-		OlderThan:      "24h",
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay"},
+		OlderThan:            "24h",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -3449,6 +3463,9 @@ func TestStorePushesImageGCAssignments(t *testing.T) {
 	if result.RequiredLabels["zone"] != "desk" {
 		t.Fatalf("required labels = %+v, want zone=desk", result.RequiredLabels)
 	}
+	if !equalStrings(result.RequiredCapabilities, []string{"ram-overlay"}) {
+		t.Fatalf("required capabilities = %+v, want ram-overlay", result.RequiredCapabilities)
+	}
 	if len(result.Assignments) != 1 {
 		t.Fatalf("assignments = %+v, want 1", result.Assignments)
 	}
@@ -3457,14 +3474,18 @@ func TestStorePushesImageGCAssignments(t *testing.T) {
 	if assignment.WorkerID != "desk" || assignment.Verb != "cove" || !equalStrings(assignment.Args, wantArgs) {
 		t.Fatalf("assignment = %+v, want worker desk args %+v", assignment, wantArgs)
 	}
-	if skipImageGCReason(result.Skipped, "drain") != "cordoned" || skipImageGCReason(result.Skipped, "stale") != "stale" || skipImageGCReason(result.Skipped, "rack") != "" {
+	if !equalStrings(assignment.RequiredCapabilities, []string{"ram-overlay"}) {
+		t.Fatalf("assignment required capabilities = %+v, want ram-overlay", assignment.RequiredCapabilities)
+	}
+	if skipImageGCReason(result.Skipped, "drain") != "cordoned" || skipImageGCReason(result.Skipped, "stale") != "stale" || skipImageGCReason(result.Skipped, "plain") != "" || skipImageGCReason(result.Skipped, "rack") != "" {
 		t.Fatalf("skipped = %+v", result.Skipped)
 	}
 
 	result, err = store.PushImageGC(ImageGCRequest{
-		RequiredLabels: map[string]string{"zone": "desk"},
-		OlderThan:      "24h",
-		Apply:          true,
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay"},
+		OlderThan:            "24h",
+		Apply:                true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -3489,7 +3510,7 @@ func TestStorePushesImageGCAssignments(t *testing.T) {
 		t.Fatal(err)
 	}
 	persisted, ok := reopened.GetImageGCRun(result.ID)
-	if !ok || persisted.ID != result.ID || skipImageGCReason(persisted.Skipped, "desk") != "active" || !persisted.Apply {
+	if !ok || persisted.ID != result.ID || skipImageGCReason(persisted.Skipped, "desk") != "active" || !persisted.Apply || !equalStrings(persisted.RequiredCapabilities, []string{"ram-overlay"}) {
 		t.Fatalf("reopened image gc = %+v ok=%v, want active skip history", persisted, ok)
 	}
 }
@@ -3503,10 +3524,11 @@ func TestStorePushesLifecyclePolicyAssignments(t *testing.T) {
 	}
 	store.now = func() time.Time { return now }
 	for _, hb := range []WorkerHeartbeat{
-		{ID: "desk", Labels: map[string]string{"zone": "desk"}},
+		{ID: "desk", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}},
+		{ID: "plain", Labels: map[string]string{"zone": "desk"}},
 		{ID: "rack", Labels: map[string]string{"zone": "rack"}},
-		{ID: "drain", Labels: map[string]string{"zone": "desk"}},
-		{ID: "stale", Labels: map[string]string{"zone": "desk"}},
+		{ID: "drain", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}},
+		{ID: "stale", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}},
 	} {
 		if _, err := store.UpsertHeartbeat(hb); err != nil {
 			t.Fatal(err)
@@ -3516,21 +3538,25 @@ func TestStorePushesLifecyclePolicyAssignments(t *testing.T) {
 		t.Fatal(err)
 	}
 	now = now.Add(2 * time.Minute)
-	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "desk", Labels: map[string]string{"zone": "desk"}}); err != nil {
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "desk", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "plain", Labels: map[string]string{"zone": "desk"}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "rack", Labels: map[string]string{"zone": "rack"}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "drain", Labels: map[string]string{"zone": "desk"}}); err != nil {
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "drain", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}}); err != nil {
 		t.Fatal(err)
 	}
 	result, err := store.PushLifecyclePolicy(LifecyclePolicyRequest{
-		VMName:         "ci-runner",
-		RequiredLabels: map[string]string{"zone": "desk"},
-		IdleTimeout:    "30m",
-		MaxAge:         "24h",
-		RunBudget:      100,
+		VMName:               "ci-runner",
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay"},
+		IdleTimeout:          "30m",
+		MaxAge:               "24h",
+		RunBudget:            100,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -3544,20 +3570,27 @@ func TestStorePushesLifecyclePolicyAssignments(t *testing.T) {
 	if result.RequiredLabels["zone"] != "desk" {
 		t.Fatalf("required labels = %+v, want zone=desk", result.RequiredLabels)
 	}
+	if !equalStrings(result.RequiredCapabilities, []string{"ram-overlay"}) {
+		t.Fatalf("required capabilities = %+v, want ram-overlay", result.RequiredCapabilities)
+	}
 	firstID := result.ID
 	assignment := result.Assignments[0]
 	wantArgs := []string{"policy", "ci-runner", "set", "idle=30m", "max-age=24h", "run-budget=100"}
 	if assignment.WorkerID != "desk" || assignment.Verb != "cove" || !equalStrings(assignment.Args, wantArgs) {
 		t.Fatalf("assignment = %+v, want worker desk args %+v", assignment, wantArgs)
 	}
-	if skipLifecyclePolicyReason(result.Skipped, "drain") != "cordoned" || skipLifecyclePolicyReason(result.Skipped, "stale") != "stale" || skipLifecyclePolicyReason(result.Skipped, "rack") != "" {
+	if !equalStrings(assignment.RequiredCapabilities, []string{"ram-overlay"}) {
+		t.Fatalf("assignment required capabilities = %+v, want ram-overlay", assignment.RequiredCapabilities)
+	}
+	if skipLifecyclePolicyReason(result.Skipped, "drain") != "cordoned" || skipLifecyclePolicyReason(result.Skipped, "stale") != "stale" || skipLifecyclePolicyReason(result.Skipped, "plain") != "" || skipLifecyclePolicyReason(result.Skipped, "rack") != "" {
 		t.Fatalf("skipped = %+v", result.Skipped)
 	}
 
 	result, err = store.PushLifecyclePolicy(LifecyclePolicyRequest{
-		VMName:         "ci-runner",
-		RequiredLabels: map[string]string{"zone": "desk"},
-		Clear:          true,
+		VMName:               "ci-runner",
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay"},
+		Clear:                true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -3587,7 +3620,7 @@ func TestStorePushesLifecyclePolicyAssignments(t *testing.T) {
 		t.Fatal(err)
 	}
 	persisted, ok := reopened.GetLifecyclePolicyRun(result.ID)
-	if !ok || persisted.ID != result.ID || skipLifecyclePolicyReason(persisted.Skipped, "desk") != "active" || !persisted.Clear {
+	if !ok || persisted.ID != result.ID || skipLifecyclePolicyReason(persisted.Skipped, "desk") != "active" || !persisted.Clear || !equalStrings(persisted.RequiredCapabilities, []string{"ram-overlay"}) {
 		t.Fatalf("reopened lifecycle policy = %+v ok=%v, want active skip history", persisted, ok)
 	}
 }
@@ -3631,10 +3664,11 @@ func TestStorePushesStorageBudgetAssignments(t *testing.T) {
 	}
 	store.now = func() time.Time { return now }
 	for _, hb := range []WorkerHeartbeat{
-		{ID: "desk", Labels: map[string]string{"zone": "desk"}},
+		{ID: "desk", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}},
+		{ID: "plain", Labels: map[string]string{"zone": "desk"}},
 		{ID: "rack", Labels: map[string]string{"zone": "rack"}},
-		{ID: "drain", Labels: map[string]string{"zone": "desk"}},
-		{ID: "stale", Labels: map[string]string{"zone": "desk"}},
+		{ID: "drain", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}},
+		{ID: "stale", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}},
 	} {
 		if _, err := store.UpsertHeartbeat(hb); err != nil {
 			t.Fatal(err)
@@ -3644,21 +3678,25 @@ func TestStorePushesStorageBudgetAssignments(t *testing.T) {
 		t.Fatal(err)
 	}
 	now = now.Add(2 * time.Minute)
-	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "desk", Labels: map[string]string{"zone": "desk"}}); err != nil {
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "desk", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "plain", Labels: map[string]string{"zone": "desk"}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "rack", Labels: map[string]string{"zone": "rack"}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "drain", Labels: map[string]string{"zone": "desk"}}); err != nil {
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "drain", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}}); err != nil {
 		t.Fatal(err)
 	}
 	warn, hard := 75, 90
 	result, err := store.PushStorageBudget(StorageBudgetRequest{
-		RequiredLabels: map[string]string{"zone": "desk"},
-		Target:         "500GB",
-		WarnPct:        &warn,
-		HardPct:        &hard,
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay"},
+		Target:               "500GB",
+		WarnPct:              &warn,
+		HardPct:              &hard,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -3672,19 +3710,26 @@ func TestStorePushesStorageBudgetAssignments(t *testing.T) {
 	if result.RequiredLabels["zone"] != "desk" {
 		t.Fatalf("required labels = %+v, want zone=desk", result.RequiredLabels)
 	}
+	if !equalStrings(result.RequiredCapabilities, []string{"ram-overlay"}) {
+		t.Fatalf("required capabilities = %+v, want ram-overlay", result.RequiredCapabilities)
+	}
 	firstID := result.ID
 	assignment := result.Assignments[0]
 	wantArgs := []string{"storage", "budget", "set", "-target", "500GB", "-warn", "75", "-hard", "90"}
 	if assignment.WorkerID != "desk" || assignment.Verb != "cove" || !equalStrings(assignment.Args, wantArgs) {
 		t.Fatalf("assignment = %+v, want worker desk args %+v", assignment, wantArgs)
 	}
-	if skipStoragePolicyReason(result.Skipped, "drain") != "cordoned" || skipStoragePolicyReason(result.Skipped, "stale") != "stale" || skipStoragePolicyReason(result.Skipped, "rack") != "" {
+	if !equalStrings(assignment.RequiredCapabilities, []string{"ram-overlay"}) {
+		t.Fatalf("assignment required capabilities = %+v, want ram-overlay", assignment.RequiredCapabilities)
+	}
+	if skipStoragePolicyReason(result.Skipped, "drain") != "cordoned" || skipStoragePolicyReason(result.Skipped, "stale") != "stale" || skipStoragePolicyReason(result.Skipped, "plain") != "" || skipStoragePolicyReason(result.Skipped, "rack") != "" {
 		t.Fatalf("skipped = %+v", result.Skipped)
 	}
 
 	result, err = store.PushStorageBudget(StorageBudgetRequest{
-		RequiredLabels: map[string]string{"zone": "desk"},
-		Clear:          true,
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay"},
+		Clear:                true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -3714,7 +3759,7 @@ func TestStorePushesStorageBudgetAssignments(t *testing.T) {
 		t.Fatal(err)
 	}
 	persisted, ok := reopened.GetStorageBudgetRun(result.ID)
-	if !ok || persisted.ID != result.ID || skipStoragePolicyReason(persisted.Skipped, "desk") != "active" || !persisted.Clear {
+	if !ok || persisted.ID != result.ID || skipStoragePolicyReason(persisted.Skipped, "desk") != "active" || !persisted.Clear || !equalStrings(persisted.RequiredCapabilities, []string{"ram-overlay"}) {
 		t.Fatalf("reopened storage budget = %+v ok=%v, want active skip history", persisted, ok)
 	}
 }
@@ -3728,10 +3773,11 @@ func TestStorePushesStoragePruneAssignments(t *testing.T) {
 	}
 	store.now = func() time.Time { return now }
 	for _, hb := range []WorkerHeartbeat{
-		{ID: "desk", Labels: map[string]string{"zone": "desk"}},
+		{ID: "desk", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}},
+		{ID: "plain", Labels: map[string]string{"zone": "desk"}},
 		{ID: "rack", Labels: map[string]string{"zone": "rack"}},
-		{ID: "drain", Labels: map[string]string{"zone": "desk"}},
-		{ID: "stale", Labels: map[string]string{"zone": "desk"}},
+		{ID: "drain", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}},
+		{ID: "stale", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}},
 	} {
 		if _, err := store.UpsertHeartbeat(hb); err != nil {
 			t.Fatal(err)
@@ -3741,20 +3787,24 @@ func TestStorePushesStoragePruneAssignments(t *testing.T) {
 		t.Fatal(err)
 	}
 	now = now.Add(2 * time.Minute)
-	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "desk", Labels: map[string]string{"zone": "desk"}}); err != nil {
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "desk", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "plain", Labels: map[string]string{"zone": "desk"}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "rack", Labels: map[string]string{"zone": "rack"}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "drain", Labels: map[string]string{"zone": "desk"}}); err != nil {
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "drain", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}}); err != nil {
 		t.Fatal(err)
 	}
 	result, err := store.PushStoragePrune(StoragePruneRequest{
-		RequiredLabels: map[string]string{"zone": "desk"},
-		Category:       "build-scratch",
-		OlderThan:      "48h",
-		Apply:          true,
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay"},
+		Category:             "build-scratch",
+		OlderThan:            "48h",
+		Apply:                true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -3768,19 +3818,26 @@ func TestStorePushesStoragePruneAssignments(t *testing.T) {
 	if result.RequiredLabels["zone"] != "desk" {
 		t.Fatalf("required labels = %+v, want zone=desk", result.RequiredLabels)
 	}
+	if !equalStrings(result.RequiredCapabilities, []string{"ram-overlay"}) {
+		t.Fatalf("required capabilities = %+v, want ram-overlay", result.RequiredCapabilities)
+	}
 	firstID := result.ID
 	assignment := result.Assignments[0]
 	wantArgs := []string{"storage", "prune", "build-scratch", "-apply", "-older-than", "48h"}
 	if assignment.WorkerID != "desk" || assignment.Verb != "cove" || !equalStrings(assignment.Args, wantArgs) {
 		t.Fatalf("assignment = %+v, want worker desk args %+v", assignment, wantArgs)
 	}
-	if skipStoragePolicyReason(result.Skipped, "drain") != "cordoned" || skipStoragePolicyReason(result.Skipped, "stale") != "stale" || skipStoragePolicyReason(result.Skipped, "rack") != "" {
+	if !equalStrings(assignment.RequiredCapabilities, []string{"ram-overlay"}) {
+		t.Fatalf("assignment required capabilities = %+v, want ram-overlay", assignment.RequiredCapabilities)
+	}
+	if skipStoragePolicyReason(result.Skipped, "drain") != "cordoned" || skipStoragePolicyReason(result.Skipped, "stale") != "stale" || skipStoragePolicyReason(result.Skipped, "plain") != "" || skipStoragePolicyReason(result.Skipped, "rack") != "" {
 		t.Fatalf("skipped = %+v", result.Skipped)
 	}
 
 	result, err = store.PushStoragePrune(StoragePruneRequest{
-		RequiredLabels: map[string]string{"zone": "desk"},
-		OlderThan:      "48h",
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay"},
+		OlderThan:            "48h",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -3810,7 +3867,7 @@ func TestStorePushesStoragePruneAssignments(t *testing.T) {
 		t.Fatal(err)
 	}
 	persisted, ok := reopened.GetStoragePruneRun(result.ID)
-	if !ok || persisted.ID != result.ID || skipStoragePolicyReason(persisted.Skipped, "desk") != "active" || persisted.Apply {
+	if !ok || persisted.ID != result.ID || skipStoragePolicyReason(persisted.Skipped, "desk") != "active" || persisted.Apply || !equalStrings(persisted.RequiredCapabilities, []string{"ram-overlay"}) {
 		t.Fatalf("reopened storage prune = %+v ok=%v, want active skip dry-run history", persisted, ok)
 	}
 }
@@ -5183,12 +5240,13 @@ func TestHandlerControllerRuns(t *testing.T) {
 	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-a", Namespace: "team-a", Token: "token-a"}, &account)
 	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-b", Namespace: "team-b", Token: "token-b"}, &account)
 	var record HostRecord
-	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", Labels: map[string]string{"zone": "desk"}}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}}, &record)
 	var prune StoragePruneResult
 	postJSONAuth(t, server.URL+"/v1/storage/prune", "token-a", StoragePruneRequest{
-		RequiredLabels: map[string]string{"zone": "desk"},
-		OlderThan:      "168h",
-		Apply:          true,
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay"},
+		OlderThan:            "168h",
+		Apply:                true,
 	}, &prune)
 
 	var page ControllerRunListResult
@@ -5196,7 +5254,7 @@ func TestHandlerControllerRuns(t *testing.T) {
 	if page.Count != 1 || len(page.Runs) != 1 || page.Runs[0].ID != prune.ID || page.Runs[0].Kind != ControllerRunKindStoragePrune {
 		t.Fatalf("controller runs = %+v, want storage prune %s", page, prune.ID)
 	}
-	if page.Runs[0].Fields["apply"] != "true" || page.Runs[0].Fields["older_than"] != "168h" {
+	if page.Runs[0].Fields["apply"] != "true" || page.Runs[0].Fields["older_than"] != "168h" || page.Runs[0].Fields["required_capabilities"] != "ram-overlay" {
 		t.Fatalf("controller run fields = %+v, want prune apply/older_than", page.Runs[0].Fields)
 	}
 	page = ControllerRunListResult{}
@@ -5218,14 +5276,18 @@ func TestHandlerPrepareImage(t *testing.T) {
 	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-a", Namespace: "team-a", Token: "token-a"}, &account)
 	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-b", Namespace: "team-b", Token: "token-b"}, &account)
 	var record HostRecord
-	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1"}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", Capabilities: []string{"ram-overlay"}}, &record)
 	var result ImagePrepareResult
 	postJSONAuth(t, server.URL+"/v1/images/prepare", "token-a", ImagePrepareRequest{
-		SourceRef: "registry.example/cove/macos-runner:latest",
-		ImageRef:  "macos-runner:latest",
+		SourceRef:            "registry.example/cove/macos-runner:latest",
+		ImageRef:             "macos-runner:latest",
+		RequiredCapabilities: []string{"ram-overlay"},
 	}, &result)
 	if len(result.Assignments) != 1 || result.Assignments[0].WorkerID != "worker-1" {
 		t.Fatalf("prepare result = %+v", result)
+	}
+	if !equalStrings(result.RequiredCapabilities, []string{"ram-overlay"}) || !equalStrings(result.Assignments[0].RequiredCapabilities, []string{"ram-overlay"}) {
+		t.Fatalf("prepare capabilities = result %+v assignment %+v, want ram-overlay", result.RequiredCapabilities, result.Assignments[0].RequiredCapabilities)
 	}
 	if result.ID == "" || result.Namespace != "team-a" {
 		t.Fatalf("prepare identity = %+v, want team-a retained prepare", result)
@@ -5309,18 +5371,22 @@ func TestHandlerImageGC(t *testing.T) {
 	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-a", Namespace: "team-a", Token: "token-a"}, &account)
 	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-b", Namespace: "team-b", Token: "token-b"}, &account)
 	var record HostRecord
-	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", Labels: map[string]string{"zone": "desk"}}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}}, &record)
 	var result ImageGCResult
 	postJSONAuth(t, server.URL+"/v1/images/gc", "token-a", ImageGCRequest{
-		RequiredLabels: map[string]string{"zone": "desk"},
-		OlderThan:      "1h",
-		Apply:          true,
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay"},
+		OlderThan:            "1h",
+		Apply:                true,
 	}, &result)
 	if len(result.Assignments) != 1 || result.Assignments[0].WorkerID != "worker-1" {
 		t.Fatalf("image gc result = %+v", result)
 	}
 	if result.ID == "" || result.Namespace != "team-a" || result.OlderThan != "1h" || !result.Apply {
 		t.Fatalf("image gc identity = %+v, want team-a retained run", result)
+	}
+	if !equalStrings(result.RequiredCapabilities, []string{"ram-overlay"}) || !equalStrings(result.Assignments[0].RequiredCapabilities, []string{"ram-overlay"}) {
+		t.Fatalf("image gc capabilities = result %+v assignment %+v, want ram-overlay", result.RequiredCapabilities, result.Assignments[0].RequiredCapabilities)
 	}
 	wantArgs := []string{"image", "gc", "-yes", "-older-than", "1h"}
 	if !equalStrings(result.Assignments[0].Args, wantArgs) {
@@ -5361,19 +5427,23 @@ func TestHandlerLifecyclePolicy(t *testing.T) {
 	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-a", Namespace: "team-a", Token: "token-a"}, &account)
 	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-b", Namespace: "team-b", Token: "token-b"}, &account)
 	var record HostRecord
-	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", Labels: map[string]string{"zone": "desk"}}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}}, &record)
 	var result LifecyclePolicyResult
 	postJSONAuth(t, server.URL+"/v1/policies/lifecycle", "token-a", LifecyclePolicyRequest{
-		VMName:         "ci-runner",
-		RequiredLabels: map[string]string{"zone": "desk"},
-		IdleTimeout:    "15m",
-		RunBudget:      5,
+		VMName:               "ci-runner",
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay"},
+		IdleTimeout:          "15m",
+		RunBudget:            5,
 	}, &result)
 	if result.VMName != "ci-runner" || len(result.Assignments) != 1 || result.Assignments[0].WorkerID != "worker-1" {
 		t.Fatalf("lifecycle policy result = %+v", result)
 	}
 	if result.ID == "" || result.Namespace != "team-a" || result.IdleTimeout != "15m" || result.RunBudget != 5 || result.Clear {
 		t.Fatalf("lifecycle policy identity = %+v, want team-a retained run", result)
+	}
+	if !equalStrings(result.RequiredCapabilities, []string{"ram-overlay"}) || !equalStrings(result.Assignments[0].RequiredCapabilities, []string{"ram-overlay"}) {
+		t.Fatalf("lifecycle policy capabilities = result %+v assignment %+v, want ram-overlay", result.RequiredCapabilities, result.Assignments[0].RequiredCapabilities)
 	}
 	wantArgs := []string{"policy", "ci-runner", "set", "idle=15m", "run-budget=5"}
 	if !equalStrings(result.Assignments[0].Args, wantArgs) {
@@ -5414,20 +5484,24 @@ func TestHandlerStorageBudget(t *testing.T) {
 	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-a", Namespace: "team-a", Token: "token-a"}, &account)
 	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-b", Namespace: "team-b", Token: "token-b"}, &account)
 	var record HostRecord
-	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", Labels: map[string]string{"zone": "desk"}}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}}, &record)
 	warn, hard := 70, 90
 	var result StorageBudgetResult
 	postJSONAuth(t, server.URL+"/v1/storage/budget", "token-a", StorageBudgetRequest{
-		RequiredLabels: map[string]string{"zone": "desk"},
-		Target:         "750GB",
-		WarnPct:        &warn,
-		HardPct:        &hard,
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay"},
+		Target:               "750GB",
+		WarnPct:              &warn,
+		HardPct:              &hard,
 	}, &result)
 	if len(result.Assignments) != 1 || result.Assignments[0].WorkerID != "worker-1" {
 		t.Fatalf("storage budget result = %+v", result)
 	}
 	if result.ID == "" || result.Namespace != "team-a" || result.Target != "750GB" || result.WarnPct == nil || *result.WarnPct != 70 || result.HardPct == nil || *result.HardPct != 90 {
 		t.Fatalf("storage budget identity = %+v, want team-a retained run", result)
+	}
+	if !equalStrings(result.RequiredCapabilities, []string{"ram-overlay"}) || !equalStrings(result.Assignments[0].RequiredCapabilities, []string{"ram-overlay"}) {
+		t.Fatalf("storage budget capabilities = result %+v assignment %+v, want ram-overlay", result.RequiredCapabilities, result.Assignments[0].RequiredCapabilities)
 	}
 	wantArgs := []string{"storage", "budget", "set", "-target", "750GB", "-warn", "70", "-hard", "90"}
 	if !equalStrings(result.Assignments[0].Args, wantArgs) {
@@ -5468,19 +5542,23 @@ func TestHandlerStoragePrune(t *testing.T) {
 	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-a", Namespace: "team-a", Token: "token-a"}, &account)
 	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-b", Namespace: "team-b", Token: "token-b"}, &account)
 	var record HostRecord
-	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", Labels: map[string]string{"zone": "desk"}}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}}, &record)
 	var result StoragePruneResult
 	postJSONAuth(t, server.URL+"/v1/storage/prune", "token-a", StoragePruneRequest{
-		RequiredLabels: map[string]string{"zone": "desk"},
-		Category:       "build-scratch",
-		OlderThan:      "168h",
-		Apply:          true,
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay"},
+		Category:             "build-scratch",
+		OlderThan:            "168h",
+		Apply:                true,
 	}, &result)
 	if len(result.Assignments) != 1 || result.Assignments[0].WorkerID != "worker-1" {
 		t.Fatalf("storage prune result = %+v", result)
 	}
 	if result.ID == "" || result.Namespace != "team-a" || result.Category != "build-scratch" || result.OlderThan != "168h" || !result.Apply {
 		t.Fatalf("storage prune identity = %+v, want team-a retained run", result)
+	}
+	if !equalStrings(result.RequiredCapabilities, []string{"ram-overlay"}) || !equalStrings(result.Assignments[0].RequiredCapabilities, []string{"ram-overlay"}) {
+		t.Fatalf("storage prune capabilities = result %+v assignment %+v, want ram-overlay", result.RequiredCapabilities, result.Assignments[0].RequiredCapabilities)
 	}
 	wantArgs := []string{"storage", "prune", "build-scratch", "-apply", "-older-than", "168h"}
 	if !equalStrings(result.Assignments[0].Args, wantArgs) {

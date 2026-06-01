@@ -390,28 +390,31 @@ type WorkerDrainSkip struct {
 }
 
 type ImagePrepareRequest struct {
-	Namespace           string            `json:"namespace,omitempty"`
-	SourceRef           string            `json:"source_ref"`
-	ImageRef            string            `json:"image_ref"`
-	ManifestBundle      string            `json:"manifest_bundle,omitempty"`
-	ImageManifestDigest string            `json:"image_manifest_digest,omitempty"`
-	ImageDigestRef      string            `json:"image_digest_ref,omitempty"`
-	ImagePlatform       string            `json:"image_platform,omitempty"`
-	RequiredLabels      map[string]string `json:"required_labels,omitempty"`
-	Force               bool              `json:"force,omitempty"`
+	Namespace            string            `json:"namespace,omitempty"`
+	SourceRef            string            `json:"source_ref"`
+	ImageRef             string            `json:"image_ref"`
+	ManifestBundle       string            `json:"manifest_bundle,omitempty"`
+	ImageManifestDigest  string            `json:"image_manifest_digest,omitempty"`
+	ImageDigestRef       string            `json:"image_digest_ref,omitempty"`
+	ImagePlatform        string            `json:"image_platform,omitempty"`
+	RequiredLabels       map[string]string `json:"required_labels,omitempty"`
+	RequiredCapabilities []string          `json:"required_capabilities,omitempty"`
+	Force                bool              `json:"force,omitempty"`
 }
 
 type ImagePrepareResult struct {
-	ID                  string             `json:"id,omitempty"`
-	Created             time.Time          `json:"created,omitempty"`
-	Namespace           string             `json:"namespace,omitempty"`
-	SourceRef           string             `json:"source_ref"`
-	ImageRef            string             `json:"image_ref"`
-	ImageManifestDigest string             `json:"image_manifest_digest,omitempty"`
-	ImageDigestRef      string             `json:"image_digest_ref,omitempty"`
-	ImagePlatform       string             `json:"image_platform,omitempty"`
-	Assignments         []Assignment       `json:"assignments,omitempty"`
-	Skipped             []ImagePrepareSkip `json:"skipped,omitempty"`
+	ID                   string             `json:"id,omitempty"`
+	Created              time.Time          `json:"created,omitempty"`
+	Namespace            string             `json:"namespace,omitempty"`
+	SourceRef            string             `json:"source_ref"`
+	ImageRef             string             `json:"image_ref"`
+	ImageManifestDigest  string             `json:"image_manifest_digest,omitempty"`
+	ImageDigestRef       string             `json:"image_digest_ref,omitempty"`
+	ImagePlatform        string             `json:"image_platform,omitempty"`
+	RequiredLabels       map[string]string  `json:"required_labels,omitempty"`
+	RequiredCapabilities []string           `json:"required_capabilities,omitempty"`
+	Assignments          []Assignment       `json:"assignments,omitempty"`
+	Skipped              []ImagePrepareSkip `json:"skipped,omitempty"`
 }
 
 type ImagePrepareListFilter struct {
@@ -437,21 +440,23 @@ type ImagePrepareSkip struct {
 }
 
 type ImageGCRequest struct {
-	Namespace      string            `json:"namespace,omitempty"`
-	RequiredLabels map[string]string `json:"required_labels,omitempty"`
-	OlderThan      string            `json:"older_than,omitempty"`
-	Apply          bool              `json:"apply,omitempty"`
+	Namespace            string            `json:"namespace,omitempty"`
+	RequiredLabels       map[string]string `json:"required_labels,omitempty"`
+	RequiredCapabilities []string          `json:"required_capabilities,omitempty"`
+	OlderThan            string            `json:"older_than,omitempty"`
+	Apply                bool              `json:"apply,omitempty"`
 }
 
 type ImageGCResult struct {
-	ID             string            `json:"id,omitempty"`
-	Created        time.Time         `json:"created,omitempty"`
-	Namespace      string            `json:"namespace,omitempty"`
-	RequiredLabels map[string]string `json:"required_labels,omitempty"`
-	OlderThan      string            `json:"older_than,omitempty"`
-	Apply          bool              `json:"apply"`
-	Assignments    []Assignment      `json:"assignments,omitempty"`
-	Skipped        []ImageGCSkip     `json:"skipped,omitempty"`
+	ID                   string            `json:"id,omitempty"`
+	Created              time.Time         `json:"created,omitempty"`
+	Namespace            string            `json:"namespace,omitempty"`
+	RequiredLabels       map[string]string `json:"required_labels,omitempty"`
+	RequiredCapabilities []string          `json:"required_capabilities,omitempty"`
+	OlderThan            string            `json:"older_than,omitempty"`
+	Apply                bool              `json:"apply"`
+	Assignments          []Assignment      `json:"assignments,omitempty"`
+	Skipped              []ImageGCSkip     `json:"skipped,omitempty"`
 }
 
 type ImageGCSkip struct {
@@ -476,27 +481,29 @@ type ImageGCListResult struct {
 }
 
 type LifecyclePolicyRequest struct {
-	Namespace      string            `json:"namespace,omitempty"`
-	VMName         string            `json:"vm_name"`
-	RequiredLabels map[string]string `json:"required_labels,omitempty"`
-	Clear          bool              `json:"clear,omitempty"`
-	IdleTimeout    string            `json:"idle_timeout,omitempty"`
-	MaxAge         string            `json:"max_age,omitempty"`
-	RunBudget      int               `json:"run_budget,omitempty"`
+	Namespace            string            `json:"namespace,omitempty"`
+	VMName               string            `json:"vm_name"`
+	RequiredLabels       map[string]string `json:"required_labels,omitempty"`
+	RequiredCapabilities []string          `json:"required_capabilities,omitempty"`
+	Clear                bool              `json:"clear,omitempty"`
+	IdleTimeout          string            `json:"idle_timeout,omitempty"`
+	MaxAge               string            `json:"max_age,omitempty"`
+	RunBudget            int               `json:"run_budget,omitempty"`
 }
 
 type LifecyclePolicyResult struct {
-	ID             string                `json:"id,omitempty"`
-	Created        time.Time             `json:"created,omitempty"`
-	Namespace      string                `json:"namespace,omitempty"`
-	VMName         string                `json:"vm_name"`
-	RequiredLabels map[string]string     `json:"required_labels,omitempty"`
-	Clear          bool                  `json:"clear"`
-	IdleTimeout    string                `json:"idle_timeout,omitempty"`
-	MaxAge         string                `json:"max_age,omitempty"`
-	RunBudget      int                   `json:"run_budget,omitempty"`
-	Assignments    []Assignment          `json:"assignments,omitempty"`
-	Skipped        []LifecyclePolicySkip `json:"skipped,omitempty"`
+	ID                   string                `json:"id,omitempty"`
+	Created              time.Time             `json:"created,omitempty"`
+	Namespace            string                `json:"namespace,omitempty"`
+	VMName               string                `json:"vm_name"`
+	RequiredLabels       map[string]string     `json:"required_labels,omitempty"`
+	RequiredCapabilities []string              `json:"required_capabilities,omitempty"`
+	Clear                bool                  `json:"clear"`
+	IdleTimeout          string                `json:"idle_timeout,omitempty"`
+	MaxAge               string                `json:"max_age,omitempty"`
+	RunBudget            int                   `json:"run_budget,omitempty"`
+	Assignments          []Assignment          `json:"assignments,omitempty"`
+	Skipped              []LifecyclePolicySkip `json:"skipped,omitempty"`
 }
 
 type LifecyclePolicySkip struct {
@@ -521,25 +528,27 @@ type LifecyclePolicyListResult struct {
 }
 
 type StorageBudgetRequest struct {
-	Namespace      string            `json:"namespace,omitempty"`
-	RequiredLabels map[string]string `json:"required_labels,omitempty"`
-	Clear          bool              `json:"clear,omitempty"`
-	Target         string            `json:"target,omitempty"`
-	WarnPct        *int              `json:"warn_pct,omitempty"`
-	HardPct        *int              `json:"hard_pct,omitempty"`
+	Namespace            string            `json:"namespace,omitempty"`
+	RequiredLabels       map[string]string `json:"required_labels,omitempty"`
+	RequiredCapabilities []string          `json:"required_capabilities,omitempty"`
+	Clear                bool              `json:"clear,omitempty"`
+	Target               string            `json:"target,omitempty"`
+	WarnPct              *int              `json:"warn_pct,omitempty"`
+	HardPct              *int              `json:"hard_pct,omitempty"`
 }
 
 type StorageBudgetResult struct {
-	ID             string              `json:"id,omitempty"`
-	Created        time.Time           `json:"created,omitempty"`
-	Namespace      string              `json:"namespace,omitempty"`
-	RequiredLabels map[string]string   `json:"required_labels,omitempty"`
-	Clear          bool                `json:"clear"`
-	Target         string              `json:"target,omitempty"`
-	WarnPct        *int                `json:"warn_pct,omitempty"`
-	HardPct        *int                `json:"hard_pct,omitempty"`
-	Assignments    []Assignment        `json:"assignments,omitempty"`
-	Skipped        []StoragePolicySkip `json:"skipped,omitempty"`
+	ID                   string              `json:"id,omitempty"`
+	Created              time.Time           `json:"created,omitempty"`
+	Namespace            string              `json:"namespace,omitempty"`
+	RequiredLabels       map[string]string   `json:"required_labels,omitempty"`
+	RequiredCapabilities []string            `json:"required_capabilities,omitempty"`
+	Clear                bool                `json:"clear"`
+	Target               string              `json:"target,omitempty"`
+	WarnPct              *int                `json:"warn_pct,omitempty"`
+	HardPct              *int                `json:"hard_pct,omitempty"`
+	Assignments          []Assignment        `json:"assignments,omitempty"`
+	Skipped              []StoragePolicySkip `json:"skipped,omitempty"`
 }
 
 type StorageBudgetListFilter struct {
@@ -559,23 +568,25 @@ type StorageBudgetListResult struct {
 }
 
 type StoragePruneRequest struct {
-	Namespace      string            `json:"namespace,omitempty"`
-	RequiredLabels map[string]string `json:"required_labels,omitempty"`
-	Category       string            `json:"category,omitempty"`
-	OlderThan      string            `json:"older_than,omitempty"`
-	Apply          bool              `json:"apply,omitempty"`
+	Namespace            string            `json:"namespace,omitempty"`
+	RequiredLabels       map[string]string `json:"required_labels,omitempty"`
+	RequiredCapabilities []string          `json:"required_capabilities,omitempty"`
+	Category             string            `json:"category,omitempty"`
+	OlderThan            string            `json:"older_than,omitempty"`
+	Apply                bool              `json:"apply,omitempty"`
 }
 
 type StoragePruneResult struct {
-	ID             string              `json:"id,omitempty"`
-	Created        time.Time           `json:"created,omitempty"`
-	Namespace      string              `json:"namespace,omitempty"`
-	RequiredLabels map[string]string   `json:"required_labels,omitempty"`
-	Category       string              `json:"category,omitempty"`
-	OlderThan      string              `json:"older_than,omitempty"`
-	Apply          bool                `json:"apply"`
-	Assignments    []Assignment        `json:"assignments,omitempty"`
-	Skipped        []StoragePolicySkip `json:"skipped,omitempty"`
+	ID                   string              `json:"id,omitempty"`
+	Created              time.Time           `json:"created,omitempty"`
+	Namespace            string              `json:"namespace,omitempty"`
+	RequiredLabels       map[string]string   `json:"required_labels,omitempty"`
+	RequiredCapabilities []string            `json:"required_capabilities,omitempty"`
+	Category             string              `json:"category,omitempty"`
+	OlderThan            string              `json:"older_than,omitempty"`
+	Apply                bool                `json:"apply"`
+	Assignments          []Assignment        `json:"assignments,omitempty"`
+	Skipped              []StoragePolicySkip `json:"skipped,omitempty"`
 }
 
 type StoragePruneListFilter struct {

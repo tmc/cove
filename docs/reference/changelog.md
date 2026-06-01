@@ -54,6 +54,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   `required_capabilities`, persist the constraint, expose it in status
   responses, and replenish or create work only on workers that report every
   requested capability.
+- `cove-fleetd` image preparation, image-GC, lifecycle-policy, storage budget,
+  and storage prune fan-out now accept `required_capabilities`, persist the
+  selector, expose it in retained run results, and only queue assignments on
+  workers that report every requested capability.
 - `cove-fleetd` now exposes `GET /v1/assignments/{id}/events` for
   assignment-scoped audit history, and global audit queries now accept
   `assignment_id`.
