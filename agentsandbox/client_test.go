@@ -345,14 +345,18 @@ func TestCloudClientPlansSandboxPlacement(t *testing.T) {
 	}
 
 	page, err := ListPlacementPlans(ctx, PlacementPlanListOptions{
-		FleetURL:  server.URL,
-		APIKey:    "secret",
-		Namespace: "team-a",
-		Policy:    "image-affinity",
-		ImageRef:  "base:v1",
-		Offset:    1,
-		Limit:     2,
-		Timeout:   time.Second,
+		FleetURL:            server.URL,
+		APIKey:              "secret",
+		Namespace:           "team-a",
+		Policy:              "image-affinity",
+		ImageRef:            "base:v1",
+		ImageManifestDigest: "sha256:base",
+		ImageDigestRef:      "ghcr.io/me/base@sha256:base",
+		ImagePlatform:       "darwin/arm64",
+		RequiredCapability:  "ram-overlay",
+		Offset:              1,
+		Limit:               2,
+		Timeout:             time.Second,
 	})
 	if err != nil {
 		t.Fatalf("ListPlacementPlans: %v", err)
@@ -375,7 +379,7 @@ func TestCloudClientPlansSandboxPlacement(t *testing.T) {
 	if len(server.requests) != 3 || server.requests[1].path != "/v1/placements/plans" || server.requests[2].path != "/v1/placements/plans/placement-plan-1" {
 		t.Fatalf("placement paths = %+v", server.requests)
 	}
-	if query := server.requests[1].query; query.Get("namespace") != "team-a" || query.Get("policy") != "image-affinity" || query.Get("image_ref") != "base:v1" || query.Get("offset") != "1" || query.Get("limit") != "2" {
+	if query := server.requests[1].query; query.Get("namespace") != "team-a" || query.Get("policy") != "image-affinity" || query.Get("image_ref") != "base:v1" || query.Get("image_manifest_digest") != "sha256:base" || query.Get("image_digest_ref") != "ghcr.io/me/base@sha256:base" || query.Get("image_platform") != "darwin/arm64" || query.Get("required_capability") != "ram-overlay" || query.Get("offset") != "1" || query.Get("limit") != "2" {
 		t.Fatalf("placement plan list query = %q", query.Encode())
 	}
 }
@@ -2590,6 +2594,8 @@ func sdkPlacementPlan() PlacementPlan {
 		Namespace:            "team-a",
 		Policy:               "image-affinity",
 		ImageRef:             "base:v1",
+		ImageManifestDigest:  "sha256:base",
+		ImageDigestRef:       "ghcr.io/me/base@sha256:base",
 		ImagePlatform:        "darwin/arm64",
 		RequiredLabels:       map[string]string{"zone": "desk"},
 		RequiredCapabilities: []string{"ram-overlay", "asif"},

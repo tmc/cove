@@ -3478,6 +3478,27 @@ func TestStorePlansPlacementCandidates(t *testing.T) {
 	if page.Count != 1 || len(page.Plans) != 1 || page.Plans[0].ID != plan.ID {
 		t.Fatalf("placement plan page = %+v, want persisted plan %s", page, plan.ID)
 	}
+	digestPlan, err := store.PlanAssignment(Assignment{
+		Policy:               PolicyImageAffinity,
+		ImageRef:             "macos-runner:latest",
+		ImageManifestDigest:  "sha256:runner",
+		ImageDigestRef:       "registry.example/macos-runner@sha256:runner",
+		ImagePlatform:        "darwin/arm64",
+		RequiredCapabilities: []string{"asif"},
+		Verb:                 "cove",
+	}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page = store.ListPlacementPlansPage(PlacementPlanListFilter{
+		ImageManifestDigest: "sha256:runner",
+		ImageDigestRef:      "registry.example/macos-runner@sha256:runner",
+		ImagePlatform:       "darwin/arm64",
+		RequiredCapability:  "asif",
+	})
+	if page.Count != 1 || len(page.Plans) != 1 || page.Plans[0].ID != digestPlan.ID {
+		t.Fatalf("provenance placement plan page = %+v, want %s", page, digestPlan.ID)
+	}
 	reopened, err := OpenStore(path, time.Minute)
 	if err != nil {
 		t.Fatal(err)
@@ -5953,16 +5974,26 @@ func TestHandlerPlansPlacement(t *testing.T) {
 	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-a", Namespace: "team-a", Token: "token-a"}, &account)
 	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-b", Namespace: "team-b", Token: "token-b"}, &account)
 	var record HostRecord
-	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "warm", ImageRefs: []string{"macos-runner:latest"}, Capacity: Capacity{VMs: 1, MaxVMs: 3}}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{
+		ID:           "warm",
+		Capabilities: []string{"ram-overlay"},
+		ImageRefs:    []string{"macos-runner:latest"},
+		ImageDetails: []WorkerImage{{Ref: "macos-runner:latest", SourceManifestDigest: "sha256:runner"}},
+		Capacity:     Capacity{VMs: 1, MaxVMs: 3},
+	}, &record)
 	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "cold", Capacity: Capacity{VMs: 0, MaxVMs: 3}}, &record)
 
 	var plan PlacementPlan
 	postJSONAuth(t, server.URL+"/v1/placements/plan", "token-a", PlacementPlanRequest{
 		Assignment: Assignment{
-			Policy:    PolicyImageAffinity,
-			ImageRef:  "macos-runner:latest",
-			Resources: Capacity{VMs: 2},
-			Verb:      "cove",
+			Policy:               PolicyImageAffinity,
+			ImageRef:             "macos-runner:latest",
+			ImageManifestDigest:  "sha256:runner",
+			ImageDigestRef:       "registry.example/macos-runner@sha256:runner",
+			ImagePlatform:        "darwin/arm64",
+			RequiredCapabilities: []string{"ram-overlay"},
+			Resources:            Capacity{VMs: 2},
+			Verb:                 "cove",
 		},
 		Limit: 1,
 	}, &plan)
@@ -5976,7 +6007,7 @@ func TestHandlerPlansPlacement(t *testing.T) {
 		t.Fatalf("candidate = %+v, want warm image candidate", got)
 	}
 	var list PlacementPlanListResult
-	getJSONAuth(t, server.URL+"/v1/placements/plans?policy=image-affinity&image_ref=macos-runner:latest&limit=1", "token-a", &list)
+	getJSONAuth(t, server.URL+"/v1/placements/plans?policy=image-affinity&image_ref=macos-runner:latest&image_manifest_digest=sha256:runner&image_digest_ref=registry.example%2Fmacos-runner%40sha256:runner&image_platform=darwin%2Farm64&required_capability=ram-overlay&limit=1", "token-a", &list)
 	if list.Count != 1 || len(list.Plans) != 1 || list.Plans[0].ID != plan.ID {
 		t.Fatalf("placement plan list = %+v, want %s", list, plan.ID)
 	}

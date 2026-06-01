@@ -1449,6 +1449,10 @@ func (s *Store) ListPlacementPlansPage(filter PlacementPlanListFilter) Placement
 	filter.Namespace = normalizeNamespace(filter.Namespace)
 	filter.Policy = strings.TrimSpace(filter.Policy)
 	filter.ImageRef = strings.TrimSpace(filter.ImageRef)
+	filter.ImageManifestDigest = strings.TrimSpace(filter.ImageManifestDigest)
+	filter.ImageDigestRef = strings.TrimSpace(filter.ImageDigestRef)
+	filter.ImagePlatform = strings.TrimSpace(filter.ImagePlatform)
+	filter.RequiredCapability = strings.TrimSpace(filter.RequiredCapability)
 	if filter.Offset < 0 {
 		filter.Offset = 0
 	}
@@ -1467,6 +1471,18 @@ func (s *Store) ListPlacementPlansPage(filter PlacementPlanListFilter) Placement
 			continue
 		}
 		if filter.ImageRef != "" && plan.ImageRef != filter.ImageRef {
+			continue
+		}
+		if filter.ImageManifestDigest != "" && plan.ImageManifestDigest != filter.ImageManifestDigest {
+			continue
+		}
+		if filter.ImageDigestRef != "" && plan.ImageDigestRef != filter.ImageDigestRef {
+			continue
+		}
+		if filter.ImagePlatform != "" && plan.ImagePlatform != filter.ImagePlatform {
+			continue
+		}
+		if filter.RequiredCapability != "" && !containsString(plan.RequiredCapabilities, filter.RequiredCapability) {
 			continue
 		}
 		filtered = append(filtered, plan)

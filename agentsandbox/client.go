@@ -170,15 +170,19 @@ type PlacementSkip struct {
 }
 
 type PlacementPlanListOptions struct {
-	FleetURL  string
-	APIKey    string
-	Namespace string
-	Policy    string
-	ImageRef  string
-	Offset    int
-	Limit     int
-	Timeout   time.Duration
-	HTTP      *http.Client
+	FleetURL            string
+	APIKey              string
+	Namespace           string
+	Policy              string
+	ImageRef            string
+	ImageManifestDigest string
+	ImageDigestRef      string
+	ImagePlatform       string
+	RequiredCapability  string
+	Offset              int
+	Limit               int
+	Timeout             time.Duration
+	HTTP                *http.Client
 }
 
 type PlacementPlanGetOptions struct {
@@ -1837,9 +1841,13 @@ func ListPlacementPlans(ctx context.Context, opts PlacementPlanListOptions) (Pla
 		return PlacementPlanListResult{}, err
 	}
 	query := map[string]string{
-		"namespace": opts.Namespace,
-		"policy":    opts.Policy,
-		"image_ref": opts.ImageRef,
+		"namespace":             opts.Namespace,
+		"policy":                opts.Policy,
+		"image_ref":             opts.ImageRef,
+		"image_manifest_digest": opts.ImageManifestDigest,
+		"image_digest_ref":      opts.ImageDigestRef,
+		"image_platform":        opts.ImagePlatform,
+		"required_capability":   opts.RequiredCapability,
 	}
 	if opts.Offset > 0 {
 		query["offset"] = strconv.Itoa(opts.Offset)

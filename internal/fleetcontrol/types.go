@@ -701,11 +701,15 @@ type PlacementPlan struct {
 }
 
 type PlacementPlanListFilter struct {
-	Namespace string `json:"namespace,omitempty"`
-	Policy    string `json:"policy,omitempty"`
-	ImageRef  string `json:"image_ref,omitempty"`
-	Offset    int    `json:"offset,omitempty"`
-	Limit     int    `json:"limit,omitempty"`
+	Namespace           string `json:"namespace,omitempty"`
+	Policy              string `json:"policy,omitempty"`
+	ImageRef            string `json:"image_ref,omitempty"`
+	ImageManifestDigest string `json:"image_manifest_digest,omitempty"`
+	ImageDigestRef      string `json:"image_digest_ref,omitempty"`
+	ImagePlatform       string `json:"image_platform,omitempty"`
+	RequiredCapability  string `json:"required_capability,omitempty"`
+	Offset              int    `json:"offset,omitempty"`
+	Limit               int    `json:"limit,omitempty"`
 }
 
 type PlacementPlanListResult struct {

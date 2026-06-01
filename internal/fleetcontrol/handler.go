@@ -2483,9 +2483,13 @@ func handlePlacementPlanRecord(w http.ResponseWriter, r *http.Request, store *St
 
 func placementPlanListFilterFromRequest(r *http.Request, namespace string) (PlacementPlanListFilter, error) {
 	filter := PlacementPlanListFilter{
-		Namespace: namespace,
-		Policy:    strings.TrimSpace(r.URL.Query().Get("policy")),
-		ImageRef:  strings.TrimSpace(r.URL.Query().Get("image_ref")),
+		Namespace:           namespace,
+		Policy:              strings.TrimSpace(r.URL.Query().Get("policy")),
+		ImageRef:            strings.TrimSpace(r.URL.Query().Get("image_ref")),
+		ImageManifestDigest: strings.TrimSpace(r.URL.Query().Get("image_manifest_digest")),
+		ImageDigestRef:      strings.TrimSpace(r.URL.Query().Get("image_digest_ref")),
+		ImagePlatform:       strings.TrimSpace(r.URL.Query().Get("image_platform")),
+		RequiredCapability:  strings.TrimSpace(r.URL.Query().Get("required_capability")),
 	}
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		limit, err := strconv.Atoi(raw)

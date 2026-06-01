@@ -536,7 +536,7 @@ Placement planning endpoint:
 curl -X POST http://127.0.0.1:9758/v1/placements/plan \
   -H 'content-type: application/json' \
   -d '{"policy":"image-affinity","image_ref":"macos-runner:latest","manifest_bundle":"manifests","image_platform":"darwin/arm64","required_capabilities":["ram-overlay"],"anti_affinity_key":"ci/buildkite","resources":{"vms":1},"limit":5}'
-curl 'http://127.0.0.1:9758/v1/placements/plans?policy=image-affinity&limit=20'
+curl 'http://127.0.0.1:9758/v1/placements/plans?policy=image-affinity&image_manifest_digest=sha256:...&required_capability=ram-overlay&limit=20'
 curl http://127.0.0.1:9758/v1/placements/plans/placement-plan-...
 ```
 
@@ -555,7 +555,8 @@ handler verifies the offline bundle and resolves the selected manifest digest
 before ranking workers.
 Each plan response is persisted with `id`, `created`, and the requested
 candidate `limit`. `GET /v1/placements/plans` returns paginated plan history
-with `policy`, `image_ref`, `offset`, and `limit` filters; scoped
+with `policy`, `image_ref`, `image_manifest_digest`, `image_digest_ref`,
+`image_platform`, `required_capability`, `offset`, and `limit` filters; scoped
 service-account tokens only see plans in their namespace. The
 `GET /v1/placements/plans/{id}` endpoint returns one retained plan or `404`
 across namespace boundaries.
@@ -1037,12 +1038,14 @@ if err != nil {
 log.Printf("controller runs=%d", runs.Count)
 
 plans, err := agentsandbox.ListPlacementPlans(ctx, agentsandbox.PlacementPlanListOptions{
-	FleetURL:  "https://fleet.internal.example",
-	APIKey:    os.Getenv("COVE_API_KEY"),
-	Namespace: "team-a",
-	Policy:    "image-affinity",
-	ImageRef:  "macos-base:latest",
-	Limit:     20,
+	FleetURL:            "https://fleet.internal.example",
+	APIKey:              os.Getenv("COVE_API_KEY"),
+	Namespace:           "team-a",
+	Policy:              "image-affinity",
+	ImageRef:            "macos-base:latest",
+	ImageManifestDigest: "sha256:...",
+	RequiredCapability:  "ram-overlay",
+	Limit:               20,
 })
 if err != nil {
 	log.Fatal(err)

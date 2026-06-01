@@ -349,6 +349,10 @@ def test_fleet_client_plan_sandbox() -> None:
             namespace="team-a",
             policy="image-affinity",
             image_ref="base:v1",
+            image_manifest_digest="sha256:base",
+            image_digest_ref="ghcr.io/me/base@sha256:base",
+            image_platform="darwin/arm64",
+            required_capability="ram-overlay",
             offset=1,
             limit=2,
         )
@@ -371,6 +375,10 @@ def test_fleet_client_plan_sandbox() -> None:
         assert query["namespace"] == ["team-a"]
         assert query["policy"] == ["image-affinity"]
         assert query["image_ref"] == ["base:v1"]
+        assert query["image_manifest_digest"] == ["sha256:base"]
+        assert query["image_digest_ref"] == ["ghcr.io/me/base@sha256:base"]
+        assert query["image_platform"] == ["darwin/arm64"]
+        assert query["required_capability"] == ["ram-overlay"]
         assert query["offset"] == ["1"]
         assert query["limit"] == ["2"]
 
@@ -1772,6 +1780,8 @@ def _placement_plan() -> dict[str, object]:
         "namespace": "team-a",
         "policy": "image-affinity",
         "image_ref": "base:v1",
+        "image_manifest_digest": "sha256:base",
+        "image_digest_ref": "ghcr.io/me/base@sha256:base",
         "image_platform": "darwin/arm64",
         "required_labels": {"zone": "desk"},
         "required_capabilities": ["ram-overlay", "asif"],

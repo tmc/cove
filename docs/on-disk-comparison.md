@@ -137,7 +137,8 @@ delegates the disk/runtime work to `tart` or `vetu`.
    capabilities; the operations summary reports per-capability coverage by
    worker status, so operators can see whether RAM-overlay capacity is ready,
    placement plans retain skipped-worker reasons for capability, capacity,
-   label, status, and exact-image mismatches, and assignment, placement-plan,
+   label, status, and exact-image mismatches and can be filtered by immutable
+   image provenance and required capability, and assignment, placement-plan,
    warm-pool, sandbox, and image-preparation
    requests can carry or resolve the selected digest from an offline
    `manifest_bundle`, so stale mutable refs are rejected or force-refreshed
