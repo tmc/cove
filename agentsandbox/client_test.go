@@ -253,6 +253,114 @@ func TestCloudClientRejectsNegativePlacementLimit(t *testing.T) {
 	}
 }
 
+func TestCloudClientImagePreparation(t *testing.T) {
+	server := newSDKFleetServer(t)
+	ctx := context.Background()
+	result, err := PrepareImage(ctx, ImagePrepareOptions{
+		FleetURL:             server.URL,
+		APIKey:               "secret",
+		Namespace:            "team-a",
+		ImageRef:             "base:v1",
+		ManifestBundle:       "manifests",
+		ImageManifestDigest:  "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+		ImageDigestRef:       "ghcr.io/me/base@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+		ImagePlatform:        "darwin/arm64",
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay", "asif", ""},
+		Force:                true,
+		Timeout:              time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ID != "image-prepare-1" || len(result.Assignments) != 1 || result.Assignments[0].WorkerID != "worker-1" {
+		t.Fatalf("PrepareImage = %+v, want image-prepare-1 worker-1", result)
+	}
+	if len(result.Skipped) != 1 || result.Skipped[0].WorkerID != "worker-2" || result.Skipped[0].Reason != "present" {
+		t.Fatalf("PrepareImage skipped = %+v, want worker-2 present", result.Skipped)
+	}
+	page, err := ListImagePreparations(ctx, ImagePrepareListOptions{
+		FleetURL:            server.URL,
+		APIKey:              "secret",
+		Namespace:           "team-a",
+		SourceRef:           "ghcr.io/me/base@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+		ImageRef:            "base:v1",
+		ImageManifestDigest: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+		Offset:              2,
+		Limit:               5,
+		Timeout:             time.Second,
+	})
+	if err != nil {
+		t.Fatalf("ListImagePreparations: %v", err)
+	}
+	if page.Count != 1 || page.Offset != 2 || page.Limit != 5 || len(page.Preparations) != 1 || page.Preparations[0].ID != "image-prepare-1" {
+		t.Fatalf("ListImagePreparations = %+v, want one image-prepare-1 page", page)
+	}
+	got, err := GetImagePreparation(ctx, ImagePrepareGetOptions{
+		FleetURL: server.URL,
+		APIKey:   "secret",
+		ID:       "image-prepare-1",
+		Timeout:  time.Second,
+	})
+	if err != nil {
+		t.Fatalf("GetImagePreparation: %v", err)
+	}
+	if got.ID != "image-prepare-1" || got.ImageDigestRef == "" || got.ImagePlatform != "darwin/arm64" {
+		t.Fatalf("GetImagePreparation = %+v, want retained image identity", got)
+	}
+
+	paths := []string{server.requests[0].path, server.requests[1].path, server.requests[2].path}
+	wantPaths := []string{"/v1/images/prepare", "/v1/images/preparations", "/v1/images/preparations/image-prepare-1"}
+	if !equalStringSlices(paths, wantPaths) {
+		t.Fatalf("paths = %+v, want %+v", paths, wantPaths)
+	}
+	for _, req := range server.requests[:3] {
+		if req.authorization != "Bearer secret" {
+			t.Fatalf("authorization for %s = %q, want bearer token", req.path, req.authorization)
+		}
+	}
+	body := server.requests[0].body
+	if body["namespace"] != "team-a" || body["image_ref"] != "base:v1" || body["manifest_bundle"] != "manifests" || body["force"] != true {
+		t.Fatalf("prepare body = %+v, want image identity and force", body)
+	}
+	if _, ok := body["source_ref"]; ok {
+		t.Fatalf("prepare source_ref = %v, want manifest bundle to resolve source", body["source_ref"])
+	}
+	if body["image_manifest_digest"] == "" || body["image_digest_ref"] == "" || body["image_platform"] != "darwin/arm64" {
+		t.Fatalf("prepare digest body = %+v, want digest identity", body)
+	}
+	labels, ok := body["required_labels"].(map[string]any)
+	if !ok || labels["zone"] != "desk" {
+		t.Fatalf("prepare labels = %+v, want zone=desk", body["required_labels"])
+	}
+	if !equalAnyStringSlice(body["required_capabilities"], []string{"ram-overlay", "asif"}) {
+		t.Fatalf("prepare capabilities = %+v, want ram-overlay/asif", body["required_capabilities"])
+	}
+	query := server.requests[1].query
+	if query.Get("namespace") != "team-a" || query.Get("source_ref") == "" || query.Get("image_ref") != "base:v1" || query.Get("image_manifest_digest") == "" || query.Get("offset") != "2" || query.Get("limit") != "5" {
+		t.Fatalf("prepare list query = %q", query.Encode())
+	}
+}
+
+func TestCloudClientImagePreparationValidation(t *testing.T) {
+	ctx := context.Background()
+	if _, err := PrepareImage(ctx, ImagePrepareOptions{FleetURL: "https://fleet.example", APIKey: "secret", ImageRef: "base:v1"}); err == nil || !strings.Contains(err.Error(), "source ref or manifest bundle required") {
+		t.Fatalf("PrepareImage missing source err = %v, want validation error", err)
+	}
+	if _, err := PrepareImage(ctx, ImagePrepareOptions{FleetURL: "https://fleet.example", APIKey: "secret", SourceRef: "ghcr.io/me/base:latest"}); err == nil || !strings.Contains(err.Error(), "image ref required") {
+		t.Fatalf("PrepareImage missing image err = %v, want validation error", err)
+	}
+	if _, err := ListImagePreparations(ctx, ImagePrepareListOptions{FleetURL: "https://fleet.example", APIKey: "secret", Limit: -1}); err == nil || !strings.Contains(err.Error(), "limit must be non-negative") {
+		t.Fatalf("ListImagePreparations negative limit err = %v, want validation error", err)
+	}
+	if _, err := ListImagePreparations(ctx, ImagePrepareListOptions{FleetURL: "https://fleet.example", APIKey: "secret", Offset: -1}); err == nil || !strings.Contains(err.Error(), "offset must be non-negative") {
+		t.Fatalf("ListImagePreparations negative offset err = %v, want validation error", err)
+	}
+	if _, err := GetImagePreparation(ctx, ImagePrepareGetOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "id required") {
+		t.Fatalf("GetImagePreparation missing id err = %v, want validation error", err)
+	}
+}
+
 func TestCloudClientWarmPools(t *testing.T) {
 	server := newSDKFleetServer(t)
 	ctx := context.Background()
@@ -632,6 +740,17 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 		}
 		server.requests = append(server.requests, req)
 		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/images/prepare":
+			writeSDKJSON(t, w, sdkImagePrepareResult())
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/images/preparations":
+			writeSDKJSON(t, w, ImagePrepareListResult{
+				Preparations: []ImagePrepareResult{sdkImagePrepareResult()},
+				Count:        1,
+				Offset:       atoiDefault(r.URL.Query().Get("offset"), 0),
+				Limit:        atoiDefault(r.URL.Query().Get("limit"), 0),
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/images/preparations/image-prepare-1":
+			writeSDKJSON(t, w, sdkImagePrepareResult())
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/warm-pools":
 			status := sdkWarmPoolStatus()
 			writeSDKJSON(t, w, WarmPoolResult{
@@ -765,6 +884,43 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 	server.Server = httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 	return server
+}
+
+func sdkImagePrepareResult() ImagePrepareResult {
+	const digest = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+	digestRef := "ghcr.io/me/base@" + digest
+	return ImagePrepareResult{
+		ID:                  "image-prepare-1",
+		Namespace:           "team-a",
+		SourceRef:           digestRef,
+		ImageRef:            "base:v1",
+		ImageManifestDigest: digest,
+		ImageDigestRef:      digestRef,
+		ImagePlatform:       "darwin/arm64",
+		RequiredLabels:      map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{
+			"ram-overlay",
+			"asif",
+		},
+		Assignments: []Assignment{{
+			ID:                  "assignment-prepare-1",
+			Namespace:           "team-a",
+			WorkerID:            "worker-1",
+			ImageRef:            "base:v1",
+			ImageManifestDigest: digest,
+			ImageDigestRef:      digestRef,
+			ImagePlatform:       "darwin/arm64",
+			RequiredLabels:      map[string]string{"zone": "desk"},
+			RequiredCapabilities: []string{
+				"ram-overlay",
+				"asif",
+			},
+			Verb:   "cove",
+			Args:   []string{"image", "pull", "-tag", "base:v1", "-force", digestRef},
+			Status: "pending",
+		}},
+		Skipped: []ImagePrepareSkip{{WorkerID: "worker-2", Reason: "present"}},
+	}
 }
 
 func sdkWarmPoolStatus() WarmPoolStatus {

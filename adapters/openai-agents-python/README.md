@@ -172,13 +172,26 @@ handle on close when `delete_on_close=True`. Set
 offline bundle and admits the sandbox only on workers with matching image
 provenance. Pass `required_labels` for operator-defined selectors and
 `required_capabilities` to restrict hosted placement to workers that advertise
-runtime traits such as `ram-overlay`.
+runtime traits such as `ram-overlay`. The direct fleet client can also queue
+image preparation before placement or warm-pool replenishment.
 
 For direct fleet-client code, `CoveFleetClient` covers hosted sandbox and
 warm-pool lifecycles:
 
 ```python
 from cove_sandbox import CoveFleetClient
+
+prepare = CoveFleetClient.prepare_image(
+    fleet_url="https://fleet.internal.example",
+    api_key="cove_...",
+    namespace="team-a",
+    image_ref="macos-base:latest",
+    manifest_bundle="manifests",
+    image_platform="darwin/arm64",
+    required_labels={"zone": "desk"},
+    required_capabilities=("ram-overlay",),
+)
+print(len(prepare["assignments"]), len(prepare["skipped"]))
 
 plan = CoveFleetClient.plan_sandbox(
     fleet_url="https://fleet.internal.example",

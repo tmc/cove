@@ -9,6 +9,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 
 ### Added
 - The public Go `agentsandbox` package and OpenAI Agents Python adapter now
+  expose hosted image-preparation controls. SDK callers can queue
+  manifest-bundle-backed pulls to label- and capability-filtered workers, then
+  list or inspect retained preparation results before placement.
+- The public Go `agentsandbox` package and OpenAI Agents Python adapter now
   expose hosted warm-pool lifecycle controls. SDK callers can ensure, list,
   inspect, claim, read events for, and delete fork warm pools before running
   hosted agent jobs.

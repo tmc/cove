@@ -406,6 +406,129 @@ class CoveFleetClient:
         return plan
 
     @classmethod
+    def prepare_image(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        image_ref: str,
+        source_ref: str | None = None,
+        manifest_bundle: str | None = None,
+        image_manifest_digest: str | None = None,
+        image_digest_ref: str | None = None,
+        image_platform: str | None = None,
+        required_labels: Mapping[str, str] | None = None,
+        required_capabilities: Sequence[str] | str | None = None,
+        force: bool = False,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        image_ref = image_ref.strip()
+        source_ref = (source_ref or "").strip()
+        manifest_bundle = (manifest_bundle or "").strip()
+        if not image_ref:
+            raise ValueError("image_ref is required")
+        if not source_ref and not manifest_bundle:
+            raise ValueError("source_ref or manifest_bundle is required")
+        body: dict[str, object] = {"image_ref": image_ref}
+        if source_ref:
+            body["source_ref"] = source_ref
+        if namespace:
+            body["namespace"] = namespace
+        if manifest_bundle:
+            body["manifest_bundle"] = manifest_bundle
+        if image_manifest_digest and image_manifest_digest.strip():
+            body["image_manifest_digest"] = image_manifest_digest.strip()
+        if image_digest_ref and image_digest_ref.strip():
+            body["image_digest_ref"] = image_digest_ref.strip()
+        if image_platform and image_platform.strip():
+            body["image_platform"] = image_platform.strip()
+        labels = _clean_string_map(required_labels)
+        if labels:
+            body["required_labels"] = labels
+        capabilities = _clean_string_list(required_capabilities)
+        if capabilities:
+            body["required_capabilities"] = capabilities
+        if force:
+            body["force"] = True
+        seed = cls(
+            sandbox_id="image-prepare",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        result = seed._request("POST", "/v1/images/prepare", body, timeout=timeout)
+        _normalize_dict_list(result, "assignments", "POST /v1/images/prepare")
+        _normalize_dict_list(result, "skipped", "POST /v1/images/prepare")
+        return result
+
+    @classmethod
+    def list_image_preparations(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        source_ref: str = "",
+        image_ref: str = "",
+        image_manifest_digest: str = "",
+        offset: int = 0,
+        limit: int = 0,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        if offset < 0:
+            raise ValueError("image preparation offset must be non-negative")
+        if limit < 0:
+            raise ValueError("image preparation limit must be non-negative")
+        seed = cls(
+            sandbox_id="image-preparations",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        query = {
+            "namespace": namespace or "",
+            "source_ref": source_ref,
+            "image_ref": image_ref,
+            "image_manifest_digest": image_manifest_digest,
+            "offset": str(offset) if offset else "",
+            "limit": str(limit) if limit else "",
+        }
+        data = seed._request("GET", _query_path("/v1/images/preparations", query), timeout=timeout)
+        preparations = data.get("preparations") or []
+        if not isinstance(preparations, list):
+            raise CoveError("GET /v1/images/preparations: expected preparations list")
+        page = dict(data)
+        page["preparations"] = [dict(item) for item in preparations if isinstance(item, dict)]
+        page["count"] = int(page.get("count") or len(page["preparations"]))
+        return page
+
+    @classmethod
+    def get_image_preparation(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        preparation_id: str,
+        api_key: str | None = None,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        preparation_id = preparation_id.strip()
+        if not preparation_id:
+            raise ValueError("image preparation id is required")
+        seed = cls(
+            sandbox_id="image-preparation",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            timeout=timeout,
+        )
+        result = seed._request("GET", _image_preparation_path(preparation_id), timeout=timeout)
+        _normalize_dict_list(result, "assignments", "GET /v1/images/preparations")
+        _normalize_dict_list(result, "skipped", "GET /v1/images/preparations")
+        return result
+
+    @classmethod
     def ensure_warm_pool(
         cls,
         *,
@@ -1109,6 +1232,10 @@ def _warm_pool_path(name: str, action: str = "") -> str:
     if action:
         path += "/" + urllib.parse.quote(action, safe="")
     return path
+
+
+def _image_preparation_path(preparation_id: str) -> str:
+    return "/v1/images/preparations/" + urllib.parse.quote(preparation_id, safe="")
 
 
 def _query_path(path: str, values: Mapping[str, str]) -> str:

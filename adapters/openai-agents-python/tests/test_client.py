@@ -246,6 +246,81 @@ def test_fleet_client_plan_sandbox() -> None:
         server.stop()
 
 
+def test_fleet_client_image_preparation() -> None:
+    server = _FleetHTTPServer()
+    server.start()
+    try:
+        digest = "sha256:" + "1" * 64
+        digest_ref = "ghcr.io/me/base@" + digest
+        result = CoveFleetClient.prepare_image(
+            fleet_url=server.url,
+            api_key="secret",
+            namespace="team-a",
+            image_ref="base:v1",
+            manifest_bundle="manifests",
+            image_manifest_digest=digest,
+            image_digest_ref=digest_ref,
+            image_platform="darwin/arm64",
+            required_labels={"zone": "desk"},
+            required_capabilities=("ram-overlay", "asif", ""),
+            force=True,
+        )
+        assert result["id"] == "image-prepare-1"
+        assert result["assignments"][0]["worker_id"] == "worker-1"
+        assert result["skipped"][0] == {"worker_id": "worker-2", "reason": "present"}
+
+        page = CoveFleetClient.list_image_preparations(
+            fleet_url=server.url,
+            api_key="secret",
+            namespace="team-a",
+            source_ref=digest_ref,
+            image_ref="base:v1",
+            image_manifest_digest=digest,
+            offset=2,
+            limit=5,
+        )
+        assert page["count"] == 1
+        assert page["offset"] == 2
+        assert page["limit"] == 5
+        assert page["preparations"][0]["id"] == "image-prepare-1"
+
+        got = CoveFleetClient.get_image_preparation(
+            fleet_url=server.url,
+            api_key="secret",
+            preparation_id="image-prepare-1",
+        )
+        assert got["id"] == "image-prepare-1"
+        assert got["image_digest_ref"] == digest_ref
+        assert got["image_platform"] == "darwin/arm64"
+
+        paths = [request["path"] for request in server.requests[-3:]]
+        assert paths == [
+            "/v1/images/prepare",
+            "/v1/images/preparations",
+            "/v1/images/preparations/image-prepare-1",
+        ]
+        prepare = server.requests[-3]["body"]
+        assert prepare["namespace"] == "team-a"
+        assert "source_ref" not in prepare
+        assert prepare["image_ref"] == "base:v1"
+        assert prepare["manifest_bundle"] == "manifests"
+        assert prepare["image_manifest_digest"] == digest
+        assert prepare["image_digest_ref"] == digest_ref
+        assert prepare["image_platform"] == "darwin/arm64"
+        assert prepare["required_labels"] == {"zone": "desk"}
+        assert prepare["required_capabilities"] == ["ram-overlay", "asif"]
+        assert prepare["force"] is True
+        query = server.requests[-2]["query"]
+        assert query["namespace"] == ["team-a"]
+        assert query["source_ref"] == [digest_ref]
+        assert query["image_ref"] == ["base:v1"]
+        assert query["image_manifest_digest"] == [digest]
+        assert query["offset"] == ["2"]
+        assert query["limit"] == ["5"]
+    finally:
+        server.stop()
+
+
 def test_fleet_client_warm_pools() -> None:
     server = _FleetHTTPServer()
     server.start()
@@ -525,6 +600,38 @@ def _metering(sandbox_id: str) -> dict[str, object]:
     }
 
 
+def _image_prepare_result() -> dict[str, object]:
+    digest = "sha256:" + "1" * 64
+    digest_ref = "ghcr.io/me/base@" + digest
+    assignment = {
+        "id": "assignment-prepare-1",
+        "namespace": "team-a",
+        "worker_id": "worker-1",
+        "image_ref": "base:v1",
+        "image_manifest_digest": digest,
+        "image_digest_ref": digest_ref,
+        "image_platform": "darwin/arm64",
+        "required_labels": {"zone": "desk"},
+        "required_capabilities": ["ram-overlay", "asif"],
+        "verb": "cove",
+        "args": ["image", "pull", "-tag", "base:v1", "-force", digest_ref],
+        "status": "pending",
+    }
+    return {
+        "id": "image-prepare-1",
+        "namespace": "team-a",
+        "source_ref": digest_ref,
+        "image_ref": "base:v1",
+        "image_manifest_digest": digest,
+        "image_digest_ref": digest_ref,
+        "image_platform": "darwin/arm64",
+        "required_labels": {"zone": "desk"},
+        "required_capabilities": ["ram-overlay", "asif"],
+        "assignments": [assignment],
+        "skipped": [{"worker_id": "worker-2", "reason": "present"}],
+    }
+
+
 def _warm_pool_status() -> dict[str, object]:
     assignment = {
         "id": "warm-slot-1",
@@ -657,6 +764,19 @@ class _FleetHTTPServer:
                 if path == "/v1/warm-pools/runner":
                     self._write(_warm_pool_status())
                     return
+                if path == "/v1/images/preparations":
+                    self._write(
+                        {
+                            "preparations": [_image_prepare_result()],
+                            "count": 1,
+                            "offset": int(query.get("offset", ["0"])[0]),
+                            "limit": int(query.get("limit", ["0"])[0]),
+                        }
+                    )
+                    return
+                if path == "/v1/images/preparations/image-prepare-1":
+                    self._write(_image_prepare_result())
+                    return
                 if path == "/v1/sandboxes":
                     self._write(
                         {
@@ -779,6 +899,9 @@ class _FleetHTTPServer:
                             },
                         }
                     )
+                    return
+                if path == "/v1/images/prepare":
+                    self._write(_image_prepare_result())
                     return
                 if path == "/v1/placements/plan":
                     self._write(

@@ -173,6 +173,72 @@ type Assignment struct {
 	LastReport           *WorkerReport     `json:"last_report,omitempty"`
 }
 
+type ImagePrepareOptions struct {
+	FleetURL             string
+	APIKey               string
+	Namespace            string
+	SourceRef            string
+	ImageRef             string
+	ManifestBundle       string
+	ImageManifestDigest  string
+	ImageDigestRef       string
+	ImagePlatform        string
+	RequiredLabels       map[string]string
+	RequiredCapabilities []string
+	Force                bool
+	Timeout              time.Duration
+	HTTP                 *http.Client
+}
+
+type ImagePrepareListOptions struct {
+	FleetURL            string
+	APIKey              string
+	Namespace           string
+	SourceRef           string
+	ImageRef            string
+	ImageManifestDigest string
+	Offset              int
+	Limit               int
+	Timeout             time.Duration
+	HTTP                *http.Client
+}
+
+type ImagePrepareGetOptions struct {
+	FleetURL string
+	APIKey   string
+	ID       string
+	Timeout  time.Duration
+	HTTP     *http.Client
+}
+
+type ImagePrepareResult struct {
+	ID                   string             `json:"id,omitempty"`
+	Created              time.Time          `json:"created,omitempty"`
+	Namespace            string             `json:"namespace,omitempty"`
+	SourceRef            string             `json:"source_ref"`
+	ImageRef             string             `json:"image_ref"`
+	ImageManifestDigest  string             `json:"image_manifest_digest,omitempty"`
+	ImageDigestRef       string             `json:"image_digest_ref,omitempty"`
+	ImagePlatform        string             `json:"image_platform,omitempty"`
+	RequiredLabels       map[string]string  `json:"required_labels,omitempty"`
+	RequiredCapabilities []string           `json:"required_capabilities,omitempty"`
+	Assignments          []Assignment       `json:"assignments,omitempty"`
+	Skipped              []ImagePrepareSkip `json:"skipped,omitempty"`
+}
+
+type ImagePrepareSkip struct {
+	WorkerID string `json:"worker_id"`
+	Reason   string `json:"reason"`
+}
+
+type ImagePrepareListResult struct {
+	Preparations []ImagePrepareResult `json:"preparations"`
+	Count        int                  `json:"count"`
+	Offset       int                  `json:"offset,omitempty"`
+	Limit        int                  `json:"limit,omitempty"`
+	NextOffset   int                  `json:"next_offset,omitempty"`
+}
+
 type WarmPoolOptions struct {
 	FleetURL             string
 	APIKey               string
@@ -620,6 +686,104 @@ func Plan(ctx context.Context, opts ClientOptions) (PlacementPlan, error) {
 		return PlacementPlan{}, err
 	}
 	return plan, nil
+}
+
+func PrepareImage(ctx context.Context, opts ImagePrepareOptions) (ImagePrepareResult, error) {
+	sourceRef := strings.TrimSpace(opts.SourceRef)
+	manifestBundle := strings.TrimSpace(opts.ManifestBundle)
+	if sourceRef == "" && manifestBundle == "" {
+		return ImagePrepareResult{}, errors.New("agentsandbox: image prepare source ref or manifest bundle required")
+	}
+	imageRef := strings.TrimSpace(opts.ImageRef)
+	if imageRef == "" {
+		return ImagePrepareResult{}, errors.New("agentsandbox: image prepare image ref required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "image-prepare")
+	if err != nil {
+		return ImagePrepareResult{}, err
+	}
+	body := map[string]any{"image_ref": imageRef}
+	if sourceRef != "" {
+		body["source_ref"] = sourceRef
+	}
+	if ns := strings.TrimSpace(opts.Namespace); ns != "" {
+		body["namespace"] = ns
+	}
+	if manifestBundle != "" {
+		body["manifest_bundle"] = manifestBundle
+	}
+	if digest := strings.TrimSpace(opts.ImageManifestDigest); digest != "" {
+		body["image_manifest_digest"] = digest
+	}
+	if digestRef := strings.TrimSpace(opts.ImageDigestRef); digestRef != "" {
+		body["image_digest_ref"] = digestRef
+	}
+	if platform := strings.TrimSpace(opts.ImagePlatform); platform != "" {
+		body["image_platform"] = platform
+	}
+	if labels := cleanStringMap(opts.RequiredLabels); len(labels) > 0 {
+		body["required_labels"] = labels
+	}
+	if capabilities := cleanStrings(opts.RequiredCapabilities); len(capabilities) > 0 {
+		body["required_capabilities"] = capabilities
+	}
+	if opts.Force {
+		body["force"] = true
+	}
+	var result ImagePrepareResult
+	if err := c.request(ctx, http.MethodPost, "/v1/images/prepare", body, &result, c.timeout); err != nil {
+		return ImagePrepareResult{}, err
+	}
+	return result, nil
+}
+
+func ListImagePreparations(ctx context.Context, opts ImagePrepareListOptions) (ImagePrepareListResult, error) {
+	if opts.Limit < 0 {
+		return ImagePrepareListResult{}, errors.New("agentsandbox: image preparation limit must be non-negative")
+	}
+	if opts.Offset < 0 {
+		return ImagePrepareListResult{}, errors.New("agentsandbox: image preparation offset must be non-negative")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "image-preparations")
+	if err != nil {
+		return ImagePrepareListResult{}, err
+	}
+	query := map[string]string{
+		"namespace":             opts.Namespace,
+		"source_ref":            opts.SourceRef,
+		"image_ref":             opts.ImageRef,
+		"image_manifest_digest": opts.ImageManifestDigest,
+	}
+	if opts.Offset > 0 {
+		query["offset"] = strconv.Itoa(opts.Offset)
+	}
+	if opts.Limit > 0 {
+		query["limit"] = strconv.Itoa(opts.Limit)
+	}
+	var result ImagePrepareListResult
+	if err := c.request(ctx, http.MethodGet, c.queryPath("/v1/images/preparations", query), nil, &result, c.timeout); err != nil {
+		return ImagePrepareListResult{}, err
+	}
+	if result.Count == 0 && len(result.Preparations) > 0 {
+		result.Count = len(result.Preparations)
+	}
+	return result, nil
+}
+
+func GetImagePreparation(ctx context.Context, opts ImagePrepareGetOptions) (ImagePrepareResult, error) {
+	id := strings.TrimSpace(opts.ID)
+	if id == "" {
+		return ImagePrepareResult{}, errors.New("agentsandbox: image preparation id required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "image-preparation")
+	if err != nil {
+		return ImagePrepareResult{}, err
+	}
+	var result ImagePrepareResult
+	if err := c.request(ctx, http.MethodGet, imagePreparationPath(id), nil, &result, c.timeout); err != nil {
+		return ImagePrepareResult{}, err
+	}
+	return result, nil
 }
 
 func EnsureWarmPool(ctx context.Context, opts WarmPoolOptions) (WarmPoolResult, error) {
@@ -1639,6 +1803,10 @@ func warmPoolPath(name, action string) string {
 		path += "/" + url.PathEscape(action)
 	}
 	return path
+}
+
+func imagePreparationPath(id string) string {
+	return "/v1/images/preparations/" + url.PathEscape(id)
 }
 
 func (c *Client) queryPath(path string, values map[string]string) string {
