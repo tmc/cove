@@ -840,6 +840,11 @@ func sandboxListFilterFromRequest(r *http.Request, namespace string) (SandboxLis
 		return SandboxListFilter{}, err
 	}
 	filter.HasOpenAssignments = hasOpen
+	retrying, err := sandboxRetryingFilterFromRequest(r, "sandbox")
+	if err != nil {
+		return SandboxListFilter{}, err
+	}
+	filter.Retrying = retrying
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		limit, err := strconv.Atoi(raw)
 		if err != nil || limit < 0 {
@@ -1755,6 +1760,11 @@ func workerSandboxesFilterFromRequest(r *http.Request, namespace, id string) (Sa
 		return SandboxListFilter{}, err
 	}
 	filter.HasOpenAssignments = hasOpen
+	retrying, err := sandboxRetryingFilterFromRequest(r, "worker sandboxes")
+	if err != nil {
+		return SandboxListFilter{}, err
+	}
+	filter.Retrying = retrying
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		limit, err := strconv.Atoi(raw)
 		if err != nil || limit < 0 {
@@ -1773,16 +1783,27 @@ func workerSandboxesFilterFromRequest(r *http.Request, namespace, id string) (Sa
 }
 
 func sandboxListBoolFilterFromRequest(r *http.Request, name string) (*bool, error) {
-	raw := strings.TrimSpace(r.URL.Query().Get("has_open_assignments"))
-	if raw == "" {
-		raw = strings.TrimSpace(r.URL.Query().Get("open_assignments"))
+	return boolFilterFromRequest(r, name, "has_open_assignments", "open_assignments")
+}
+
+func sandboxRetryingFilterFromRequest(r *http.Request, name string) (*bool, error) {
+	return boolFilterFromRequest(r, name, "retrying", "has_retry")
+}
+
+func boolFilterFromRequest(r *http.Request, name, field string, aliases ...string) (*bool, error) {
+	raw := strings.TrimSpace(r.URL.Query().Get(field))
+	for _, alias := range aliases {
+		if raw != "" {
+			break
+		}
+		raw = strings.TrimSpace(r.URL.Query().Get(alias))
 	}
 	if raw == "" {
 		return nil, nil
 	}
 	value, err := strconv.ParseBool(raw)
 	if err != nil {
-		return nil, fmt.Errorf("%s has_open_assignments must be true or false", name)
+		return nil, fmt.Errorf("%s %s must be true or false", name, field)
 	}
 	return &value, nil
 }

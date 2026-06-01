@@ -1887,6 +1887,9 @@ func (s *Store) ListSandboxesPage(filter SandboxListFilter) SandboxListResult {
 		if filter.HasOpenAssignments != nil && (len(sandbox.OpenAssignments) > 0) != *filter.HasOpenAssignments {
 			continue
 		}
+		if filter.Retrying != nil && sandboxRetrying(sandbox) != *filter.Retrying {
+			continue
+		}
 		if offset < filter.Offset {
 			offset++
 			continue
@@ -1899,6 +1902,10 @@ func (s *Store) ListSandboxesPage(filter SandboxListFilter) SandboxListResult {
 	}
 	result.Count = len(result.Sandboxes)
 	return result
+}
+
+func sandboxRetrying(status SandboxStatus) bool {
+	return normalizeOperationStatus(status.Status) == "pending" && status.Attempt > 0
 }
 
 func (s *Store) ListSandboxMetering(namespace, sandboxID string) SandboxMeteringResult {

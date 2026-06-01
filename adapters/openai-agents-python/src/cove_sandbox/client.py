@@ -1585,6 +1585,7 @@ class CoveFleetClient:
         status: str = "",
         image_ref: str = "",
         has_open_assignments: bool | None = None,
+        retrying: bool | None = None,
         offset: int = 0,
         limit: int = 0,
         timeout: float = 30.0,
@@ -1608,6 +1609,7 @@ class CoveFleetClient:
             "status": status,
             "image_ref": image_ref,
             "has_open_assignments": _bool_query(has_open_assignments),
+            "retrying": _bool_query(retrying),
             "offset": str(offset) if offset else "",
             "limit": str(limit) if limit else "",
         }
@@ -2310,6 +2312,7 @@ class CoveFleetClient:
         worker_id: str | None = None,
         image_ref: str | None = None,
         has_open_assignments: bool | None = None,
+        retrying: bool | None = None,
         offset: int | None = None,
         limit: int | None = None,
         timeout: float = 30.0,
@@ -2322,6 +2325,7 @@ class CoveFleetClient:
             worker_id=worker_id,
             image_ref=image_ref,
             has_open_assignments=has_open_assignments,
+            retrying=retrying,
             offset=offset,
             limit=limit,
             timeout=timeout,
@@ -2339,6 +2343,7 @@ class CoveFleetClient:
         worker_id: str | None = None,
         image_ref: str | None = None,
         has_open_assignments: bool | None = None,
+        retrying: bool | None = None,
         offset: int | None = None,
         limit: int | None = None,
         timeout: float = 30.0,
@@ -2355,6 +2360,7 @@ class CoveFleetClient:
             worker_id=worker_id,
             image_ref=image_ref,
             has_open_assignments=has_open_assignments,
+            retrying=retrying,
             offset=offset,
             limit=limit,
         )
@@ -2366,6 +2372,7 @@ class CoveFleetClient:
         worker_id: str | None = None,
         image_ref: str | None = None,
         has_open_assignments: bool | None = None,
+        retrying: bool | None = None,
         offset: int | None = None,
         limit: int | None = None,
     ) -> list[dict[str, Any]]:
@@ -2374,6 +2381,7 @@ class CoveFleetClient:
             worker_id=worker_id,
             image_ref=image_ref,
             has_open_assignments=has_open_assignments,
+            retrying=retrying,
             offset=offset,
             limit=limit,
         )
@@ -2386,6 +2394,7 @@ class CoveFleetClient:
         worker_id: str | None = None,
         image_ref: str | None = None,
         has_open_assignments: bool | None = None,
+        retrying: bool | None = None,
         offset: int | None = None,
         limit: int | None = None,
     ) -> dict[str, Any]:
@@ -2395,6 +2404,7 @@ class CoveFleetClient:
             "worker_id": worker_id or "",
             "image_ref": image_ref or "",
             "has_open_assignments": _bool_query(has_open_assignments),
+            "retrying": _bool_query(retrying),
         }
         if limit is not None:
             if limit < 0:

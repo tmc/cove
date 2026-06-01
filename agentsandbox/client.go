@@ -102,6 +102,7 @@ type SandboxListOptions struct {
 	WorkerID           string
 	ImageRef           string
 	HasOpenAssignments *bool
+	Retrying           *bool
 	Offset             int
 	Limit              int
 }
@@ -980,6 +981,7 @@ type WorkerSandboxListOptions struct {
 	Status             string
 	ImageRef           string
 	HasOpenAssignments *bool
+	Retrying           *bool
 	Offset             int
 	Limit              int
 	Timeout            time.Duration
@@ -2862,6 +2864,9 @@ func ListWorkerSandboxes(ctx context.Context, opts WorkerSandboxListOptions) (Sa
 	if opts.HasOpenAssignments != nil {
 		query["has_open_assignments"] = strconv.FormatBool(*opts.HasOpenAssignments)
 	}
+	if opts.Retrying != nil {
+		query["retrying"] = strconv.FormatBool(*opts.Retrying)
+	}
 	if opts.Offset > 0 {
 		query["offset"] = strconv.Itoa(opts.Offset)
 	}
@@ -3514,7 +3519,14 @@ func sandboxMatchesListOptions(status SandboxStatus, options SandboxListOptions)
 	if options.HasOpenAssignments != nil && (len(status.OpenAssignments) > 0) != *options.HasOpenAssignments {
 		return false
 	}
+	if options.Retrying != nil && sandboxStatusRetrying(status) != *options.Retrying {
+		return false
+	}
 	return true
+}
+
+func sandboxStatusRetrying(status SandboxStatus) bool {
+	return status.Status == "pending" && status.Attempt > 0
 }
 
 func (o SandboxListOptions) query() (map[string]string, error) {
@@ -3532,6 +3544,9 @@ func (o SandboxListOptions) query() (map[string]string, error) {
 	}
 	if o.HasOpenAssignments != nil {
 		query["has_open_assignments"] = strconv.FormatBool(*o.HasOpenAssignments)
+	}
+	if o.Retrying != nil {
+		query["retrying"] = strconv.FormatBool(*o.Retrying)
 	}
 	if o.Offset > 0 {
 		query["offset"] = strconv.Itoa(o.Offset)

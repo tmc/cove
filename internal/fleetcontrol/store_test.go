@@ -822,6 +822,14 @@ func TestStoreSandboxAutoRetryKeepsAdmission(t *testing.T) {
 	if retrying.Attempt != 1 || retrying.MaxAttempts != 2 || retrying.RetryDelay != "1s" || !retrying.RetryAt.Equal(now.Add(time.Second)) || retrying.RetryRemainingMillis != 1000 {
 		t.Fatalf("retrying diagnostics = %+v, want attempt 1/2 retry at +1s with 1000ms remaining", retrying)
 	}
+	isRetrying := true
+	if got := store.ListSandboxesFiltered(SandboxListFilter{Namespace: "team-a", Retrying: &isRetrying}); len(got) != 1 || got[0].ID != "job-1" {
+		t.Fatalf("retrying sandboxes = %+v, want job-1", got)
+	}
+	isRetrying = false
+	if got := store.ListSandboxesFiltered(SandboxListFilter{Namespace: "team-a", Retrying: &isRetrying}); len(got) != 0 {
+		t.Fatalf("non-retrying sandboxes = %+v, want none", got)
+	}
 	wait, err := store.WaitSandbox("job-1")
 	if err != nil {
 		t.Fatal(err)
@@ -6917,11 +6925,24 @@ func TestHandlerSandboxRetryDiagnostics(t *testing.T) {
 	getJSON(t, server.URL+"/v1/sandboxes/job-1", &got)
 	var list SandboxListResult
 	getJSON(t, server.URL+"/v1/sandboxes?status=pending", &list)
-	var wait SandboxWaitResult
-	postJSON(t, server.URL+"/v1/sandboxes/job-1/wait?status=ready&timeout=0", map[string]string{}, &wait)
 	if len(list.Sandboxes) != 1 {
 		t.Fatalf("sandbox list = %+v, want one pending retry", list)
 	}
+	var retryList SandboxListResult
+	getJSON(t, server.URL+"/v1/sandboxes?retrying=true", &retryList)
+	if len(retryList.Sandboxes) != 1 || retryList.Sandboxes[0].ID != "job-1" {
+		t.Fatalf("retrying sandbox filter = %+v, want job-1", retryList)
+	}
+	var workerList SandboxListResult
+	getJSON(t, server.URL+"/v1/workers/worker-1/sandboxes?retrying=false", &workerList)
+	if len(workerList.Sandboxes) != 0 {
+		t.Fatalf("worker non-retrying sandbox filter = %+v, want none", workerList)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/sandboxes?retrying=bad", ""); code != http.StatusBadRequest {
+		t.Fatalf("bad retrying filter status = %d, want 400", code)
+	}
+	var wait SandboxWaitResult
+	postJSON(t, server.URL+"/v1/sandboxes/job-1/wait?status=ready&timeout=0", map[string]string{}, &wait)
 	cases := []struct {
 		name string
 		got  SandboxStatus

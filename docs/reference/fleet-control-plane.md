@@ -691,13 +691,15 @@ optional positive Go duration that delays the next lease and is surfaced as
 `retry_at` on the assignment.
 
 `GET /v1/sandboxes` accepts `namespace`, `status`, `worker_id`, `image_ref`,
-`offset`, and `limit` query parameters. Namespace-scoped bearer tokens still
-force their own namespace, and `offset`/`limit` must be non-negative. Filters
+`has_open_assignments`, `retrying`, `offset`, and `limit` query parameters.
+Namespace-scoped bearer tokens still force their own namespace, and
+`offset`/`limit` must be non-negative. The boolean `retrying` filter matches
+pending handles that have already consumed at least one worker lease. Filters
 apply after reconciliation, then `offset` skips matching handles and `limit`
 caps the response. The result includes `sandboxes`, `count`, `offset`, `limit`,
 and `next_offset` when another page is available, so clients can ask for ready
-handles, draining cleanup, a single worker, or a base image without fetching
-the whole controller inventory.
+handles, draining cleanup, retry backoff, a single worker, or a base image
+without fetching the whole controller inventory.
 
 `POST /v1/sandboxes/{id}/lease` acquires or renews an exclusive client lease on
 the sandbox handle. The optional `holder` defaults to the authenticated actor;
