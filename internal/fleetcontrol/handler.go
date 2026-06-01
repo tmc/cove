@@ -109,6 +109,9 @@ func Handler(store *Store) http.Handler {
 	mux.HandleFunc("/v1/operations/summary", func(w http.ResponseWriter, r *http.Request) {
 		handleOperationsSummary(w, r, store)
 	})
+	mux.HandleFunc("/v1/operations/runs/", func(w http.ResponseWriter, r *http.Request) {
+		handleControllerRun(w, r, store)
+	})
 	mux.HandleFunc("/v1/operations/runs", func(w http.ResponseWriter, r *http.Request) {
 		handleControllerRuns(w, r, store)
 	})
@@ -313,6 +316,28 @@ func handleControllerRuns(w http.ResponseWriter, r *http.Request, store *Store) 
 		return
 	}
 	writeJSON(w, http.StatusOK, store.ListControllerRunsPage(filter))
+}
+
+func handleControllerRun(w http.ResponseWriter, r *http.Request, store *Store) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	id, err := nameFromPath(r.URL.Path, "/v1/operations/runs/", "controller run")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	detail, ok := store.GetControllerRun(id)
+	if !ok || !canAccessNamespace(identity, detail.Summary.Namespace) {
+		writeError(w, http.StatusNotFound, "controller run not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, detail)
 }
 
 func controllerRunListFilterFromRequest(r *http.Request, namespace string) (ControllerRunListFilter, error) {

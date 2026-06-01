@@ -5033,6 +5033,17 @@ func TestStoreListControllerRunsPage(t *testing.T) {
 	if planFilter.Count != 1 || len(planFilter.Runs) != 1 || planFilter.Runs[0].ID != plan.ID {
 		t.Fatalf("plan provenance controller runs = %+v, want placement plan %s", planFilter, plan.ID)
 	}
+	detail, ok := store.GetControllerRun(prep.ID)
+	if !ok || detail.Summary.ID != prep.ID || detail.Summary.Kind != ControllerRunKindImagePrepare || detail.ImagePreparation == nil || detail.ImagePreparation.ImageDigestRef != "registry.example/tool@sha256:tool" {
+		t.Fatalf("controller run detail = %+v, %v, want image preparation %s", detail, ok, prep.ID)
+	}
+	planDetail, ok := store.GetControllerRun(plan.ID)
+	if !ok || planDetail.Summary.ID != plan.ID || planDetail.Summary.Kind != ControllerRunKindPlacementPlan || planDetail.PlacementPlan == nil || planDetail.PlacementPlan.ImageManifestDigest != "sha256:base" {
+		t.Fatalf("placement controller run detail = %+v, %v, want placement plan %s", planDetail, ok, plan.ID)
+	}
+	if _, ok := store.GetControllerRun("missing"); ok {
+		t.Fatalf("missing controller run found")
+	}
 	storage := store.ListControllerRunsPage(ControllerRunListFilter{Namespace: "team-a", TargetType: "storage"})
 	if storage.Count != 2 || len(storage.Runs) != 2 {
 		t.Fatalf("storage controller runs = %+v, want budget and prune", storage)
@@ -6406,6 +6417,17 @@ func TestHandlerControllerRuns(t *testing.T) {
 	getJSONAuth(t, server.URL+"/v1/operations/runs?kind=image.prepare&source_ref=registry.example%2Frunner%3Av1&image_ref=runner:v1&image_manifest_digest=sha256:runner&image_digest_ref=registry.example%2Frunner%40sha256:runner&image_platform=darwin%2Farm64&required_capability=ram-overlay&limit=1", "token-a", &page)
 	if page.Count != 1 || len(page.Runs) != 1 || page.Runs[0].ID != prep.ID || page.Runs[0].Fields["image_digest_ref"] != "registry.example/runner@sha256:runner" {
 		t.Fatalf("filtered controller runs = %+v, want image prepare %s", page, prep.ID)
+	}
+	var detail ControllerRunDetail
+	getJSONAuth(t, server.URL+"/v1/operations/runs/"+prep.ID, "token-a", &detail)
+	if detail.Summary.ID != prep.ID || detail.Summary.Kind != ControllerRunKindImagePrepare || detail.ImagePreparation == nil || detail.ImagePreparation.ImagePlatform != "darwin/arm64" {
+		t.Fatalf("controller run detail = %+v, want image prepare %s", detail, prep.ID)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/operations/runs/"+prep.ID, "token-b"); code != http.StatusNotFound {
+		t.Fatalf("team-b controller run detail status = %d, want %d", code, http.StatusNotFound)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/operations/runs/missing", "token-a"); code != http.StatusNotFound {
+		t.Fatalf("missing controller run detail status = %d, want %d", code, http.StatusNotFound)
 	}
 	page = ControllerRunListResult{}
 	getJSONAuth(t, server.URL+"/v1/operations/runs", "token-b", &page)

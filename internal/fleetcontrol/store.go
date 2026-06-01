@@ -3603,6 +3603,76 @@ func (s *Store) ListControllerRunsPage(filter ControllerRunListFilter) Controlle
 	return result
 }
 
+func (s *Store) GetControllerRun(id string) (ControllerRunDetail, bool) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return ControllerRunDetail{}, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, plan := range s.plans {
+		if plan.ID != id {
+			continue
+		}
+		plan = clonePlacementPlan(plan)
+		return ControllerRunDetail{
+			Summary:       controllerRunFromPlacementPlan(plan),
+			PlacementPlan: &plan,
+		}, true
+	}
+	for _, prep := range s.preparations {
+		if prep.ID != id {
+			continue
+		}
+		prep = cloneImagePrepareResult(prep)
+		return ControllerRunDetail{
+			Summary:          controllerRunFromImagePrepare(prep),
+			ImagePreparation: &prep,
+		}, true
+	}
+	for _, run := range s.imageGCRuns {
+		if run.ID != id {
+			continue
+		}
+		run = cloneImageGCResult(run)
+		return ControllerRunDetail{
+			Summary: controllerRunFromImageGC(run),
+			ImageGC: &run,
+		}, true
+	}
+	for _, run := range s.lifecycleRuns {
+		if run.ID != id {
+			continue
+		}
+		run = cloneLifecyclePolicyResult(run)
+		return ControllerRunDetail{
+			Summary:         controllerRunFromLifecyclePolicy(run),
+			LifecyclePolicy: &run,
+		}, true
+	}
+	for _, run := range s.storageBudgetRuns {
+		if run.ID != id {
+			continue
+		}
+		run = cloneStorageBudgetResult(run)
+		return ControllerRunDetail{
+			Summary:       controllerRunFromStorageBudget(run),
+			StorageBudget: &run,
+		}, true
+	}
+	for _, run := range s.storagePruneRuns {
+		if run.ID != id {
+			continue
+		}
+		run = cloneStoragePruneResult(run)
+		return ControllerRunDetail{
+			Summary:      controllerRunFromStoragePrune(run),
+			StoragePrune: &run,
+		}, true
+	}
+	return ControllerRunDetail{}, false
+}
+
 func controllerRunFieldMatches(fields map[string]string, key, want string) bool {
 	if fields == nil {
 		return false

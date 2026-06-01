@@ -673,6 +673,16 @@ type ControllerRunListResult struct {
 	NextOffset int                    `json:"next_offset,omitempty"`
 }
 
+type ControllerRunDetail struct {
+	Summary          ControllerRunSummary   `json:"summary"`
+	PlacementPlan    *PlacementPlan         `json:"placement_plan,omitempty"`
+	ImagePreparation *ImagePrepareResult    `json:"image_preparation,omitempty"`
+	ImageGC          *ImageGCResult         `json:"image_gc,omitempty"`
+	LifecyclePolicy  *LifecyclePolicyResult `json:"lifecycle_policy,omitempty"`
+	StorageBudget    *StorageBudgetResult   `json:"storage_budget,omitempty"`
+	StoragePrune     *StoragePruneResult    `json:"storage_prune,omitempty"`
+}
+
 type ControllerRunSummary struct {
 	ID              string            `json:"id"`
 	Created         time.Time         `json:"created"`

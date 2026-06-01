@@ -735,6 +735,13 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 	if runs.Count != 1 || runs.Runs[0].Kind != "storage.prune" || runs.Runs[0].AssignmentCount != 1 {
 		t.Fatalf("ListControllerRuns = %+v, want storage prune summary", runs)
 	}
+	runDetail, err := GetControllerRun(ctx, ControllerRunGetOptions{FleetURL: server.URL, APIKey: "secret", ID: "storage-prune-1", Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("GetControllerRun: %v", err)
+	}
+	if runDetail.Summary.ID != "storage-prune-1" || runDetail.Summary.Kind != "storage.prune" || runDetail.StoragePrune == nil || runDetail.StoragePrune.OlderThan != "48h" {
+		t.Fatalf("GetControllerRun = %+v, want storage prune detail", runDetail)
+	}
 	reconcilePlan, err := PlanReconcile(ctx, ReconcileOptions{FleetURL: server.URL, APIKey: "secret", Timeout: time.Second})
 	if err != nil {
 		t.Fatalf("PlanReconcile: %v", err)
@@ -784,6 +791,7 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 		"/v1/storage/prune/runs",
 		"/v1/storage/prune/runs/storage-prune-1",
 		"/v1/operations/runs",
+		"/v1/operations/runs/storage-prune-1",
 		"/v1/reconcile/plan",
 		"/v1/reconcile",
 		"/v1/operations/summary",
@@ -815,10 +823,10 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 	if query := server.requests[12].query; query.Get("kind") != "storage.prune" || query.Get("target_type") != "storage" || query.Get("namespace") != "team-a" || query.Get("source_ref") != "registry.example/base:v1" || query.Get("image_ref") != "base:v1" || query.Get("image_manifest_digest") != "sha256:base" || query.Get("image_digest_ref") != "registry.example/base@sha256:base" || query.Get("image_platform") != "darwin/arm64" || query.Get("required_capability") != "ram-overlay" {
 		t.Fatalf("controller runs query = %q", query.Encode())
 	}
-	if body := server.requests[14].body; len(body) != 0 {
+	if body := server.requests[15].body; len(body) != 0 {
 		t.Fatalf("reconcile body = %+v, want empty body", body)
 	}
-	if query := server.requests[15].query; query.Get("namespace") != "team-a" {
+	if query := server.requests[16].query; query.Get("namespace") != "team-a" {
 		t.Fatalf("operations summary query = %q", query.Encode())
 	}
 }
@@ -1716,6 +1724,9 @@ func TestCloudClientMaintenanceValidation(t *testing.T) {
 	if _, err := ListControllerRuns(ctx, ControllerRunListOptions{FleetURL: "https://fleet.example", APIKey: "secret", Offset: -1}); err == nil || !strings.Contains(err.Error(), "offset must be non-negative") {
 		t.Fatalf("ListControllerRuns negative offset err = %v, want validation error", err)
 	}
+	if _, err := GetControllerRun(ctx, ControllerRunGetOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "id required") {
+		t.Fatalf("GetControllerRun missing id err = %v, want validation error", err)
+	}
 }
 
 func TestCloudClientWarmPools(t *testing.T) {
@@ -2199,6 +2210,22 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 				Count:  1,
 				Offset: atoiDefault(r.URL.Query().Get("offset"), 0),
 				Limit:  atoiDefault(r.URL.Query().Get("limit"), 0),
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/operations/runs/storage-prune-1":
+			run := sdkStoragePruneResult(false)
+			writeSDKJSON(t, w, ControllerRunDetail{
+				Summary: ControllerRunSummary{
+					ID:              "storage-prune-1",
+					Created:         time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC),
+					Namespace:       "team-a",
+					Kind:            "storage.prune",
+					TargetType:      "storage",
+					TargetID:        "build-scratch",
+					AssignmentCount: 1,
+					SkipCount:       1,
+					Fields:          map[string]string{"older_than": "48h", "apply": "true"},
+				},
+				StoragePrune: &run,
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/reconcile/plan":
 			writeSDKJSON(t, w, sdkReconcilePlan())

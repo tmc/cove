@@ -1022,6 +1022,22 @@ class CoveFleetClient:
         return _normalize_run_page(result, "GET /v1/operations/runs")
 
     @classmethod
+    def get_controller_run(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        run_id: str,
+        api_key: str | None = None,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        run_id = run_id.strip()
+        if not run_id:
+            raise ValueError("controller run id is required")
+        seed = cls(sandbox_id="controller-run", fleet_url=fleet_url, api_key=api_key, timeout=timeout)
+        result = seed._request("GET", _controller_run_path(run_id), timeout=timeout)
+        return _normalize_controller_run_detail(result, "GET /v1/operations/runs")
+
+    @classmethod
     def plan_reconcile(
         cls,
         *,
@@ -3011,6 +3027,26 @@ def _normalize_run_page(data: dict[str, Any], endpoint: str) -> dict[str, Any]:
     return page
 
 
+def _normalize_controller_run_detail(data: dict[str, Any], endpoint: str) -> dict[str, Any]:
+    detail = dict(data)
+    summary = detail.get("summary")
+    if not isinstance(summary, dict):
+        raise CoveError(f"{endpoint}: expected summary object")
+    detail["summary"] = dict(summary)
+    if isinstance(detail.get("placement_plan"), dict):
+        detail["placement_plan"] = _normalize_placement_plan(detail["placement_plan"], endpoint)
+    for key in (
+        "image_preparation",
+        "image_gc",
+        "lifecycle_policy",
+        "storage_budget",
+        "storage_prune",
+    ):
+        if isinstance(detail.get(key), dict):
+            detail[key] = _normalize_run_result(detail[key], endpoint)
+    return detail
+
+
 def _normalize_reconcile_result(data: dict[str, Any], endpoint: str) -> dict[str, Any]:
     result = dict(data)
     for key in (
@@ -3239,6 +3275,10 @@ def _storage_budget_run_path(run_id: str) -> str:
 
 def _storage_prune_run_path(run_id: str) -> str:
     return "/v1/storage/prune/runs/" + urllib.parse.quote(run_id, safe="")
+
+
+def _controller_run_path(run_id: str) -> str:
+    return "/v1/operations/runs/" + urllib.parse.quote(run_id, safe="")
 
 
 def _worker_path(worker_id: str) -> str:

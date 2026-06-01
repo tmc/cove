@@ -238,6 +238,13 @@ runs = CoveFleetClient.list_controller_runs(
     limit=20,
 )
 print(runs["count"])
+if runs["runs"]:
+    detail = CoveFleetClient.get_controller_run(
+        fleet_url="https://fleet.internal.example",
+        api_key="cove_...",
+        run_id=runs["runs"][0]["id"],
+    )
+    print(detail["summary"]["kind"])
 
 plan = CoveFleetClient.plan_sandbox(
     fleet_url="https://fleet.internal.example",

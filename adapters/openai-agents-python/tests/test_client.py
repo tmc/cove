@@ -640,6 +640,14 @@ def test_fleet_client_maintenance_runs() -> None:
         )
         assert runs["runs"][0]["kind"] == "storage.prune"
         assert runs["runs"][0]["assignment_count"] == 1
+        run_detail = CoveFleetClient.get_controller_run(
+            fleet_url=server.url,
+            api_key="secret",
+            run_id="storage-prune-1",
+        )
+        assert run_detail["summary"]["id"] == "storage-prune-1"
+        assert run_detail["summary"]["kind"] == "storage.prune"
+        assert run_detail["storage_prune"]["older_than"] == "48h"
         reconcile_plan = CoveFleetClient.plan_reconcile(
             fleet_url=server.url,
             api_key="secret",
@@ -668,7 +676,7 @@ def test_fleet_client_maintenance_runs() -> None:
         assert summary["warm_pools"]["pools"][0]["name"] == "runner"
         assert summary["metering"]["records"] == 2
 
-        paths = [request["path"] for request in server.requests[-16:]]
+        paths = [request["path"] for request in server.requests[-17:]]
         assert paths == [
             "/v1/images/gc",
             "/v1/images/gc/runs",
@@ -683,28 +691,29 @@ def test_fleet_client_maintenance_runs() -> None:
             "/v1/storage/prune/runs",
             "/v1/storage/prune/runs/storage-prune-1",
             "/v1/operations/runs",
+            "/v1/operations/runs/storage-prune-1",
             "/v1/reconcile/plan",
             "/v1/reconcile",
             "/v1/operations/summary",
         ]
-        assert server.requests[-16]["body"]["required_capabilities"] == ["ram-overlay", "asif"]
-        assert server.requests[-16]["body"]["dry_run"] is True
-        assert server.requests[-15]["query"]["apply"] == ["true"]
-        assert server.requests[-13]["body"]["run_budget"] == 100
-        assert server.requests[-13]["body"]["dry_run"] is True
-        assert server.requests[-12]["query"]["clear"] == ["false"]
-        assert server.requests[-10]["body"]["warn_pct"] == 70
-        assert server.requests[-10]["body"]["dry_run"] is True
-        assert server.requests[-9]["query"]["target"] == ["750GB"]
-        assert server.requests[-7]["body"]["category"] == "build-scratch"
-        assert server.requests[-7]["body"]["dry_run"] is True
-        assert server.requests[-4]["query"]["kind"] == ["storage.prune"]
-        assert server.requests[-4]["query"]["source_ref"] == ["registry.example/base:v1"]
-        assert server.requests[-4]["query"]["image_ref"] == ["base:v1"]
-        assert server.requests[-4]["query"]["image_manifest_digest"] == ["sha256:base"]
-        assert server.requests[-4]["query"]["image_digest_ref"] == ["registry.example/base@sha256:base"]
-        assert server.requests[-4]["query"]["image_platform"] == ["darwin/arm64"]
-        assert server.requests[-4]["query"]["required_capability"] == ["ram-overlay"]
+        assert server.requests[-17]["body"]["required_capabilities"] == ["ram-overlay", "asif"]
+        assert server.requests[-17]["body"]["dry_run"] is True
+        assert server.requests[-16]["query"]["apply"] == ["true"]
+        assert server.requests[-14]["body"]["run_budget"] == 100
+        assert server.requests[-14]["body"]["dry_run"] is True
+        assert server.requests[-13]["query"]["clear"] == ["false"]
+        assert server.requests[-11]["body"]["warn_pct"] == 70
+        assert server.requests[-11]["body"]["dry_run"] is True
+        assert server.requests[-10]["query"]["target"] == ["750GB"]
+        assert server.requests[-8]["body"]["category"] == "build-scratch"
+        assert server.requests[-8]["body"]["dry_run"] is True
+        assert server.requests[-5]["query"]["kind"] == ["storage.prune"]
+        assert server.requests[-5]["query"]["source_ref"] == ["registry.example/base:v1"]
+        assert server.requests[-5]["query"]["image_ref"] == ["base:v1"]
+        assert server.requests[-5]["query"]["image_manifest_digest"] == ["sha256:base"]
+        assert server.requests[-5]["query"]["image_digest_ref"] == ["registry.example/base@sha256:base"]
+        assert server.requests[-5]["query"]["image_platform"] == ["darwin/arm64"]
+        assert server.requests[-5]["query"]["required_capability"] == ["ram-overlay"]
         assert server.requests[-2]["body"] == {}
         assert server.requests[-1]["query"]["namespace"] == ["team-a"]
     finally:
@@ -1449,6 +1458,8 @@ def test_fleet_client_maintenance_validation() -> None:
         CoveFleetClient.push_storage_budget(fleet_url="https://fleet.example", api_key="secret", clear=True, target="1GB")
     with pytest.raises(ValueError, match="controller run offset must be non-negative"):
         CoveFleetClient.list_controller_runs(fleet_url="https://fleet.example", api_key="secret", offset=-1)
+    with pytest.raises(ValueError, match="controller run id is required"):
+        CoveFleetClient.get_controller_run(fleet_url="https://fleet.example", api_key="secret", run_id="")
 
 
 def test_fleet_client_warm_pools() -> None:
@@ -2564,6 +2575,24 @@ class _FleetHTTPServer:
                             "count": 1,
                             "offset": int(query.get("offset", ["0"])[0]),
                             "limit": int(query.get("limit", ["0"])[0]),
+                        }
+                    )
+                    return
+                if path == "/v1/operations/runs/storage-prune-1":
+                    self._write(
+                        {
+                            "summary": {
+                                "id": "storage-prune-1",
+                                "created": "2026-05-31T10:00:00Z",
+                                "namespace": "team-a",
+                                "kind": "storage.prune",
+                                "target_type": "storage",
+                                "target_id": "build-scratch",
+                                "assignment_count": 1,
+                                "skip_count": 1,
+                                "fields": {"older_than": "48h", "apply": "true"},
+                            },
+                            "storage_prune": _storage_prune_result(),
                         }
                     )
                     return

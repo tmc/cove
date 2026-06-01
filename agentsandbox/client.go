@@ -584,12 +584,30 @@ type ControllerRunListOptions struct {
 	HTTP                *http.Client
 }
 
+type ControllerRunGetOptions struct {
+	FleetURL string
+	APIKey   string
+	ID       string
+	Timeout  time.Duration
+	HTTP     *http.Client
+}
+
 type ControllerRunListResult struct {
 	Runs       []ControllerRunSummary `json:"runs"`
 	Count      int                    `json:"count"`
 	Offset     int                    `json:"offset,omitempty"`
 	Limit      int                    `json:"limit,omitempty"`
 	NextOffset int                    `json:"next_offset,omitempty"`
+}
+
+type ControllerRunDetail struct {
+	Summary          ControllerRunSummary   `json:"summary"`
+	PlacementPlan    *PlacementPlan         `json:"placement_plan,omitempty"`
+	ImagePreparation *ImagePrepareResult    `json:"image_preparation,omitempty"`
+	ImageGC          *ImageGCResult         `json:"image_gc,omitempty"`
+	LifecyclePolicy  *LifecyclePolicyResult `json:"lifecycle_policy,omitempty"`
+	StorageBudget    *StorageBudgetResult   `json:"storage_budget,omitempty"`
+	StoragePrune     *StoragePruneResult    `json:"storage_prune,omitempty"`
 }
 
 type ControllerRunSummary struct {
@@ -2354,6 +2372,22 @@ func ListControllerRuns(ctx context.Context, opts ControllerRunListOptions) (Con
 	}
 	if result.Count == 0 && len(result.Runs) > 0 {
 		result.Count = len(result.Runs)
+	}
+	return result, nil
+}
+
+func GetControllerRun(ctx context.Context, opts ControllerRunGetOptions) (ControllerRunDetail, error) {
+	id := strings.TrimSpace(opts.ID)
+	if id == "" {
+		return ControllerRunDetail{}, errors.New("agentsandbox: controller run id required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "controller-run")
+	if err != nil {
+		return ControllerRunDetail{}, err
+	}
+	var result ControllerRunDetail
+	if err := c.request(ctx, http.MethodGet, controllerRunPath(id), nil, &result, c.timeout); err != nil {
+		return ControllerRunDetail{}, err
 	}
 	return result, nil
 }
@@ -4568,6 +4602,10 @@ func storageBudgetRunPath(id string) string {
 
 func storagePruneRunPath(id string) string {
 	return "/v1/storage/prune/runs/" + url.PathEscape(id)
+}
+
+func controllerRunPath(id string) string {
+	return "/v1/operations/runs/" + url.PathEscape(id)
 }
 
 func workerPath(id string) string {
