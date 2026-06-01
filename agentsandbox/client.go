@@ -531,6 +531,103 @@ type ControllerRunSummary struct {
 	Fields          map[string]string `json:"fields,omitempty"`
 }
 
+type OperationsSummaryOptions struct {
+	FleetURL  string
+	APIKey    string
+	Namespace string
+	Timeout   time.Duration
+	HTTP      *http.Client
+}
+
+type WorkerImage struct {
+	Ref                  string `json:"ref"`
+	SourceManifestDigest string `json:"source_manifest_digest,omitempty"`
+}
+
+type HostRecord struct {
+	ID               string            `json:"id"`
+	Host             string            `json:"host,omitempty"`
+	Address          string            `json:"address,omitempty"`
+	Version          string            `json:"version,omitempty"`
+	Labels           map[string]string `json:"labels,omitempty"`
+	Capabilities     []string          `json:"capabilities,omitempty"`
+	ImageRefs        []string          `json:"image_refs,omitempty"`
+	ImageDetails     []WorkerImage     `json:"image_details,omitempty"`
+	Capacity         Capacity          `json:"capacity,omitempty"`
+	Status           string            `json:"status"`
+	Cordoned         bool              `json:"cordoned"`
+	CordonReason     string            `json:"cordon_reason,omitempty"`
+	CordonedAt       time.Time         `json:"cordoned_at,omitempty"`
+	Quarantined      bool              `json:"quarantined"`
+	QuarantineReason string            `json:"quarantine_reason,omitempty"`
+	QuarantinedAt    time.Time         `json:"quarantined_at,omitempty"`
+	LastSeen         time.Time         `json:"last_seen"`
+	Expires          time.Time         `json:"expires"`
+	Report           *WorkerReport     `json:"last_report,omitempty"`
+}
+
+type OperationsSummary struct {
+	Time        time.Time                   `json:"time"`
+	Namespace   string                      `json:"namespace,omitempty"`
+	Workers     WorkerOperationsSummary     `json:"workers"`
+	Assignments AssignmentOperationsSummary `json:"assignments"`
+	Sandboxes   SandboxOperationsSummary    `json:"sandboxes"`
+	WarmPools   WarmPoolOperationsSummary   `json:"warm_pools"`
+	Metering    MeteringSummary             `json:"metering"`
+}
+
+type WorkerOperationsSummary struct {
+	Total        int                       `json:"total"`
+	Ready        int                       `json:"ready"`
+	Cordoned     int                       `json:"cordoned"`
+	Quarantined  int                       `json:"quarantined"`
+	Stale        int                       `json:"stale"`
+	ByStatus     map[string]int            `json:"by_status,omitempty"`
+	Capabilities []WorkerCapabilitySummary `json:"capabilities,omitempty"`
+	Attention    []HostRecord              `json:"attention,omitempty"`
+}
+
+type WorkerCapabilitySummary struct {
+	Name        string         `json:"name"`
+	Total       int            `json:"total"`
+	Ready       int            `json:"ready"`
+	Cordoned    int            `json:"cordoned"`
+	Quarantined int            `json:"quarantined"`
+	Stale       int            `json:"stale"`
+	ByStatus    map[string]int `json:"by_status,omitempty"`
+	Workers     []string       `json:"workers,omitempty"`
+}
+
+type AssignmentOperationsSummary struct {
+	Total             int            `json:"total"`
+	Active            int            `json:"active"`
+	Terminal          int            `json:"terminal"`
+	ByStatus          map[string]int `json:"by_status,omitempty"`
+	ActiveAssignments []Assignment   `json:"active_assignments,omitempty"`
+}
+
+type SandboxOperationsSummary struct {
+	Total             int             `json:"total"`
+	Active            int             `json:"active"`
+	Terminal          int             `json:"terminal"`
+	ByStatus          map[string]int  `json:"by_status,omitempty"`
+	ActiveSandboxes   []SandboxStatus `json:"active_sandboxes,omitempty"`
+	DrainingSandboxes []SandboxStatus `json:"draining_sandboxes,omitempty"`
+}
+
+type WarmPoolOperationsSummary struct {
+	Total    int              `json:"total"`
+	Desired  int              `json:"desired"`
+	Slots    int              `json:"slots"`
+	Active   int              `json:"active"`
+	Ready    int              `json:"ready"`
+	Claimed  int              `json:"claimed"`
+	Draining int              `json:"draining"`
+	Terminal int              `json:"terminal"`
+	ByStatus map[string]int   `json:"by_status,omitempty"`
+	Pools    []WarmPoolStatus `json:"pools,omitempty"`
+}
+
 type WarmPoolOptions struct {
 	FleetURL             string
 	APIKey               string
@@ -1435,6 +1532,19 @@ func ListControllerRuns(ctx context.Context, opts ControllerRunListOptions) (Con
 	}
 	if result.Count == 0 && len(result.Runs) > 0 {
 		result.Count = len(result.Runs)
+	}
+	return result, nil
+}
+
+func GetOperationsSummary(ctx context.Context, opts OperationsSummaryOptions) (OperationsSummary, error) {
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "operations-summary")
+	if err != nil {
+		return OperationsSummary{}, err
+	}
+	query := map[string]string{"namespace": opts.Namespace}
+	var result OperationsSummary
+	if err := c.request(ctx, http.MethodGet, c.queryPath("/v1/operations/summary", query), nil, &result, c.timeout); err != nil {
+		return OperationsSummary{}, err
 	}
 	return result, nil
 }

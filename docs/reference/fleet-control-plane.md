@@ -764,16 +764,18 @@ advertise runtime traits such as `ram-overlay`, `asif`, or `apfs-quota`. The
 same SDKs can dry-run hosted placement before creating a sandbox:
 `agentsandbox.Plan` in Go and `CoveFleetClient.plan_sandbox` in Python return
 the controller's feasible candidates and skipped-worker reasons. They also
-expose image-preparation, maintenance fan-out, retained controller-run history,
-and fork warm-pool lifecycle controls, so hosted agent clients can pre-stage
-exact images, push image GC/lifecycle/storage policy work, inspect operations
+expose image-preparation, maintenance fan-out, the operations dashboard
+summary, retained controller-run history, and fork warm-pool lifecycle
+controls, so hosted agent clients can pre-stage exact images, push image
+GC/lifecycle/storage policy work, inspect fleet pressure and operations
 history, prewarm RAM-overlay slots, claim a ready slot for a guest command,
 read pool events, and delete the pool through the same fleet credentials.
 Maintenance helpers include `PushImageGC`, `PushLifecyclePolicy`,
 `PushStorageBudget`, `PushStoragePrune`, their list/get run companions, and
-`ListControllerRuns` for the aggregate operations timeline. Pass `DryRun` to
-maintenance pushes to inspect planned assignments and structured
-skipped-worker diagnostics without mutating the controller.
+`GetOperationsSummary` plus `ListControllerRuns` for the aggregate operations
+dashboard and timeline. Pass `DryRun` to maintenance pushes to inspect planned
+assignments and structured skipped-worker diagnostics without mutating the
+controller.
 
 Go SDK example:
 
@@ -810,6 +812,16 @@ if err != nil {
 	log.Fatal(err)
 }
 log.Printf("storage prune assignments=%d skipped=%d", len(prune.Assignments), len(prune.Skipped))
+
+summary, err := agentsandbox.GetOperationsSummary(ctx, agentsandbox.OperationsSummaryOptions{
+	FleetURL:  "https://fleet.internal.example",
+	APIKey:    os.Getenv("COVE_API_KEY"),
+	Namespace: "team-a",
+})
+if err != nil {
+	log.Fatal(err)
+}
+log.Printf("ready workers=%d active sandboxes=%d", summary.Workers.Ready, summary.Sandboxes.Active)
 
 runs, err := agentsandbox.ListControllerRuns(ctx, agentsandbox.ControllerRunListOptions{
 	FleetURL:   "https://fleet.internal.example",

@@ -246,6 +246,12 @@ pool = CoveFleetClient.ensure_warm_pool(
     resources={"vms": 1},
 )
 print(pool["pool"]["ready"], pool["pool"]["active"])
+summary = CoveFleetClient.get_operations_summary(
+    fleet_url="https://fleet.internal.example",
+    api_key="cove_...",
+    namespace="team-a",
+)
+print(summary["workers"]["ready"], summary["sandboxes"]["active"])
 claim = CoveFleetClient.claim_warm_pool(
     fleet_url="https://fleet.internal.example",
     api_key="cove_...",
@@ -280,8 +286,9 @@ client.delete_vm()
 
 Maintenance helpers include `push_image_gc`, `push_lifecycle_policy`,
 `push_storage_budget`, `push_storage_prune`, the matching `list_*_runs` /
-`get_*_run` methods, and `list_controller_runs` for the aggregate operations
-timeline. Pass `dry_run=True` to maintenance pushes to inspect planned
+`get_*_run` methods, `get_operations_summary`, and `list_controller_runs` for
+the aggregate operations dashboard and timeline. Pass `dry_run=True` to
+maintenance pushes to inspect planned
 assignments and structured skipped-worker diagnostics without mutating the
 controller.
 

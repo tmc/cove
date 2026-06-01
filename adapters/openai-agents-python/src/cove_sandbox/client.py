@@ -925,6 +925,29 @@ class CoveFleetClient:
         return _normalize_run_page(result, "GET /v1/operations/runs")
 
     @classmethod
+    def get_operations_summary(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        seed = cls(
+            sandbox_id="operations-summary",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        result = seed._request(
+            "GET",
+            _query_path("/v1/operations/summary", {"namespace": namespace or ""}),
+            timeout=timeout,
+        )
+        return _normalize_operations_summary(result, "GET /v1/operations/summary")
+
+    @classmethod
     def ensure_warm_pool(
         cls,
         *,
@@ -1621,6 +1644,22 @@ def _normalize_run_page(data: dict[str, Any], endpoint: str) -> dict[str, Any]:
     _normalize_dict_list(page, "runs", endpoint)
     page["count"] = int(page.get("count") or len(page["runs"]))
     return page
+
+
+def _normalize_operations_summary(data: dict[str, Any], endpoint: str) -> dict[str, Any]:
+    result = dict(data)
+    for key in ("workers", "assignments", "sandboxes", "warm_pools", "metering"):
+        value = result.get(key) or {}
+        if not isinstance(value, dict):
+            raise CoveError(f"{endpoint}: expected {key} object")
+        result[key] = dict(value)
+    _normalize_dict_list(result["workers"], "capabilities", endpoint)
+    _normalize_dict_list(result["workers"], "attention", endpoint)
+    _normalize_dict_list(result["assignments"], "active_assignments", endpoint)
+    _normalize_dict_list(result["sandboxes"], "active_sandboxes", endpoint)
+    _normalize_dict_list(result["sandboxes"], "draining_sandboxes", endpoint)
+    _normalize_dict_list(result["warm_pools"], "pools", endpoint)
+    return result
 
 
 def _normalize_dict_list(data: dict[str, Any], key: str, endpoint: str) -> None:

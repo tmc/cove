@@ -520,6 +520,19 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 	if runs.Count != 1 || runs.Runs[0].Kind != "storage.prune" || runs.Runs[0].AssignmentCount != 1 {
 		t.Fatalf("ListControllerRuns = %+v, want storage prune summary", runs)
 	}
+	summary, err := GetOperationsSummary(ctx, OperationsSummaryOptions{FleetURL: server.URL, APIKey: "secret", Namespace: "team-a", Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("GetOperationsSummary: %v", err)
+	}
+	if summary.Namespace != "team-a" || summary.Workers.Total != 3 || summary.Workers.Ready != 1 || summary.Assignments.Active != 1 || summary.Sandboxes.Active != 1 || summary.WarmPools.Ready != 1 || summary.Metering.Records != 2 {
+		t.Fatalf("GetOperationsSummary = %+v, want team-a dashboard summary", summary)
+	}
+	if len(summary.Workers.Capabilities) != 2 || summary.Workers.Capabilities[0].Name != "asif" || summary.Workers.Capabilities[0].Ready != 1 {
+		t.Fatalf("operations capabilities = %+v, want sorted capability coverage", summary.Workers.Capabilities)
+	}
+	if len(summary.Workers.Attention) != 1 || summary.Workers.Attention[0].ID != "worker-2" || !summary.Workers.Attention[0].Cordoned {
+		t.Fatalf("operations attention workers = %+v, want cordoned worker-2", summary.Workers.Attention)
+	}
 
 	paths := make([]string, 0, len(server.requests))
 	for _, req := range server.requests {
@@ -542,6 +555,7 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 		"/v1/storage/prune/runs",
 		"/v1/storage/prune/runs/storage-prune-1",
 		"/v1/operations/runs",
+		"/v1/operations/summary",
 	}
 	if !equalStringSlices(paths, wantPaths) {
 		t.Fatalf("paths = %+v, want %+v", paths, wantPaths)
@@ -569,6 +583,9 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 	}
 	if query := server.requests[12].query; query.Get("kind") != "storage.prune" || query.Get("target_type") != "storage" || query.Get("namespace") != "team-a" {
 		t.Fatalf("controller runs query = %q", query.Encode())
+	}
+	if query := server.requests[13].query; query.Get("namespace") != "team-a" {
+		t.Fatalf("operations summary query = %q", query.Encode())
 	}
 }
 
@@ -1048,6 +1065,8 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 				Offset: atoiDefault(r.URL.Query().Get("offset"), 0),
 				Limit:  atoiDefault(r.URL.Query().Get("limit"), 0),
 			})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/operations/summary":
+			writeSDKJSON(t, w, sdkOperationsSummary())
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/warm-pools":
 			status := sdkWarmPoolStatus()
 			writeSDKJSON(t, w, WarmPoolResult{
@@ -1316,6 +1335,66 @@ func sdkMaintenanceAssignment(id string, args ...string) Assignment {
 		Verb:                 "cove",
 		Args:                 args,
 		Status:               "pending",
+	}
+}
+
+func sdkOperationsSummary() OperationsSummary {
+	now := time.Date(2026, 5, 31, 10, 5, 0, 0, time.UTC)
+	active := sdkMaintenanceAssignment("assignment-storage-prune-1", "storage", "prune", "build-scratch", "-apply", "-older-than", "48h")
+	active.Status = "running"
+	return OperationsSummary{
+		Time:      now,
+		Namespace: "team-a",
+		Workers: WorkerOperationsSummary{
+			Total:       3,
+			Ready:       1,
+			Cordoned:    1,
+			Quarantined: 1,
+			ByStatus:    map[string]int{"ready": 1, "cordoned": 1, "quarantined": 1},
+			Capabilities: []WorkerCapabilitySummary{
+				{Name: "asif", Total: 2, Ready: 1, Cordoned: 1, ByStatus: map[string]int{"ready": 1, "cordoned": 1}, Workers: []string{"worker-1", "worker-2"}},
+				{Name: "ram-overlay", Total: 2, Ready: 1, Quarantined: 1, ByStatus: map[string]int{"ready": 1, "quarantined": 1}, Workers: []string{"worker-1", "worker-3"}},
+			},
+			Attention: []HostRecord{{
+				ID:           "worker-2",
+				Host:         "mini-2",
+				Version:      "dev",
+				Capabilities: []string{"asif"},
+				Status:       "cordoned",
+				Cordoned:     true,
+				CordonReason: "maintenance",
+				LastSeen:     now,
+				Expires:      now.Add(time.Minute),
+			}},
+		},
+		Assignments: AssignmentOperationsSummary{
+			Total:             2,
+			Active:            1,
+			Terminal:          1,
+			ByStatus:          map[string]int{"running": 1, "complete": 1},
+			ActiveAssignments: []Assignment{active},
+		},
+		Sandboxes: SandboxOperationsSummary{
+			Total:    1,
+			Active:   1,
+			ByStatus: map[string]int{"ready": 1},
+			ActiveSandboxes: []SandboxStatus{{
+				Namespace: "team-a",
+				ID:        "job-1",
+				Status:    "ready",
+				WorkerID:  "worker-1",
+			}},
+		},
+		WarmPools: WarmPoolOperationsSummary{
+			Total:    1,
+			Desired:  2,
+			Slots:    1,
+			Active:   1,
+			Ready:    1,
+			ByStatus: map[string]int{"ready": 1},
+			Pools:    []WarmPoolStatus{sdkWarmPoolStatus()},
+		},
+		Metering: MeteringSummary{Namespace: "team-a", Records: 2, DurationMillis: 2000, VMMillis: 2000},
 	}
 }
 

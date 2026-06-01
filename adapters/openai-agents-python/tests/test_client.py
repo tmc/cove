@@ -475,8 +475,21 @@ def test_fleet_client_maintenance_runs() -> None:
         )
         assert runs["runs"][0]["kind"] == "storage.prune"
         assert runs["runs"][0]["assignment_count"] == 1
+        summary = CoveFleetClient.get_operations_summary(
+            fleet_url=server.url,
+            api_key="secret",
+            namespace="team-a",
+        )
+        assert summary["namespace"] == "team-a"
+        assert summary["workers"]["total"] == 3
+        assert summary["workers"]["capabilities"][0]["name"] == "asif"
+        assert summary["workers"]["attention"][0]["id"] == "worker-2"
+        assert summary["assignments"]["active"] == 1
+        assert summary["sandboxes"]["active_sandboxes"][0]["id"] == "job-1"
+        assert summary["warm_pools"]["pools"][0]["name"] == "runner"
+        assert summary["metering"]["records"] == 2
 
-        paths = [request["path"] for request in server.requests[-13:]]
+        paths = [request["path"] for request in server.requests[-14:]]
         assert paths == [
             "/v1/images/gc",
             "/v1/images/gc/runs",
@@ -491,19 +504,21 @@ def test_fleet_client_maintenance_runs() -> None:
             "/v1/storage/prune/runs",
             "/v1/storage/prune/runs/storage-prune-1",
             "/v1/operations/runs",
+            "/v1/operations/summary",
         ]
-        assert server.requests[-13]["body"]["required_capabilities"] == ["ram-overlay", "asif"]
-        assert server.requests[-13]["body"]["dry_run"] is True
-        assert server.requests[-12]["query"]["apply"] == ["true"]
-        assert server.requests[-10]["body"]["run_budget"] == 100
-        assert server.requests[-10]["body"]["dry_run"] is True
-        assert server.requests[-9]["query"]["clear"] == ["false"]
-        assert server.requests[-7]["body"]["warn_pct"] == 70
-        assert server.requests[-7]["body"]["dry_run"] is True
-        assert server.requests[-6]["query"]["target"] == ["750GB"]
-        assert server.requests[-4]["body"]["category"] == "build-scratch"
-        assert server.requests[-4]["body"]["dry_run"] is True
-        assert server.requests[-1]["query"]["kind"] == ["storage.prune"]
+        assert server.requests[-14]["body"]["required_capabilities"] == ["ram-overlay", "asif"]
+        assert server.requests[-14]["body"]["dry_run"] is True
+        assert server.requests[-13]["query"]["apply"] == ["true"]
+        assert server.requests[-11]["body"]["run_budget"] == 100
+        assert server.requests[-11]["body"]["dry_run"] is True
+        assert server.requests[-10]["query"]["clear"] == ["false"]
+        assert server.requests[-8]["body"]["warn_pct"] == 70
+        assert server.requests[-8]["body"]["dry_run"] is True
+        assert server.requests[-7]["query"]["target"] == ["750GB"]
+        assert server.requests[-5]["body"]["category"] == "build-scratch"
+        assert server.requests[-5]["body"]["dry_run"] is True
+        assert server.requests[-2]["query"]["kind"] == ["storage.prune"]
+        assert server.requests[-1]["query"]["namespace"] == ["team-a"]
     finally:
         server.stop()
 
@@ -948,6 +963,79 @@ def _maintenance_assignment(assignment_id: str, args: list[str]) -> dict[str, ob
     }
 
 
+def _operations_summary() -> dict[str, object]:
+    active = _maintenance_assignment(
+        "assignment-storage-prune-1",
+        ["storage", "prune", "build-scratch", "-apply", "-older-than", "48h"],
+    )
+    active["status"] = "running"
+    return {
+        "time": "2026-05-31T10:05:00Z",
+        "namespace": "team-a",
+        "workers": {
+            "total": 3,
+            "ready": 1,
+            "cordoned": 1,
+            "quarantined": 1,
+            "by_status": {"ready": 1, "cordoned": 1, "quarantined": 1},
+            "capabilities": [
+                {
+                    "name": "asif",
+                    "total": 2,
+                    "ready": 1,
+                    "cordoned": 1,
+                    "by_status": {"ready": 1, "cordoned": 1},
+                    "workers": ["worker-1", "worker-2"],
+                },
+                {
+                    "name": "ram-overlay",
+                    "total": 2,
+                    "ready": 1,
+                    "quarantined": 1,
+                    "by_status": {"ready": 1, "quarantined": 1},
+                    "workers": ["worker-1", "worker-3"],
+                },
+            ],
+            "attention": [
+                {
+                    "id": "worker-2",
+                    "host": "mini-2",
+                    "version": "dev",
+                    "capabilities": ["asif"],
+                    "status": "cordoned",
+                    "cordoned": True,
+                    "cordon_reason": "maintenance",
+                    "last_seen": "2026-05-31T10:05:00Z",
+                    "expires": "2026-05-31T10:06:00Z",
+                }
+            ],
+        },
+        "assignments": {
+            "total": 2,
+            "active": 1,
+            "terminal": 1,
+            "by_status": {"running": 1, "complete": 1},
+            "active_assignments": [active],
+        },
+        "sandboxes": {
+            "total": 1,
+            "active": 1,
+            "by_status": {"ready": 1},
+            "active_sandboxes": [{"namespace": "team-a", "id": "job-1", "status": "ready", "worker_id": "worker-1"}],
+        },
+        "warm_pools": {
+            "total": 1,
+            "desired": 2,
+            "slots": 1,
+            "active": 1,
+            "ready": 1,
+            "by_status": {"ready": 1},
+            "pools": [_warm_pool_status()],
+        },
+        "metering": {"namespace": "team-a", "records": 2, "duration_millis": 2000, "vm_millis": 2000},
+    }
+
+
 def _warm_pool_status() -> dict[str, object]:
     assignment = {
         "id": "warm-slot-1",
@@ -1166,6 +1254,9 @@ class _FleetHTTPServer:
                             "limit": int(query.get("limit", ["0"])[0]),
                         }
                     )
+                    return
+                if path == "/v1/operations/summary":
+                    self._write(_operations_summary())
                     return
                 if path == "/v1/sandboxes":
                     self._write(
