@@ -144,6 +144,34 @@ type PlacementSkip struct {
 	ImageManifestDigest string            `json:"image_manifest_digest,omitempty"`
 }
 
+type PlacementPlanListOptions struct {
+	FleetURL  string
+	APIKey    string
+	Namespace string
+	Policy    string
+	ImageRef  string
+	Offset    int
+	Limit     int
+	Timeout   time.Duration
+	HTTP      *http.Client
+}
+
+type PlacementPlanGetOptions struct {
+	FleetURL string
+	APIKey   string
+	ID       string
+	Timeout  time.Duration
+	HTTP     *http.Client
+}
+
+type PlacementPlanListResult struct {
+	Plans      []PlacementPlan `json:"plans"`
+	Count      int             `json:"count"`
+	Offset     int             `json:"offset,omitempty"`
+	Limit      int             `json:"limit,omitempty"`
+	NextOffset int             `json:"next_offset,omitempty"`
+}
+
 type Assignment struct {
 	ID                   string            `json:"id"`
 	Namespace            string            `json:"namespace,omitempty"`
@@ -1418,6 +1446,54 @@ func Plan(ctx context.Context, opts ClientOptions) (PlacementPlan, error) {
 		return PlacementPlan{}, err
 	}
 	return plan, nil
+}
+
+func ListPlacementPlans(ctx context.Context, opts PlacementPlanListOptions) (PlacementPlanListResult, error) {
+	if opts.Limit < 0 {
+		return PlacementPlanListResult{}, errors.New("agentsandbox: placement plan limit must be non-negative")
+	}
+	if opts.Offset < 0 {
+		return PlacementPlanListResult{}, errors.New("agentsandbox: placement plan offset must be non-negative")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "placement-plans")
+	if err != nil {
+		return PlacementPlanListResult{}, err
+	}
+	query := map[string]string{
+		"namespace": opts.Namespace,
+		"policy":    opts.Policy,
+		"image_ref": opts.ImageRef,
+	}
+	if opts.Offset > 0 {
+		query["offset"] = strconv.Itoa(opts.Offset)
+	}
+	if opts.Limit > 0 {
+		query["limit"] = strconv.Itoa(opts.Limit)
+	}
+	var result PlacementPlanListResult
+	if err := c.request(ctx, http.MethodGet, c.queryPath("/v1/placements/plans", query), nil, &result, c.timeout); err != nil {
+		return PlacementPlanListResult{}, err
+	}
+	if result.Count == 0 && len(result.Plans) > 0 {
+		result.Count = len(result.Plans)
+	}
+	return result, nil
+}
+
+func GetPlacementPlan(ctx context.Context, opts PlacementPlanGetOptions) (PlacementPlan, error) {
+	id := strings.TrimSpace(opts.ID)
+	if id == "" {
+		return PlacementPlan{}, errors.New("agentsandbox: placement plan id required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "placement-plan")
+	if err != nil {
+		return PlacementPlan{}, err
+	}
+	var result PlacementPlan
+	if err := c.request(ctx, http.MethodGet, placementPlanPath(id), nil, &result, c.timeout); err != nil {
+		return PlacementPlan{}, err
+	}
+	return result, nil
 }
 
 func PrepareImage(ctx context.Context, opts ImagePrepareOptions) (ImagePrepareResult, error) {
@@ -3416,6 +3492,10 @@ func warmPoolPath(name, action string) string {
 		path += "/" + url.PathEscape(action)
 	}
 	return path
+}
+
+func placementPlanPath(id string) string {
+	return "/v1/placements/plans/" + url.PathEscape(id)
 }
 
 func imagePreparationPath(id string) string {

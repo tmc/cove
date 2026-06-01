@@ -237,6 +237,41 @@ func TestCloudClientPlansSandboxPlacement(t *testing.T) {
 	if !equalAnyStringSlice(req.body["required_capabilities"], []string{"ram-overlay", "asif"}) {
 		t.Fatalf("required capabilities = %+v, want ram-overlay/asif", req.body["required_capabilities"])
 	}
+
+	page, err := ListPlacementPlans(ctx, PlacementPlanListOptions{
+		FleetURL:  server.URL,
+		APIKey:    "secret",
+		Namespace: "team-a",
+		Policy:    "image-affinity",
+		ImageRef:  "base:v1",
+		Offset:    1,
+		Limit:     2,
+		Timeout:   time.Second,
+	})
+	if err != nil {
+		t.Fatalf("ListPlacementPlans: %v", err)
+	}
+	if page.Count != 1 || page.Offset != 1 || page.Limit != 2 || len(page.Plans) != 1 || page.Plans[0].ID != "placement-plan-1" {
+		t.Fatalf("ListPlacementPlans = %+v, want placement-plan-1 page", page)
+	}
+	got, err := GetPlacementPlan(ctx, PlacementPlanGetOptions{
+		FleetURL: server.URL,
+		APIKey:   "secret",
+		ID:       "placement-plan-1",
+		Timeout:  time.Second,
+	})
+	if err != nil {
+		t.Fatalf("GetPlacementPlan: %v", err)
+	}
+	if got.ID != "placement-plan-1" || got.Skipped[0].MissingCapabilities[0] != "asif" {
+		t.Fatalf("GetPlacementPlan = %+v, want placement-plan-1 diagnostics", got)
+	}
+	if len(server.requests) != 3 || server.requests[1].path != "/v1/placements/plans" || server.requests[2].path != "/v1/placements/plans/placement-plan-1" {
+		t.Fatalf("placement paths = %+v", server.requests)
+	}
+	if query := server.requests[1].query; query.Get("namespace") != "team-a" || query.Get("policy") != "image-affinity" || query.Get("image_ref") != "base:v1" || query.Get("offset") != "1" || query.Get("limit") != "2" {
+		t.Fatalf("placement plan list query = %q", query.Encode())
+	}
 }
 
 func TestCloudClientRejectsNegativePlacementLimit(t *testing.T) {
@@ -250,6 +285,15 @@ func TestCloudClientRejectsNegativePlacementLimit(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "placement limit must be non-negative") {
 		t.Fatalf("negative placement limit err = %v, want validation error", err)
+	}
+	if _, err := ListPlacementPlans(ctx, PlacementPlanListOptions{FleetURL: "https://fleet.example", APIKey: "secret", Limit: -1}); err == nil || !strings.Contains(err.Error(), "placement plan limit must be non-negative") {
+		t.Fatalf("negative placement plan limit err = %v, want validation error", err)
+	}
+	if _, err := ListPlacementPlans(ctx, PlacementPlanListOptions{FleetURL: "https://fleet.example", APIKey: "secret", Offset: -1}); err == nil || !strings.Contains(err.Error(), "placement plan offset must be non-negative") {
+		t.Fatalf("negative placement plan offset err = %v, want validation error", err)
+	}
+	if _, err := GetPlacementPlan(ctx, PlacementPlanGetOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "placement plan id required") {
+		t.Fatalf("missing placement plan id err = %v, want validation error", err)
 	}
 }
 
@@ -1752,18 +1796,16 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 				Cleanup:   []Assignment{{ID: "cleanup-1", Namespace: "team-a", WorkerID: "worker-1", WarmPoolSlot: "warm-slot-1", Verb: "cove", Args: []string{"ctl", "stop"}, Status: "pending"}},
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/placements/plan":
-			writeSDKJSON(t, w, PlacementPlan{
-				ID:                   "placement-plan-1",
-				Namespace:            "team-a",
-				Policy:               "image-affinity",
-				ImageRef:             "base:v1",
-				ImagePlatform:        "darwin/arm64",
-				RequiredLabels:       map[string]string{"zone": "desk"},
-				RequiredCapabilities: []string{"ram-overlay", "asif"},
-				Limit:                3,
-				Candidates:           []PlacementCandidate{{Rank: 1, WorkerID: "worker-1", Load: 1, MaxVMs: 4, RequestedVMs: 1, HasImage: true}},
-				Skipped:              []PlacementSkip{{WorkerID: "worker-2", Reason: "capability", MissingCapabilities: []string{"asif"}}},
+			writeSDKJSON(t, w, sdkPlacementPlan())
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/placements/plans":
+			writeSDKJSON(t, w, PlacementPlanListResult{
+				Plans:  []PlacementPlan{sdkPlacementPlan()},
+				Count:  1,
+				Offset: atoiDefault(r.URL.Query().Get("offset"), 0),
+				Limit:  atoiDefault(r.URL.Query().Get("limit"), 0),
 			})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/placements/plans/placement-plan-1":
+			writeSDKJSON(t, w, sdkPlacementPlan())
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes":
 			writeSDKJSON(t, w, SandboxStatus{Namespace: "team-a", ID: "job-1", VMName: "cove-sandbox-job-1", RequiredCapabilities: []string{"ram-overlay"}, Status: "pending"})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/sandboxes":
@@ -1883,6 +1925,21 @@ func sdkImagePrepareResult(dryRun bool) ImagePrepareResult {
 			{WorkerID: "worker-3", Reason: "label", MissingLabels: map[string]string{"zone": "desk"}},
 			{WorkerID: "worker-4", Reason: "capability", MissingCapabilities: []string{"asif"}},
 		},
+	}
+}
+
+func sdkPlacementPlan() PlacementPlan {
+	return PlacementPlan{
+		ID:                   "placement-plan-1",
+		Namespace:            "team-a",
+		Policy:               "image-affinity",
+		ImageRef:             "base:v1",
+		ImagePlatform:        "darwin/arm64",
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay", "asif"},
+		Limit:                3,
+		Candidates:           []PlacementCandidate{{Rank: 1, WorkerID: "worker-1", Load: 1, MaxVMs: 4, RequestedVMs: 1, HasImage: true}},
+		Skipped:              []PlacementSkip{{WorkerID: "worker-2", Reason: "capability", MissingCapabilities: []string{"asif"}}},
 	}
 }
 

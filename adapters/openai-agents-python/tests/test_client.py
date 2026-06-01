@@ -242,6 +242,44 @@ def test_fleet_client_plan_sandbox() -> None:
         assert req["body"]["required_labels"] == {"zone": "desk"}
         assert req["body"]["required_capabilities"] == ["ram-overlay", "asif"]
         assert req["body"]["limit"] == 3
+
+        page = CoveFleetClient.list_placement_plans(
+            fleet_url=server.url,
+            api_key="secret",
+            namespace="team-a",
+            policy="image-affinity",
+            image_ref="base:v1",
+            offset=1,
+            limit=2,
+        )
+        assert page["count"] == 1
+        assert page["plans"][0]["id"] == "placement-plan-1"
+        assert page["plans"][0]["skipped"][0]["missing_capabilities"] == ["asif"]
+        got = CoveFleetClient.get_placement_plan(
+            fleet_url=server.url,
+            api_key="secret",
+            plan_id="placement-plan-1",
+        )
+        assert got["id"] == "placement-plan-1"
+        assert got["candidates"][0]["worker_id"] == "worker-1"
+        assert [request["path"] for request in server.requests[-3:]] == [
+            "/v1/placements/plan",
+            "/v1/placements/plans",
+            "/v1/placements/plans/placement-plan-1",
+        ]
+        query = server.requests[-2]["query"]
+        assert query["namespace"] == ["team-a"]
+        assert query["policy"] == ["image-affinity"]
+        assert query["image_ref"] == ["base:v1"]
+        assert query["offset"] == ["1"]
+        assert query["limit"] == ["2"]
+
+        with pytest.raises(ValueError, match="placement plan limit must be non-negative"):
+            CoveFleetClient.list_placement_plans(fleet_url="https://fleet.example", api_key="secret", limit=-1)
+        with pytest.raises(ValueError, match="placement plan offset must be non-negative"):
+            CoveFleetClient.list_placement_plans(fleet_url="https://fleet.example", api_key="secret", offset=-1)
+        with pytest.raises(ValueError, match="placement plan id is required"):
+            CoveFleetClient.get_placement_plan(fleet_url="https://fleet.example", api_key="secret", plan_id="")
     finally:
         server.stop()
 
@@ -1272,6 +1310,36 @@ def _assignment_metering(assignment_id: str) -> dict[str, object]:
     return data
 
 
+def _placement_plan() -> dict[str, object]:
+    return {
+        "id": "placement-plan-1",
+        "namespace": "team-a",
+        "policy": "image-affinity",
+        "image_ref": "base:v1",
+        "image_platform": "darwin/arm64",
+        "required_labels": {"zone": "desk"},
+        "required_capabilities": ["ram-overlay", "asif"],
+        "limit": 3,
+        "candidates": [
+            {
+                "rank": 1,
+                "worker_id": "worker-1",
+                "load": 1,
+                "max_vms": 4,
+                "requested_vms": 1,
+                "has_image": True,
+            }
+        ],
+        "skipped": [
+            {
+                "worker_id": "worker-2",
+                "reason": "capability",
+                "missing_capabilities": ["asif"],
+            }
+        ],
+    }
+
+
 def _image_prepare_result(*, dry_run: bool = False) -> dict[str, object]:
     digest = "sha256:" + "1" * 64
     digest_ref = "ghcr.io/me/base@" + digest
@@ -1899,6 +1967,19 @@ class _FleetHTTPServer:
                 if path == "/v1/operations/summary":
                     self._write(_operations_summary())
                     return
+                if path == "/v1/placements/plans":
+                    self._write(
+                        {
+                            "plans": [_placement_plan()],
+                            "count": 1,
+                            "offset": int(query.get("offset", ["0"])[0]),
+                            "limit": int(query.get("limit", ["0"])[0]),
+                        }
+                    )
+                    return
+                if path == "/v1/placements/plans/placement-plan-1":
+                    self._write(_placement_plan())
+                    return
                 if path == "/v1/audit":
                     self._write(
                         {
@@ -2169,35 +2250,7 @@ class _FleetHTTPServer:
                     self._write(_worker_decommission(body))
                     return
                 if path == "/v1/placements/plan":
-                    self._write(
-                        {
-                            "id": "placement-plan-1",
-                            "namespace": "team-a",
-                            "policy": "image-affinity",
-                            "image_ref": "base:v1",
-                            "image_platform": "darwin/arm64",
-                            "required_labels": {"zone": "desk"},
-                            "required_capabilities": ["ram-overlay", "asif"],
-                            "limit": 3,
-                            "candidates": [
-                                {
-                                    "rank": 1,
-                                    "worker_id": "worker-1",
-                                    "load": 1,
-                                    "max_vms": 4,
-                                    "requested_vms": 1,
-                                    "has_image": True,
-                                }
-                            ],
-                            "skipped": [
-                                {
-                                    "worker_id": "worker-2",
-                                    "reason": "capability",
-                                    "missing_capabilities": ["asif"],
-                                }
-                            ],
-                        }
-                    )
+                    self._write(_placement_plan())
                     return
                 if path == "/v1/sandboxes/job-1/wait":
                     self._write(

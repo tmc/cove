@@ -174,8 +174,9 @@ provenance. Pass `required_labels` for operator-defined selectors and
 `required_capabilities` to restrict hosted placement to workers that advertise
 runtime traits such as `ram-overlay`. The direct fleet client can also queue
 image preparation before placement or warm-pool replenishment, push image
-GC/lifecycle/storage maintenance work, read the retained controller-run
-timeline, inspect or verify the hash-chained audit feed, and drill into
+GC/lifecycle/storage maintenance work, read retained placement-plan history and
+the retained controller-run timeline, inspect or verify the hash-chained audit
+feed, and drill into
 worker- or assignment-scoped events, reports, metering, and hosted sandbox
 lists.
 
@@ -233,6 +234,23 @@ plan = CoveFleetClient.plan_sandbox(
     limit=5,
 )
 print(len(plan["candidates"]), len(plan["skipped"]))
+
+plans = CoveFleetClient.list_placement_plans(
+    fleet_url="https://fleet.internal.example",
+    api_key="cove_...",
+    namespace="team-a",
+    policy="image-affinity",
+    image_ref="macos-base:latest",
+    limit=20,
+)
+print(plans["count"])
+
+plan_history = CoveFleetClient.get_placement_plan(
+    fleet_url="https://fleet.internal.example",
+    api_key="cove_...",
+    plan_id="placement-plan-123",
+)
+print(len(plan_history["candidates"]), len(plan_history["skipped"]))
 
 pool = CoveFleetClient.ensure_warm_pool(
     fleet_url="https://fleet.internal.example",
@@ -355,7 +373,8 @@ client.delete_vm()
 
 Maintenance helpers include `push_image_gc`, `push_lifecycle_policy`,
 `push_storage_budget`, `push_storage_prune`, the matching `list_*_runs` /
-`get_*_run` methods, `get_operations_summary`, `list_workers`, `get_worker`,
+`get_*_run` methods, `plan_sandbox`, `list_placement_plans`,
+`get_placement_plan`, `get_operations_summary`, `list_workers`, `get_worker`,
 `list_assignments`, `get_assignment`, `cancel_assignment`, `retry_assignment`,
 worker lifecycle helpers such as `cordon_worker`, `evacuate_worker`,
 `drain_worker`, and `decommission_worker`, `list_audit_events`,

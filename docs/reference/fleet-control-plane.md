@@ -764,15 +764,19 @@ advertise runtime traits such as `ram-overlay`, `asif`, or `apfs-quota`. The
 same SDKs can dry-run hosted placement before creating a sandbox:
 `agentsandbox.Plan` in Go and `CoveFleetClient.plan_sandbox` in Python return
 the controller's feasible candidates and skipped-worker reasons. They also
-expose image-preparation, maintenance fan-out, the operations dashboard
-summary, worker/assignment inventory, scoped worker/assignment observability,
-retained controller-run history, and fork warm-pool lifecycle controls, so
+expose retained placement-plan history, image-preparation, maintenance fan-out,
+the operations dashboard summary, worker/assignment inventory, scoped
+worker/assignment observability, retained controller-run history, and fork
+warm-pool lifecycle controls, so
 hosted agent clients can pre-stage exact images, push image GC/lifecycle/storage
 policy work, inspect fleet pressure, enumerate current work, drill into
 per-worker and per-assignment timelines, verify audit-chain continuity, inspect
 operations history, prewarm RAM-overlay slots, claim a ready slot for a guest
 command, read pool events, and delete the pool through the same fleet
 credentials.
+Placement helpers include `Plan`, `ListPlacementPlans`, and `GetPlacementPlan`
+for read-only admission checks plus the retained placement history that records
+feasible candidates and skipped-worker diagnostics.
 Maintenance helpers include `PushImageGC`, `PushLifecyclePolicy`,
 `PushStorageBudget`, `PushStoragePrune`, their list/get run companions, and
 `GetOperationsSummary` plus `ListControllerRuns` for the aggregate operations
@@ -932,6 +936,29 @@ if err != nil {
 	log.Fatal(err)
 }
 log.Printf("controller runs=%d", runs.Count)
+
+plans, err := agentsandbox.ListPlacementPlans(ctx, agentsandbox.PlacementPlanListOptions{
+	FleetURL:  "https://fleet.internal.example",
+	APIKey:    os.Getenv("COVE_API_KEY"),
+	Namespace: "team-a",
+	Policy:    "image-affinity",
+	ImageRef:  "macos-base:latest",
+	Limit:     20,
+})
+if err != nil {
+	log.Fatal(err)
+}
+log.Printf("placement plans=%d", plans.Count)
+
+planHistory, err := agentsandbox.GetPlacementPlan(ctx, agentsandbox.PlacementPlanGetOptions{
+	FleetURL: "https://fleet.internal.example",
+	APIKey:   os.Getenv("COVE_API_KEY"),
+	ID:       "placement-plan-123",
+})
+if err != nil {
+	log.Fatal(err)
+}
+log.Printf("placement plan candidates=%d skipped=%d", len(planHistory.Candidates), len(planHistory.Skipped))
 
 audit, err := agentsandbox.ListAuditEvents(ctx, agentsandbox.AuditListOptions{
 	FleetURL:     "https://fleet.internal.example",

@@ -53,6 +53,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   expose hosted placement dry-runs. Go callers can use `agentsandbox.Plan`,
   and Python callers can use `CoveFleetClient.plan_sandbox` to see feasible
   workers and skipped-worker reasons before creating a hosted sandbox.
+- The public Go `agentsandbox` package and OpenAI Agents Python adapter now
+  expose retained hosted placement-plan history with list/get helpers for
+  `/v1/placements/plans` and `/v1/placements/plans/{id}`.
 - `POST /v1/placements/plan` now returns skipped workers with structured
   reasons for status, label, capability, capacity, or exact-image mismatch,
   making capability-constrained placement dry-runs useful as admission

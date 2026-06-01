@@ -397,13 +397,57 @@ class CoveFleetClient:
             timeout=timeout,
         )
         data = seed._request("POST", "/v1/placements/plan", body, timeout=timeout)
-        plan = dict(data)
-        for key in ("candidates", "skipped"):
-            items = plan.get(key) or []
-            if not isinstance(items, list):
-                raise CoveError(f"POST /v1/placements/plan: expected {key} list")
-            plan[key] = [dict(item) for item in items if isinstance(item, dict)]
-        return plan
+        return _normalize_placement_plan(data, "POST /v1/placements/plan")
+
+    @classmethod
+    def list_placement_plans(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        policy: str = "",
+        image_ref: str = "",
+        offset: int = 0,
+        limit: int = 0,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        if offset < 0:
+            raise ValueError("placement plan offset must be non-negative")
+        if limit < 0:
+            raise ValueError("placement plan limit must be non-negative")
+        seed = cls(
+            sandbox_id="placement-plans",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        query = {
+            "namespace": namespace or "",
+            "policy": policy,
+            "image_ref": image_ref,
+            "offset": str(offset) if offset else "",
+            "limit": str(limit) if limit else "",
+        }
+        data = seed._request("GET", _query_path("/v1/placements/plans", query), timeout=timeout)
+        return _normalize_placement_plan_page(data, "GET /v1/placements/plans")
+
+    @classmethod
+    def get_placement_plan(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        plan_id: str,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        plan_id = plan_id.strip()
+        if not plan_id:
+            raise ValueError("placement plan id is required")
+        seed = cls(sandbox_id="placement-plan", fleet_url=fleet_url, api_key=api_key, timeout=timeout)
+        data = seed._request("GET", _placement_plan_path(plan_id), timeout=timeout)
+        return _normalize_placement_plan(data, "GET /v1/placements/plans/{id}")
 
     @classmethod
     def prepare_image(
@@ -2250,6 +2294,23 @@ def _normalize_warm_pool_result(data: dict[str, Any], endpoint: str) -> dict[str
     return result
 
 
+def _normalize_placement_plan(data: dict[str, Any], endpoint: str) -> dict[str, Any]:
+    plan = dict(data)
+    _normalize_dict_list(plan, "candidates", endpoint)
+    _normalize_dict_list(plan, "skipped", endpoint)
+    return plan
+
+
+def _normalize_placement_plan_page(data: dict[str, Any], endpoint: str) -> dict[str, Any]:
+    page = dict(data)
+    plans = page.get("plans") or []
+    if not isinstance(plans, list):
+        raise CoveError(f"{endpoint}: expected plans list")
+    page["plans"] = [_normalize_placement_plan(item, endpoint) for item in plans if isinstance(item, dict)]
+    page["count"] = int(page.get("count") or len(page["plans"]))
+    return page
+
+
 def _normalize_run_result(data: dict[str, Any], endpoint: str) -> dict[str, Any]:
     result = dict(data)
     _normalize_dict_list(result, "assignments", endpoint)
@@ -2373,6 +2434,10 @@ def _warm_pool_path(name: str, action: str = "") -> str:
     if action:
         path += "/" + urllib.parse.quote(action, safe="")
     return path
+
+
+def _placement_plan_path(plan_id: str) -> str:
+    return "/v1/placements/plans/" + urllib.parse.quote(plan_id, safe="")
 
 
 def _image_preparation_path(preparation_id: str) -> str:
