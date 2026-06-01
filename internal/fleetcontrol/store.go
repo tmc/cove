@@ -37,6 +37,7 @@ type Store struct {
 	warmPools     map[string]WarmPool
 	audit         []AuditEvent
 	metering      []SandboxMeteringRecord
+	reports       []AssignmentReport
 	accounts      map[string]serviceAccountRecord
 	oidcBindings  map[string]oidcBindingRecord
 	samlBindings  map[string]samlBindingRecord
@@ -45,16 +46,17 @@ type Store struct {
 }
 
 type storeFile struct {
-	Hosts           []HostRecord            `json:"hosts"`
-	Assignments     []Assignment            `json:"assignments,omitempty"`
-	WarmPools       []WarmPool              `json:"warm_pools,omitempty"`
-	AuditEvents     []AuditEvent            `json:"audit_events,omitempty"`
-	MeteringRecords []SandboxMeteringRecord `json:"metering_records,omitempty"`
-	ServiceAccounts []serviceAccountRecord  `json:"service_accounts,omitempty"`
-	OIDCBindings    []oidcBindingRecord     `json:"oidc_bindings,omitempty"`
-	SAMLBindings    []samlBindingRecord     `json:"saml_bindings,omitempty"`
-	SAMLReplays     []samlReplayRecord      `json:"saml_replays,omitempty"`
-	SAMLSessions    []samlSessionRecord     `json:"saml_sessions,omitempty"`
+	Hosts             []HostRecord            `json:"hosts"`
+	Assignments       []Assignment            `json:"assignments,omitempty"`
+	WarmPools         []WarmPool              `json:"warm_pools,omitempty"`
+	AuditEvents       []AuditEvent            `json:"audit_events,omitempty"`
+	MeteringRecords   []SandboxMeteringRecord `json:"metering_records,omitempty"`
+	AssignmentReports []AssignmentReport      `json:"assignment_reports,omitempty"`
+	ServiceAccounts   []serviceAccountRecord  `json:"service_accounts,omitempty"`
+	OIDCBindings      []oidcBindingRecord     `json:"oidc_bindings,omitempty"`
+	SAMLBindings      []samlBindingRecord     `json:"saml_bindings,omitempty"`
+	SAMLReplays       []samlReplayRecord      `json:"saml_replays,omitempty"`
+	SAMLSessions      []samlSessionRecord     `json:"saml_sessions,omitempty"`
 }
 
 type serviceAccountRecord struct {
@@ -139,6 +141,7 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		warmPools:     make(map[string]WarmPool),
 		audit:         nil,
 		metering:      nil,
+		reports:       nil,
 		accounts:      make(map[string]serviceAccountRecord),
 		oidcBindings:  make(map[string]oidcBindingRecord),
 		samlBindings:  make(map[string]samlBindingRecord),
@@ -217,6 +220,20 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		}
 		s.metering = append(s.metering, record)
 	}
+	for _, report := range file.AssignmentReports {
+		report = normalizeAssignmentReport(report)
+		if report.AssignmentID == "" || report.Report.ID == "" || report.Report.Status == "" || report.Report.Time.IsZero() {
+			continue
+		}
+		s.reports = append(s.reports, report)
+	}
+	if len(file.AssignmentReports) == 0 {
+		for _, assignment := range s.assignments {
+			if assignment.LastReport != nil {
+				s.reports = append(s.reports, assignmentReportFromAssignment(assignment))
+			}
+		}
+	}
 	for _, account := range file.ServiceAccounts {
 		account = normalizeServiceAccountRecord(account)
 		if account.Name == "" || account.TokenHash == "" || account.Role == "" {
@@ -284,6 +301,7 @@ func (s *Store) ReconcilePlan() ReconcileResult {
 		assignments:   cloneAssignmentMap(s.assignments),
 		warmPools:     cloneWarmPoolMap(s.warmPools),
 		metering:      cloneSandboxMeteringRecords(s.metering),
+		reports:       cloneAssignmentReports(s.reports),
 	}
 	s.mu.Unlock()
 	return shadow.reconcileLocked(now)
@@ -907,6 +925,7 @@ func (s *Store) Report(r WorkerReport) (HostRecord, error) {
 				assignment.LeaseExpires = received.Add(s.assignmentTTL)
 			}
 			s.assignments[assignment.ID] = assignment
+			s.reports = append(s.reports, assignmentReportFromAssignment(assignment))
 			if assignment.SandboxID != "" && assignment.SandboxRole == sandboxRoleStop {
 				s.finishSandboxStopLocked(received, assignment.SandboxID, storedStatus)
 			}
@@ -1643,6 +1662,50 @@ func (s *Store) ListSandboxReportsPage(filter SandboxReportFilter) SandboxReport
 		reports = append(reports, sandboxReportFromAssignment(assignment))
 	}
 	result := SandboxReportListResult{Offset: filter.Offset, Limit: filter.Limit}
+	if filter.Offset >= len(reports) {
+		return result
+	}
+	end := len(reports) - filter.Offset
+	start := 0
+	if filter.Limit > 0 && end > filter.Limit {
+		start = end - filter.Limit
+		result.NextOffset = filter.Offset + filter.Limit
+	}
+	result.Reports = reports[start:end]
+	result.Count = len(result.Reports)
+	return result
+}
+
+func (s *Store) ListAssignmentReportsPage(filter AssignmentReportFilter) AssignmentReportListResult {
+	filter.Namespace = normalizeNamespace(filter.Namespace)
+	filter.AssignmentID = strings.TrimSpace(filter.AssignmentID)
+	filter.WorkerID = strings.TrimSpace(filter.WorkerID)
+	filter.Status = strings.TrimSpace(filter.Status)
+	if filter.Offset < 0 {
+		filter.Offset = 0
+	}
+	if filter.Limit < 0 {
+		filter.Limit = 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	reports := make([]AssignmentReport, 0)
+	for _, report := range s.sortedAssignmentReportsLocked() {
+		if !namespaceMatches(report.Namespace, filter.Namespace) {
+			continue
+		}
+		if filter.AssignmentID != "" && report.AssignmentID != filter.AssignmentID {
+			continue
+		}
+		if filter.WorkerID != "" && report.WorkerID != filter.WorkerID {
+			continue
+		}
+		if filter.Status != "" && report.Status != filter.Status {
+			continue
+		}
+		reports = append(reports, cloneAssignmentReport(report))
+	}
+	result := AssignmentReportListResult{Offset: filter.Offset, Limit: filter.Limit}
 	if filter.Offset >= len(reports) {
 		return result
 	}
@@ -3582,12 +3645,13 @@ func (s *Store) persistLocked() error {
 	warmPools := s.sortedWarmPoolsLocked()
 	audit := cloneAuditEvents(s.audit)
 	metering := s.sortedMeteringLocked()
+	reports := s.sortedAssignmentReportsLocked()
 	accounts := s.sortedServiceAccountsLocked()
 	oidcBindings := s.sortedOIDCBindingsLocked()
 	samlBindings := s.sortedSAMLBindingsLocked()
 	samlReplays := s.sortedSAMLReplaysLocked()
 	samlSessions := s.sortedSAMLSessionRecordsLocked()
-	data, err := json.MarshalIndent(storeFile{Hosts: hosts, Assignments: assignments, WarmPools: warmPools, AuditEvents: audit, MeteringRecords: metering, ServiceAccounts: accounts, OIDCBindings: oidcBindings, SAMLBindings: samlBindings, SAMLReplays: samlReplays, SAMLSessions: samlSessions}, "", "  ")
+	data, err := json.MarshalIndent(storeFile{Hosts: hosts, Assignments: assignments, WarmPools: warmPools, AuditEvents: audit, MeteringRecords: metering, AssignmentReports: reports, ServiceAccounts: accounts, OIDCBindings: oidcBindings, SAMLBindings: samlBindings, SAMLReplays: samlReplays, SAMLSessions: samlSessions}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode fleet store: %w", err)
 	}
@@ -3658,6 +3722,20 @@ func (s *Store) sortedMeteringLocked() []SandboxMeteringRecord {
 		return records[i].ID < records[j].ID
 	})
 	return records
+}
+
+func (s *Store) sortedAssignmentReportsLocked() []AssignmentReport {
+	reports := cloneAssignmentReports(s.reports)
+	sort.Slice(reports, func(i, j int) bool {
+		if !reports[i].Report.Time.Equal(reports[j].Report.Time) {
+			return reports[i].Report.Time.Before(reports[j].Report.Time)
+		}
+		if reports[i].AssignmentID != reports[j].AssignmentID {
+			return reports[i].AssignmentID < reports[j].AssignmentID
+		}
+		return reports[i].WorkerID < reports[j].WorkerID
+	})
+	return reports
 }
 
 func (s *Store) sortedServiceAccountsLocked() []serviceAccountRecord {
@@ -3868,6 +3946,21 @@ func cloneSandboxMeteringRecords(in []SandboxMeteringRecord) []SandboxMeteringRe
 	return out
 }
 
+func cloneAssignmentReport(in AssignmentReport) AssignmentReport {
+	return in
+}
+
+func cloneAssignmentReports(in []AssignmentReport) []AssignmentReport {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]AssignmentReport, len(in))
+	for i := range in {
+		out[i] = cloneAssignmentReport(in[i])
+	}
+	return out
+}
+
 func sandboxReportFromAssignment(assignment Assignment) SandboxReport {
 	report := *assignment.LastReport
 	return SandboxReport{
@@ -3875,6 +3968,19 @@ func sandboxReportFromAssignment(assignment Assignment) SandboxReport {
 		SandboxID:    assignment.SandboxID,
 		AssignmentID: assignment.ID,
 		Role:         assignment.SandboxRole,
+		WorkerID:     assignment.WorkerID,
+		Status:       assignment.Status,
+		Created:      assignment.Created,
+		Updated:      assignment.Updated,
+		Report:       report,
+	}
+}
+
+func assignmentReportFromAssignment(assignment Assignment) AssignmentReport {
+	report := *assignment.LastReport
+	return AssignmentReport{
+		Namespace:    assignment.Namespace,
+		AssignmentID: assignment.ID,
 		WorkerID:     assignment.WorkerID,
 		Status:       assignment.Status,
 		Created:      assignment.Created,
@@ -5229,6 +5335,35 @@ func normalizeSandboxMeteringRecord(record SandboxMeteringRecord) SandboxMeterin
 		record.CPUMillis = 0
 	}
 	return record
+}
+
+func normalizeAssignmentReport(report AssignmentReport) AssignmentReport {
+	report.Namespace = normalizeNamespace(report.Namespace)
+	report.AssignmentID = strings.TrimSpace(report.AssignmentID)
+	report.WorkerID = strings.TrimSpace(report.WorkerID)
+	report.Status = strings.TrimSpace(report.Status)
+	if !report.Created.IsZero() {
+		report.Created = report.Created.UTC()
+	}
+	if !report.Updated.IsZero() {
+		report.Updated = report.Updated.UTC()
+	}
+	report.Report.ID = strings.TrimSpace(report.Report.ID)
+	report.Report.AssignmentID = strings.TrimSpace(report.Report.AssignmentID)
+	report.Report.Status = strings.TrimSpace(report.Report.Status)
+	if !report.Report.Time.IsZero() {
+		report.Report.Time = report.Report.Time.UTC()
+	}
+	if report.AssignmentID == "" {
+		report.AssignmentID = report.Report.AssignmentID
+	}
+	if report.WorkerID == "" {
+		report.WorkerID = report.Report.ID
+	}
+	if report.Status == "" {
+		report.Status = report.Report.Status
+	}
+	return report
 }
 
 func sandboxMeteringSummary(namespace, sandboxID string, records []SandboxMeteringRecord) SandboxMeteringSummary {

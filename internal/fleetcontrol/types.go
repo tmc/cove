@@ -740,6 +740,33 @@ type SandboxReportListResult struct {
 	NextOffset int             `json:"next_offset,omitempty"`
 }
 
+type AssignmentReportFilter struct {
+	Namespace    string `json:"namespace,omitempty"`
+	AssignmentID string `json:"assignment_id,omitempty"`
+	WorkerID     string `json:"worker_id,omitempty"`
+	Status       string `json:"status,omitempty"`
+	Offset       int    `json:"offset,omitempty"`
+	Limit        int    `json:"limit,omitempty"`
+}
+
+type AssignmentReport struct {
+	Namespace    string       `json:"namespace,omitempty"`
+	AssignmentID string       `json:"assignment_id"`
+	WorkerID     string       `json:"worker_id,omitempty"`
+	Status       string       `json:"status,omitempty"`
+	Created      time.Time    `json:"created,omitempty"`
+	Updated      time.Time    `json:"updated,omitempty"`
+	Report       WorkerReport `json:"report"`
+}
+
+type AssignmentReportListResult struct {
+	Reports    []AssignmentReport `json:"reports"`
+	Count      int                `json:"count"`
+	Offset     int                `json:"offset,omitempty"`
+	Limit      int                `json:"limit,omitempty"`
+	NextOffset int                `json:"next_offset,omitempty"`
+}
+
 type OperationsSummary struct {
 	Time        time.Time                   `json:"time"`
 	Namespace   string                      `json:"namespace,omitempty"`

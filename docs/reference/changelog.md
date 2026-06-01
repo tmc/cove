@@ -13,6 +13,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `cove-fleetd` now exposes `GET /v1/assignments/{id}/events` for
   assignment-scoped audit history, and global audit queries now accept
   `assignment_id`.
+- `cove-fleetd` now persists assignment worker reports and exposes
+  `GET /v1/assignments/{id}/reports` with status, worker, offset, and limit
+  filters.
 - `cove-fleetd` worker listing now supports controller-scale filters and
   pagination by status, host, version, image ref, source manifest digest,
   repeated exact labels, offset, and limit.

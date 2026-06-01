@@ -689,6 +689,7 @@ curl 'http://127.0.0.1:9758/v1/assignments?status=failed&worker_id=mini-1&limit=
 curl 'http://127.0.0.1:9758/v1/assignments?verb=cove&image_ref=macos-runner:latest&offset=50&limit=50'
 curl http://127.0.0.1:9758/v1/assignments/probe-1
 curl 'http://127.0.0.1:9758/v1/assignments/probe-1/events?limit=50'
+curl 'http://127.0.0.1:9758/v1/assignments/probe-1/reports?limit=50'
 curl -X POST http://127.0.0.1:9758/v1/assignments/probe-1/cancel \
   -H 'content-type: application/json' \
   -d '{"reason":"bad input"}'
@@ -717,6 +718,11 @@ retry, evacuation, and reassignment events carrying the same `assignment_id`;
 `actor`, `action`, `target_type`, `target_id`, `worker_id`, `sandbox_id`,
 `offset`, and `limit` filters match the global audit-list semantics. Scoped
 service-account tokens can only read assignment events in their namespace.
+`GET /v1/assignments/{id}/reports` returns the persisted worker report stream
+for the assignment, including active `running` or `ready` renewals and terminal
+status reports with captured stdout, stderr, error, and exit code. It accepts
+`worker_id`, `status`, `offset`, and `limit`, and is namespace-scoped like the
+assignment itself.
 Reconciliation marks expired workers stale, requeues expired assignment leases,
 rejects late reports for reclaimed leases, and can move a policy-placed
 assignment from a stale worker to another ready worker.

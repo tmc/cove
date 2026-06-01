@@ -2184,6 +2184,9 @@ func handleAssignment(w http.ResponseWriter, r *http.Request, store *Store) {
 		case "events":
 			handleAssignmentEvents(w, r, store, parts[0])
 			return
+		case "reports":
+			handleAssignmentReports(w, r, store, parts[0])
+			return
 		case "retry":
 			handleAssignmentRetry(w, r, store, parts[0])
 			return
@@ -2263,6 +2266,55 @@ func assignmentEventsFilterFromRequest(r *http.Request, namespace, id string) (A
 		offset, err := strconv.Atoi(raw)
 		if err != nil || offset < 0 {
 			return AuditListFilter{}, fmt.Errorf("assignment events offset must be non-negative")
+		}
+		filter.Offset = offset
+	}
+	return filter, nil
+}
+
+func handleAssignmentReports(w http.ResponseWriter, r *http.Request, store *Store, id string) {
+	if id == "" || r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	if !reconcile(w, store) {
+		return
+	}
+	assignment, ok := store.GetAssignment(id)
+	if !ok || !canAccessNamespace(identity, assignment.Namespace) {
+		writeError(w, http.StatusNotFound, "assignment not found")
+		return
+	}
+	filter, err := assignmentReportsFilterFromRequest(r, assignment.Namespace, id)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, store.ListAssignmentReportsPage(filter))
+}
+
+func assignmentReportsFilterFromRequest(r *http.Request, namespace, id string) (AssignmentReportFilter, error) {
+	filter := AssignmentReportFilter{
+		Namespace:    namespace,
+		AssignmentID: id,
+		WorkerID:     strings.TrimSpace(r.URL.Query().Get("worker_id")),
+		Status:       strings.TrimSpace(r.URL.Query().Get("status")),
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 0 {
+			return AssignmentReportFilter{}, fmt.Errorf("assignment reports limit must be non-negative")
+		}
+		filter.Limit = limit
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		offset, err := strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			return AssignmentReportFilter{}, fmt.Errorf("assignment reports offset must be non-negative")
 		}
 		filter.Offset = offset
 	}

@@ -253,6 +253,63 @@ func TestStoreListAuditPageFilters(t *testing.T) {
 	}
 }
 
+func TestStoreListAssignmentReportsPage(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	path := filepath.Join(t.TempDir(), "fleet.json")
+	store, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1"}); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	assignment, err := store.CreateAssignment(Assignment{Namespace: "team-a", WorkerID: "worker-1", Verb: "noop"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AwaitAssignment("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: assignment.ID, Status: "running", Stdout: "started"}); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: assignment.ID, Status: "complete", ExitCode: 7, Stdout: "done"}); err != nil {
+		t.Fatal(err)
+	}
+
+	page := store.ListAssignmentReportsPage(AssignmentReportFilter{Namespace: "team-a", AssignmentID: assignment.ID, Limit: 1})
+	if page.Count != 1 || page.NextOffset != 1 || len(page.Reports) != 1 {
+		t.Fatalf("assignment reports page = %+v, want latest report with next offset", page)
+	}
+	if page.Reports[0].Status != "complete" || page.Reports[0].Report.ExitCode != 7 || page.Reports[0].Report.Stdout != "done" {
+		t.Fatalf("latest assignment report = %+v, want complete output", page.Reports[0])
+	}
+	page = store.ListAssignmentReportsPage(AssignmentReportFilter{Namespace: "team-a", AssignmentID: assignment.ID, Status: "running"})
+	if page.Count != 1 || page.Reports[0].Report.Stdout != "started" {
+		t.Fatalf("running assignment reports = %+v, want started report", page)
+	}
+	page = store.ListAssignmentReportsPage(AssignmentReportFilter{Namespace: "team-a", AssignmentID: assignment.ID, Offset: 1, Limit: 1})
+	if page.Count != 1 || page.Reports[0].Status != "running" {
+		t.Fatalf("older assignment reports = %+v, want running report", page)
+	}
+	if reports := store.ListAssignmentReportsPage(AssignmentReportFilter{Namespace: "team-b", AssignmentID: assignment.ID}).Reports; len(reports) != 0 {
+		t.Fatalf("team-b assignment reports = %+v, want none", reports)
+	}
+
+	reopened, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page = reopened.ListAssignmentReportsPage(AssignmentReportFilter{Namespace: "team-a", AssignmentID: assignment.ID})
+	if page.Count != 2 || len(page.Reports) != 2 {
+		t.Fatalf("reopened assignment reports = %+v, want persisted reports", page)
+	}
+}
+
 func TestStoreAuditHashChainDetectsTamper(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{ID: "worker-1"}); err != nil {
@@ -4199,6 +4256,8 @@ func TestHandlerAssignmentProtocol(t *testing.T) {
 	postJSON(t, server.URL+"/v1/workers/mini-1/reports", WorkerReport{
 		AssignmentID: "assignment-1",
 		Status:       "complete",
+		ExitCode:     7,
+		Stdout:       "done",
 	}, &record)
 
 	var finished Assignment
@@ -4221,6 +4280,17 @@ func TestHandlerAssignmentProtocol(t *testing.T) {
 	}
 	if code := getJSONStatus(t, server.URL+"/v1/assignments/assignment-1/events?limit=-1", ""); code != http.StatusBadRequest {
 		t.Fatalf("bad assignment events limit status = %d, want %d", code, http.StatusBadRequest)
+	}
+	var reports AssignmentReportListResult
+	getJSON(t, server.URL+"/v1/assignments/assignment-1/reports?status=complete&limit=1", &reports)
+	if reports.Count != 1 || len(reports.Reports) != 1 || reports.Reports[0].AssignmentID != "assignment-1" || reports.Reports[0].Report.ExitCode != 7 || reports.Reports[0].Report.Stdout != "done" {
+		t.Fatalf("assignment reports = %+v, want complete report for assignment-1", reports)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/assignments/missing/reports", ""); code != http.StatusNotFound {
+		t.Fatalf("missing assignment reports status = %d, want %d", code, http.StatusNotFound)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/assignments/assignment-1/reports?offset=-1", ""); code != http.StatusBadRequest {
+		t.Fatalf("bad assignment reports offset status = %d, want %d", code, http.StatusBadRequest)
 	}
 
 	var list struct {
@@ -5476,6 +5546,9 @@ func TestHandlerServiceAccountNamespaceScope(t *testing.T) {
 	if code := getJSONStatus(t, server.URL+"/v1/assignments/"+teamB.ID+"/events", "token-a"); code != http.StatusNotFound {
 		t.Fatalf("cross-namespace assignment events status = %d, want 404", code)
 	}
+	if code := getJSONStatus(t, server.URL+"/v1/assignments/"+teamB.ID+"/reports", "token-a"); code != http.StatusNotFound {
+		t.Fatalf("cross-namespace assignment reports status = %d, want 404", code)
+	}
 	var events AuditListResult
 	getJSONAuth(t, server.URL+"/v1/assignments/"+teamA.ID+"/events", "token-a", &events)
 	if events.Count == 0 || len(events.Events) == 0 {
@@ -5485,6 +5558,11 @@ func TestHandlerServiceAccountNamespaceScope(t *testing.T) {
 		if event.Namespace != "team-a" || event.AssignmentID != teamA.ID {
 			t.Fatalf("team-a assignment event = %+v, want namespace team-a assignment %s", event, teamA.ID)
 		}
+	}
+	var reports AssignmentReportListResult
+	getJSONAuth(t, server.URL+"/v1/assignments/"+teamA.ID+"/reports", "token-a", &reports)
+	if reports.Count != 0 || len(reports.Reports) != 0 {
+		t.Fatalf("team-a assignment reports = %+v, want none before worker report", reports)
 	}
 
 	var accounts struct {
