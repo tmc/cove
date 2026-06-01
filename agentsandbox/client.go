@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -564,6 +565,71 @@ type HostRecord struct {
 	LastSeen         time.Time         `json:"last_seen"`
 	Expires          time.Time         `json:"expires"`
 	Report           *WorkerReport     `json:"last_report,omitempty"`
+}
+
+type WorkerListOptions struct {
+	FleetURL             string
+	APIKey               string
+	Status               string
+	Host                 string
+	Version              string
+	ImageRef             string
+	SourceManifestDigest string
+	Labels               map[string]string
+	Capabilities         []string
+	Offset               int
+	Limit                int
+	Timeout              time.Duration
+	HTTP                 *http.Client
+}
+
+type WorkerGetOptions struct {
+	FleetURL string
+	APIKey   string
+	ID       string
+	Timeout  time.Duration
+	HTTP     *http.Client
+}
+
+type WorkerListResult struct {
+	Workers    []HostRecord `json:"workers"`
+	Count      int          `json:"count"`
+	Offset     int          `json:"offset,omitempty"`
+	Limit      int          `json:"limit,omitempty"`
+	NextOffset int          `json:"next_offset,omitempty"`
+}
+
+type AssignmentListOptions struct {
+	FleetURL  string
+	APIKey    string
+	Namespace string
+	Status    string
+	WorkerID  string
+	LeasedTo  string
+	Verb      string
+	ImageRef  string
+	SandboxID string
+	WarmPool  string
+	Offset    int
+	Limit     int
+	Timeout   time.Duration
+	HTTP      *http.Client
+}
+
+type AssignmentGetOptions struct {
+	FleetURL string
+	APIKey   string
+	ID       string
+	Timeout  time.Duration
+	HTTP     *http.Client
+}
+
+type AssignmentListResult struct {
+	Assignments []Assignment `json:"assignments"`
+	Count       int          `json:"count"`
+	Offset      int          `json:"offset,omitempty"`
+	Limit       int          `json:"limit,omitempty"`
+	NextOffset  int          `json:"next_offset,omitempty"`
 }
 
 type OperationsSummary struct {
@@ -1545,6 +1611,120 @@ func GetOperationsSummary(ctx context.Context, opts OperationsSummaryOptions) (O
 	var result OperationsSummary
 	if err := c.request(ctx, http.MethodGet, c.queryPath("/v1/operations/summary", query), nil, &result, c.timeout); err != nil {
 		return OperationsSummary{}, err
+	}
+	return result, nil
+}
+
+func ListWorkers(ctx context.Context, opts WorkerListOptions) (WorkerListResult, error) {
+	if opts.Limit < 0 {
+		return WorkerListResult{}, errors.New("agentsandbox: worker limit must be non-negative")
+	}
+	if opts.Offset < 0 {
+		return WorkerListResult{}, errors.New("agentsandbox: worker offset must be non-negative")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "workers")
+	if err != nil {
+		return WorkerListResult{}, err
+	}
+	query := url.Values{}
+	setQuery(query, "status", opts.Status)
+	setQuery(query, "host", opts.Host)
+	setQuery(query, "version", opts.Version)
+	setQuery(query, "image_ref", opts.ImageRef)
+	setQuery(query, "source_manifest_digest", opts.SourceManifestDigest)
+	if opts.Offset > 0 {
+		query.Set("offset", strconv.Itoa(opts.Offset))
+	}
+	if opts.Limit > 0 {
+		query.Set("limit", strconv.Itoa(opts.Limit))
+	}
+	labels := cleanStringMap(opts.Labels)
+	labelKeys := make([]string, 0, len(labels))
+	for key := range labels {
+		labelKeys = append(labelKeys, key)
+	}
+	sort.Strings(labelKeys)
+	for _, key := range labelKeys {
+		query.Add("label", key+"="+labels[key])
+	}
+	for _, capability := range cleanStrings(opts.Capabilities) {
+		query.Add("capability", capability)
+	}
+	var result WorkerListResult
+	if err := c.request(ctx, http.MethodGet, queryPathValues("/v1/workers", query), nil, &result, c.timeout); err != nil {
+		return WorkerListResult{}, err
+	}
+	if result.Count == 0 && len(result.Workers) > 0 {
+		result.Count = len(result.Workers)
+	}
+	return result, nil
+}
+
+func GetWorker(ctx context.Context, opts WorkerGetOptions) (HostRecord, error) {
+	id := strings.TrimSpace(opts.ID)
+	if id == "" {
+		return HostRecord{}, errors.New("agentsandbox: worker id required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "worker")
+	if err != nil {
+		return HostRecord{}, err
+	}
+	var result HostRecord
+	if err := c.request(ctx, http.MethodGet, workerPath(id), nil, &result, c.timeout); err != nil {
+		return HostRecord{}, err
+	}
+	return result, nil
+}
+
+func ListAssignments(ctx context.Context, opts AssignmentListOptions) (AssignmentListResult, error) {
+	if opts.Limit < 0 {
+		return AssignmentListResult{}, errors.New("agentsandbox: assignment limit must be non-negative")
+	}
+	if opts.Offset < 0 {
+		return AssignmentListResult{}, errors.New("agentsandbox: assignment offset must be non-negative")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "assignments")
+	if err != nil {
+		return AssignmentListResult{}, err
+	}
+	query := map[string]string{
+		"namespace":  opts.Namespace,
+		"status":     opts.Status,
+		"worker_id":  opts.WorkerID,
+		"leased_to":  opts.LeasedTo,
+		"verb":       opts.Verb,
+		"image_ref":  opts.ImageRef,
+		"sandbox_id": opts.SandboxID,
+		"warm_pool":  opts.WarmPool,
+	}
+	if opts.Offset > 0 {
+		query["offset"] = strconv.Itoa(opts.Offset)
+	}
+	if opts.Limit > 0 {
+		query["limit"] = strconv.Itoa(opts.Limit)
+	}
+	var result AssignmentListResult
+	if err := c.request(ctx, http.MethodGet, c.queryPath("/v1/assignments", query), nil, &result, c.timeout); err != nil {
+		return AssignmentListResult{}, err
+	}
+	if result.Count == 0 && len(result.Assignments) > 0 {
+		result.Count = len(result.Assignments)
+	}
+	return result, nil
+}
+
+func GetAssignment(ctx context.Context, opts AssignmentGetOptions) (Assignment, error) {
+	id := strings.TrimSpace(opts.ID)
+	if id == "" {
+		return Assignment{}, errors.New("agentsandbox: assignment id required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "assignment")
+	if err != nil {
+		return Assignment{}, err
+	}
+	var result Assignment
+	if err := c.request(ctx, http.MethodGet, assignmentPath(id), nil, &result, c.timeout); err != nil {
+		return Assignment{}, err
 	}
 	return result, nil
 }
@@ -2588,6 +2768,14 @@ func storagePruneRunPath(id string) string {
 	return "/v1/storage/prune/runs/" + url.PathEscape(id)
 }
 
+func workerPath(id string) string {
+	return "/v1/workers/" + url.PathEscape(id)
+}
+
+func assignmentPath(id string) string {
+	return "/v1/assignments/" + url.PathEscape(id)
+}
+
 func (c *Client) queryPath(path string, values map[string]string) string {
 	query := make(url.Values)
 	for key, value := range values {
@@ -2600,6 +2788,20 @@ func (c *Client) queryPath(path string, values map[string]string) string {
 		return path
 	}
 	return path + "?" + query.Encode()
+}
+
+func setQuery(query url.Values, key, value string) {
+	value = strings.TrimSpace(value)
+	if value != "" {
+		query.Set(key, value)
+	}
+}
+
+func queryPathValues(path string, values url.Values) string {
+	if len(values) == 0 {
+		return path
+	}
+	return path + "?" + values.Encode()
 }
 
 func (c *Client) ready() error {

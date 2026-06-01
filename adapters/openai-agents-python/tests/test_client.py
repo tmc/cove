@@ -523,6 +523,86 @@ def test_fleet_client_maintenance_runs() -> None:
         server.stop()
 
 
+def test_fleet_client_inventory() -> None:
+    server = _FleetHTTPServer()
+    server.start()
+    try:
+        workers = CoveFleetClient.list_workers(
+            fleet_url=server.url,
+            api_key="secret",
+            status="ready",
+            host="mini-1",
+            version="dev",
+            image_ref="base:v1",
+            source_manifest_digest="sha256:base",
+            labels={"zone": "desk", "role": "runner"},
+            capabilities=("ram-overlay", "asif", "ram-overlay", ""),
+            offset=1,
+            limit=2,
+        )
+        assert workers["count"] == 1
+        assert workers["workers"][0]["id"] == "worker-1"
+        assert workers["workers"][0]["labels"]["zone"] == "desk"
+        assert workers["workers"][0]["image_details"][0]["source_manifest_digest"] == "sha256:base"
+        worker = CoveFleetClient.get_worker(
+            fleet_url=server.url,
+            api_key="secret",
+            worker_id="worker-1",
+        )
+        assert worker["capacity"]["max_vms"] == 4
+
+        assignments = CoveFleetClient.list_assignments(
+            fleet_url=server.url,
+            api_key="secret",
+            namespace="team-a",
+            status="running",
+            worker_id="worker-1",
+            leased_to="worker-1",
+            verb="cove",
+            image_ref="base:v1",
+            sandbox_id="job-1",
+            warm_pool="runner",
+            offset=1,
+            limit=2,
+        )
+        assert assignments["count"] == 1
+        assert assignments["assignments"][0]["id"] == "assignment-1"
+        assignment = CoveFleetClient.get_assignment(
+            fleet_url=server.url,
+            api_key="secret",
+            assignment_id="assignment-1",
+        )
+        assert assignment["sandbox_id"] == "job-1"
+        assert assignment["warm_pool"] == "runner"
+
+        paths = [request["path"] for request in server.requests[-4:]]
+        assert paths == [
+            "/v1/workers",
+            "/v1/workers/worker-1",
+            "/v1/assignments",
+            "/v1/assignments/assignment-1",
+        ]
+        assert server.requests[-4]["query"]["label"] == ["role=runner", "zone=desk"]
+        assert server.requests[-4]["query"]["capability"] == ["ram-overlay", "asif"]
+        assert server.requests[-4]["query"]["source_manifest_digest"] == ["sha256:base"]
+        assert server.requests[-2]["query"]["namespace"] == ["team-a"]
+        assert server.requests[-2]["query"]["sandbox_id"] == ["job-1"]
+        assert server.requests[-2]["query"]["warm_pool"] == ["runner"]
+    finally:
+        server.stop()
+
+
+def test_fleet_client_inventory_validation() -> None:
+    with pytest.raises(ValueError, match="worker limit must be non-negative"):
+        CoveFleetClient.list_workers(fleet_url="https://fleet.example", api_key="secret", limit=-1)
+    with pytest.raises(ValueError, match="worker id is required"):
+        CoveFleetClient.get_worker(fleet_url="https://fleet.example", api_key="secret", worker_id="")
+    with pytest.raises(ValueError, match="assignment offset must be non-negative"):
+        CoveFleetClient.list_assignments(fleet_url="https://fleet.example", api_key="secret", offset=-1)
+    with pytest.raises(ValueError, match="assignment id is required"):
+        CoveFleetClient.get_assignment(fleet_url="https://fleet.example", api_key="secret", assignment_id="")
+
+
 def test_fleet_client_maintenance_validation() -> None:
     with pytest.raises(ValueError, match="image gc run limit must be non-negative"):
         CoveFleetClient.list_image_gc_runs(fleet_url="https://fleet.example", api_key="secret", limit=-1)
@@ -1036,6 +1116,40 @@ def _operations_summary() -> dict[str, object]:
     }
 
 
+def _host_record() -> dict[str, object]:
+    return {
+        "id": "worker-1",
+        "host": "mini-1",
+        "address": "ssh://mini-1",
+        "version": "dev",
+        "labels": {"zone": "desk", "role": "runner"},
+        "capabilities": ["ram-overlay", "asif"],
+        "image_refs": ["base:v1"],
+        "image_details": [{"ref": "base:v1", "source_manifest_digest": "sha256:base"}],
+        "capacity": {"vms": 1, "max_vms": 4},
+        "status": "ready",
+        "cordoned": True,
+        "cordon_reason": "maintenance",
+        "last_seen": "2026-05-31T10:05:00Z",
+        "expires": "2026-05-31T10:06:00Z",
+        "last_report": {"id": "report-1", "status": "running", "time": "2026-05-31T10:05:00Z"},
+    }
+
+
+def _inventory_assignment() -> dict[str, object]:
+    assignment = _maintenance_assignment(
+        "assignment-1",
+        ["run", "-fork-from", "base:v1", "-ephemeral"],
+    )
+    assignment["image_ref"] = "base:v1"
+    assignment["warm_pool"] = "runner"
+    assignment["sandbox_id"] = "job-1"
+    assignment["status"] = "running"
+    assignment["leased_to"] = "worker-1"
+    assignment["lease_expires"] = "2026-05-31T10:06:00Z"
+    return assignment
+
+
 def _warm_pool_status() -> dict[str, object]:
     assignment = {
         "id": "warm-slot-1",
@@ -1257,6 +1371,32 @@ class _FleetHTTPServer:
                     return
                 if path == "/v1/operations/summary":
                     self._write(_operations_summary())
+                    return
+                if path == "/v1/workers":
+                    self._write(
+                        {
+                            "workers": [_host_record()],
+                            "count": 1,
+                            "offset": int(query.get("offset", ["0"])[0]),
+                            "limit": int(query.get("limit", ["0"])[0]),
+                        }
+                    )
+                    return
+                if path == "/v1/workers/worker-1":
+                    self._write(_host_record())
+                    return
+                if path == "/v1/assignments":
+                    self._write(
+                        {
+                            "assignments": [_inventory_assignment()],
+                            "count": 1,
+                            "offset": int(query.get("offset", ["0"])[0]),
+                            "limit": int(query.get("limit", ["0"])[0]),
+                        }
+                    )
+                    return
+                if path == "/v1/assignments/assignment-1":
+                    self._write(_inventory_assignment())
                     return
                 if path == "/v1/sandboxes":
                     self._write(

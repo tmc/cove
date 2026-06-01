@@ -252,6 +252,26 @@ summary = CoveFleetClient.get_operations_summary(
     namespace="team-a",
 )
 print(summary["workers"]["ready"], summary["sandboxes"]["active"])
+workers = CoveFleetClient.list_workers(
+    fleet_url="https://fleet.internal.example",
+    api_key="cove_...",
+    status="ready",
+    image_ref="macos-base:latest",
+    source_manifest_digest="sha256:...",
+    labels={"zone": "desk"},
+    capabilities=("ram-overlay",),
+    limit=20,
+)
+print(workers["count"])
+assignments = CoveFleetClient.list_assignments(
+    fleet_url="https://fleet.internal.example",
+    api_key="cove_...",
+    namespace="team-a",
+    status="running",
+    worker_id="mini-1",
+    limit=20,
+)
+print(assignments["count"])
 claim = CoveFleetClient.claim_warm_pool(
     fleet_url="https://fleet.internal.example",
     api_key="cove_...",
@@ -286,8 +306,9 @@ client.delete_vm()
 
 Maintenance helpers include `push_image_gc`, `push_lifecycle_policy`,
 `push_storage_budget`, `push_storage_prune`, the matching `list_*_runs` /
-`get_*_run` methods, `get_operations_summary`, and `list_controller_runs` for
-the aggregate operations dashboard and timeline. Pass `dry_run=True` to
+`get_*_run` methods, `get_operations_summary`, `list_workers`, `get_worker`,
+`list_assignments`, `get_assignment`, and `list_controller_runs` for the
+aggregate operations dashboard, inventory, and timeline. Pass `dry_run=True` to
 maintenance pushes to inspect planned
 assignments and structured skipped-worker diagnostics without mutating the
 controller.

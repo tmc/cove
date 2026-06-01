@@ -765,15 +765,18 @@ same SDKs can dry-run hosted placement before creating a sandbox:
 `agentsandbox.Plan` in Go and `CoveFleetClient.plan_sandbox` in Python return
 the controller's feasible candidates and skipped-worker reasons. They also
 expose image-preparation, maintenance fan-out, the operations dashboard
-summary, retained controller-run history, and fork warm-pool lifecycle
-controls, so hosted agent clients can pre-stage exact images, push image
-GC/lifecycle/storage policy work, inspect fleet pressure and operations
-history, prewarm RAM-overlay slots, claim a ready slot for a guest command,
-read pool events, and delete the pool through the same fleet credentials.
+summary, worker/assignment inventory, retained controller-run history, and fork
+warm-pool lifecycle controls, so hosted agent clients can pre-stage exact
+images, push image GC/lifecycle/storage policy work, inspect fleet pressure,
+enumerate current work, inspect operations history, prewarm RAM-overlay slots,
+claim a ready slot for a guest command, read pool events, and delete the pool
+through the same fleet credentials.
 Maintenance helpers include `PushImageGC`, `PushLifecyclePolicy`,
 `PushStorageBudget`, `PushStoragePrune`, their list/get run companions, and
 `GetOperationsSummary` plus `ListControllerRuns` for the aggregate operations
-dashboard and timeline. Pass `DryRun` to maintenance pushes to inspect planned
+dashboard and timeline. Inventory helpers include `ListWorkers`, `GetWorker`,
+`ListAssignments`, and `GetAssignment`, with the same filters and pagination as
+the REST API. Pass `DryRun` to maintenance pushes to inspect planned
 assignments and structured skipped-worker diagnostics without mutating the
 controller.
 
@@ -822,6 +825,34 @@ if err != nil {
 	log.Fatal(err)
 }
 log.Printf("ready workers=%d active sandboxes=%d", summary.Workers.Ready, summary.Sandboxes.Active)
+
+workers, err := agentsandbox.ListWorkers(ctx, agentsandbox.WorkerListOptions{
+	FleetURL:             "https://fleet.internal.example",
+	APIKey:               os.Getenv("COVE_API_KEY"),
+	Status:               "ready",
+	ImageRef:             "macos-base:latest",
+	SourceManifestDigest: "sha256:...",
+	Labels:               map[string]string{"zone": "desk"},
+	Capabilities:         []string{"ram-overlay"},
+	Limit:                20,
+})
+if err != nil {
+	log.Fatal(err)
+}
+log.Printf("matching workers=%d", workers.Count)
+
+assignments, err := agentsandbox.ListAssignments(ctx, agentsandbox.AssignmentListOptions{
+	FleetURL:  "https://fleet.internal.example",
+	APIKey:    os.Getenv("COVE_API_KEY"),
+	Namespace: "team-a",
+	Status:    "running",
+	WorkerID:  "mini-1",
+	Limit:     20,
+})
+if err != nil {
+	log.Fatal(err)
+}
+log.Printf("running assignments=%d", assignments.Count)
 
 runs, err := agentsandbox.ListControllerRuns(ctx, agentsandbox.ControllerRunListOptions{
 	FleetURL:   "https://fleet.internal.example",

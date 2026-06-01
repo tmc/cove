@@ -589,6 +589,116 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 	}
 }
 
+func TestCloudClientInventory(t *testing.T) {
+	server := newSDKFleetServer(t)
+	ctx := context.Background()
+
+	workers, err := ListWorkers(ctx, WorkerListOptions{
+		FleetURL:             server.URL,
+		APIKey:               "secret",
+		Status:               "ready",
+		Host:                 "mini-1",
+		Version:              "dev",
+		ImageRef:             "base:v1",
+		SourceManifestDigest: "sha256:base",
+		Labels:               map[string]string{"zone": "desk", "role": "runner"},
+		Capabilities:         []string{"ram-overlay", "asif", "ram-overlay", ""},
+		Offset:               1,
+		Limit:                2,
+		Timeout:              time.Second,
+	})
+	if err != nil {
+		t.Fatalf("ListWorkers: %v", err)
+	}
+	if workers.Count != 1 || workers.Offset != 1 || workers.Limit != 2 || len(workers.Workers) != 1 || workers.Workers[0].ID != "worker-1" {
+		t.Fatalf("ListWorkers = %+v, want worker-1 page", workers)
+	}
+	if !workers.Workers[0].Cordoned || workers.Workers[0].Labels["zone"] != "desk" || !equalStringSlices(workers.Workers[0].Capabilities, []string{"ram-overlay", "asif"}) || workers.Workers[0].ImageDetails[0].SourceManifestDigest != "sha256:base" {
+		t.Fatalf("ListWorkers worker = %+v, want decoded inventory details", workers.Workers[0])
+	}
+	worker, err := GetWorker(ctx, WorkerGetOptions{FleetURL: server.URL, APIKey: "secret", ID: "worker-1", Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("GetWorker: %v", err)
+	}
+	if worker.ID != "worker-1" || worker.Capacity.MaxVMs != 4 {
+		t.Fatalf("GetWorker = %+v, want worker-1", worker)
+	}
+
+	assignments, err := ListAssignments(ctx, AssignmentListOptions{
+		FleetURL:  server.URL,
+		APIKey:    "secret",
+		Namespace: "team-a",
+		Status:    "running",
+		WorkerID:  "worker-1",
+		LeasedTo:  "worker-1",
+		Verb:      "cove",
+		ImageRef:  "base:v1",
+		SandboxID: "job-1",
+		WarmPool:  "runner",
+		Offset:    1,
+		Limit:     2,
+		Timeout:   time.Second,
+	})
+	if err != nil {
+		t.Fatalf("ListAssignments: %v", err)
+	}
+	if assignments.Count != 1 || assignments.Offset != 1 || assignments.Limit != 2 || len(assignments.Assignments) != 1 || assignments.Assignments[0].ID != "assignment-1" {
+		t.Fatalf("ListAssignments = %+v, want assignment-1 page", assignments)
+	}
+	assignment, err := GetAssignment(ctx, AssignmentGetOptions{FleetURL: server.URL, APIKey: "secret", ID: "assignment-1", Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("GetAssignment: %v", err)
+	}
+	if assignment.ID != "assignment-1" || assignment.SandboxID != "job-1" || assignment.WarmPool != "runner" {
+		t.Fatalf("GetAssignment = %+v, want assignment-1", assignment)
+	}
+
+	paths := make([]string, 0, len(server.requests))
+	for _, req := range server.requests {
+		paths = append(paths, req.path)
+		if req.authorization != "Bearer secret" {
+			t.Fatalf("authorization for %s = %q, want bearer token", req.path, req.authorization)
+		}
+	}
+	wantPaths := []string{
+		"/v1/workers",
+		"/v1/workers/worker-1",
+		"/v1/assignments",
+		"/v1/assignments/assignment-1",
+	}
+	if !equalStringSlices(paths, wantPaths) {
+		t.Fatalf("paths = %+v, want %+v", paths, wantPaths)
+	}
+	if query := server.requests[0].query; query.Get("status") != "ready" || query.Get("host") != "mini-1" || query.Get("version") != "dev" || query.Get("image_ref") != "base:v1" || query.Get("source_manifest_digest") != "sha256:base" || query.Get("offset") != "1" || query.Get("limit") != "2" {
+		t.Fatalf("worker query = %q", query.Encode())
+	}
+	if labels := server.requests[0].query["label"]; !equalStringSlices(labels, []string{"role=runner", "zone=desk"}) {
+		t.Fatalf("worker label query = %+v, want sorted labels", labels)
+	}
+	if capabilities := server.requests[0].query["capability"]; !equalStringSlices(capabilities, []string{"ram-overlay", "asif"}) {
+		t.Fatalf("worker capability query = %+v, want deduped capabilities", capabilities)
+	}
+	if query := server.requests[2].query; query.Get("namespace") != "team-a" || query.Get("status") != "running" || query.Get("worker_id") != "worker-1" || query.Get("leased_to") != "worker-1" || query.Get("verb") != "cove" || query.Get("image_ref") != "base:v1" || query.Get("sandbox_id") != "job-1" || query.Get("warm_pool") != "runner" || query.Get("offset") != "1" || query.Get("limit") != "2" {
+		t.Fatalf("assignment query = %q", query.Encode())
+	}
+}
+
+func TestCloudClientInventoryValidation(t *testing.T) {
+	ctx := context.Background()
+	if _, err := ListWorkers(ctx, WorkerListOptions{FleetURL: "https://fleet.example", APIKey: "secret", Limit: -1}); err == nil || !strings.Contains(err.Error(), "limit must be non-negative") {
+		t.Fatalf("ListWorkers negative limit err = %v, want validation error", err)
+	}
+	if _, err := GetWorker(ctx, WorkerGetOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "id required") {
+		t.Fatalf("GetWorker missing id err = %v, want validation error", err)
+	}
+	if _, err := ListAssignments(ctx, AssignmentListOptions{FleetURL: "https://fleet.example", APIKey: "secret", Offset: -1}); err == nil || !strings.Contains(err.Error(), "offset must be non-negative") {
+		t.Fatalf("ListAssignments negative offset err = %v, want validation error", err)
+	}
+	if _, err := GetAssignment(ctx, AssignmentGetOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "id required") {
+		t.Fatalf("GetAssignment missing id err = %v, want validation error", err)
+	}
+}
+
 func TestCloudClientMaintenanceValidation(t *testing.T) {
 	ctx := context.Background()
 	if _, err := ListImageGCRuns(ctx, ImageGCListOptions{FleetURL: "https://fleet.example", APIKey: "secret", Limit: -1}); err == nil || !strings.Contains(err.Error(), "limit must be non-negative") {
@@ -1067,6 +1177,24 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/operations/summary":
 			writeSDKJSON(t, w, sdkOperationsSummary())
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/workers":
+			writeSDKJSON(t, w, WorkerListResult{
+				Workers: []HostRecord{sdkHostRecord()},
+				Count:   1,
+				Offset:  atoiDefault(r.URL.Query().Get("offset"), 0),
+				Limit:   atoiDefault(r.URL.Query().Get("limit"), 0),
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/workers/worker-1":
+			writeSDKJSON(t, w, sdkHostRecord())
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/assignments":
+			writeSDKJSON(t, w, AssignmentListResult{
+				Assignments: []Assignment{sdkInventoryAssignment()},
+				Count:       1,
+				Offset:      atoiDefault(r.URL.Query().Get("offset"), 0),
+				Limit:       atoiDefault(r.URL.Query().Get("limit"), 0),
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/assignments/assignment-1":
+			writeSDKJSON(t, w, sdkInventoryAssignment())
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/warm-pools":
 			status := sdkWarmPoolStatus()
 			writeSDKJSON(t, w, WarmPoolResult{
@@ -1396,6 +1524,41 @@ func sdkOperationsSummary() OperationsSummary {
 		},
 		Metering: MeteringSummary{Namespace: "team-a", Records: 2, DurationMillis: 2000, VMMillis: 2000},
 	}
+}
+
+func sdkHostRecord() HostRecord {
+	now := time.Date(2026, 5, 31, 10, 5, 0, 0, time.UTC)
+	return HostRecord{
+		ID:           "worker-1",
+		Host:         "mini-1",
+		Address:      "ssh://mini-1",
+		Version:      "dev",
+		Labels:       map[string]string{"zone": "desk", "role": "runner"},
+		Capabilities: []string{"ram-overlay", "asif"},
+		ImageRefs:    []string{"base:v1"},
+		ImageDetails: []WorkerImage{{
+			Ref:                  "base:v1",
+			SourceManifestDigest: "sha256:base",
+		}},
+		Capacity:     Capacity{VMs: 1, MaxVMs: 4},
+		Status:       "ready",
+		Cordoned:     true,
+		CordonReason: "maintenance",
+		LastSeen:     now,
+		Expires:      now.Add(time.Minute),
+		Report:       &WorkerReport{ID: "report-1", Status: "running", Time: now},
+	}
+}
+
+func sdkInventoryAssignment() Assignment {
+	assignment := sdkMaintenanceAssignment("assignment-1", "run", "-fork-from", "base:v1", "-ephemeral")
+	assignment.ImageRef = "base:v1"
+	assignment.WarmPool = "runner"
+	assignment.SandboxID = "job-1"
+	assignment.Status = "running"
+	assignment.LeasedTo = "worker-1"
+	assignment.LeaseExpires = time.Date(2026, 5, 31, 10, 6, 0, 0, time.UTC)
+	return assignment
 }
 
 func sdkWarmPoolStatus() WarmPoolStatus {
