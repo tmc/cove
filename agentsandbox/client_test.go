@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -13,6 +14,18 @@ import (
 	"testing"
 	"time"
 )
+
+func TestResponseErrorIncludesPlacementPlanID(t *testing.T) {
+	resp := &http.Response{
+		Status:     "400 Bad Request",
+		StatusCode: http.StatusBadRequest,
+		Body:       io.NopCloser(strings.NewReader(`{"error":"no ready worker matches assignment","placement_plan":{"id":"placement-plan-1"}}`)),
+	}
+	err := responseError(http.MethodPost, "/v1/sandboxes", resp)
+	if err == nil || !strings.Contains(err.Error(), "placement_plan=placement-plan-1") {
+		t.Fatalf("responseError = %v, want placement plan id", err)
+	}
+}
 
 func TestCloudClientCreateExecControlDelete(t *testing.T) {
 	server := newSDKFleetServer(t)

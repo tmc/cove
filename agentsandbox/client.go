@@ -4648,10 +4648,14 @@ func responseError(method, path string, resp *http.Response) error {
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	msg := strings.TrimSpace(string(data))
 	var errBody struct {
-		Error string `json:"error"`
+		Error         string         `json:"error"`
+		PlacementPlan *PlacementPlan `json:"placement_plan"`
 	}
 	if json.Unmarshal(data, &errBody) == nil && strings.TrimSpace(errBody.Error) != "" {
 		msg = strings.TrimSpace(errBody.Error)
+		if errBody.PlacementPlan != nil && strings.TrimSpace(errBody.PlacementPlan.ID) != "" {
+			msg += " (placement_plan=" + strings.TrimSpace(errBody.PlacementPlan.ID) + ")"
+		}
 	}
 	if msg == "" {
 		msg = resp.Status

@@ -6747,6 +6747,56 @@ func TestHandlerSandboxMaxActiveSandboxes(t *testing.T) {
 	}
 }
 
+func TestHandlerSandboxAdmissionFailureIncludesPlacementPlan(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	server := httptest.NewServer(Handler(store))
+	defer server.Close()
+
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "cordoned", Capabilities: []string{"ram-overlay"}, ImageRefs: []string{"base:v1"}}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "full", Capabilities: []string{"ram-overlay"}, ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 1, MaxVMs: 1}}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "plain", Capabilities: []string{"asif"}, ImageRefs: []string{"base:v1"}}, &record)
+	if _, err := store.CordonWorker("cordoned", "maintenance"); err != nil {
+		t.Fatal(err)
+	}
+
+	resp := postJSONRequest(t, server.URL+"/v1/sandboxes", "", SandboxRequest{ID: "job-1", ImageRef: "base:v1", RequiredCapabilities: []string{"ram-overlay"}})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("sandbox create status = %d, want 400", resp.StatusCode)
+	}
+	var body SandboxAdmissionError
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(body.Error, "no ready worker matches assignment") || body.PlacementPlan == nil {
+		t.Fatalf("admission body = %+v, want placement plan error", body)
+	}
+	plan := body.PlacementPlan
+	if plan.Policy != PolicyImageAffinity || plan.ImageRef != "base:v1" || len(plan.Candidates) != 0 || len(plan.Skipped) != 3 {
+		t.Fatalf("placement plan = %+v, want image-affinity with three skips", plan)
+	}
+	skips := make(map[string]PlacementSkip)
+	for _, skip := range plan.Skipped {
+		skips[skip.WorkerID] = skip
+	}
+	if skips["cordoned"].Reason != "status" || skips["cordoned"].Status != "cordoned" {
+		t.Fatalf("cordoned skip = %+v, want status/cordoned", skips["cordoned"])
+	}
+	if skips["full"].Reason != "capacity" || skips["full"].Load != 1 || skips["full"].MaxVMs != 1 || skips["full"].RequestedVMs != 1 {
+		t.Fatalf("full skip = %+v, want capacity 1/1 request 1", skips["full"])
+	}
+	if skips["plain"].Reason != "capability" || !equalStrings(skips["plain"].MissingCapabilities, []string{"ram-overlay"}) {
+		t.Fatalf("plain skip = %+v, want missing ram-overlay", skips["plain"])
+	}
+
+	var plans PlacementPlanListResult
+	getJSON(t, server.URL+"/v1/placements/plans?limit=1", &plans)
+	if plans.Count != 1 || len(plans.Plans) != 1 || plans.Plans[0].ID != plan.ID {
+		t.Fatalf("placement plan history = %+v, want retained %s", plans, plan.ID)
+	}
+}
+
 func TestHandlerSandboxQueueDiagnostics(t *testing.T) {
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
 	store := NewMemoryStore(time.Minute)

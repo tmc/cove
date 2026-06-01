@@ -837,6 +837,11 @@ type SandboxRequest struct {
 	RetryDelay           string            `json:"retry_delay,omitempty"`
 }
 
+type SandboxAdmissionError struct {
+	Error         string         `json:"error"`
+	PlacementPlan *PlacementPlan `json:"placement_plan,omitempty"`
+}
+
 type SandboxStatus struct {
 	Namespace            string        `json:"namespace,omitempty"`
 	ID                   string        `json:"id"`

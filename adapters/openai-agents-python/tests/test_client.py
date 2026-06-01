@@ -15,7 +15,13 @@ import pytest
 from cove_sandbox import CoveClient, CoveComputer, CoveError, CoveFleetClient
 from cove_sandbox import backend as backend_module
 from cove_sandbox.backend import CoveSandboxClientOptions, CoveSandboxSessionState
+from cove_sandbox.client import _json_error
 from cove_sandbox.computer import _resolve_keys
+
+
+def test_json_error_includes_placement_plan_id() -> None:
+    data = b'{"error":"no ready worker matches assignment","placement_plan":{"id":"placement-plan-1"}}'
+    assert _json_error(data) == "no ready worker matches assignment (placement_plan=placement-plan-1)"
 
 
 def test_resolve_keys() -> None:

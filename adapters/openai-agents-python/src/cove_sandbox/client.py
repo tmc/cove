@@ -3131,5 +3131,11 @@ def _json_error(data: bytes) -> str:
     except json.JSONDecodeError:
         return data.decode(errors="replace").strip()
     if isinstance(loaded, dict):
-        return str(loaded.get("error") or "").strip()
+        msg = str(loaded.get("error") or "").strip()
+        plan = loaded.get("placement_plan")
+        if msg and isinstance(plan, dict):
+            plan_id = str(plan.get("id") or "").strip()
+            if plan_id:
+                return f"{msg} (placement_plan={plan_id})"
+        return msg
     return ""

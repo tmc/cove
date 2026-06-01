@@ -819,7 +819,7 @@ func handleSandboxes(w http.ResponseWriter, r *http.Request, store *Store) {
 		}
 		result, err := store.CreateSandboxActor(identity.Actor, req)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
+			writeSandboxAdmissionError(w, store, req, err)
 			return
 		}
 		writeJSON(w, http.StatusOK, result)
@@ -850,6 +850,41 @@ func sandboxListFilterFromRequest(r *http.Request, namespace string) (SandboxLis
 		filter.Offset = offset
 	}
 	return filter, nil
+}
+
+func writeSandboxAdmissionError(w http.ResponseWriter, store *Store, req SandboxRequest, err error) {
+	if !isPlacementAdmissionError(err) {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	plan, planErr := store.PlanAssignment(sandboxPlacementAssignment(req), DefaultPlacementPlanLimit)
+	if planErr != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusBadRequest, SandboxAdmissionError{
+		Error:         err.Error(),
+		PlacementPlan: &plan,
+	})
+}
+
+func isPlacementAdmissionError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "no ready worker matches assignment")
+}
+
+func sandboxPlacementAssignment(req SandboxRequest) Assignment {
+	return Assignment{
+		Namespace:            normalizeNamespace(req.Namespace),
+		Policy:               strings.TrimSpace(req.Policy),
+		ImageRef:             strings.TrimSpace(req.ImageRef),
+		ImageManifestDigest:  strings.TrimSpace(req.ImageManifestDigest),
+		ImageDigestRef:       strings.TrimSpace(req.ImageDigestRef),
+		ImagePlatform:        strings.TrimSpace(req.ImagePlatform),
+		RequiredLabels:       cloneLabels(req.RequiredLabels),
+		RequiredCapabilities: sortedUniqueStrings(req.RequiredCapabilities),
+		AntiAffinityKey:      strings.TrimSpace(req.AntiAffinityKey),
+		Resources:            req.Resources,
+	}
 }
 
 func handleSandbox(w http.ResponseWriter, r *http.Request, store *Store) {
