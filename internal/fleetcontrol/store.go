@@ -36,6 +36,7 @@ type Store struct {
 	assignments   map[string]Assignment
 	warmPools     map[string]WarmPool
 	plans         []PlacementPlan
+	preparations  []ImagePrepareResult
 	audit         []AuditEvent
 	metering      []SandboxMeteringRecord
 	reports       []AssignmentReport
@@ -51,6 +52,7 @@ type storeFile struct {
 	Assignments       []Assignment            `json:"assignments,omitempty"`
 	WarmPools         []WarmPool              `json:"warm_pools,omitempty"`
 	PlacementPlans    []PlacementPlan         `json:"placement_plans,omitempty"`
+	ImagePreparations []ImagePrepareResult    `json:"image_preparations,omitempty"`
 	AuditEvents       []AuditEvent            `json:"audit_events,omitempty"`
 	MeteringRecords   []SandboxMeteringRecord `json:"metering_records,omitempty"`
 	AssignmentReports []AssignmentReport      `json:"assignment_reports,omitempty"`
@@ -142,6 +144,7 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		assignments:   make(map[string]Assignment),
 		warmPools:     make(map[string]WarmPool),
 		plans:         nil,
+		preparations:  nil,
 		audit:         nil,
 		metering:      nil,
 		reports:       nil,
@@ -214,6 +217,13 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 			continue
 		}
 		s.plans = append(s.plans, plan)
+	}
+	for _, prep := range file.ImagePreparations {
+		prep = normalizeImagePrepareResult(prep)
+		if prep.ID == "" || prep.Created.IsZero() || prep.SourceRef == "" || prep.ImageRef == "" {
+			continue
+		}
+		s.preparations = append(s.preparations, prep)
 	}
 	for _, event := range file.AuditEvents {
 		event = normalizeAuditEvent(event)
@@ -311,6 +321,7 @@ func (s *Store) ReconcilePlan() ReconcileResult {
 		assignments:   cloneAssignmentMap(s.assignments),
 		warmPools:     cloneWarmPoolMap(s.warmPools),
 		plans:         clonePlacementPlans(s.plans),
+		preparations:  cloneImagePrepareResults(s.preparations),
 		metering:      cloneSandboxMeteringRecords(s.metering),
 		reports:       cloneAssignmentReports(s.reports),
 	}
@@ -2394,8 +2405,10 @@ func (s *Store) PrepareImageActor(actor string, req ImagePrepareRequest) (ImageP
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	reconciled := s.reconcileLocked(now)
+	s.reconcileLocked(now)
 	result := ImagePrepareResult{
+		ID:                  s.nextImagePrepareIDLocked(now),
+		Created:             now,
 		Namespace:           namespace,
 		SourceRef:           sourceRef,
 		ImageRef:            imageRef,
@@ -2442,29 +2455,89 @@ func (s *Store) PrepareImageActor(actor string, req ImagePrepareRequest) (ImageP
 	if len(result.Assignments) == 0 && len(result.Skipped) == 0 {
 		return result, fmt.Errorf("no workers match image prepare")
 	}
-	if len(result.Assignments) > 0 || reconciled.changed() {
-		if len(result.Assignments) > 0 {
-			fields := map[string]string{
-				"source_ref":  sourceRef,
-				"assignments": strconv.Itoa(len(result.Assignments)),
-			}
-			if result.ImageManifestDigest != "" {
-				fields["image_digest"] = result.ImageManifestDigest
-			}
-			s.appendAuditLocked(now, AuditEvent{
-				Actor:      actor,
-				Namespace:  namespace,
-				Action:     "image.prepare",
-				TargetType: "image",
-				TargetID:   imageRef,
-				Fields:     fields,
-			})
+	result = normalizeImagePrepareResult(result)
+	s.preparations = append(s.preparations, cloneImagePrepareResult(result))
+	if len(result.Assignments) > 0 {
+		fields := map[string]string{
+			"source_ref":  sourceRef,
+			"assignments": strconv.Itoa(len(result.Assignments)),
 		}
-		if err := s.persistLocked(); err != nil {
-			return result, err
+		if result.ImageManifestDigest != "" {
+			fields["image_digest"] = result.ImageManifestDigest
 		}
+		s.appendAuditLocked(now, AuditEvent{
+			Actor:      actor,
+			Namespace:  namespace,
+			Action:     "image.prepare",
+			TargetType: "image",
+			TargetID:   imageRef,
+			Fields:     fields,
+		})
+	}
+	if err := s.persistLocked(); err != nil {
+		return result, err
 	}
 	return result, nil
+}
+
+func (s *Store) GetImagePreparation(id string) (ImagePrepareResult, bool) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return ImagePrepareResult{}, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, prep := range s.preparations {
+		if prep.ID == id {
+			return cloneImagePrepareResult(prep), true
+		}
+	}
+	return ImagePrepareResult{}, false
+}
+
+func (s *Store) ListImagePreparationsPage(filter ImagePrepareListFilter) ImagePrepareListResult {
+	filter.Namespace = normalizeNamespace(filter.Namespace)
+	filter.SourceRef = strings.TrimSpace(filter.SourceRef)
+	filter.ImageRef = strings.TrimSpace(filter.ImageRef)
+	filter.ImageManifestDigest = strings.TrimSpace(filter.ImageManifestDigest)
+	if filter.Offset < 0 {
+		filter.Offset = 0
+	}
+	if filter.Limit < 0 {
+		filter.Limit = 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	preps := s.sortedImagePreparationsLocked()
+	filtered := preps[:0]
+	for _, prep := range preps {
+		if !namespaceMatches(prep.Namespace, filter.Namespace) {
+			continue
+		}
+		if filter.SourceRef != "" && prep.SourceRef != filter.SourceRef {
+			continue
+		}
+		if filter.ImageRef != "" && prep.ImageRef != filter.ImageRef {
+			continue
+		}
+		if filter.ImageManifestDigest != "" && prep.ImageManifestDigest != filter.ImageManifestDigest {
+			continue
+		}
+		filtered = append(filtered, prep)
+	}
+	result := ImagePrepareListResult{Offset: filter.Offset, Limit: filter.Limit}
+	if filter.Offset >= len(filtered) {
+		return result
+	}
+	end := len(filtered) - filter.Offset
+	start := 0
+	if filter.Limit > 0 && end > filter.Limit {
+		start = end - filter.Limit
+		result.NextOffset = filter.Offset + filter.Limit
+	}
+	result.Preparations = cloneImagePrepareResults(filtered[start:end])
+	result.Count = len(result.Preparations)
+	return result
 }
 
 func (s *Store) PushImageGC(req ImageGCRequest) (ImageGCResult, error) {
@@ -3771,6 +3844,7 @@ func (s *Store) persistLocked() error {
 	assignments := s.sortedAssignmentsLocked()
 	warmPools := s.sortedWarmPoolsLocked()
 	plans := s.sortedPlacementPlansLocked()
+	preparations := s.sortedImagePreparationsLocked()
 	audit := cloneAuditEvents(s.audit)
 	metering := s.sortedMeteringLocked()
 	reports := s.sortedAssignmentReportsLocked()
@@ -3779,7 +3853,7 @@ func (s *Store) persistLocked() error {
 	samlBindings := s.sortedSAMLBindingsLocked()
 	samlReplays := s.sortedSAMLReplaysLocked()
 	samlSessions := s.sortedSAMLSessionRecordsLocked()
-	data, err := json.MarshalIndent(storeFile{Hosts: hosts, Assignments: assignments, WarmPools: warmPools, PlacementPlans: plans, AuditEvents: audit, MeteringRecords: metering, AssignmentReports: reports, ServiceAccounts: accounts, OIDCBindings: oidcBindings, SAMLBindings: samlBindings, SAMLReplays: samlReplays, SAMLSessions: samlSessions}, "", "  ")
+	data, err := json.MarshalIndent(storeFile{Hosts: hosts, Assignments: assignments, WarmPools: warmPools, PlacementPlans: plans, ImagePreparations: preparations, AuditEvents: audit, MeteringRecords: metering, AssignmentReports: reports, ServiceAccounts: accounts, OIDCBindings: oidcBindings, SAMLBindings: samlBindings, SAMLReplays: samlReplays, SAMLSessions: samlSessions}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode fleet store: %w", err)
 	}
@@ -3850,6 +3924,17 @@ func (s *Store) sortedPlacementPlansLocked() []PlacementPlan {
 		return plans[i].ID < plans[j].ID
 	})
 	return plans
+}
+
+func (s *Store) sortedImagePreparationsLocked() []ImagePrepareResult {
+	preps := cloneImagePrepareResults(s.preparations)
+	sort.Slice(preps, func(i, j int) bool {
+		if !preps[i].Created.Equal(preps[j].Created) {
+			return preps[i].Created.Before(preps[j].Created)
+		}
+		return preps[i].ID < preps[j].ID
+	})
+	return preps
 }
 
 func (s *Store) sortedMeteringLocked() []SandboxMeteringRecord {
@@ -3988,6 +4073,24 @@ func (s *Store) nextPlacementPlanIDLocked(now time.Time) string {
 	}
 }
 
+func (s *Store) nextImagePrepareIDLocked(now time.Time) string {
+	base := fmt.Sprintf("image-prepare-%d", now.UnixNano())
+	id := base
+	for i := 2; ; i++ {
+		found := false
+		for _, prep := range s.preparations {
+			if prep.ID == id {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return id
+		}
+		id = fmt.Sprintf("%s-%d", base, i)
+	}
+}
+
 func (s *Store) nextMeteringIDLocked(now time.Time) string {
 	base := fmt.Sprintf("metering-%d", now.UnixNano())
 	id := base
@@ -4046,6 +4149,36 @@ func clonePlacementPlans(in []PlacementPlan) []PlacementPlan {
 	for i := range in {
 		out[i] = clonePlacementPlan(in[i])
 	}
+	return out
+}
+
+func cloneImagePrepareResult(in ImagePrepareResult) ImagePrepareResult {
+	out := in
+	if !out.Created.IsZero() {
+		out.Created = out.Created.UTC()
+	}
+	out.Assignments = cloneAssignments(in.Assignments)
+	out.Skipped = cloneImagePrepareSkips(in.Skipped)
+	return out
+}
+
+func cloneImagePrepareResults(in []ImagePrepareResult) []ImagePrepareResult {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]ImagePrepareResult, len(in))
+	for i := range in {
+		out[i] = cloneImagePrepareResult(in[i])
+	}
+	return out
+}
+
+func cloneImagePrepareSkips(in []ImagePrepareSkip) []ImagePrepareSkip {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]ImagePrepareSkip, len(in))
+	copy(out, in)
 	return out
 }
 
@@ -5534,6 +5667,26 @@ func normalizePlacementPlan(plan PlacementPlan) PlacementPlan {
 	}
 	plan.Candidates = clonePlacementCandidates(plan.Candidates)
 	return plan
+}
+
+func normalizeImagePrepareResult(result ImagePrepareResult) ImagePrepareResult {
+	result.ID = strings.TrimSpace(result.ID)
+	result.Namespace = normalizeNamespace(result.Namespace)
+	result.SourceRef = strings.TrimSpace(result.SourceRef)
+	result.ImageRef = strings.TrimSpace(result.ImageRef)
+	result.ImageManifestDigest = strings.TrimSpace(result.ImageManifestDigest)
+	result.ImageDigestRef = strings.TrimSpace(result.ImageDigestRef)
+	result.ImagePlatform = strings.TrimSpace(result.ImagePlatform)
+	if !result.Created.IsZero() {
+		result.Created = result.Created.UTC()
+	}
+	result.Assignments = cloneAssignments(result.Assignments)
+	result.Skipped = cloneImagePrepareSkips(result.Skipped)
+	for i := range result.Skipped {
+		result.Skipped[i].WorkerID = strings.TrimSpace(result.Skipped[i].WorkerID)
+		result.Skipped[i].Reason = strings.TrimSpace(result.Skipped[i].Reason)
+	}
+	return result
 }
 
 func normalizeAssignmentReport(report AssignmentReport) AssignmentReport {

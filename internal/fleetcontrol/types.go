@@ -399,6 +399,8 @@ type ImagePrepareRequest struct {
 }
 
 type ImagePrepareResult struct {
+	ID                  string             `json:"id,omitempty"`
+	Created             time.Time          `json:"created,omitempty"`
 	Namespace           string             `json:"namespace,omitempty"`
 	SourceRef           string             `json:"source_ref"`
 	ImageRef            string             `json:"image_ref"`
@@ -407,6 +409,23 @@ type ImagePrepareResult struct {
 	ImagePlatform       string             `json:"image_platform,omitempty"`
 	Assignments         []Assignment       `json:"assignments,omitempty"`
 	Skipped             []ImagePrepareSkip `json:"skipped,omitempty"`
+}
+
+type ImagePrepareListFilter struct {
+	Namespace           string `json:"namespace,omitempty"`
+	SourceRef           string `json:"source_ref,omitempty"`
+	ImageRef            string `json:"image_ref,omitempty"`
+	ImageManifestDigest string `json:"image_manifest_digest,omitempty"`
+	Offset              int    `json:"offset,omitempty"`
+	Limit               int    `json:"limit,omitempty"`
+}
+
+type ImagePrepareListResult struct {
+	Preparations []ImagePrepareResult `json:"preparations"`
+	Count        int                  `json:"count"`
+	Offset       int                  `json:"offset,omitempty"`
+	Limit        int                  `json:"limit,omitempty"`
+	NextOffset   int                  `json:"next_offset,omitempty"`
 }
 
 type ImagePrepareSkip struct {

@@ -127,6 +127,12 @@ func Handler(store *Store) http.Handler {
 	mux.HandleFunc("/v1/images/gc", func(w http.ResponseWriter, r *http.Request) {
 		handleImageGC(w, r, store)
 	})
+	mux.HandleFunc("/v1/images/preparations/", func(w http.ResponseWriter, r *http.Request) {
+		handleImagePreparation(w, r, store)
+	})
+	mux.HandleFunc("/v1/images/preparations", func(w http.ResponseWriter, r *http.Request) {
+		handleImagePreparations(w, r, store)
+	})
 	mux.HandleFunc("/v1/images/prepare", func(w http.ResponseWriter, r *http.Request) {
 		handleImagePrepare(w, r, store)
 	})
@@ -1730,6 +1736,69 @@ func handleImagePrepare(w http.ResponseWriter, r *http.Request, store *Store) {
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+func handleImagePreparations(w http.ResponseWriter, r *http.Request, store *Store) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	filter, err := imagePrepareListFilterFromRequest(r, namespaceFilterFromRequest(r, identity))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, store.ListImagePreparationsPage(filter))
+}
+
+func handleImagePreparation(w http.ResponseWriter, r *http.Request, store *Store) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	id, err := nameFromPath(r.URL.Path, "/v1/images/preparations/", "image preparation")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	prep, ok := store.GetImagePreparation(id)
+	if !ok || !canAccessNamespace(identity, prep.Namespace) {
+		writeError(w, http.StatusNotFound, "image preparation not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, prep)
+}
+
+func imagePrepareListFilterFromRequest(r *http.Request, namespace string) (ImagePrepareListFilter, error) {
+	filter := ImagePrepareListFilter{
+		Namespace:           namespace,
+		SourceRef:           strings.TrimSpace(r.URL.Query().Get("source_ref")),
+		ImageRef:            strings.TrimSpace(r.URL.Query().Get("image_ref")),
+		ImageManifestDigest: strings.TrimSpace(r.URL.Query().Get("image_manifest_digest")),
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 0 {
+			return ImagePrepareListFilter{}, fmt.Errorf("image preparation limit must be non-negative")
+		}
+		filter.Limit = limit
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		offset, err := strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			return ImagePrepareListFilter{}, fmt.Errorf("image preparation offset must be non-negative")
+		}
+		filter.Offset = offset
+	}
+	return filter, nil
 }
 
 func handleImageGC(w http.ResponseWriter, r *http.Request, store *Store) {

@@ -343,6 +343,8 @@ Image preparation endpoint:
 curl -X POST http://127.0.0.1:9758/v1/images/prepare \
   -H 'content-type: application/json' \
   -d '{"manifest_bundle":"manifests","image_ref":"macos-runner:latest","image_platform":"darwin/arm64","required_labels":{"zone":"desk"}}'
+curl 'http://127.0.0.1:9758/v1/images/preparations?image_ref=macos-runner:latest&limit=20'
+curl http://127.0.0.1:9758/v1/images/preparations/image-prepare-...
 ```
 
 Image preparation creates one `cove image pull -tag <image_ref> <source_ref>`
@@ -363,6 +365,13 @@ audits.
 controller verifies the bundle, selects `image_platform` when supplied,
 populates the digest fields, and queues the pull from the selected digest ref
 instead of the mutable source tag.
+Each successful preparation response is persisted with `id` and `created`,
+including skipped-only no-op runs. `GET /v1/images/preparations` returns
+paginated preparation history with `source_ref`, `image_ref`,
+`image_manifest_digest`, `offset`, and `limit` filters; scoped service-account
+tokens only see preparations in their namespace. The `GET
+/v1/images/preparations/{id}` endpoint returns one retained preparation result
+or `404` across namespace boundaries.
 
 Image GC endpoint:
 

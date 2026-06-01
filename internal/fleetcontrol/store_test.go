@@ -3232,7 +3232,11 @@ func TestStoreDecommissionWorkerForceBlocksLeasedAssignments(t *testing.T) {
 }
 
 func TestStorePrepareImageCreatesMissingWorkerAssignments(t *testing.T) {
-	store := NewMemoryStore(time.Minute)
+	path := filepath.Join(t.TempDir(), "fleet.json")
+	store, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, hb := range []WorkerHeartbeat{
 		{ID: "warm", Labels: map[string]string{"zone": "desk"}, ImageRefs: []string{"macos-runner:latest"}},
 		{ID: "cold", Labels: map[string]string{"zone": "desk"}},
@@ -3253,6 +3257,9 @@ func TestStorePrepareImageCreatesMissingWorkerAssignments(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if result.ID == "" || result.Created.IsZero() {
+		t.Fatalf("prepare identity = %+v, want persisted id/created", result)
 	}
 	if len(result.Assignments) != 1 {
 		t.Fatalf("assignments = %+v, want 1", result.Assignments)
@@ -3279,6 +3286,18 @@ func TestStorePrepareImageCreatesMissingWorkerAssignments(t *testing.T) {
 	}
 	if len(result.Assignments) != 0 || skipReason(result.Skipped, "cold") != "active" {
 		t.Fatalf("second prepare result = %+v", result)
+	}
+	page := store.ListImagePreparationsPage(ImagePrepareListFilter{ImageRef: "macos-runner:latest", Limit: 1})
+	if page.Count != 1 || page.NextOffset != 1 || len(page.Preparations) != 1 || page.Preparations[0].ID != result.ID {
+		t.Fatalf("prepare history page = %+v, want latest prepare %s", page, result.ID)
+	}
+	reopened, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	persisted, ok := reopened.GetImagePreparation(result.ID)
+	if !ok || persisted.ID != result.ID || skipReason(persisted.Skipped, "cold") != "active" {
+		t.Fatalf("reopened prepare = %+v ok=%v, want active skip history", persisted, ok)
 	}
 }
 
@@ -4859,15 +4878,42 @@ func TestHandlerPrepareImage(t *testing.T) {
 	server := httptest.NewServer(Handler(store))
 	defer server.Close()
 
+	var account ServiceAccountResult
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-a", Namespace: "team-a", Token: "token-a"}, &account)
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-b", Namespace: "team-b", Token: "token-b"}, &account)
 	var record HostRecord
 	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1"}, &record)
 	var result ImagePrepareResult
-	postJSON(t, server.URL+"/v1/images/prepare", ImagePrepareRequest{
+	postJSONAuth(t, server.URL+"/v1/images/prepare", "token-a", ImagePrepareRequest{
 		SourceRef: "registry.example/cove/macos-runner:latest",
 		ImageRef:  "macos-runner:latest",
 	}, &result)
 	if len(result.Assignments) != 1 || result.Assignments[0].WorkerID != "worker-1" {
 		t.Fatalf("prepare result = %+v", result)
+	}
+	if result.ID == "" || result.Namespace != "team-a" {
+		t.Fatalf("prepare identity = %+v, want team-a retained prepare", result)
+	}
+	var list ImagePrepareListResult
+	getJSONAuth(t, server.URL+"/v1/images/preparations?image_ref=macos-runner:latest&limit=1", "token-a", &list)
+	if list.Count != 1 || len(list.Preparations) != 1 || list.Preparations[0].ID != result.ID {
+		t.Fatalf("prepare history = %+v, want %s", list, result.ID)
+	}
+	var got ImagePrepareResult
+	getJSONAuth(t, server.URL+"/v1/images/preparations/"+result.ID, "token-a", &got)
+	if got.ID != result.ID || got.Namespace != "team-a" || len(got.Assignments) != 1 {
+		t.Fatalf("prepare get = %+v, want %s", got, result.ID)
+	}
+	list = ImagePrepareListResult{}
+	getJSONAuth(t, server.URL+"/v1/images/preparations", "token-b", &list)
+	if list.Count != 0 || len(list.Preparations) != 0 {
+		t.Fatalf("team-b prepare history = %+v, want none", list)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/images/preparations/"+result.ID, "token-b"); code != http.StatusNotFound {
+		t.Fatalf("cross-namespace prepare status = %d, want %d", code, http.StatusNotFound)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/images/preparations?limit=-1", "token-a"); code != http.StatusBadRequest {
+		t.Fatalf("bad prepare history limit status = %d, want %d", code, http.StatusBadRequest)
 	}
 }
 
