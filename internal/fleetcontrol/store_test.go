@@ -20,6 +20,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/beevik/etree"
+	dsig "github.com/russellhaering/goxmldsig"
 	"github.com/tmc/cove/internal/ociimage"
 )
 
@@ -1523,6 +1525,61 @@ func TestStoreSAMLBindingPersistsValidatedCertificate(t *testing.T) {
 	bindings := reopened.ListSAMLBindings()
 	if len(bindings) != 1 || bindings[0].Name != "okta" || bindings[0].CertificateSHA256 != result.Binding.CertificateSHA256 {
 		t.Fatalf("reopened saml bindings = %+v", bindings)
+	}
+}
+
+func TestStoreSAMLBindingAuthenticatesSignedAssertion(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	key, cert, certPEM := testSAMLKeyCertificate(t)
+	store, err := OpenStore(filepath.Join(t.TempDir(), "fleet.json"), time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.now = func() time.Time { return now }
+	_, err = store.UpsertSAMLBinding(SAMLBindingRequest{
+		Name:           "okta",
+		EntityID:       "https://idp.example/saml",
+		Subject:        "alice@example.com",
+		SSOURL:         "https://idp.example/sso",
+		Audience:       "https://fleet.example/saml/acs",
+		Namespace:      "team-a",
+		Role:           ServiceAccountRoleOperator,
+		CertificatePEM: certPEM,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	token := "saml:" + base64.StdEncoding.EncodeToString(signedSAMLAssertion(t, key, cert, "https://idp.example/saml", "alice@example.com", "https://fleet.example/saml/acs", now.Add(-time.Minute), now.Add(5*time.Minute)))
+	principal, ok := store.AuthenticateBearer(token)
+	if !ok {
+		t.Fatal("AuthenticateBearer(saml assertion) = false")
+	}
+	if principal.Actor != "saml:okta" || principal.Namespace != "team-a" || principal.Role != ServiceAccountRoleOperator {
+		t.Fatalf("principal = %+v, want saml okta team-a operator", principal)
+	}
+	responseToken := "saml:" + base64.StdEncoding.EncodeToString(signedSAMLResponse(t, key, cert, "https://idp.example/saml", "alice@example.com", "https://fleet.example/saml/acs", now.Add(-time.Minute), now.Add(5*time.Minute)))
+	if _, ok := store.AuthenticateBearer(responseToken); !ok {
+		t.Fatal("AuthenticateBearer(signed saml response) = false")
+	}
+
+	wrongAudience := "saml:" + base64.StdEncoding.EncodeToString(signedSAMLAssertion(t, key, cert, "https://idp.example/saml", "alice@example.com", "https://other.example/saml/acs", now.Add(-time.Minute), now.Add(5*time.Minute)))
+	if _, ok := store.AuthenticateBearer(wrongAudience); ok {
+		t.Fatal("AuthenticateBearer(wrong audience) = true")
+	}
+	wrongSubject := "saml:" + base64.StdEncoding.EncodeToString(signedSAMLAssertion(t, key, cert, "https://idp.example/saml", "bob@example.com", "https://fleet.example/saml/acs", now.Add(-time.Minute), now.Add(5*time.Minute)))
+	if _, ok := store.AuthenticateBearer(wrongSubject); ok {
+		t.Fatal("AuthenticateBearer(wrong subject) = true")
+	}
+	expired := "saml:" + base64.StdEncoding.EncodeToString(signedSAMLAssertion(t, key, cert, "https://idp.example/saml", "alice@example.com", "https://fleet.example/saml/acs", now.Add(-10*time.Minute), now.Add(-2*time.Minute)))
+	if _, ok := store.AuthenticateBearer(expired); ok {
+		t.Fatal("AuthenticateBearer(expired assertion) = true")
+	}
+	tamperedXML := signedSAMLAssertion(t, key, cert, "https://idp.example/saml", "alice@example.com", "https://fleet.example/saml/acs", now.Add(-time.Minute), now.Add(5*time.Minute))
+	tamperedXML = []byte(strings.Replace(string(tamperedXML), "alice@example.com", "mallory@example.com", 1))
+	tampered := "saml:" + base64.StdEncoding.EncodeToString(tamperedXML)
+	if _, ok := store.AuthenticateBearer(tampered); ok {
+		t.Fatal("AuthenticateBearer(tampered assertion) = true")
 	}
 }
 
@@ -4264,8 +4321,10 @@ func TestHandlerOIDCBindingAuthScopesOperator(t *testing.T) {
 }
 
 func TestHandlerSAMLBindingRBACScopes(t *testing.T) {
-	certPEM := testSAMLCertificate(t)
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	key, cert, certPEM := testSAMLKeyCertificate(t)
 	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
 	server := httptest.NewServer(Handler(store))
 	defer server.Close()
 
@@ -4277,6 +4336,7 @@ func TestHandlerSAMLBindingRBACScopes(t *testing.T) {
 	req := SAMLBindingRequest{
 		Name:           "okta",
 		EntityID:       "https://idp.example/saml",
+		Subject:        "alice@example.com",
 		SSOURL:         "https://idp.example/sso",
 		Audience:       "https://fleet.example/saml/acs",
 		Role:           ServiceAccountRoleOperator,
@@ -4304,6 +4364,24 @@ func TestHandlerSAMLBindingRBACScopes(t *testing.T) {
 	getJSONAuth(t, server.URL+"/v1/saml-bindings", "admin-b", &list)
 	if len(list.SAMLBindings) != 0 {
 		t.Fatalf("team-b saml bindings = %+v, want none", list.SAMLBindings)
+	}
+	var record HostRecord
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 2}}, &record)
+	token := "saml:" + base64.StdEncoding.EncodeToString(signedSAMLAssertion(t, key, cert, "https://idp.example/saml", "alice@example.com", "https://fleet.example/saml/acs", now.Add(-time.Minute), now.Add(5*time.Minute)))
+	var created SandboxStatus
+	postJSONAuth(t, server.URL+"/v1/sandboxes", token, SandboxRequest{ID: "job-1", ImageRef: "base:v1"}, &created)
+	if created.Namespace != "team-a" || created.ID != "job-1" {
+		t.Fatalf("created sandbox = %+v, want team-a job-1", created)
+	}
+	if code := postJSONStatus(t, server.URL+"/v1/service-accounts", token, ServiceAccountRequest{Name: "denied", Token: "denied"}); code != http.StatusForbidden {
+		t.Fatalf("saml operator service-account POST status = %d, want 403", code)
+	}
+	var audit struct {
+		Events []AuditEvent `json:"events"`
+	}
+	getJSON(t, server.URL+"/v1/audit?limit=1", &audit)
+	if len(audit.Events) != 1 || audit.Events[0].Actor != "saml:okta" || audit.Events[0].TargetID != "job-1" {
+		t.Fatalf("audit = %+v, want saml sandbox create", audit.Events)
 	}
 	if code := deleteJSONStatusAuth(t, server.URL+"/v1/saml-bindings/okta", "admin-b"); code != http.StatusNotFound {
 		t.Fatalf("cross-namespace saml DELETE status = %d, want 404", code)
@@ -4619,6 +4697,11 @@ func testOIDCKey(t *testing.T) (*rsa.PrivateKey, string) {
 }
 
 func testSAMLCertificate(t *testing.T) string {
+	_, _, certPEM := testSAMLKeyCertificate(t)
+	return certPEM
+}
+
+func testSAMLKeyCertificate(t *testing.T) (*rsa.PrivateKey, *x509.Certificate, string) {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -4634,7 +4717,65 @@ func testSAMLCertificate(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return key, cert, string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+}
+
+func signedSAMLAssertion(t *testing.T, key *rsa.PrivateKey, cert *x509.Certificate, issuer, subject, audience string, notBefore, notOnOrAfter time.Time) []byte {
+	t.Helper()
+	return signedSAMLElement(t, key, cert, testSAMLAssertionElement(issuer, subject, audience, notBefore, notOnOrAfter))
+}
+
+func signedSAMLResponse(t *testing.T, key *rsa.PrivateKey, cert *x509.Certificate, issuer, subject, audience string, notBefore, notOnOrAfter time.Time) []byte {
+	t.Helper()
+	response := etree.NewElement("samlp:Response")
+	response.CreateAttr("xmlns:samlp", "urn:oasis:names:tc:SAML:2.0:protocol")
+	response.CreateAttr("xmlns:saml", "urn:oasis:names:tc:SAML:2.0:assertion")
+	response.CreateAttr("ID", "_response-1")
+	response.CreateAttr("Version", "2.0")
+	response.CreateAttr("IssueInstant", notBefore.UTC().Format(time.RFC3339Nano))
+	response.CreateElement("saml:Issuer").SetText(issuer)
+	response.AddChild(testSAMLAssertionElement(issuer, subject, audience, notBefore, notOnOrAfter))
+	return signedSAMLElement(t, key, cert, response)
+}
+
+func testSAMLAssertionElement(issuer, subject, audience string, notBefore, notOnOrAfter time.Time) *etree.Element {
+	assertion := etree.NewElement("saml:Assertion")
+	assertion.CreateAttr("xmlns:saml", "urn:oasis:names:tc:SAML:2.0:assertion")
+	assertion.CreateAttr("ID", "_assertion-1")
+	assertion.CreateAttr("Version", "2.0")
+	assertion.CreateAttr("IssueInstant", notBefore.UTC().Format(time.RFC3339Nano))
+	assertion.CreateElement("saml:Issuer").SetText(issuer)
+	subjectEl := assertion.CreateElement("saml:Subject")
+	subjectEl.CreateElement("saml:NameID").SetText(subject)
+	conditions := assertion.CreateElement("saml:Conditions")
+	conditions.CreateAttr("NotBefore", notBefore.UTC().Format(time.RFC3339Nano))
+	conditions.CreateAttr("NotOnOrAfter", notOnOrAfter.UTC().Format(time.RFC3339Nano))
+	restriction := conditions.CreateElement("saml:AudienceRestriction")
+	restriction.CreateElement("saml:Audience").SetText(audience)
+	return assertion
+}
+
+func signedSAMLElement(t *testing.T, key *rsa.PrivateKey, cert *x509.Certificate, el *etree.Element) []byte {
+	t.Helper()
+	ctx, err := dsig.NewSigningContext(key, [][]byte{cert.Raw})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx.IdAttribute = "ID"
+	signed, err := ctx.SignEnveloped(el)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := etree.NewDocumentWithRoot(signed)
+	data, err := doc.WriteToBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }
 
 func testOIDCJWK(key *rsa.PrivateKey, kid string) map[string]string {

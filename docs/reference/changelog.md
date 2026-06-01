@@ -205,10 +205,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   `jwks_uri` from the issuer, cache fetched key IDs, and refresh the JWKS on
   key misses for provider key rotation.
 - `cove-fleetd` now exposes admin-managed `/v1/saml-bindings` records for
-  fail-closed SAML setup: IdP entity ID, SSO URL, audience, namespace, role, and
-  PEM signing certificate are validated, persisted, scoped, and audited while
-  assertion authentication remains disabled until a real XML signature verifier
-  lands.
+  signed SAML bearer authentication: IdP entity ID, optional subject, SSO URL,
+  audience, namespace, role, and PEM signing certificate are validated,
+  persisted, scoped, and audited, and matching signed assertions authenticate as
+  `saml:<binding-name>`.
 - `cove fleet cordon` and `uncordon` now mark registered hosts as skipped for
   `fleet run` placement while keeping direct `--fleet=<name>` routing intact.
 - `cove fleet run` now records short local placement leases and counts active
@@ -255,6 +255,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   `image_manifest_digest`, `image_digest_ref`, and `image_platform`) on create,
   so SDK callers can request the same controller-verified registry identity as
   the raw REST API.
+- SAML bindings now accept signed SAML bearer assertions: the controller
+  verifies XML signatures against the stored X.509 certificate, enforces
+  issuer, audience, optional subject, and assertion time bounds, and maps the
+  request to the binding's namespace-scoped role.
 - `cove-fleetd` now reconciles stale workers and expired assignment leases,
   exposes `POST /v1/reconcile`, and `coved` renews active `cove` assignments
   with `running` reports so long jobs do not get reclaimed while still alive.

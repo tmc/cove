@@ -130,6 +130,7 @@ curl -X POST http://127.0.0.1:9758/v1/saml-bindings \
   -d '{
     "name":"okta",
     "entity_id":"https://idp.example/saml",
+    "subject":"ci@example.com",
     "sso_url":"https://idp.example/sso",
     "audience":"https://fleet.example/saml/acs",
     "namespace":"team-a",
@@ -169,12 +170,17 @@ the first time a matching token arrives. A matching bearer JWT must verify with
 one of those public keys, must not be expired, and records audit actor
 `oidc:<binding-name>`. Cached JWKS keys persist in the fleet store and refresh
 on key misses so provider key rotation does not require rewriting the binding.
-`/v1/saml-bindings` adds the fail-closed SAML configuration half: admin users
-can store an IdP entity ID, SSO URL, service-provider audience, namespace, role,
-and PEM X.509 signing certificate. The controller validates and persists the
-certificate and exposes only its SHA-256 fingerprint in API responses. SAML
-assertion authentication is not accepted yet; it remains disabled until XML
-signature verification, recipient/audience checks, and replay protection land.
+`/v1/saml-bindings` lets admin users store an IdP entity ID, optional subject,
+SSO URL, service-provider audience, namespace, role, and PEM X.509 signing
+certificate. The controller validates and persists the certificate and exposes
+only its SHA-256 fingerprint in API responses. A request can authenticate with
+`Authorization: Bearer saml:<base64-saml-xml>` when the payload is a signed
+SAML response or assertion whose XML signature verifies against the binding
+certificate, issuer matches `entity_id`, audience matches `audience`, optional
+subject matches, and assertion conditions are currently valid. Matching
+assertions record audit actor `saml:<binding-name>` and inherit the binding's
+namespace and role. Keep assertions short lived; the controller verifies
+signatures and time bounds but does not keep a replay cache yet.
 If a service account has `namespace` set, assignment, warm-pool, sandbox,
 service-account, and audit list/read/mutation requests through that bearer token
 are scoped to that namespace; attempts to write another namespace are rejected.

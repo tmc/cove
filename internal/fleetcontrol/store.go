@@ -84,6 +84,7 @@ type oidcKeyRecord struct {
 type samlBindingRecord struct {
 	Name           string    `json:"name"`
 	EntityID       string    `json:"entity_id"`
+	Subject        string    `json:"subject,omitempty"`
 	SSOURL         string    `json:"sso_url"`
 	Audience       string    `json:"audience"`
 	Namespace      string    `json:"namespace,omitempty"`
@@ -2328,7 +2329,10 @@ func (s *Store) AuthenticateBearer(token string) (authenticatedPrincipal, bool) 
 			Role:      account.Role,
 		}, true
 	}
-	return s.authenticateOIDCBearer(token)
+	if principal, ok := s.authenticateOIDCBearer(token); ok {
+		return principal, true
+	}
+	return s.authenticateSAMLBearer(token)
 }
 
 func (s *Store) UpsertOIDCBinding(req OIDCBindingRequest) (OIDCBindingResult, error) {
@@ -2443,6 +2447,7 @@ func (s *Store) UpsertSAMLBindingActor(actor string, req SAMLBindingRequest) (SA
 	record := samlBindingRecord{
 		Name:           strings.TrimSpace(req.Name),
 		EntityID:       strings.TrimSpace(req.EntityID),
+		Subject:        strings.TrimSpace(req.Subject),
 		SSOURL:         strings.TrimSpace(req.SSOURL),
 		Audience:       strings.TrimSpace(req.Audience),
 		Namespace:      normalizeNamespace(req.Namespace),
@@ -2476,6 +2481,7 @@ func (s *Store) UpsertSAMLBindingActor(actor string, req SAMLBindingRequest) (SA
 		TargetID:   record.Name,
 		Fields: map[string]string{
 			"entity_id":          record.EntityID,
+			"subject":            record.Subject,
 			"audience":           record.Audience,
 			"role":               record.Role,
 			"sso_url":            record.SSOURL,
@@ -3018,6 +3024,7 @@ func publicSAMLBinding(record samlBindingRecord) SAMLBinding {
 	return SAMLBinding{
 		Name:              record.Name,
 		EntityID:          record.EntityID,
+		Subject:           record.Subject,
 		SSOURL:            record.SSOURL,
 		Audience:          record.Audience,
 		Namespace:         record.Namespace,
@@ -4576,6 +4583,7 @@ func normalizeSAMLBindingRecord(record samlBindingRecord) (samlBindingRecord, er
 	if record.EntityID == "" {
 		return samlBindingRecord{}, fmt.Errorf("saml binding entity_id required")
 	}
+	record.Subject = strings.TrimSpace(record.Subject)
 	record.SSOURL = strings.TrimSpace(record.SSOURL)
 	if record.SSOURL == "" {
 		return samlBindingRecord{}, fmt.Errorf("saml binding sso_url required")

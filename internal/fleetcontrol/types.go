@@ -196,6 +196,7 @@ type OIDCBindingResult struct {
 type SAMLBinding struct {
 	Name              string    `json:"name"`
 	EntityID          string    `json:"entity_id"`
+	Subject           string    `json:"subject,omitempty"`
 	SSOURL            string    `json:"sso_url"`
 	Audience          string    `json:"audience"`
 	Namespace         string    `json:"namespace,omitempty"`
@@ -208,6 +209,7 @@ type SAMLBinding struct {
 type SAMLBindingRequest struct {
 	Name           string `json:"name"`
 	EntityID       string `json:"entity_id"`
+	Subject        string `json:"subject,omitempty"`
 	SSOURL         string `json:"sso_url"`
 	Audience       string `json:"audience"`
 	Namespace      string `json:"namespace,omitempty"`

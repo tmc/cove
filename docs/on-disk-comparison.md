@@ -153,11 +153,11 @@ delegates the disk/runtime work to `tart` or `vetu`.
   per-resource sandbox usage records, a
   filterable/paginated hash-chained controller audit feed, service-account actor binding,
   namespace-scoped controller resources, basic service-account roles, RS256 OIDC
-  bearer bindings with issuer discovery/JWKS refresh, and fail-closed SAML IdP
-  binding records with validated X.509 signing certificates, plus worker drain
+  bearer bindings with issuer discovery/JWKS refresh, signed SAML bearer
+  assertion bindings with X.509 XML signature verification, and worker drain
   for hosted sandbox maintenance and a reconciled operations summary; orchard
-  still owns complete SAML assertion authentication and broader production
-  controller operations.
+  still owns broader production controller operations and more complete SAML
+  deployment hardening such as replay caches and SP-initiated flows.
 - **tart has the mature public image lane.** cove now speaks tart format, but
   tart still has the established image catalog and local layer-cache machinery.
 - **lume has native ecosystem defaults.** cove can interoperate with Lume
@@ -189,6 +189,6 @@ handles over fork-run assignments with enforced modify leases, OpenAI Agents Pyt
 switches with hosted lifecycle, list filters, pagination, sandbox event/report history, metering, and GUI events, persisted per-resource sandbox usage
 records, plus a filterable/paginated hash-chained audit feed with service-account actor binding,
 namespace filters, basic service-account roles, RS256 OIDC bearer bindings with
-issuer discovery/JWKS refresh, and fail-closed SAML IdP binding records, but
+issuer discovery/JWKS refresh, and signed SAML bearer assertion bindings, but
 tart and lume still lead in
 ecosystem maturity, and orchard still leads as a full fleet controller.
