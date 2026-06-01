@@ -1016,6 +1016,29 @@ class CoveFleetClient:
         return _normalize_operations_summary(result, "GET /v1/operations/summary")
 
     @classmethod
+    def list_sandbox_metering(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        sandbox_id: str = "",
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        seed = cls(
+            sandbox_id="sandbox-metering",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        query = {
+            "namespace": namespace or "",
+            "sandbox_id": sandbox_id,
+        }
+        return seed._request("GET", _query_path("/v1/metering/sandboxes", query), timeout=timeout)
+
+    @classmethod
     def list_audit_events(
         cls,
         *,

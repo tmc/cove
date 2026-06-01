@@ -854,6 +854,14 @@ def test_fleet_client_scoped_observability() -> None:
         )
         assert worker_metering["summary"]["worker_id"] == "worker-1"
         assert worker_metering["records"][0]["resources"]["vms"] == 1
+        sandbox_metering = CoveFleetClient.list_sandbox_metering(
+            fleet_url=server.url,
+            api_key="secret",
+            namespace="team-a",
+            sandbox_id="job-1",
+        )
+        assert sandbox_metering["summary"]["sandbox_id"] == "job-1"
+        assert sandbox_metering["records"][0]["sandbox_id"] == "job-1"
 
         assignment_events = CoveFleetClient.list_assignment_events(
             fleet_url=server.url,
@@ -888,21 +896,23 @@ def test_fleet_client_scoped_observability() -> None:
         assert assignment_metering["summary"]["assignment_id"] == "assignment-1"
         assert assignment_metering["records"][0]["worker_id"] == "worker-1"
 
-        paths = [request["path"] for request in server.requests[-7:]]
+        paths = [request["path"] for request in server.requests[-8:]]
         assert paths == [
             "/v1/workers/worker-1/sandboxes",
             "/v1/workers/worker-1/events",
             "/v1/workers/worker-1/reports",
             "/v1/workers/worker-1/metering",
+            "/v1/metering/sandboxes",
             "/v1/assignments/assignment-1/events",
             "/v1/assignments/assignment-1/reports",
             "/v1/assignments/assignment-1/metering",
         ]
-        assert server.requests[-7]["query"]["namespace"] == ["team-a"]
-        assert server.requests[-7]["query"]["image_ref"] == ["base:v1"]
-        assert server.requests[-6]["query"]["actor"] == ["service-account:ci"]
-        assert server.requests[-6]["query"]["sandbox_id"] == ["job-1"]
-        assert server.requests[-5]["query"]["assignment_id"] == ["assignment-1"]
+        assert server.requests[-8]["query"]["namespace"] == ["team-a"]
+        assert server.requests[-8]["query"]["image_ref"] == ["base:v1"]
+        assert server.requests[-7]["query"]["actor"] == ["service-account:ci"]
+        assert server.requests[-7]["query"]["sandbox_id"] == ["job-1"]
+        assert server.requests[-6]["query"]["assignment_id"] == ["assignment-1"]
+        assert server.requests[-5]["query"]["sandbox_id"] == ["job-1"]
         assert server.requests[-4]["query"]["sandbox_id"] == ["job-1"]
         assert server.requests[-3]["query"]["worker_id"] == ["worker-1"]
         assert server.requests[-2]["query"]["status"] == ["complete"]

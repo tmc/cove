@@ -995,6 +995,19 @@ func TestCloudClientScopedObservability(t *testing.T) {
 	if workerMetering.Summary.WorkerID != "worker-1" || workerMetering.Records[0].Resources.VMs != 1 {
 		t.Fatalf("GetWorkerMetering = %+v, want worker-1 resource metering", workerMetering)
 	}
+	sandboxMetering, err := ListSandboxMetering(ctx, SandboxMeteringOptions{
+		FleetURL:  server.URL,
+		APIKey:    "secret",
+		Namespace: "team-a",
+		SandboxID: "job-1",
+		Timeout:   time.Second,
+	})
+	if err != nil {
+		t.Fatalf("ListSandboxMetering: %v", err)
+	}
+	if sandboxMetering.Summary.SandboxID != "job-1" || sandboxMetering.Records[0].SandboxID != "job-1" {
+		t.Fatalf("ListSandboxMetering = %+v, want job-1 metering", sandboxMetering)
+	}
 	assignmentEvents, err := ListAssignmentEvents(ctx, AssignmentEventListOptions{
 		FleetURL:   server.URL,
 		APIKey:     "secret",
@@ -1057,6 +1070,7 @@ func TestCloudClientScopedObservability(t *testing.T) {
 		"/v1/workers/worker-1/events",
 		"/v1/workers/worker-1/reports",
 		"/v1/workers/worker-1/metering",
+		"/v1/metering/sandboxes",
 		"/v1/assignments/assignment-1/events",
 		"/v1/assignments/assignment-1/reports",
 		"/v1/assignments/assignment-1/metering",
@@ -1076,13 +1090,16 @@ func TestCloudClientScopedObservability(t *testing.T) {
 	if query := server.requests[3].query; query.Get("namespace") != "team-a" || query.Get("sandbox_id") != "job-1" || query.Get("status") != "ready" {
 		t.Fatalf("worker metering query = %q", query.Encode())
 	}
-	if query := server.requests[4].query; query.Get("actor") != "service-account:ci" || query.Get("worker_id") != "worker-1" || query.Get("sandbox_id") != "job-1" || query.Get("offset") != "1" || query.Get("limit") != "2" {
+	if query := server.requests[4].query; query.Get("namespace") != "team-a" || query.Get("sandbox_id") != "job-1" {
+		t.Fatalf("sandbox metering query = %q", query.Encode())
+	}
+	if query := server.requests[5].query; query.Get("actor") != "service-account:ci" || query.Get("worker_id") != "worker-1" || query.Get("sandbox_id") != "job-1" || query.Get("offset") != "1" || query.Get("limit") != "2" {
 		t.Fatalf("assignment events query = %q", query.Encode())
 	}
-	if query := server.requests[5].query; query.Get("worker_id") != "worker-1" || query.Get("status") != "complete" || query.Get("offset") != "1" || query.Get("limit") != "2" {
+	if query := server.requests[6].query; query.Get("worker_id") != "worker-1" || query.Get("status") != "complete" || query.Get("offset") != "1" || query.Get("limit") != "2" {
 		t.Fatalf("assignment reports query = %q", query.Encode())
 	}
-	if query := server.requests[6].query; query.Get("status") != "ready" {
+	if query := server.requests[7].query; query.Get("status") != "ready" {
 		t.Fatalf("assignment metering query = %q", query.Encode())
 	}
 }

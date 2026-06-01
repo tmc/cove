@@ -803,8 +803,8 @@ global chain verification. Identity helpers include `ListServiceAccounts`,
 federated identity bindings, metadata export, and browserless SAML session
 exchange. Scoped observability helpers include
 `ListWorkerSandboxes`, `ListWorkerEvents`, `ListWorkerReports`,
-`GetWorkerMetering`, `ListAssignmentEvents`, `ListAssignmentReports`, and
-`GetAssignmentMetering`. Pass `DryRun` to maintenance pushes to inspect planned
+`GetWorkerMetering`, `ListSandboxMetering`, `ListAssignmentEvents`,
+`ListAssignmentReports`, and `GetAssignmentMetering`. Pass `DryRun` to maintenance pushes to inspect planned
 assignments and structured skipped-worker diagnostics without mutating the
 controller.
 
@@ -903,6 +903,17 @@ if err != nil {
 	log.Fatal(err)
 }
 log.Printf("queued assignment=%s worker=%s", created.ID, created.WorkerID)
+
+sandboxMetering, err := agentsandbox.ListSandboxMetering(ctx, agentsandbox.SandboxMeteringOptions{
+	FleetURL:  "https://fleet.internal.example",
+	APIKey:    os.Getenv("COVE_API_KEY"),
+	Namespace: "team-a",
+	SandboxID: "job-123",
+})
+if err != nil {
+	log.Fatal(err)
+}
+log.Printf("sandbox metered records=%d", sandboxMetering.Summary.Records)
 
 assignments, err := agentsandbox.ListAssignments(ctx, agentsandbox.AssignmentListOptions{
 	FleetURL:  "https://fleet.internal.example",

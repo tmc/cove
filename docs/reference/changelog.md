@@ -9,6 +9,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 
 ### Added
 - The public Go `agentsandbox` package and OpenAI Agents Python adapter now
+  expose hosted sandbox metering list helpers for `/v1/metering/sandboxes`, so
+  SDK operators can query namespace or sandbox usage without first constructing
+  a sandbox handle.
+- The public Go `agentsandbox` package and OpenAI Agents Python adapter now
   expose hosted assignment creation helpers for `/v1/assignments`, so SDK
   operators can queue generic `cove` or `noop` controller work with placement
   selectors and image provenance fields.

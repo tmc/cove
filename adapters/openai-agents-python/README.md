@@ -177,8 +177,8 @@ image preparation before placement or warm-pool replenishment, push image
 GC/lifecycle/storage maintenance work, read retained placement-plan history and
 the retained controller-run timeline, plan or apply controller reconciliation,
 inspect or verify the hash-chained audit feed, manage scoped service-account
-tokens and OIDC/SAML identity bindings, and drill into worker- or
-assignment-scoped events, reports, metering, and hosted sandbox lists.
+tokens and OIDC/SAML identity bindings, and drill into worker-, assignment-, or
+sandbox-scoped events, reports, metering, and hosted sandbox lists.
 
 For direct fleet-client code, `CoveFleetClient` covers hosted sandbox and
 warm-pool lifecycles plus maintenance controls:
@@ -354,6 +354,13 @@ created = CoveFleetClient.create_assignment(
     args=("run", "-fork-from", "macos-base:latest", "-ephemeral"),
 )
 print(created["id"], created.get("worker_id"))
+sandbox_metering = CoveFleetClient.list_sandbox_metering(
+    fleet_url="https://fleet.internal.example",
+    api_key="cove_...",
+    namespace="team-a",
+    sandbox_id="job-123",
+)
+print(sandbox_metering["summary"]["records"])
 assignments = CoveFleetClient.list_assignments(
     fleet_url="https://fleet.internal.example",
     api_key="cove_...",
@@ -444,8 +451,9 @@ worker lifecycle helpers such as `cordon_worker`, `evacuate_worker`,
 `refresh_saml_binding`, `get_saml_metadata`, `saml_binding_login`,
 `create_saml_session`, and `delete_saml_binding`, scoped observability helpers such as
 `list_worker_sandboxes`, `list_worker_events`, `list_worker_reports`,
-`get_worker_metering`, `list_assignment_events`, `list_assignment_reports`,
-and `get_assignment_metering`, and `list_controller_runs` for the aggregate
+`get_worker_metering`, `list_sandbox_metering`, `list_assignment_events`,
+`list_assignment_reports`, and `get_assignment_metering`, and
+`list_controller_runs` for the aggregate
 operations dashboard, inventory, maintenance controls, audit chain, and
 timeline.
 Pass `dry_run=True` to maintenance pushes to inspect planned

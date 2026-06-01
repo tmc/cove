@@ -938,6 +938,15 @@ type WorkerMeteringOptions struct {
 	HTTP      *http.Client
 }
 
+type SandboxMeteringOptions struct {
+	FleetURL  string
+	APIKey    string
+	Namespace string
+	SandboxID string
+	Timeout   time.Duration
+	HTTP      *http.Client
+}
+
 type WorkerSandboxListOptions struct {
 	FleetURL  string
 	APIKey    string
@@ -2225,6 +2234,22 @@ func GetOperationsSummary(ctx context.Context, opts OperationsSummaryOptions) (O
 	var result OperationsSummary
 	if err := c.request(ctx, http.MethodGet, c.queryPath("/v1/operations/summary", query), nil, &result, c.timeout); err != nil {
 		return OperationsSummary{}, err
+	}
+	return result, nil
+}
+
+func ListSandboxMetering(ctx context.Context, opts SandboxMeteringOptions) (MeteringResult, error) {
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "sandbox-metering")
+	if err != nil {
+		return MeteringResult{}, err
+	}
+	query := map[string]string{
+		"namespace":  opts.Namespace,
+		"sandbox_id": opts.SandboxID,
+	}
+	var result MeteringResult
+	if err := c.request(ctx, http.MethodGet, c.queryPath("/v1/metering/sandboxes", query), nil, &result, c.timeout); err != nil {
+		return MeteringResult{}, err
 	}
 	return result, nil
 }
