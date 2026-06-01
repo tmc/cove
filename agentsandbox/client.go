@@ -566,16 +566,22 @@ type StoragePruneListResult struct {
 }
 
 type ControllerRunListOptions struct {
-	FleetURL   string
-	APIKey     string
-	Namespace  string
-	Kind       string
-	TargetType string
-	TargetID   string
-	Offset     int
-	Limit      int
-	Timeout    time.Duration
-	HTTP       *http.Client
+	FleetURL            string
+	APIKey              string
+	Namespace           string
+	Kind                string
+	TargetType          string
+	TargetID            string
+	SourceRef           string
+	ImageRef            string
+	ImageManifestDigest string
+	ImageDigestRef      string
+	ImagePlatform       string
+	RequiredCapability  string
+	Offset              int
+	Limit               int
+	Timeout             time.Duration
+	HTTP                *http.Client
 }
 
 type ControllerRunListResult struct {
@@ -2325,10 +2331,16 @@ func ListControllerRuns(ctx context.Context, opts ControllerRunListOptions) (Con
 		return ControllerRunListResult{}, err
 	}
 	query := map[string]string{
-		"namespace":   opts.Namespace,
-		"kind":        opts.Kind,
-		"target_type": opts.TargetType,
-		"target_id":   opts.TargetID,
+		"namespace":             opts.Namespace,
+		"kind":                  opts.Kind,
+		"target_type":           opts.TargetType,
+		"target_id":             opts.TargetID,
+		"source_ref":            opts.SourceRef,
+		"image_ref":             opts.ImageRef,
+		"image_manifest_digest": opts.ImageManifestDigest,
+		"image_digest_ref":      opts.ImageDigestRef,
+		"image_platform":        opts.ImagePlatform,
+		"required_capability":   opts.RequiredCapability,
 	}
 	if opts.Offset > 0 {
 		query["offset"] = strconv.Itoa(opts.Offset)

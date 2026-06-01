@@ -728,7 +728,7 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 		t.Fatalf("GetStoragePruneRun = %+v, want storage-prune-1", gotPrune)
 	}
 
-	runs, err := ListControllerRuns(ctx, ControllerRunListOptions{FleetURL: server.URL, APIKey: "secret", Namespace: "team-a", Kind: "storage.prune", TargetType: "storage", Offset: 1, Limit: 2, Timeout: time.Second})
+	runs, err := ListControllerRuns(ctx, ControllerRunListOptions{FleetURL: server.URL, APIKey: "secret", Namespace: "team-a", Kind: "storage.prune", TargetType: "storage", SourceRef: "registry.example/base:v1", ImageRef: "base:v1", ImageManifestDigest: "sha256:base", ImageDigestRef: "registry.example/base@sha256:base", ImagePlatform: "darwin/arm64", RequiredCapability: "ram-overlay", Offset: 1, Limit: 2, Timeout: time.Second})
 	if err != nil {
 		t.Fatalf("ListControllerRuns: %v", err)
 	}
@@ -812,7 +812,7 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 	if body := server.requests[9].body; body["category"] != "build-scratch" || body["older_than"] != "48h" || body["apply"] != true || body["dry_run"] != true {
 		t.Fatalf("storage prune body = %+v", body)
 	}
-	if query := server.requests[12].query; query.Get("kind") != "storage.prune" || query.Get("target_type") != "storage" || query.Get("namespace") != "team-a" {
+	if query := server.requests[12].query; query.Get("kind") != "storage.prune" || query.Get("target_type") != "storage" || query.Get("namespace") != "team-a" || query.Get("source_ref") != "registry.example/base:v1" || query.Get("image_ref") != "base:v1" || query.Get("image_manifest_digest") != "sha256:base" || query.Get("image_digest_ref") != "registry.example/base@sha256:base" || query.Get("image_platform") != "darwin/arm64" || query.Get("required_capability") != "ram-overlay" {
 		t.Fatalf("controller runs query = %q", query.Encode())
 	}
 	if body := server.requests[14].body; len(body) != 0 {

@@ -4927,10 +4927,15 @@ func TestStoreListControllerRunsPage(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	store.now = func() time.Time { return now }
 	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{
-		ID:        "desk",
-		Labels:    map[string]string{"zone": "desk"},
-		ImageRefs: []string{"base:v1"},
-		Capacity:  Capacity{MaxVMs: 3},
+		ID:           "desk",
+		Labels:       map[string]string{"zone": "desk"},
+		Capabilities: []string{"ram-overlay"},
+		ImageRefs:    []string{"base:v1"},
+		ImageDetails: []WorkerImage{{
+			Ref:                  "base:v1",
+			SourceManifestDigest: "sha256:base",
+		}},
+		Capacity: Capacity{MaxVMs: 3},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -4940,21 +4945,29 @@ func TestStoreListControllerRunsPage(t *testing.T) {
 
 	step()
 	plan, err := store.PlanAssignment(Assignment{
-		Namespace:      "team-a",
-		Policy:         PolicyImageAffinity,
-		ImageRef:       "base:v1",
-		RequiredLabels: map[string]string{"zone": "desk"},
-		Verb:           "cove",
+		Namespace:            "team-a",
+		Policy:               PolicyImageAffinity,
+		ImageRef:             "base:v1",
+		ImageManifestDigest:  "sha256:base",
+		ImageDigestRef:       "registry.example/base@sha256:base",
+		ImagePlatform:        "darwin/arm64",
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay"},
+		Verb:                 "cove",
 	}, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	step()
 	prep, err := store.PrepareImage(ImagePrepareRequest{
-		Namespace:      "team-a",
-		SourceRef:      "registry.example/tool:v1",
-		ImageRef:       "tool:v1",
-		RequiredLabels: map[string]string{"zone": "desk"},
+		Namespace:            "team-a",
+		SourceRef:            "registry.example/tool:v1",
+		ImageRef:             "tool:v1",
+		ImageManifestDigest:  "sha256:tool",
+		ImageDigestRef:       "registry.example/tool@sha256:tool",
+		ImagePlatform:        "darwin/arm64",
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -4996,6 +5009,29 @@ func TestStoreListControllerRunsPage(t *testing.T) {
 	filtered := store.ListControllerRunsPage(ControllerRunListFilter{Namespace: "team-a", Kind: ControllerRunKindImagePrepare, TargetType: "image", TargetID: "tool:v1"})
 	if filtered.Count != 1 || len(filtered.Runs) != 1 || filtered.Runs[0].ID != prep.ID || filtered.Runs[0].Fields["source_ref"] != "registry.example/tool:v1" {
 		t.Fatalf("filtered controller runs = %+v, want image prepare %s", filtered, prep.ID)
+	}
+	provenance := store.ListControllerRunsPage(ControllerRunListFilter{
+		Namespace:           "team-a",
+		SourceRef:           "registry.example/tool:v1",
+		ImageRef:            "tool:v1",
+		ImageManifestDigest: "sha256:tool",
+		ImageDigestRef:      "registry.example/tool@sha256:tool",
+		ImagePlatform:       "darwin/arm64",
+		RequiredCapability:  "ram-overlay",
+	})
+	if provenance.Count != 1 || len(provenance.Runs) != 1 || provenance.Runs[0].ID != prep.ID {
+		t.Fatalf("provenance controller runs = %+v, want image prepare %s", provenance, prep.ID)
+	}
+	planFilter := store.ListControllerRunsPage(ControllerRunListFilter{
+		Namespace:           "team-a",
+		ImageRef:            "base:v1",
+		ImageManifestDigest: "sha256:base",
+		ImageDigestRef:      "registry.example/base@sha256:base",
+		ImagePlatform:       "darwin/arm64",
+		RequiredCapability:  "ram-overlay",
+	})
+	if planFilter.Count != 1 || len(planFilter.Runs) != 1 || planFilter.Runs[0].ID != plan.ID {
+		t.Fatalf("plan provenance controller runs = %+v, want placement plan %s", planFilter, plan.ID)
 	}
 	storage := store.ListControllerRunsPage(ControllerRunListFilter{Namespace: "team-a", TargetType: "storage"})
 	if storage.Count != 2 || len(storage.Runs) != 2 {
@@ -6347,6 +6383,16 @@ func TestHandlerControllerRuns(t *testing.T) {
 		OlderThan:            "168h",
 		Apply:                true,
 	}, &prune)
+	var prep ImagePrepareResult
+	postJSONAuth(t, server.URL+"/v1/images/prepare", "token-a", ImagePrepareRequest{
+		SourceRef:            "registry.example/runner:v1",
+		ImageRef:             "runner:v1",
+		ImageManifestDigest:  "sha256:runner",
+		ImageDigestRef:       "registry.example/runner@sha256:runner",
+		ImagePlatform:        "darwin/arm64",
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay"},
+	}, &prep)
 
 	var page ControllerRunListResult
 	getJSONAuth(t, server.URL+"/v1/operations/runs?kind=storage.prune&target_type=storage&limit=1", "token-a", &page)
@@ -6355,6 +6401,11 @@ func TestHandlerControllerRuns(t *testing.T) {
 	}
 	if page.Runs[0].Fields["apply"] != "true" || page.Runs[0].Fields["older_than"] != "168h" || page.Runs[0].Fields["required_capabilities"] != "ram-overlay" {
 		t.Fatalf("controller run fields = %+v, want prune apply/older_than", page.Runs[0].Fields)
+	}
+	page = ControllerRunListResult{}
+	getJSONAuth(t, server.URL+"/v1/operations/runs?kind=image.prepare&source_ref=registry.example%2Frunner%3Av1&image_ref=runner:v1&image_manifest_digest=sha256:runner&image_digest_ref=registry.example%2Frunner%40sha256:runner&image_platform=darwin%2Farm64&required_capability=ram-overlay&limit=1", "token-a", &page)
+	if page.Count != 1 || len(page.Runs) != 1 || page.Runs[0].ID != prep.ID || page.Runs[0].Fields["image_digest_ref"] != "registry.example/runner@sha256:runner" {
+		t.Fatalf("filtered controller runs = %+v, want image prepare %s", page, prep.ID)
 	}
 	page = ControllerRunListResult{}
 	getJSONAuth(t, server.URL+"/v1/operations/runs", "token-b", &page)

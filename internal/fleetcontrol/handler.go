@@ -317,10 +317,16 @@ func handleControllerRuns(w http.ResponseWriter, r *http.Request, store *Store) 
 
 func controllerRunListFilterFromRequest(r *http.Request, namespace string) (ControllerRunListFilter, error) {
 	filter := ControllerRunListFilter{
-		Namespace:  namespace,
-		Kind:       strings.TrimSpace(r.URL.Query().Get("kind")),
-		TargetType: strings.TrimSpace(r.URL.Query().Get("target_type")),
-		TargetID:   strings.TrimSpace(r.URL.Query().Get("target_id")),
+		Namespace:           namespace,
+		Kind:                strings.TrimSpace(r.URL.Query().Get("kind")),
+		TargetType:          strings.TrimSpace(r.URL.Query().Get("target_type")),
+		TargetID:            strings.TrimSpace(r.URL.Query().Get("target_id")),
+		SourceRef:           strings.TrimSpace(r.URL.Query().Get("source_ref")),
+		ImageRef:            strings.TrimSpace(r.URL.Query().Get("image_ref")),
+		ImageManifestDigest: strings.TrimSpace(r.URL.Query().Get("image_manifest_digest")),
+		ImageDigestRef:      strings.TrimSpace(r.URL.Query().Get("image_digest_ref")),
+		ImagePlatform:       strings.TrimSpace(r.URL.Query().Get("image_platform")),
+		RequiredCapability:  strings.TrimSpace(r.URL.Query().Get("required_capability")),
 	}
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		limit, err := strconv.Atoi(raw)

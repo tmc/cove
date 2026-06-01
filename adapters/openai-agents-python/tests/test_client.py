@@ -629,6 +629,12 @@ def test_fleet_client_maintenance_runs() -> None:
             namespace="team-a",
             kind="storage.prune",
             target_type="storage",
+            source_ref="registry.example/base:v1",
+            image_ref="base:v1",
+            image_manifest_digest="sha256:base",
+            image_digest_ref="registry.example/base@sha256:base",
+            image_platform="darwin/arm64",
+            required_capability="ram-overlay",
             offset=1,
             limit=2,
         )
@@ -693,6 +699,12 @@ def test_fleet_client_maintenance_runs() -> None:
         assert server.requests[-7]["body"]["category"] == "build-scratch"
         assert server.requests[-7]["body"]["dry_run"] is True
         assert server.requests[-4]["query"]["kind"] == ["storage.prune"]
+        assert server.requests[-4]["query"]["source_ref"] == ["registry.example/base:v1"]
+        assert server.requests[-4]["query"]["image_ref"] == ["base:v1"]
+        assert server.requests[-4]["query"]["image_manifest_digest"] == ["sha256:base"]
+        assert server.requests[-4]["query"]["image_digest_ref"] == ["registry.example/base@sha256:base"]
+        assert server.requests[-4]["query"]["image_platform"] == ["darwin/arm64"]
+        assert server.requests[-4]["query"]["required_capability"] == ["ram-overlay"]
         assert server.requests[-2]["body"] == {}
         assert server.requests[-1]["query"]["namespace"] == ["team-a"]
     finally:

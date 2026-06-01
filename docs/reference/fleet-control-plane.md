@@ -79,6 +79,7 @@ curl http://127.0.0.1:9758/v1/operations/summary
 curl http://127.0.0.1:9758/v1/operations/summary?namespace=team-a
 curl 'http://127.0.0.1:9758/v1/operations/runs?kind=storage.prune&limit=20'
 curl 'http://127.0.0.1:9758/v1/operations/runs?target_type=image&target_id=macos-runner:latest'
+curl 'http://127.0.0.1:9758/v1/operations/runs?image_manifest_digest=sha256:...&required_capability=ram-overlay&limit=20'
 curl http://127.0.0.1:9758/v1/workers
 curl 'http://127.0.0.1:9758/v1/workers?status=ready&label=zone=desk&capability=ram-overlay&image_ref=macos-runner:latest&limit=50'
 curl http://127.0.0.1:9758/v1/workers/mini-1
@@ -220,11 +221,16 @@ service-account tokens cannot read it.
 `GET /v1/operations/runs` is the retained controller-run feed. It merges
 placement plans, image preparations, image-GC runs, lifecycle-policy pushes,
 and storage budget/prune runs into one paginated timeline with `kind`,
-`target_type`, `target_id`, `offset`, and `limit` filters. Scoped
-service-account tokens see only runs in their namespace. Run summaries include
-the source run `id`, `kind`, creation time, assignment/skip/candidate counts,
-common target fields, and kind-specific metadata in `fields`; placement-plan
-run summaries count both feasible candidates and skipped workers.
+`target_type`, `target_id`, `source_ref`, `image_ref`,
+`image_manifest_digest`, `image_digest_ref`, `image_platform`,
+`required_capability`, `offset`, and `limit` filters. Scoped service-account
+tokens see only runs in their namespace. Run summaries include the source run
+`id`, `kind`, creation time, assignment/skip/candidate counts, common target
+fields, and kind-specific metadata in `fields`; placement-plan run summaries
+count both feasible candidates and skipped workers. The image provenance and
+capability filters match summary metadata when the source run carries it, so
+operators can collapse placement, preparation, and maintenance history around a
+specific immutable image or worker trait.
 
 Service-account and audit endpoints:
 
@@ -1026,12 +1032,13 @@ if err != nil {
 log.Printf("drained sandboxes=%d skipped=%d", len(drain.Sandboxes), len(drain.Skipped))
 
 runs, err := agentsandbox.ListControllerRuns(ctx, agentsandbox.ControllerRunListOptions{
-	FleetURL:   "https://fleet.internal.example",
-	APIKey:     os.Getenv("COVE_API_KEY"),
-	Namespace:  "team-a",
-	Kind:       "storage.prune",
-	TargetType: "storage",
-	Limit:      20,
+	FleetURL:            "https://fleet.internal.example",
+	APIKey:              os.Getenv("COVE_API_KEY"),
+	Namespace:           "team-a",
+	Kind:                "image.prepare",
+	ImageManifestDigest: "sha256:...",
+	RequiredCapability:  "ram-overlay",
+	Limit:               20,
 })
 if err != nil {
 	log.Fatal(err)

@@ -651,12 +651,18 @@ const (
 )
 
 type ControllerRunListFilter struct {
-	Namespace  string `json:"namespace,omitempty"`
-	Kind       string `json:"kind,omitempty"`
-	TargetType string `json:"target_type,omitempty"`
-	TargetID   string `json:"target_id,omitempty"`
-	Offset     int    `json:"offset,omitempty"`
-	Limit      int    `json:"limit,omitempty"`
+	Namespace           string `json:"namespace,omitempty"`
+	Kind                string `json:"kind,omitempty"`
+	TargetType          string `json:"target_type,omitempty"`
+	TargetID            string `json:"target_id,omitempty"`
+	SourceRef           string `json:"source_ref,omitempty"`
+	ImageRef            string `json:"image_ref,omitempty"`
+	ImageManifestDigest string `json:"image_manifest_digest,omitempty"`
+	ImageDigestRef      string `json:"image_digest_ref,omitempty"`
+	ImagePlatform       string `json:"image_platform,omitempty"`
+	RequiredCapability  string `json:"required_capability,omitempty"`
+	Offset              int    `json:"offset,omitempty"`
+	Limit               int    `json:"limit,omitempty"`
 }
 
 type ControllerRunListResult struct {

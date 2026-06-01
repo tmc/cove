@@ -232,8 +232,9 @@ runs = CoveFleetClient.list_controller_runs(
     fleet_url="https://fleet.internal.example",
     api_key="cove_...",
     namespace="team-a",
-    kind="storage.prune",
-    target_type="storage",
+    kind="image.prepare",
+    image_manifest_digest="sha256:...",
+    required_capability="ram-overlay",
     limit=20,
 )
 print(runs["count"])

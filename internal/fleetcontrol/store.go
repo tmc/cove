@@ -3539,6 +3539,12 @@ func (s *Store) ListControllerRunsPage(filter ControllerRunListFilter) Controlle
 	filter.Kind = strings.TrimSpace(filter.Kind)
 	filter.TargetType = strings.TrimSpace(filter.TargetType)
 	filter.TargetID = strings.TrimSpace(filter.TargetID)
+	filter.SourceRef = strings.TrimSpace(filter.SourceRef)
+	filter.ImageRef = strings.TrimSpace(filter.ImageRef)
+	filter.ImageManifestDigest = strings.TrimSpace(filter.ImageManifestDigest)
+	filter.ImageDigestRef = strings.TrimSpace(filter.ImageDigestRef)
+	filter.ImagePlatform = strings.TrimSpace(filter.ImagePlatform)
+	filter.RequiredCapability = strings.TrimSpace(filter.RequiredCapability)
 	if filter.Offset < 0 {
 		filter.Offset = 0
 	}
@@ -3562,6 +3568,24 @@ func (s *Store) ListControllerRunsPage(filter ControllerRunListFilter) Controlle
 		if filter.TargetID != "" && run.TargetID != filter.TargetID {
 			continue
 		}
+		if filter.SourceRef != "" && !controllerRunFieldMatches(run.Fields, "source_ref", filter.SourceRef) {
+			continue
+		}
+		if filter.ImageRef != "" && !controllerRunFieldMatches(run.Fields, "image_ref", filter.ImageRef) {
+			continue
+		}
+		if filter.ImageManifestDigest != "" && !controllerRunFieldMatches(run.Fields, "image_manifest_digest", filter.ImageManifestDigest) {
+			continue
+		}
+		if filter.ImageDigestRef != "" && !controllerRunFieldMatches(run.Fields, "image_digest_ref", filter.ImageDigestRef) {
+			continue
+		}
+		if filter.ImagePlatform != "" && !controllerRunFieldMatches(run.Fields, "image_platform", filter.ImagePlatform) {
+			continue
+		}
+		if filter.RequiredCapability != "" && !controllerRunHasCapability(run.Fields, filter.RequiredCapability) {
+			continue
+		}
 		filtered = append(filtered, run)
 	}
 	result := ControllerRunListResult{Offset: filter.Offset, Limit: filter.Limit}
@@ -3577,6 +3601,25 @@ func (s *Store) ListControllerRunsPage(filter ControllerRunListFilter) Controlle
 	result.Runs = cloneControllerRunSummaries(filtered[start:end])
 	result.Count = len(result.Runs)
 	return result
+}
+
+func controllerRunFieldMatches(fields map[string]string, key, want string) bool {
+	if fields == nil {
+		return false
+	}
+	return strings.TrimSpace(fields[key]) == want
+}
+
+func controllerRunHasCapability(fields map[string]string, capability string) bool {
+	if fields == nil {
+		return false
+	}
+	for _, value := range strings.Split(fields["required_capabilities"], ",") {
+		if strings.TrimSpace(value) == capability {
+			return true
+		}
+	}
+	return strings.TrimSpace(fields["required_capability"]) == capability
 }
 
 func (s *Store) AwaitAssignment(id string) (*Assignment, error) {
