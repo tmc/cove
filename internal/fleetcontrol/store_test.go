@@ -31,7 +31,7 @@ func TestStoreHeartbeatPersistsAndSorts(t *testing.T) {
 	store.now = func() time.Time { return now }
 	for _, hb := range []WorkerHeartbeat{
 		{ID: "b", Host: "beta", Version: "v2", Capacity: Capacity{CPUs: 8}},
-		{ID: "a", Host: "alpha", Version: "v1", Capacity: Capacity{CPUs: 4}},
+		{ID: "a", Host: "alpha", Version: "v1", ImageDetails: []WorkerImage{{Ref: "base:v1", SourceManifestDigest: "sha256:base"}}, Capacity: Capacity{CPUs: 4}},
 	} {
 		if _, err := store.UpsertHeartbeat(hb); err != nil {
 			t.Fatalf("UpsertHeartbeat(%q): %v", hb.ID, err)
@@ -50,6 +50,9 @@ func TestStoreHeartbeatPersistsAndSorts(t *testing.T) {
 	}
 	if got[0].Capacity.CPUs != 4 || got[1].Capacity.CPUs != 8 {
 		t.Fatalf("capacity not persisted: %+v", got)
+	}
+	if len(got[0].ImageDetails) != 1 || got[0].ImageDetails[0].Ref != "base:v1" || got[0].ImageDetails[0].SourceManifestDigest != "sha256:base" {
+		t.Fatalf("image details not persisted: %+v", got[0].ImageDetails)
 	}
 }
 
@@ -259,6 +262,168 @@ func TestStoreCreateSandbox(t *testing.T) {
 	}
 	if !deleted.Canceled || deleted.Status != "canceled" || deleted.Cleanup != nil {
 		t.Fatalf("DeleteSandbox pending = %+v, want canceled without cleanup", deleted)
+	}
+}
+
+func TestStoreImageAffinityRequiresManifestDigestMatch(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	for _, hb := range []WorkerHeartbeat{
+		{
+			ID:        "stale",
+			ImageRefs: []string{"base:v1"},
+			ImageDetails: []WorkerImage{{
+				Ref:                  "base:v1",
+				SourceManifestDigest: "sha256:old",
+			}},
+			Capacity: Capacity{VMs: 0, MaxVMs: 4},
+		},
+		{
+			ID:        "exact",
+			ImageRefs: []string{"base:v1"},
+			ImageDetails: []WorkerImage{{
+				Ref:                  "base:v1",
+				SourceManifestDigest: "sha256:new",
+			}},
+			Capacity: Capacity{VMs: 2, MaxVMs: 4},
+		},
+		{ID: "cold", Capacity: Capacity{VMs: 0, MaxVMs: 4}},
+	} {
+		if _, err := store.UpsertHeartbeat(hb); err != nil {
+			t.Fatalf("UpsertHeartbeat(%q): %v", hb.ID, err)
+		}
+	}
+	plan, err := store.PlanAssignment(Assignment{
+		Policy:              PolicyImageAffinity,
+		ImageRef:            "base:v1",
+		ImageManifestDigest: "sha256:new",
+		Verb:                "cove",
+	}, 10)
+	if err != nil {
+		t.Fatalf("PlanAssignment: %v", err)
+	}
+	if len(plan.Candidates) != 1 || plan.Candidates[0].WorkerID != "exact" || !plan.Candidates[0].HasImage {
+		t.Fatalf("plan candidates = %+v, want only exact image worker", plan.Candidates)
+	}
+	created, err := store.CreateAssignment(Assignment{
+		Policy:              PolicyImageAffinity,
+		ImageRef:            "base:v1",
+		ImageManifestDigest: "sha256:new",
+		Verb:                "cove",
+	})
+	if err != nil {
+		t.Fatalf("CreateAssignment: %v", err)
+	}
+	if created.WorkerID != "exact" || created.ImageManifestDigest != "sha256:new" {
+		t.Fatalf("assignment = %+v, want exact worker and digest", created)
+	}
+}
+
+func TestStoreCreateSandboxCarriesImageDigest(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	for _, hb := range []WorkerHeartbeat{
+		{
+			ID:        "exact",
+			ImageRefs: []string{"base:v1"},
+			ImageDetails: []WorkerImage{{
+				Ref:                  "base:v1",
+				SourceManifestDigest: "sha256:new",
+			}},
+			Capacity: Capacity{VMs: 0, MaxVMs: 4},
+		},
+		{ID: "cold", Capacity: Capacity{VMs: 0, MaxVMs: 4}},
+	} {
+		if _, err := store.UpsertHeartbeat(hb); err != nil {
+			t.Fatalf("UpsertHeartbeat(%q): %v", hb.ID, err)
+		}
+	}
+	status, err := store.CreateSandbox(SandboxRequest{
+		ID:                  "job-1",
+		ImageRef:            "base:v1",
+		ImageManifestDigest: "sha256:new",
+		ImageDigestRef:      "registry.example/base@sha256:new",
+		ImagePlatform:       "darwin/arm64",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.WorkerID != "exact" || status.ImageManifestDigest != "sha256:new" || status.ImageDigestRef != "registry.example/base@sha256:new" || status.ImagePlatform != "darwin/arm64" {
+		t.Fatalf("sandbox status = %+v, want exact image metadata", status)
+	}
+	if status.Assignment.ImageManifestDigest != "sha256:new" || status.Assignment.ImageDigestRef != "registry.example/base@sha256:new" || status.Assignment.ImagePlatform != "darwin/arm64" {
+		t.Fatalf("sandbox assignment = %+v, want exact image metadata", status.Assignment)
+	}
+}
+
+func TestStoreCreateSandboxRejectsStaleImageDigest(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{
+		ID:        "stale",
+		ImageRefs: []string{"base:v1"},
+		ImageDetails: []WorkerImage{{
+			Ref:                  "base:v1",
+			SourceManifestDigest: "sha256:old",
+		}},
+		Capacity: Capacity{VMs: 0, MaxVMs: 4},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := store.CreateSandbox(SandboxRequest{
+		ID:                  "job-1",
+		ImageRef:            "base:v1",
+		ImageManifestDigest: "sha256:new",
+	})
+	if err == nil || !strings.Contains(err.Error(), "no ready worker matches assignment") {
+		t.Fatalf("CreateSandbox error = %v, want no exact worker", err)
+	}
+}
+
+func TestStoreWarmPoolRequiresManifestDigestMatch(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	for _, hb := range []WorkerHeartbeat{
+		{
+			ID:        "stale",
+			ImageRefs: []string{"base:v1"},
+			ImageDetails: []WorkerImage{{
+				Ref:                  "base:v1",
+				SourceManifestDigest: "sha256:old",
+			}},
+			Capacity: Capacity{VMs: 0, MaxVMs: 4},
+		},
+		{
+			ID:        "exact",
+			ImageRefs: []string{"base:v1"},
+			ImageDetails: []WorkerImage{{
+				Ref:                  "base:v1",
+				SourceManifestDigest: "sha256:new",
+			}},
+			Capacity: Capacity{VMs: 0, MaxVMs: 4},
+		},
+		{ID: "cold", Capacity: Capacity{VMs: 0, MaxVMs: 4}},
+	} {
+		if _, err := store.UpsertHeartbeat(hb); err != nil {
+			t.Fatalf("UpsertHeartbeat(%q): %v", hb.ID, err)
+		}
+	}
+	result, err := store.EnsureWarmPool(WarmPoolRequest{
+		Name:                "runner",
+		ImageRef:            "base:v1",
+		ImageManifestDigest: "sha256:new",
+		ImageDigestRef:      "registry.example/base@sha256:new",
+		ImagePlatform:       "darwin/arm64",
+		Size:                1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Created) != 1 || result.Created[0].WorkerID != "exact" {
+		t.Fatalf("created = %+v, want exact worker", result.Created)
+	}
+	got := result.Created[0]
+	if got.ImageManifestDigest != "sha256:new" || got.ImageDigestRef != "registry.example/base@sha256:new" || got.ImagePlatform != "darwin/arm64" {
+		t.Fatalf("warm-pool assignment = %+v, want exact image metadata", got)
+	}
+	if result.Pool.ImageManifestDigest != "sha256:new" || result.Pool.ImageDigestRef != "registry.example/base@sha256:new" || result.Pool.ImagePlatform != "darwin/arm64" {
+		t.Fatalf("pool = %+v, want exact image metadata", result.Pool)
 	}
 }
 
@@ -2061,6 +2226,55 @@ func TestStorePrepareImageCreatesMissingWorkerAssignments(t *testing.T) {
 	}
 	if len(result.Assignments) != 0 || skipReason(result.Skipped, "cold") != "active" {
 		t.Fatalf("second prepare result = %+v", result)
+	}
+}
+
+func TestStorePrepareImageUsesManifestDigest(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	for _, hb := range []WorkerHeartbeat{
+		{
+			ID:        "exact",
+			ImageRefs: []string{"base:v1"},
+			ImageDetails: []WorkerImage{{
+				Ref:                  "base:v1",
+				SourceManifestDigest: "sha256:new",
+			}},
+		},
+		{
+			ID:        "stale",
+			ImageRefs: []string{"base:v1"},
+			ImageDetails: []WorkerImage{{
+				Ref:                  "base:v1",
+				SourceManifestDigest: "sha256:old",
+			}},
+		},
+	} {
+		if _, err := store.UpsertHeartbeat(hb); err != nil {
+			t.Fatalf("UpsertHeartbeat(%q): %v", hb.ID, err)
+		}
+	}
+	result, err := store.PrepareImage(ImagePrepareRequest{
+		SourceRef:           "registry.example/base:v1",
+		ImageRef:            "base:v1",
+		ImageManifestDigest: "sha256:new",
+		ImageDigestRef:      "registry.example/base@sha256:new",
+		ImagePlatform:       "darwin/arm64",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if skipReason(result.Skipped, "exact") != "present" {
+		t.Fatalf("skipped = %+v, want exact present", result.Skipped)
+	}
+	if len(result.Assignments) != 1 || result.Assignments[0].WorkerID != "stale" {
+		t.Fatalf("assignments = %+v, want stale prepared", result.Assignments)
+	}
+	if got := result.Assignments[0]; got.ImageManifestDigest != "sha256:new" || got.ImageDigestRef != "registry.example/base@sha256:new" || got.ImagePlatform != "darwin/arm64" {
+		t.Fatalf("assignment image metadata = %+v", got)
+	}
+	wantArgs := []string{"image", "pull", "-tag", "base:v1", "-force", "registry.example/base:v1"}
+	if !equalStrings(result.Assignments[0].Args, wantArgs) {
+		t.Fatalf("assignment args = %+v, want stale refresh with force", result.Assignments[0].Args)
 	}
 }
 

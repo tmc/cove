@@ -546,14 +546,16 @@ func (w *FleetWorker) postJSON(ctx context.Context, path string, in, out any) er
 }
 
 func (w *FleetWorker) heartbeat() fleetcontrol.WorkerHeartbeat {
-	imageRefs := listImageRefs(w.imageRoot)
+	imageDetails := listImageInventory(w.imageRoot)
+	imageRefs := imageRefsFromInventory(imageDetails)
 	return fleetcontrol.WorkerHeartbeat{
-		ID:        w.id,
-		Host:      w.host,
-		Version:   w.version,
-		Labels:    cloneStringMap(w.labels),
-		ImageRefs: imageRefs,
-		Capacity:  w.capacity(len(imageRefs)),
+		ID:           w.id,
+		Host:         w.host,
+		Version:      w.version,
+		Labels:       cloneStringMap(w.labels),
+		ImageRefs:    imageRefs,
+		ImageDetails: imageDetails,
+		Capacity:     w.capacity(len(imageRefs)),
 	}
 }
 
@@ -607,10 +609,14 @@ func countDirEntries(root string) int {
 }
 
 func listImageRefs(root string) []string {
+	return imageRefsFromInventory(listImageInventory(root))
+}
+
+func listImageInventory(root string) []fleetcontrol.WorkerImage {
 	if strings.TrimSpace(root) == "" {
 		return nil
 	}
-	seen := make(map[string]bool)
+	seen := make(map[string]fleetcontrol.WorkerImage)
 	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil
@@ -618,17 +624,50 @@ func listImageRefs(root string) []string {
 		if !d.IsDir() && filepath.Base(path) == "manifest.json" {
 			ref, ok := imageRefForManifest(root, path)
 			if ok {
-				seen[ref] = true
+				seen[ref] = fleetcontrol.WorkerImage{
+					Ref:                  ref,
+					SourceManifestDigest: imageSourceManifestDigest(path),
+				}
 			}
 		}
 		return nil
 	})
-	refs := make([]string, 0, len(seen))
-	for ref := range seen {
-		refs = append(refs, ref)
+	images := make([]fleetcontrol.WorkerImage, 0, len(seen))
+	for _, image := range seen {
+		images = append(images, image)
+	}
+	sort.Slice(images, func(i, j int) bool {
+		return images[i].Ref < images[j].Ref
+	})
+	return images
+}
+
+func imageRefsFromInventory(images []fleetcontrol.WorkerImage) []string {
+	if len(images) == 0 {
+		return nil
+	}
+	refs := make([]string, 0, len(images))
+	for _, image := range images {
+		if ref := strings.TrimSpace(image.Ref); ref != "" {
+			refs = append(refs, ref)
+		}
 	}
 	sort.Strings(refs)
 	return refs
+}
+
+func imageSourceManifestDigest(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	var manifest struct {
+		SourceManifestDigest string `json:"source_manifest_digest"`
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(manifest.SourceManifestDigest)
 }
 
 func imageRefForManifest(root, manifest string) (string, bool) {

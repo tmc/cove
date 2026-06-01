@@ -22,7 +22,7 @@ func TestFleetWorkerRegisterHeartbeatAndAwait(t *testing.T) {
 	vmRoot := t.TempDir()
 	mustMkdirAll(t, filepath.Join(vmRoot, "vm-a"))
 	imageRoot := t.TempDir()
-	writeManifest(t, imageRoot, "base", "v1")
+	writeManifestWithDigest(t, imageRoot, "sha256:base", "base", "v1")
 	writeManifest(t, imageRoot, "nested", "image", "latest")
 
 	store := fleetcontrol.NewMemoryStore(time.Minute)
@@ -74,6 +74,9 @@ func TestFleetWorkerRegisterHeartbeatAndAwait(t *testing.T) {
 	wantRefs := []string{"base:v1", "nested/image:latest"}
 	if strings.Join(record.ImageRefs, ",") != strings.Join(wantRefs, ",") {
 		t.Fatalf("image refs = %+v, want %+v", record.ImageRefs, wantRefs)
+	}
+	if len(record.ImageDetails) != 2 || record.ImageDetails[0].Ref != "base:v1" || record.ImageDetails[0].SourceManifestDigest != "sha256:base" {
+		t.Fatalf("image details = %+v, want base digest plus nested image", record.ImageDetails)
 	}
 }
 
@@ -836,11 +839,20 @@ func mustMkdirAll(t *testing.T, path string) {
 
 func writeManifest(t *testing.T, root string, parts ...string) {
 	t.Helper()
+	writeManifestWithDigest(t, root, "", parts...)
+}
+
+func writeManifestWithDigest(t *testing.T, root, digest string, parts ...string) {
+	t.Helper()
 	dir := filepath.Join(append([]string{root}, parts...)...)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte("{}\n"), 0644); err != nil {
+	data := []byte("{}\n")
+	if digest != "" {
+		data = []byte(`{"source_manifest_digest":"` + digest + `"}` + "\n")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), data, 0644); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -138,7 +138,7 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 			continue
 		}
 		host.ID = id
-		host.ImageRefs = sortedUniqueStrings(host.ImageRefs)
+		host.ImageRefs, host.ImageDetails = normalizeWorkerImageInventory(host.ImageRefs, host.ImageDetails)
 		s.hosts[id] = host
 	}
 	for _, assignment := range file.Assignments {
@@ -158,6 +158,9 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 			assignment.SandboxLeaseExpires = assignment.SandboxLeaseExpires.UTC()
 		}
 		assignment.ImageRef = strings.TrimSpace(assignment.ImageRef)
+		assignment.ImageManifestDigest = strings.TrimSpace(assignment.ImageManifestDigest)
+		assignment.ImageDigestRef = strings.TrimSpace(assignment.ImageDigestRef)
+		assignment.ImagePlatform = strings.TrimSpace(assignment.ImagePlatform)
 		assignment.AntiAffinityKey = strings.TrimSpace(assignment.AntiAffinityKey)
 		assignment.RequiredLabels = cloneLabels(assignment.RequiredLabels)
 		if assignment.Status == "" {
@@ -265,17 +268,19 @@ func (s *Store) UpsertHeartbeat(h WorkerHeartbeat) (HostRecord, error) {
 		return HostRecord{}, fmt.Errorf("worker capacity must not be negative")
 	}
 	now := s.now().UTC()
+	imageRefs, imageDetails := normalizeWorkerImageInventory(h.ImageRefs, h.ImageDetails)
 	record := HostRecord{
-		ID:        id,
-		Host:      strings.TrimSpace(h.Host),
-		Address:   strings.TrimSpace(h.Address),
-		Version:   strings.TrimSpace(h.Version),
-		Labels:    cloneLabels(h.Labels),
-		ImageRefs: sortedUniqueStrings(h.ImageRefs),
-		Capacity:  h.Capacity,
-		Status:    "ready",
-		LastSeen:  now,
-		Expires:   now.Add(s.ttl),
+		ID:           id,
+		Host:         strings.TrimSpace(h.Host),
+		Address:      strings.TrimSpace(h.Address),
+		Version:      strings.TrimSpace(h.Version),
+		Labels:       cloneLabels(h.Labels),
+		ImageRefs:    imageRefs,
+		ImageDetails: imageDetails,
+		Capacity:     h.Capacity,
+		Status:       "ready",
+		LastSeen:     now,
+		Expires:      now.Add(s.ttl),
 	}
 
 	s.mu.Lock()
@@ -568,7 +573,7 @@ func (s *Store) CreateAssignmentActor(actor string, a Assignment) (Assignment, e
 		return Assignment{}, fmt.Errorf("assignment verb required")
 	}
 	workerID := strings.TrimSpace(a.WorkerID)
-	policy, imageRef, antiAffinityKey, requiredLabels, resources, err := normalizePlacementFields(a)
+	policy, imageRef, imageManifestDigest, antiAffinityKey, requiredLabels, resources, err := normalizePlacementFields(a)
 	if err != nil {
 		return Assignment{}, err
 	}
@@ -590,7 +595,7 @@ func (s *Store) CreateAssignmentActor(actor string, a Assignment) (Assignment, e
 			return Assignment{}, fmt.Errorf("worker %q not registered", workerID)
 		}
 	} else if policy != "" || len(requiredLabels) > 0 {
-		selected, err := s.selectWorkerLocked(policy, imageRef, requiredLabels, antiAffinityKey, resources)
+		selected, err := s.selectWorkerLocked(policy, imageRef, imageManifestDigest, requiredLabels, antiAffinityKey, resources)
 		if err != nil {
 			return Assignment{}, err
 		}
@@ -607,6 +612,9 @@ func (s *Store) CreateAssignmentActor(actor string, a Assignment) (Assignment, e
 	a.SandboxLeaseExpires = time.Time{}
 	a.Policy = policy
 	a.ImageRef = imageRef
+	a.ImageManifestDigest = imageManifestDigest
+	a.ImageDigestRef = strings.TrimSpace(a.ImageDigestRef)
+	a.ImagePlatform = strings.TrimSpace(a.ImagePlatform)
 	a.AntiAffinityKey = antiAffinityKey
 	a.RequiredLabels = requiredLabels
 	a.Resources = resources
@@ -640,7 +648,7 @@ func (s *Store) CreateAssignmentActor(actor string, a Assignment) (Assignment, e
 }
 
 func (s *Store) PlanAssignment(a Assignment, limit int) (PlacementPlan, error) {
-	policy, imageRef, antiAffinityKey, requiredLabels, resources, err := normalizePlacementFields(a)
+	policy, imageRef, imageManifestDigest, antiAffinityKey, requiredLabels, resources, err := normalizePlacementFields(a)
 	if err != nil {
 		return PlacementPlan{}, err
 	}
@@ -655,18 +663,21 @@ func (s *Store) PlanAssignment(a Assignment, limit int) (PlacementPlan, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	reconciled := s.reconcileLocked(now)
-	candidates := s.placementCandidatesLocked(policy, imageRef, requiredLabels, antiAffinityKey, resources)
+	candidates := s.placementCandidatesLocked(policy, imageRef, imageManifestDigest, requiredLabels, antiAffinityKey, resources)
 	if len(candidates) > limit {
 		candidates = candidates[:limit]
 	}
 	plan := PlacementPlan{
-		Namespace:       normalizeNamespace(a.Namespace),
-		Policy:          policy,
-		ImageRef:        imageRef,
-		RequiredLabels:  cloneLabels(requiredLabels),
-		AntiAffinityKey: antiAffinityKey,
-		Resources:       normalizeResources(resources),
-		Candidates:      clonePlacementCandidates(candidates),
+		Namespace:           normalizeNamespace(a.Namespace),
+		Policy:              policy,
+		ImageRef:            imageRef,
+		ImageManifestDigest: imageManifestDigest,
+		ImageDigestRef:      strings.TrimSpace(a.ImageDigestRef),
+		ImagePlatform:       strings.TrimSpace(a.ImagePlatform),
+		RequiredLabels:      cloneLabels(requiredLabels),
+		AntiAffinityKey:     antiAffinityKey,
+		Resources:           normalizeResources(resources),
+		Candidates:          clonePlacementCandidates(candidates),
 	}
 	if reconciled.changed() {
 		if err := s.persistLocked(); err != nil {
@@ -874,14 +885,17 @@ func (s *Store) CreateSandboxActor(actor string, req SandboxRequest) (SandboxSta
 		return SandboxStatus{}, err
 	}
 	assignment := Assignment{
-		Namespace:       normalizeNamespace(req.Namespace),
-		Policy:          strings.TrimSpace(req.Policy),
-		ImageRef:        imageRef,
-		RequiredLabels:  cloneLabels(req.RequiredLabels),
-		AntiAffinityKey: strings.TrimSpace(req.AntiAffinityKey),
-		Resources:       req.Resources,
+		Namespace:           normalizeNamespace(req.Namespace),
+		Policy:              strings.TrimSpace(req.Policy),
+		ImageRef:            imageRef,
+		ImageManifestDigest: strings.TrimSpace(req.ImageManifestDigest),
+		ImageDigestRef:      strings.TrimSpace(req.ImageDigestRef),
+		ImagePlatform:       strings.TrimSpace(req.ImagePlatform),
+		RequiredLabels:      cloneLabels(req.RequiredLabels),
+		AntiAffinityKey:     strings.TrimSpace(req.AntiAffinityKey),
+		Resources:           req.Resources,
 	}
-	policy, imageRef, antiAffinityKey, requiredLabels, resources, err := normalizePlacementFields(assignment)
+	policy, imageRef, imageManifestDigest, antiAffinityKey, requiredLabels, resources, err := normalizePlacementFields(assignment)
 	if err != nil {
 		return SandboxStatus{}, err
 	}
@@ -907,7 +921,7 @@ func (s *Store) CreateSandboxActor(actor string, req SandboxRequest) (SandboxSta
 	if _, ok := s.assignments[id]; ok {
 		return SandboxStatus{}, fmt.Errorf("assignment %q already exists", id)
 	}
-	workerID, err := s.selectWorkerLocked(policy, imageRef, requiredLabels, antiAffinityKey, resources)
+	workerID, err := s.selectWorkerLocked(policy, imageRef, imageManifestDigest, requiredLabels, antiAffinityKey, resources)
 	if err != nil {
 		return SandboxStatus{}, err
 	}
@@ -916,21 +930,24 @@ func (s *Store) CreateSandboxActor(actor string, req SandboxRequest) (SandboxSta
 		vmName = sandboxVMName(id)
 	}
 	assignment = Assignment{
-		ID:              id,
-		Namespace:       normalizeNamespace(req.Namespace),
-		WorkerID:        workerID,
-		SandboxID:       id,
-		SandboxRole:     sandboxRoleRun,
-		Policy:          policy,
-		ImageRef:        imageRef,
-		RequiredLabels:  requiredLabels,
-		AntiAffinityKey: antiAffinityKey,
-		Resources:       normalizeResources(resources),
-		Verb:            "cove",
-		Args:            sandboxRunArgs(imageRef, vmName, args),
-		Status:          "pending",
-		Created:         now,
-		Updated:         now,
+		ID:                  id,
+		Namespace:           normalizeNamespace(req.Namespace),
+		WorkerID:            workerID,
+		SandboxID:           id,
+		SandboxRole:         sandboxRoleRun,
+		Policy:              policy,
+		ImageRef:            imageRef,
+		ImageManifestDigest: imageManifestDigest,
+		ImageDigestRef:      strings.TrimSpace(req.ImageDigestRef),
+		ImagePlatform:       strings.TrimSpace(req.ImagePlatform),
+		RequiredLabels:      requiredLabels,
+		AntiAffinityKey:     antiAffinityKey,
+		Resources:           normalizeResources(resources),
+		Verb:                "cove",
+		Args:                sandboxRunArgs(imageRef, vmName, args),
+		Status:              "pending",
+		Created:             now,
+		Updated:             now,
 	}
 	s.assignments[id] = assignment
 	s.appendAuditLocked(now, AuditEvent{
@@ -1640,9 +1657,12 @@ func (s *Store) PrepareImageActor(actor string, req ImagePrepareRequest) (ImageP
 	defer s.mu.Unlock()
 	reconciled := s.reconcileLocked(now)
 	result := ImagePrepareResult{
-		Namespace: namespace,
-		SourceRef: sourceRef,
-		ImageRef:  imageRef,
+		Namespace:           namespace,
+		SourceRef:           sourceRef,
+		ImageRef:            imageRef,
+		ImageManifestDigest: strings.TrimSpace(req.ImageManifestDigest),
+		ImageDigestRef:      strings.TrimSpace(req.ImageDigestRef),
+		ImagePlatform:       strings.TrimSpace(req.ImagePlatform),
 	}
 	for _, host := range s.sortedHostsLocked() {
 		host = s.statusLocked(host)
@@ -1653,7 +1673,7 @@ func (s *Store) PrepareImageActor(actor string, req ImagePrepareRequest) (ImageP
 			result.Skipped = append(result.Skipped, ImagePrepareSkip{WorkerID: host.ID, Reason: host.Status})
 			continue
 		}
-		if containsString(host.ImageRefs, imageRef) {
+		if workerHasImage(host, imageRef, result.ImageManifestDigest) {
 			result.Skipped = append(result.Skipped, ImagePrepareSkip{WorkerID: host.ID, Reason: "present"})
 			continue
 		}
@@ -1661,17 +1681,21 @@ func (s *Store) PrepareImageActor(actor string, req ImagePrepareRequest) (ImageP
 			result.Skipped = append(result.Skipped, ImagePrepareSkip{WorkerID: host.ID, Reason: "active"})
 			continue
 		}
+		force := req.Force || (result.ImageManifestDigest != "" && containsString(host.ImageRefs, imageRef))
 		assignment := Assignment{
-			ID:             s.nextAssignmentIDLocked(now),
-			Namespace:      namespace,
-			WorkerID:       host.ID,
-			ImageRef:       imageRef,
-			RequiredLabels: labels,
-			Verb:           "cove",
-			Args:           imagePrepareArgs(sourceRef, imageRef, req.Force),
-			Status:         "pending",
-			Created:        now,
-			Updated:        now,
+			ID:                  s.nextAssignmentIDLocked(now),
+			Namespace:           namespace,
+			WorkerID:            host.ID,
+			ImageRef:            imageRef,
+			ImageManifestDigest: result.ImageManifestDigest,
+			ImageDigestRef:      result.ImageDigestRef,
+			ImagePlatform:       result.ImagePlatform,
+			RequiredLabels:      labels,
+			Verb:                "cove",
+			Args:                imagePrepareArgs(sourceRef, imageRef, force),
+			Status:              "pending",
+			Created:             now,
+			Updated:             now,
 		}
 		s.assignments[assignment.ID] = assignment
 		result.Assignments = append(result.Assignments, cloneAssignment(assignment))
@@ -1681,16 +1705,20 @@ func (s *Store) PrepareImageActor(actor string, req ImagePrepareRequest) (ImageP
 	}
 	if len(result.Assignments) > 0 || reconciled.changed() {
 		if len(result.Assignments) > 0 {
+			fields := map[string]string{
+				"source_ref":  sourceRef,
+				"assignments": strconv.Itoa(len(result.Assignments)),
+			}
+			if result.ImageManifestDigest != "" {
+				fields["image_digest"] = result.ImageManifestDigest
+			}
 			s.appendAuditLocked(now, AuditEvent{
 				Actor:      actor,
 				Namespace:  namespace,
 				Action:     "image.prepare",
 				TargetType: "image",
 				TargetID:   imageRef,
-				Fields: map[string]string{
-					"source_ref":  sourceRef,
-					"assignments": strconv.Itoa(len(result.Assignments)),
-				},
+				Fields:     fields,
 			})
 		}
 		if err := s.persistLocked(); err != nil {
@@ -2569,7 +2597,7 @@ func (s *Store) reconcileLocked(now time.Time) ReconcileResult {
 			changed = true
 		}
 		if workerStale && assignmentCanPlace(assignment) {
-			selected, err := s.selectWorkerLocked(assignmentPolicy(assignment), assignment.ImageRef, assignment.RequiredLabels, assignment.AntiAffinityKey, assignment.Resources)
+			selected, err := s.selectWorkerLocked(assignmentPolicy(assignment), assignment.ImageRef, assignment.ImageManifestDigest, assignment.RequiredLabels, assignment.AntiAffinityKey, assignment.Resources)
 			if err == nil && selected != assignment.WorkerID {
 				assignment.WorkerID = selected
 				result.ReplacedAssignments = append(result.ReplacedAssignments, assignment.ID)
@@ -2613,6 +2641,7 @@ func (s *Store) statusLocked(record HostRecord) HostRecord {
 	}
 	record.Labels = cloneLabels(record.Labels)
 	record.ImageRefs = cloneStrings(record.ImageRefs)
+	record.ImageDetails = cloneWorkerImages(record.ImageDetails)
 	if record.Report != nil {
 		report := *record.Report
 		record.Report = &report
@@ -3002,6 +3031,15 @@ func clonePlacementCandidates(in []PlacementCandidate) []PlacementCandidate {
 	return out
 }
 
+func cloneWorkerImages(in []WorkerImage) []WorkerImage {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]WorkerImage, len(in))
+	copy(out, in)
+	return out
+}
+
 func cloneStrings(in []string) []string {
 	if len(in) == 0 {
 		return nil
@@ -3011,7 +3049,46 @@ func cloneStrings(in []string) []string {
 	return out
 }
 
-func (s *Store) selectWorkerLocked(policy, imageRef string, labels map[string]string, antiAffinityKey string, resources Capacity) (string, error) {
+func normalizeWorkerImageInventory(refs []string, details []WorkerImage) ([]string, []WorkerImage) {
+	byRef := make(map[string]WorkerImage)
+	for _, ref := range refs {
+		ref = strings.TrimSpace(ref)
+		if ref == "" {
+			continue
+		}
+		byRef[ref] = WorkerImage{Ref: ref}
+	}
+	for _, image := range details {
+		ref := strings.TrimSpace(image.Ref)
+		if ref == "" {
+			continue
+		}
+		next := WorkerImage{
+			Ref:                  ref,
+			SourceManifestDigest: strings.TrimSpace(image.SourceManifestDigest),
+		}
+		cur := byRef[ref]
+		if cur.Ref == "" || cur.SourceManifestDigest == "" {
+			byRef[ref] = next
+		}
+	}
+	outRefs := make([]string, 0, len(byRef))
+	outDetails := make([]WorkerImage, 0, len(byRef))
+	for ref, image := range byRef {
+		outRefs = append(outRefs, ref)
+		if image.Ref == "" {
+			image.Ref = ref
+		}
+		outDetails = append(outDetails, image)
+	}
+	sort.Strings(outRefs)
+	sort.Slice(outDetails, func(i, j int) bool {
+		return outDetails[i].Ref < outDetails[j].Ref
+	})
+	return outRefs, outDetails
+}
+
+func (s *Store) selectWorkerLocked(policy, imageRef, imageManifestDigest string, labels map[string]string, antiAffinityKey string, resources Capacity) (string, error) {
 	if policy == "" {
 		policy = PolicyLeastLoaded
 	}
@@ -3020,17 +3097,18 @@ func (s *Store) selectWorkerLocked(policy, imageRef string, labels map[string]st
 	default:
 		return "", fmt.Errorf("unknown assignment policy %q", policy)
 	}
-	candidates := s.placementCandidatesLocked(policy, imageRef, labels, antiAffinityKey, resources)
+	candidates := s.placementCandidatesLocked(policy, imageRef, imageManifestDigest, labels, antiAffinityKey, resources)
 	if len(candidates) == 0 {
 		return "", fmt.Errorf("no ready worker matches assignment")
 	}
 	return candidates[0].WorkerID, nil
 }
 
-func (s *Store) placementCandidatesLocked(policy, imageRef string, labels map[string]string, antiAffinityKey string, resources Capacity) []PlacementCandidate {
+func (s *Store) placementCandidatesLocked(policy, imageRef, imageManifestDigest string, labels map[string]string, antiAffinityKey string, resources Capacity) []PlacementCandidate {
 	if policy == "" {
 		policy = PolicyLeastLoaded
 	}
+	imageManifestDigest = strings.TrimSpace(imageManifestDigest)
 	resources = normalizeResources(resources)
 	var candidates []PlacementCandidate
 	for _, host := range s.sortedHostsLocked() {
@@ -3045,7 +3123,10 @@ func (s *Store) placementCandidatesLocked(policy, imageRef string, labels map[st
 		if host.Capacity.MaxVMs > 0 && load+resources.VMs > host.Capacity.MaxVMs {
 			continue
 		}
-		hasImage := imageRef != "" && containsString(host.ImageRefs, imageRef)
+		hasImage := workerHasImage(host, imageRef, imageManifestDigest)
+		if imageManifestDigest != "" && !hasImage {
+			continue
+		}
 		antiAffinityLoad := s.antiAffinityLoadLocked(host.ID, antiAffinityKey)
 		candidates = append(candidates, PlacementCandidate{
 			WorkerID:         host.ID,
@@ -3063,6 +3144,23 @@ func (s *Store) placementCandidatesLocked(policy, imageRef string, labels map[st
 		candidates[i].Rank = i + 1
 	}
 	return candidates
+}
+
+func workerHasImage(host HostRecord, imageRef, imageManifestDigest string) bool {
+	imageRef = strings.TrimSpace(imageRef)
+	if imageRef == "" {
+		return false
+	}
+	imageManifestDigest = strings.TrimSpace(imageManifestDigest)
+	if imageManifestDigest == "" {
+		return containsString(host.ImageRefs, imageRef)
+	}
+	for _, image := range host.ImageDetails {
+		if strings.TrimSpace(image.Ref) == imageRef && strings.TrimSpace(image.SourceManifestDigest) == imageManifestDigest {
+			return true
+		}
+	}
+	return false
 }
 
 func betterCandidate(policy string, a, b PlacementCandidate) bool {
@@ -3095,26 +3193,29 @@ func (s *Store) ensureWarmPoolLocked(now time.Time, pool WarmPool) []Assignment 
 	}
 	var created []Assignment
 	for i := 0; i < need; i++ {
-		workerID, err := s.selectWorkerLocked(pool.Policy, pool.ImageRef, pool.RequiredLabels, warmPoolAntiAffinityKey(pool.Name), pool.Resources)
+		workerID, err := s.selectWorkerLocked(pool.Policy, pool.ImageRef, pool.ImageManifestDigest, pool.RequiredLabels, warmPoolAntiAffinityKey(pool.Name), pool.Resources)
 		if err != nil {
 			return created
 		}
 		id := s.nextAssignmentIDLocked(now)
 		assignment := Assignment{
-			ID:              id,
-			Namespace:       pool.Namespace,
-			WorkerID:        workerID,
-			WarmPool:        pool.Name,
-			Policy:          pool.Policy,
-			ImageRef:        pool.ImageRef,
-			RequiredLabels:  cloneLabels(pool.RequiredLabels),
-			AntiAffinityKey: warmPoolAntiAffinityKey(pool.Name),
-			Resources:       pool.Resources,
-			Verb:            "cove",
-			Args:            warmPoolArgs(pool, id),
-			Status:          "pending",
-			Created:         now,
-			Updated:         now,
+			ID:                  id,
+			Namespace:           pool.Namespace,
+			WorkerID:            workerID,
+			WarmPool:            pool.Name,
+			Policy:              pool.Policy,
+			ImageRef:            pool.ImageRef,
+			ImageManifestDigest: pool.ImageManifestDigest,
+			ImageDigestRef:      pool.ImageDigestRef,
+			ImagePlatform:       pool.ImagePlatform,
+			RequiredLabels:      cloneLabels(pool.RequiredLabels),
+			AntiAffinityKey:     warmPoolAntiAffinityKey(pool.Name),
+			Resources:           pool.Resources,
+			Verb:                "cove",
+			Args:                warmPoolArgs(pool, id),
+			Status:              "pending",
+			Created:             now,
+			Updated:             now,
 		}
 		s.assignments[id] = assignment
 		created = append(created, cloneAssignment(assignment))
@@ -3359,7 +3460,7 @@ func (s *Store) startSandboxLocked(now time.Time, actor, id, action, holder stri
 		}
 		assignment.Args = sandboxStartArgs(assignment)
 	} else if assignmentCanPlace(assignment) {
-		workerID, err := s.selectWorkerLocked(assignmentPolicy(assignment), assignment.ImageRef, assignment.RequiredLabels, assignment.AntiAffinityKey, assignment.Resources)
+		workerID, err := s.selectWorkerLocked(assignmentPolicy(assignment), assignment.ImageRef, assignment.ImageManifestDigest, assignment.RequiredLabels, assignment.AntiAffinityKey, assignment.Resources)
 		if err != nil {
 			return SandboxStartResult{}, err
 		}
@@ -3521,16 +3622,19 @@ func (s *Store) nextSandboxIDLocked(now time.Time) string {
 
 func warmPoolFromRequest(req WarmPoolRequest, now time.Time) (WarmPool, error) {
 	pool := WarmPool{
-		Namespace:      normalizeNamespace(req.Namespace),
-		Name:           strings.TrimSpace(req.Name),
-		ImageRef:       strings.TrimSpace(req.ImageRef),
-		Size:           req.Size,
-		Policy:         strings.TrimSpace(req.Policy),
-		RequiredLabels: cloneLabels(req.RequiredLabels),
-		Resources:      req.Resources,
-		Args:           cloneStrings(req.Args),
-		Created:        now,
-		Updated:        now,
+		Namespace:           normalizeNamespace(req.Namespace),
+		Name:                strings.TrimSpace(req.Name),
+		ImageRef:            strings.TrimSpace(req.ImageRef),
+		ImageManifestDigest: strings.TrimSpace(req.ImageManifestDigest),
+		ImageDigestRef:      strings.TrimSpace(req.ImageDigestRef),
+		ImagePlatform:       strings.TrimSpace(req.ImagePlatform),
+		Size:                req.Size,
+		Policy:              strings.TrimSpace(req.Policy),
+		RequiredLabels:      cloneLabels(req.RequiredLabels),
+		Resources:           req.Resources,
+		Args:                cloneStrings(req.Args),
+		Created:             now,
+		Updated:             now,
 	}
 	if pool.Name == "" {
 		pool.Name = warmPoolDefaultName(pool.ImageRef)
@@ -3542,6 +3646,9 @@ func normalizeWarmPool(pool WarmPool, now time.Time) (WarmPool, error) {
 	pool.Name = strings.TrimSpace(pool.Name)
 	pool.Namespace = normalizeNamespace(pool.Namespace)
 	pool.ImageRef = strings.TrimSpace(pool.ImageRef)
+	pool.ImageManifestDigest = strings.TrimSpace(pool.ImageManifestDigest)
+	pool.ImageDigestRef = strings.TrimSpace(pool.ImageDigestRef)
+	pool.ImagePlatform = strings.TrimSpace(pool.ImagePlatform)
 	pool.Policy = strings.TrimSpace(pool.Policy)
 	pool.RequiredLabels = cloneLabels(pool.RequiredLabels)
 	pool.Args = cloneStrings(pool.Args)
@@ -3623,15 +3730,18 @@ func sandboxStatusFromAssignment(assignment Assignment, now time.Time) SandboxSt
 	assignment = cloneAssignment(assignment)
 	clearExpiredSandboxLease(&assignment, now)
 	status := SandboxStatus{
-		Namespace:  assignment.Namespace,
-		ID:         assignment.SandboxID,
-		VMName:     SandboxAssignmentVMName(assignment),
-		ImageRef:   assignment.ImageRef,
-		WorkerID:   assignment.WorkerID,
-		Status:     assignment.Status,
-		Assignment: assignment,
-		Created:    assignment.Created,
-		Updated:    assignment.Updated,
+		Namespace:           assignment.Namespace,
+		ID:                  assignment.SandboxID,
+		VMName:              SandboxAssignmentVMName(assignment),
+		ImageRef:            assignment.ImageRef,
+		ImageManifestDigest: assignment.ImageManifestDigest,
+		ImageDigestRef:      assignment.ImageDigestRef,
+		ImagePlatform:       assignment.ImagePlatform,
+		WorkerID:            assignment.WorkerID,
+		Status:              assignment.Status,
+		Assignment:          assignment,
+		Created:             assignment.Created,
+		Updated:             assignment.Updated,
 	}
 	if assignment.SandboxLeaseHolder != "" && !assignment.SandboxLeaseExpires.IsZero() {
 		status.Lease = &SandboxLease{
@@ -3904,14 +4014,18 @@ func sanitizeResources(in Capacity) (Capacity, error) {
 	return in, nil
 }
 
-func normalizePlacementFields(a Assignment) (policy, imageRef, antiAffinityKey string, labels map[string]string, resources Capacity, err error) {
+func normalizePlacementFields(a Assignment) (policy, imageRef, imageManifestDigest, antiAffinityKey string, labels map[string]string, resources Capacity, err error) {
 	policy = strings.TrimSpace(a.Policy)
 	imageRef = strings.TrimSpace(a.ImageRef)
+	imageManifestDigest = strings.TrimSpace(a.ImageManifestDigest)
 	antiAffinityKey = strings.TrimSpace(a.AntiAffinityKey)
 	labels = cloneLabels(a.RequiredLabels)
 	resources, err = sanitizeResources(a.Resources)
 	if err != nil {
-		return "", "", "", nil, Capacity{}, err
+		return "", "", "", "", nil, Capacity{}, err
+	}
+	if imageManifestDigest != "" && imageRef == "" {
+		return "", "", "", "", nil, Capacity{}, fmt.Errorf("assignment image_manifest_digest requires image_ref")
 	}
 	if policy == "" && imageRef != "" {
 		policy = PolicyImageAffinity
@@ -3919,9 +4033,9 @@ func normalizePlacementFields(a Assignment) (policy, imageRef, antiAffinityKey s
 	switch policy {
 	case "", PolicyLeastLoaded, PolicyImageAffinity, PolicyBinPack:
 	default:
-		return "", "", "", nil, Capacity{}, fmt.Errorf("unknown assignment policy %q", policy)
+		return "", "", "", "", nil, Capacity{}, fmt.Errorf("unknown assignment policy %q", policy)
 	}
-	return policy, imageRef, antiAffinityKey, labels, resources, nil
+	return policy, imageRef, imageManifestDigest, antiAffinityKey, labels, resources, nil
 }
 
 func assignmentVMs(assignment Assignment) int {

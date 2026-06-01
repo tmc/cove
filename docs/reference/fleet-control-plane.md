@@ -195,7 +195,7 @@ Image preparation endpoint:
 ```bash
 curl -X POST http://127.0.0.1:9758/v1/images/prepare \
   -H 'content-type: application/json' \
-  -d '{"source_ref":"registry.example/cove/macos-runner:latest","image_ref":"macos-runner:latest","required_labels":{"zone":"desk"}}'
+  -d '{"source_ref":"registry.example/cove/macos-runner:latest","image_ref":"macos-runner:latest","image_manifest_digest":"sha256:...","image_digest_ref":"registry.example/cove/macos-runner@sha256:...","image_platform":"darwin/arm64","required_labels":{"zone":"desk"}}'
 ```
 
 Image preparation creates one `cove image pull -tag <image_ref> <source_ref>`
@@ -205,6 +205,12 @@ cordoned or stale, or already have an active preparation assignment are returned
 in `skipped`. After a successful image preparation assignment, `coved` sends an
 extra heartbeat so the controller can place later `image-affinity` work against
 fresh image refs.
+When `image_manifest_digest` is supplied, a worker counts as already prepared
+only if its heartbeat reports the same `image_ref` and
+`source_manifest_digest`; a stale mutable ref is refreshed with a forced pull.
+The optional `image_digest_ref` and `image_platform` fields are stored on the
+queued assignments and returned in the preparation result for offline bundle
+audits.
 
 Image GC endpoint:
 
@@ -272,20 +278,23 @@ Placement planning endpoint:
 ```bash
 curl -X POST http://127.0.0.1:9758/v1/placements/plan \
   -H 'content-type: application/json' \
-  -d '{"policy":"bin-pack","image_ref":"macos-runner:latest","anti_affinity_key":"ci/buildkite","resources":{"vms":1},"limit":5}'
+  -d '{"policy":"image-affinity","image_ref":"macos-runner:latest","image_manifest_digest":"sha256:...","anti_affinity_key":"ci/buildkite","resources":{"vms":1},"limit":5}'
 ```
 
 Placement planning returns the retained ranked feasible workers without storing
 an assignment. It uses the same policy, required-label, image-affinity,
 anti-affinity, and slot-cap logic as assignment creation. `limit` defaults to
 five candidates.
+If `image_manifest_digest` is set, the plan only includes workers whose
+heartbeat reports that exact source manifest digest for the requested
+`image_ref`; stale or unknown mutable refs are not warm candidates.
 
 Warm-pool endpoint:
 
 ```bash
 curl -X POST http://127.0.0.1:9758/v1/warm-pools \
   -H 'content-type: application/json' \
-  -d '{"name":"runner-14","image_ref":"macos-runner:14.5","size":3,"required_labels":{"zone":"desk"},"resources":{"vms":1}}'
+  -d '{"name":"runner-14","image_ref":"macos-runner:14.5","image_manifest_digest":"sha256:...","size":3,"required_labels":{"zone":"desk"},"resources":{"vms":1}}'
 curl -X POST http://127.0.0.1:9758/v1/warm-pools/claim \
   -H 'content-type: application/json' \
   -d '{"name":"runner-14","command":["/bin/sh","-lc","make test"],"env":{"CI":"1"}}'
@@ -301,6 +310,11 @@ placement scheduler and anti-affinity key `warm-pool/<name>`. Each slot runs:
 ```bash
 cove run -fork-from <image_ref> -fork-name <generated> -ephemeral -keep -headless
 ```
+
+Warm pools accept the same optional `image_manifest_digest`, `image_digest_ref`,
+and `image_platform` fields as assignments. With a manifest digest, the
+controller only replenishes slots on workers that report the exact image
+provenance; use `/v1/images/prepare` first to refresh stale mutable refs.
 
 The first slice keeps those fork assignments active, probes the warmed VM with
 `cove shell <generated> -- /bin/sh -c true`, and replenishes completed or failed
@@ -331,7 +345,7 @@ Sandbox endpoint:
 ```bash
 curl -X POST http://127.0.0.1:9758/v1/sandboxes \
   -H 'content-type: application/json' \
-  -d '{"id":"job-1","image_ref":"macos-runner:14.5","required_labels":{"zone":"desk"},"args":["--net","nat"]}'
+  -d '{"id":"job-1","image_ref":"macos-runner:14.5","image_manifest_digest":"sha256:...","required_labels":{"zone":"desk"},"args":["--net","nat"]}'
 curl http://127.0.0.1:9758/v1/sandboxes
 curl 'http://127.0.0.1:9758/v1/sandboxes?status=ready&image_ref=macos-runner:14.5&offset=0&limit=20'
 curl http://127.0.0.1:9758/v1/sandboxes/job-1
@@ -371,6 +385,10 @@ to `cove-sandbox-<id>`. The controller records the backing assignment with
 `sandbox_id` and `sandbox_role:"run"` so the handle can be listed and fetched
 without a separate scheduler. Extra `args` are appended to `cove run`, but
 fork/source/lifetime/headless flags are reserved by the controller.
+Create requests accept optional `image_manifest_digest`, `image_digest_ref`,
+and `image_platform` fields. The returned sandbox status and backing assignment
+keep those fields, and exact-digest requests are admitted only onto workers that
+report the matching image provenance.
 
 `GET /v1/sandboxes` accepts `namespace`, `status`, `worker_id`, `image_ref`,
 `offset`, and `limit` query parameters. Namespace-scoped bearer tokens still
@@ -523,7 +541,7 @@ curl -X POST http://127.0.0.1:9758/v1/assignments \
   -d '{"id":"run-1","worker_id":"mini-1","verb":"cove","args":["run","-ephemeral","-headless"]}'
 curl -X POST http://127.0.0.1:9758/v1/assignments \
   -H 'content-type: application/json' \
-  -d '{"id":"placed-1","policy":"image-affinity","image_ref":"macos-runner:latest","verb":"cove","args":["run","-fork-from","macos-runner:latest","-ephemeral"]}'
+  -d '{"id":"placed-1","policy":"image-affinity","image_ref":"macos-runner:latest","image_manifest_digest":"sha256:...","image_digest_ref":"registry.example/cove/macos-runner@sha256:...","image_platform":"darwin/arm64","verb":"cove","args":["run","-fork-from","macos-runner:latest","-ephemeral"]}'
 curl -X POST http://127.0.0.1:9758/v1/assignments \
   -H 'content-type: application/json' \
   -d '{"id":"packed-1","policy":"bin-pack","anti_affinity_key":"ci/buildkite","resources":{"vms":1},"verb":"cove","args":["run","-ephemeral","-headless"]}'
@@ -554,7 +572,7 @@ assignment before storing it:
 | Policy | Placement |
 |--------|-----------|
 | `least-loaded` | Choose the non-cordoned ready worker with the lowest VM count plus pending assignment count. |
-| `image-affinity` | Prefer a non-cordoned ready worker that already reports `image_ref`; fall back to least-loaded. |
+| `image-affinity` | Prefer a non-cordoned ready worker that already reports `image_ref`; fall back to least-loaded. If `image_manifest_digest` is set, only workers that report the matching source manifest digest for that ref are feasible. |
 | `bin-pack` | Choose the densest non-cordoned ready worker that still fits the assignment's `resources.vms` under the worker's `max_vms` slot cap. |
 
 `required_labels` can restrict placement to workers with exact matching labels.
@@ -563,6 +581,9 @@ count. Assignment `resources.vms` defaults to one scheduling slot when omitted.
 Set `anti_affinity_key` to spread active assignments for the same job, base, or
 replica group across workers. `image-affinity` still prefers a warm worker
 before applying the anti-affinity tie-break.
+Worker heartbeats include both legacy `image_refs` and `image_details` entries
+with optional `source_manifest_digest`, so mutable tags can be scheduled with a
+digest-exact provenance check.
 `POST /v1/placements/plan` exposes the same ranking as a read-only top-k plan.
 
 Register a worker record manually:
@@ -570,7 +591,7 @@ Register a worker record manually:
 ```bash
 curl -X POST http://127.0.0.1:9758/v1/workers/register \
   -H 'content-type: application/json' \
-  -d '{"id":"mini-1","host":"mini.local","version":"dev","cpus":12,"max_vms":8,"memory_bytes":68719476736}'
+  -d '{"id":"mini-1","host":"mini.local","version":"dev","image_refs":["macos-runner:latest"],"image_details":[{"ref":"macos-runner:latest","source_manifest_digest":"sha256:..."}],"cpus":12,"max_vms":8,"memory_bytes":68719476736}'
 ```
 
 This surface is intentionally private and local-first. It now has basic

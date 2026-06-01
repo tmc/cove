@@ -238,6 +238,12 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `cove-fleetd` assignment creation can now place work on a ready worker with
   controller-side `least-loaded` or `image-affinity` policy using `coved`
   heartbeat image refs and pending assignment load.
+- `coved` worker heartbeats now include per-image source manifest provenance,
+  and `cove-fleetd` assignment, placement-plan, warm-pool, sandbox, and image
+  preparation flows can carry `image_manifest_digest`, `image_digest_ref`, and
+  `image_platform`. When a manifest digest is supplied, image-affinity admits
+  only workers that report the matching local image provenance, and image
+  preparation forces a refresh for stale mutable refs.
 - `cove-fleetd` now reconciles stale workers and expired assignment leases,
   exposes `POST /v1/reconcile`, and `coved` renews active `cove` assignments
   with `running` reports so long jobs do not get reclaimed while still alive.

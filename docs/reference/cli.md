@@ -1080,7 +1080,7 @@ cove daemon ui [-addr <host:port>] [-open <cmd>]
 
 | Command | Description |
 |---------|-------------|
-| `coved` | Start the host-side coordinator daemon; `-fleet-url` enables worker dial-out to `cove-fleetd`. |
+| `coved` | Start the host-side coordinator daemon; `-fleet-url` enables worker dial-out to `cove-fleetd` with image refs and source manifest provenance in heartbeats. |
 | `cove daemon start [-coved <path>]` | Start `coved`, optionally from an explicit binary path. |
 | `cove daemon stop` | Stop the user-session daemon. |
 | `cove daemon status [--json]` | Show daemon reachability, lifecycle enforcement, and image-GC counters. |
