@@ -1289,13 +1289,25 @@ type SandboxDeleteResult struct {
 }
 
 type OperationsSummary struct {
-	Time        time.Time                   `json:"time"`
-	Namespace   string                      `json:"namespace,omitempty"`
-	Workers     WorkerOperationsSummary     `json:"workers"`
-	Assignments AssignmentOperationsSummary `json:"assignments"`
-	Sandboxes   SandboxOperationsSummary    `json:"sandboxes"`
-	WarmPools   WarmPoolOperationsSummary   `json:"warm_pools"`
-	Metering    MeteringSummary             `json:"metering"`
+	Time           time.Time                      `json:"time"`
+	Namespace      string                         `json:"namespace,omitempty"`
+	Workers        WorkerOperationsSummary        `json:"workers"`
+	Assignments    AssignmentOperationsSummary    `json:"assignments"`
+	Sandboxes      SandboxOperationsSummary       `json:"sandboxes"`
+	WarmPools      WarmPoolOperationsSummary      `json:"warm_pools"`
+	ControllerRuns ControllerRunOperationsSummary `json:"controller_runs"`
+	Metering       MeteringSummary                `json:"metering"`
+}
+
+type ControllerRunOperationsSummary struct {
+	Total              int                    `json:"total"`
+	AssignmentBacked   int                    `json:"assignment_backed"`
+	Active             int                    `json:"active"`
+	Attention          int                    `json:"attention"`
+	ByKind             map[string]int         `json:"by_kind,omitempty"`
+	ByAssignmentStatus map[string]int         `json:"by_assignment_status,omitempty"`
+	ActiveRuns         []ControllerRunSummary `json:"active_runs,omitempty"`
+	AttentionRuns      []ControllerRunSummary `json:"attention_runs,omitempty"`
 }
 
 type WorkerOperationsSummary struct {

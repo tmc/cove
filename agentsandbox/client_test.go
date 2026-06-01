@@ -770,6 +770,9 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 	if summary.Namespace != "team-a" || summary.Workers.Total != 3 || summary.Workers.Ready != 1 || summary.Assignments.Active != 1 || summary.Sandboxes.Active != 1 || summary.WarmPools.Ready != 1 || summary.Metering.Records != 2 {
 		t.Fatalf("GetOperationsSummary = %+v, want team-a dashboard summary", summary)
 	}
+	if summary.ControllerRuns.Total != 2 || summary.ControllerRuns.Active != 1 || summary.ControllerRuns.Attention != 1 || summary.ControllerRuns.ByKind["storage.prune"] != 1 || summary.ControllerRuns.ByAssignmentStatus["running"] != 1 {
+		t.Fatalf("controller run operations summary = %+v, want active storage prune and attention run", summary.ControllerRuns)
+	}
 	if len(summary.Workers.Capabilities) != 2 || summary.Workers.Capabilities[0].Name != "asif" || summary.Workers.Capabilities[0].Ready != 1 {
 		t.Fatalf("operations capabilities = %+v, want sorted capability coverage", summary.Workers.Capabilities)
 	}
@@ -2896,6 +2899,32 @@ func sdkOperationsSummary() OperationsSummary {
 			Ready:    1,
 			ByStatus: map[string]int{"ready": 1},
 			Pools:    []WarmPoolStatus{sdkWarmPoolStatus()},
+		},
+		ControllerRuns: ControllerRunOperationsSummary{
+			Total:              2,
+			AssignmentBacked:   2,
+			Active:             1,
+			Attention:          1,
+			ByKind:             map[string]int{"storage.prune": 1, "image.gc": 1},
+			ByAssignmentStatus: map[string]int{"running": 1, "failed": 1},
+			ActiveRuns: []ControllerRunSummary{{
+				ID:              "storage-prune-1",
+				Created:         now,
+				Namespace:       "team-a",
+				Kind:            "storage.prune",
+				TargetType:      "storage",
+				TargetID:        "build-scratch",
+				AssignmentCount: 1,
+			}},
+			AttentionRuns: []ControllerRunSummary{{
+				ID:              "image-gc-1",
+				Created:         now.Add(-time.Minute),
+				Namespace:       "team-a",
+				Kind:            "image.gc",
+				TargetType:      "image-cache",
+				TargetID:        "all",
+				AssignmentCount: 1,
+			}},
 		},
 		Metering: MeteringSummary{Namespace: "team-a", Records: 2, DurationMillis: 2000, VMMillis: 2000},
 	}

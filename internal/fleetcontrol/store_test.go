@@ -1519,6 +1519,83 @@ func TestStoreOperationsSummary(t *testing.T) {
 	}
 }
 
+func TestStoreOperationsSummaryControllerRuns(t *testing.T) {
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(time.Minute)
+	store.now = func() time.Time { return now }
+	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{
+		ID:           "worker-1",
+		Labels:       map[string]string{"zone": "desk"},
+		Capabilities: []string{"ram-overlay"},
+		Capacity:     Capacity{MaxVMs: 4},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	prep, err := store.PrepareImage(ImagePrepareRequest{
+		Namespace:            "team-a",
+		SourceRef:            "registry.example/runner:v1",
+		ImageRef:             "runner:v1",
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leased, err := store.AwaitAssignment("worker-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leased == nil || leased.ID != prep.Assignments[0].ID {
+		t.Fatalf("leased assignment = %+v, want prepare %s", leased, prep.Assignments[0].ID)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: prep.Assignments[0].ID, Status: "running"}); err != nil {
+		t.Fatal(err)
+	}
+	prune, err := store.PushStoragePrune(StoragePruneRequest{
+		Namespace:            "team-a",
+		RequiredLabels:       map[string]string{"zone": "desk"},
+		RequiredCapabilities: []string{"ram-overlay"},
+		Category:             "build-scratch",
+		OlderThan:            "48h",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leased, err = store.AwaitAssignment("worker-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leased == nil || leased.ID != prune.Assignments[0].ID {
+		t.Fatalf("leased assignment = %+v, want prune %s", leased, prune.Assignments[0].ID)
+	}
+	now = now.Add(time.Second)
+	if _, err := store.Report(WorkerReport{ID: "worker-1", AssignmentID: prune.Assignments[0].ID, Status: "failed"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.PushImageGC(ImageGCRequest{Namespace: "team-b", RequiredLabels: map[string]string{"zone": "desk"}, OlderThan: "24h"}); err != nil {
+		t.Fatal(err)
+	}
+
+	summary := store.OperationsSummary("team-a")
+	runs := summary.ControllerRuns
+	if runs.Total != 2 || runs.AssignmentBacked != 2 || runs.Active != 1 || runs.Attention != 1 {
+		t.Fatalf("controller run summary = %+v, want two assignment-backed runs with one active and one attention", runs)
+	}
+	if runs.ByKind[ControllerRunKindImagePrepare] != 1 || runs.ByKind[ControllerRunKindStoragePrune] != 1 || runs.ByKind[ControllerRunKindImageGC] != 0 {
+		t.Fatalf("controller run kinds = %+v, want team-a prepare and prune only", runs.ByKind)
+	}
+	if runs.ByAssignmentStatus["running"] != 1 || runs.ByAssignmentStatus["failed"] != 1 {
+		t.Fatalf("controller run statuses = %+v, want running and failed", runs.ByAssignmentStatus)
+	}
+	if len(runs.ActiveRuns) != 1 || runs.ActiveRuns[0].ID != prep.ID {
+		t.Fatalf("active controller runs = %+v, want %s", runs.ActiveRuns, prep.ID)
+	}
+	if len(runs.AttentionRuns) != 1 || runs.AttentionRuns[0].ID != prune.ID {
+		t.Fatalf("attention controller runs = %+v, want %s", runs.AttentionRuns, prune.ID)
+	}
+}
+
 func TestStoreSandboxExecQueuesSameWorkerShell(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)

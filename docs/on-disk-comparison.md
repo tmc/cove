@@ -135,7 +135,9 @@ delegates the disk/runtime work to `tart` or `vetu`.
    placement-plan, warm-pool, sandbox, image-preparation, image-GC,
    lifecycle-policy, and storage maintenance requests can require
    capabilities; the operations summary reports per-capability coverage by
-   worker status, so operators can see whether RAM-overlay capacity is ready,
+   worker status plus controller-run active/attention rollups by kind and live
+   assignment status, so operators can see whether RAM-overlay capacity is ready
+   and whether preparation or maintenance fan-out is currently blocked;
    placement plans retain skipped-worker reasons for capability, capacity,
    label, status, and exact-image mismatches and can be filtered by immutable
    image provenance and required capability, and assignment, placement-plan,

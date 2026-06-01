@@ -688,6 +688,10 @@ def test_fleet_client_maintenance_runs() -> None:
         assert summary["assignments"]["active"] == 1
         assert summary["sandboxes"]["active_sandboxes"][0]["id"] == "job-1"
         assert summary["warm_pools"]["pools"][0]["name"] == "runner"
+        assert summary["controller_runs"]["active"] == 1
+        assert summary["controller_runs"]["attention"] == 1
+        assert summary["controller_runs"]["by_kind"]["storage.prune"] == 1
+        assert summary["controller_runs"]["by_assignment_status"]["running"] == 1
         assert summary["metering"]["records"] == 2
 
         paths = [request["path"] for request in server.requests[-17:]]
@@ -2095,6 +2099,36 @@ def _operations_summary() -> dict[str, object]:
             "ready": 1,
             "by_status": {"ready": 1},
             "pools": [_warm_pool_status()],
+        },
+        "controller_runs": {
+            "total": 2,
+            "assignment_backed": 2,
+            "active": 1,
+            "attention": 1,
+            "by_kind": {"storage.prune": 1, "image.gc": 1},
+            "by_assignment_status": {"running": 1, "failed": 1},
+            "active_runs": [
+                {
+                    "id": "storage-prune-1",
+                    "created": "2026-05-31T10:05:00Z",
+                    "namespace": "team-a",
+                    "kind": "storage.prune",
+                    "target_type": "storage",
+                    "target_id": "build-scratch",
+                    "assignment_count": 1,
+                }
+            ],
+            "attention_runs": [
+                {
+                    "id": "image-gc-1",
+                    "created": "2026-05-31T10:04:00Z",
+                    "namespace": "team-a",
+                    "kind": "image.gc",
+                    "target_type": "image-cache",
+                    "target_id": "all",
+                    "assignment_count": 1,
+                }
+            ],
         },
         "metering": {"namespace": "team-a", "records": 2, "duration_millis": 2000, "vm_millis": 2000},
     }

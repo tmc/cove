@@ -2143,6 +2143,10 @@ func (s *Store) OperationsSummary(namespace string) OperationsSummary {
 		WarmPools: WarmPoolOperationsSummary{
 			ByStatus: make(map[string]int),
 		},
+		ControllerRuns: ControllerRunOperationsSummary{
+			ByKind:             make(map[string]int),
+			ByAssignmentStatus: make(map[string]int),
+		},
 	}
 	capabilityCoverage := make(map[string]*WorkerCapabilitySummary)
 
@@ -2234,6 +2238,31 @@ func (s *Store) OperationsSummary(namespace string) OperationsSummary {
 			continue
 		}
 		metering = append(metering, record)
+	}
+	for _, run := range s.sortedControllerRunsLocked() {
+		if !namespaceMatches(run.Namespace, namespace) {
+			continue
+		}
+		summary.ControllerRuns.Total++
+		summary.ControllerRuns.ByKind[run.Kind]++
+		detail, ok := s.controllerRunDetailLocked(run.ID)
+		if !ok {
+			continue
+		}
+		if len(detail.Assignments) > 0 {
+			summary.ControllerRuns.AssignmentBacked++
+		}
+		for status, count := range detail.AssignmentStatusCounts {
+			summary.ControllerRuns.ByAssignmentStatus[status] += count
+		}
+		if len(detail.ActiveAssignmentIDs) > 0 {
+			summary.ControllerRuns.Active++
+			summary.ControllerRuns.ActiveRuns = append(summary.ControllerRuns.ActiveRuns, cloneControllerRunSummary(run))
+		}
+		if controllerRunNeedsAttention(detail) {
+			summary.ControllerRuns.Attention++
+			summary.ControllerRuns.AttentionRuns = append(summary.ControllerRuns.AttentionRuns, cloneControllerRunSummary(run))
+		}
 	}
 	summary.Metering = sandboxMeteringSummary(namespace, "", metering)
 	return summary
@@ -3772,6 +3801,24 @@ func controllerRunDetailMatchesFilter(detail ControllerRunDetail, filter Control
 
 func controllerRunDetailHasWorker(detail ControllerRunDetail, workerID string) bool {
 	return containsString(detail.WorkerIDs, workerID) || containsString(detail.CandidateWorkerIDs, workerID) || containsString(detail.SkippedWorkerIDs, workerID)
+}
+
+func controllerRunNeedsAttention(detail ControllerRunDetail) bool {
+	for status := range detail.AssignmentStatusCounts {
+		if controllerRunAttentionStatus(status) {
+			return true
+		}
+	}
+	return false
+}
+
+func controllerRunAttentionStatus(status string) bool {
+	switch normalizeOperationStatus(status) {
+	case "failed", "canceled", "expired":
+		return true
+	default:
+		return false
+	}
 }
 
 func controllerRunAssignmentIDs(assignments []Assignment) []string {
