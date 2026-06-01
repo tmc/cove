@@ -33,3 +33,9 @@ cove fleet run --policy=least-loaded -linux -headless -vm ubuntu
 
 The policy is opt-in. Plain `cove run` and named `--fleet=<host>` routing keep
 their existing behavior.
+
+For registry-audited images, `cove fleet run --policy=image-affinity
+-manifest-bundle <dir> -fork-from <ref>` verifies the offline bundle and treats a
+host as warm only when the local image provenance matches the bundle-selected
+manifest digest. If every matching host is cold, cove checks the local image
+against the same digest before streaming it.

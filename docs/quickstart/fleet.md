@@ -76,6 +76,17 @@ cove fleet run --all -fork-from agentkit/linux-base:latest -linux -headless -eph
 When `--all` is combined with `-fork-from`, cove checks each target for the
 image and streams the local image only to cold hosts before starting the runs.
 
+If the image came from a registry preflight, pass the saved manifest bundle to
+make placement digest-exact:
+
+```sh
+cove fleet run --policy=image-affinity -manifest-bundle manifests -fork-from agentkit/linux-base:latest -linux -headless -ephemeral
+```
+
+With `-manifest-bundle`, a host counts as warm only when `cove image inspect
+-json <ref>` reports the bundle-selected source manifest digest. Cove also
+checks the local staging source before streaming it to a cold host.
+
 Temporarily take a host out of placement without removing it:
 
 ```sh

@@ -102,6 +102,25 @@ func TestExtractFleetRunOptionsAll(t *testing.T) {
 	}
 }
 
+func TestExtractFleetRunOptionsManifestBundle(t *testing.T) {
+	got, err := extractFleetRunOptions([]string{
+		"--manifest-bundle", "manifests",
+		"--policy=image-affinity",
+		"-fork-from", "base:latest",
+		"-ephemeral",
+	})
+	if err != nil {
+		t.Fatalf("extractFleetRunOptions: %v", err)
+	}
+	if got.ManifestBundle != "manifests" || got.Policy != "image-affinity" {
+		t.Fatalf("opts = %#v, want manifest bundle and image-affinity policy", got)
+	}
+	wantArgs := []string{"-fork-from", "base:latest", "-ephemeral"}
+	if !reflect.DeepEqual(got.RunArgs, wantArgs) {
+		t.Fatalf("RunArgs = %#v, want %#v", got.RunArgs, wantArgs)
+	}
+}
+
 func TestFleetRunForkFrom(t *testing.T) {
 	tests := []struct {
 		name string

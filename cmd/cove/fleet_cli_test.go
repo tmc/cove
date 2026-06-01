@@ -367,6 +367,121 @@ func TestFleetRunImageAffinityStagesLocalImageWhenCold(t *testing.T) {
 	runner.assertSawCall(t, "b.local", []string{"run", "-fork-from=base:latest", "-ephemeral"})
 }
 
+func TestFleetRunImageAffinityManifestBundleSelectsExactHost(t *testing.T) {
+	path := writeFleetHostsConfig(t, "a", "b")
+	bundleDir := writeTestManifestBundle(t)
+	digest := testManifestBundleLinuxDigest(t, bundleDir)
+	vmListKey := fakeFleetArgsKey([]string{"vm", "list"})
+	inspectKey := fakeFleetArgsKey([]string{"image", "inspect", "-json", "base:latest"})
+	runner := &fakeFleetRunner{
+		outputsByArgs: map[string]map[string]string{
+			"a.local": {vmListKey: ""},
+			"b.local": {vmListKey: "b1 running\nb2 running\n", inspectKey: fleetRunInspectDigestJSON(digest)},
+		},
+		errsByArgs: map[string]map[string]error{
+			"a.local": {inspectKey: errors.New("missing image")},
+		},
+	}
+	var out bytes.Buffer
+	err := runFleetCommandWithRunner(context.Background(), []string{
+		"run", "--policy=image-affinity", "--manifest-bundle", bundleDir, "-fork-from", "base:latest", "-ephemeral",
+	}, path, runner, &out, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("fleet run image-affinity manifest bundle: %v", err)
+	}
+	for _, want := range []string{"manifest bundle " + bundleDir, "digest=ghcr.io/me/dev-vm@" + digest, "selected b"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("output missing %q:\n%s", want, out.String())
+		}
+	}
+	runner.assertSawCall(t, "b.local", []string{"run", "-fork-from", "base:latest", "-ephemeral"})
+}
+
+func TestFleetRunImageAffinityManifestBundleStagesAfterLocalMatch(t *testing.T) {
+	path := writeFleetTestConfig(t)
+	bundleDir := writeTestManifestBundle(t)
+	digest := testManifestBundleLinuxDigest(t, bundleDir)
+	vmListKey := fakeFleetArgsKey([]string{"vm", "list"})
+	inspectKey := fakeFleetArgsKey([]string{"image", "inspect", "-json", "base:latest"})
+	runner := &fakeFleetRunner{
+		streamPayload: "tarball",
+		outputsByArgs: map[string]map[string]string{
+			"":        {inspectKey: fleetRunInspectDigestJSON(digest)},
+			"a.local": {vmListKey: "a1 running\n"},
+			"b.local": {vmListKey: ""},
+		},
+		errsByArgs: map[string]map[string]error{
+			"a.local": {inspectKey: errors.New("missing image")},
+			"b.local": {inspectKey: errors.New("missing image")},
+		},
+	}
+	var out bytes.Buffer
+	err := runFleetCommandWithRunner(context.Background(), []string{
+		"run", "--policy=image-affinity", "--manifest-bundle=" + bundleDir, "-fork-from=base:latest", "-ephemeral",
+	}, path, runner, &out, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("fleet run image-affinity manifest bundle: %v", err)
+	}
+	for _, want := range []string{
+		"staged image base:latest (digest=ghcr.io/me/dev-vm@" + digest,
+		"from local to b",
+		"selected b",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("output missing %q:\n%s", want, out.String())
+		}
+	}
+	runner.assertCommandCalls(t, []fakeFleetCommandCall{
+		{host: "", args: []string{"image", "inspect", "-json", "base:latest"}},
+		{host: "", args: []string{"image", "push", "base:latest", "-"}},
+		{host: "b.local", args: []string{"image", "load", "-"}},
+	})
+}
+
+func TestFleetRunImageAffinityManifestBundleRejectsLocalMismatch(t *testing.T) {
+	path := writeFleetTestConfig(t)
+	bundleDir := writeTestManifestBundle(t)
+	vmListKey := fakeFleetArgsKey([]string{"vm", "list"})
+	inspectKey := fakeFleetArgsKey([]string{"image", "inspect", "-json", "base:latest"})
+	runner := &fakeFleetRunner{
+		outputsByArgs: map[string]map[string]string{
+			"":        {inspectKey: fleetRunInspectDigestJSON("sha256:old")},
+			"a.local": {vmListKey: "a1 running\n"},
+			"b.local": {vmListKey: ""},
+		},
+		errsByArgs: map[string]map[string]error{
+			"a.local": {inspectKey: errors.New("missing image")},
+			"b.local": {inspectKey: errors.New("missing image")},
+		},
+	}
+	err := runFleetCommandWithRunner(context.Background(), []string{
+		"run", "--policy=image-affinity", "--manifest-bundle", bundleDir, "-fork-from=base:latest",
+	}, path, runner, &bytes.Buffer{}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "local image base:latest does not match manifest bundle") {
+		t.Fatalf("fleet run error = %v, want local bundle mismatch", err)
+	}
+	runner.assertCommandCalls(t, []fakeFleetCommandCall{
+		{host: "", args: []string{"image", "inspect", "-json", "base:latest"}},
+	})
+}
+
+func TestFleetRunAllManifestBundleRejectsRemoteMismatch(t *testing.T) {
+	path := writeFleetHostsConfig(t, "a")
+	bundleDir := writeTestManifestBundle(t)
+	inspectKey := fakeFleetArgsKey([]string{"image", "inspect", "-json", "base:latest"})
+	runner := &fakeFleetRunner{
+		outputsByArgs: map[string]map[string]string{
+			"a.local": {inspectKey: fleetRunInspectDigestJSON("sha256:old")},
+		},
+	}
+	err := runFleetCommandWithRunner(context.Background(), []string{
+		"run", "--all", "--manifest-bundle", bundleDir, "-fork-from=base:latest",
+	}, path, runner, &bytes.Buffer{}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "does not match manifest bundle") {
+		t.Fatalf("fleet run --all error = %v, want remote bundle mismatch", err)
+	}
+}
+
 func TestFleetRunImageAffinitySkipsCordoned(t *testing.T) {
 	path := writeFleetHostsConfigWithRemotes(t, map[string]fleetpkg.Remote{
 		"a": {Host: "a.local", Cordoned: true},
@@ -891,6 +1006,10 @@ func writeFleetHostsConfigWithRemotes(t *testing.T, remotes map[string]fleetpkg.
 	return path
 }
 
+func fleetRunInspectDigestJSON(digest string) string {
+	return `{"source_manifest_digest":"` + digest + `"}`
+}
+
 type fakeFleetCall struct {
 	remote fleetpkg.Remote
 	args   []string
@@ -957,7 +1076,17 @@ func (f *fakeFleetRunner) RunCommand(ctx context.Context, remote fleetpkg.Remote
 	f.mu.Lock()
 	f.commandCalls = append(f.commandCalls, fakeFleetCommandCall{host: remote.Host, args: append([]string(nil), args...)})
 	payload := f.streamPayload
+	out := ""
+	key := fakeFleetArgsKey(args)
+	if byHost := f.outputsByArgs[remote.Host]; byHost != nil {
+		if value, ok := byHost[key]; ok {
+			out = value
+		}
+	}
 	err := error(nil)
+	if byHost := f.errsByArgs[remote.Host]; byHost != nil {
+		err = byHost[key]
+	}
 	if f.errs != nil {
 		err = f.errs[remote.Host]
 	}
@@ -977,6 +1106,9 @@ func (f *fakeFleetRunner) RunCommand(ctx context.Context, remote fleetpkg.Remote
 		f.mu.Lock()
 		f.loaded = b.String()
 		f.mu.Unlock()
+	}
+	if out != "" {
+		_, _ = io.WriteString(stdout, out)
 	}
 	return nil
 }

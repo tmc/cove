@@ -145,6 +145,11 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `cove pull --dry-run --manifest-bundle <dir>` now consumes a verified offline
   manifest bundle as a registry-free pull-planning source, including
   `--platform` selection across saved index children.
+- `cove fleet run --policy=image-affinity -manifest-bundle <dir> -fork-from
+  <ref>` and `cove fleet run --all -manifest-bundle <dir> -fork-from <ref>` now
+  verify offline manifest bundles before placement, count a host as warm only
+  when the local image provenance matches the bundle-selected digest, and check
+  the local staging source before streaming it to cold hosts.
 - `cove pull --platform <os/arch[/variant]>` and
   `cove image inspect -remote -platform <os/arch[/variant]>` now select an OCI
   image-index or Docker manifest-list child explicitly, and pull dry-runs report

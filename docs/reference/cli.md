@@ -1025,8 +1025,8 @@ cove fleet ps [--json] [--watch]
 cove fleet image push <ref> <dst-host>
 cove fleet image pull <ref> <src-host>
 cove fleet image sync <ref> <src-host> <dst-host>
-cove fleet run --policy=least-loaded|image-affinity [run flags...]
-cove fleet run --all [run flags...]
+cove fleet run --policy=least-loaded|image-affinity [-manifest-bundle dir] [run flags...]
+cove fleet run --all [-manifest-bundle dir] [run flags...]
 cove fleet health [--json]
 cove fleet metrics [--json]
 ```
@@ -1045,8 +1045,8 @@ cove fleet metrics [--json]
 | `image push <ref> <dst-host>` | Stream a local image ref to another fleet host. |
 | `image pull <ref> <src-host>` | Pull an image ref from another fleet host. |
 | `image sync <ref> <src-host> <dst-host>` | Copy an image ref between two fleet hosts. |
-| `run --policy=least-loaded|image-affinity` | Place one run on a non-cordoned registered host by load or image locality, counting short local placement leases as pending load. |
-| `run --all` | Start the same run concurrently on every non-cordoned registered host; with `-fork-from`, stage the image to cold hosts first. |
+| `run --policy=least-loaded|image-affinity` | Place one run on a non-cordoned registered host by load or image locality, counting short local placement leases as pending load. With `-manifest-bundle <dir>`, image-affinity requires `-fork-from` image provenance to match the bundle-selected digest before treating a host as warm or staging the local image. |
+| `run --all` | Start the same run concurrently on every non-cordoned registered host; with `-fork-from`, stage the image to cold hosts first. `-manifest-bundle <dir>` applies the same exact digest-provenance check. |
 | `health [--json]` | Check remote cove reachability and version across registered hosts. |
 | `metrics [--json]` | Aggregate fleet-wide metrics across registered hosts. |
 
@@ -1057,6 +1057,7 @@ cove fleet uncordon mini-1
 cove fleet vm list
 cove fleet image push macos-runner:latest mini-1
 cove fleet run --policy=least-loaded -fork-from macos-runner:latest -ephemeral
+cove fleet run --policy=image-affinity -manifest-bundle manifests -fork-from macos-runner:latest -ephemeral
 cove fleet run --all -linux -headless -ephemeral
 cove fleet health
 ```
