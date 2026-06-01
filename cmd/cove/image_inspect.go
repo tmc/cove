@@ -170,6 +170,7 @@ func runImageInspect(env commandEnv, args []string) error {
 	verifyBlobs := fs.Bool("verify-blobs", false, "verify remote config/layer descriptors with HEAD requests")
 	platform := fs.String("platform", "", "select remote image-index platform (os/arch[/variant])")
 	allPlatforms := fs.Bool("all-platforms", false, "inspect every remote image-index child manifest")
+	manifestOut := fs.String("manifest-out", "", "write selected remote manifest JSON to path")
 	if err := parseFlagsOrHelp(fs, moveImageInspectFlagsFirst(args)); err != nil {
 		if errors.Is(err, errFlagHelp) {
 			return nil
@@ -185,12 +186,18 @@ func runImageInspect(env commandEnv, args []string) error {
 	if *allPlatforms && !*remote {
 		return fmt.Errorf("image inspect: -all-platforms requires -remote")
 	}
+	if *manifestOut != "" && !*remote {
+		return fmt.Errorf("image inspect: -manifest-out requires -remote")
+	}
 	if *remote {
 		if *diff {
 			return fmt.Errorf("image inspect: -remote cannot be combined with -diff")
 		}
 		if fs.NArg() < 1 {
 			return fmt.Errorf("usage: cove image inspect [-json] -remote <registry/ref:tag|digest>...")
+		}
+		if *manifestOut != "" && fs.NArg() != 1 {
+			return fmt.Errorf("image inspect: -manifest-out requires exactly one remote ref")
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), remoteInspectTimeout)
 		defer cancel()
@@ -201,6 +208,9 @@ func runImageInspect(env commandEnv, args []string) error {
 				InspectIndexManifests: *allPlatforms,
 			})
 			if err != nil {
+				return err
+			}
+			if err := writeRemoteInspectManifestOut(out, *manifestOut); err != nil {
 				return err
 			}
 			if *asJSON {
@@ -289,6 +299,7 @@ func moveImageInspectFlagsFirst(args []string) []string {
 		"verify-blobs":  false,
 		"platform":      true,
 		"all-platforms": false,
+		"manifest-out":  true,
 	})
 }
 
@@ -329,7 +340,9 @@ Flags:
   -verify-blobs  with -remote, HEAD every config/layer descriptor
   -platform P    with -remote, select image-index platform os/arch[/variant]
   -all-platforms
-                 with -remote, inspect every image-index child manifest`)
+                 with -remote, inspect every image-index child manifest
+  -manifest-out P
+                 with -remote, write selected manifest JSON to path`)
 }
 
 func writeInspectJSON(w io.Writer, out ImageInspectOutput) error {

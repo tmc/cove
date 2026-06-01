@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -45,6 +47,32 @@ func TestInspectRemoteImageCoveManifest(t *testing.T) {
 	}
 	if out.CompressedDiskBytes == 0 {
 		t.Fatal("compressed disk bytes = 0, want non-zero")
+	}
+}
+
+func TestInspectRemoteImageManifestOut(t *testing.T) {
+	manifest, _, _ := pullCompressedChunkedTestManifest(t, []byte("abcdefghijklmnop"), 4)
+	manifestData, manifestDigest := pullTestManifestData(t, manifest)
+	srv := newRemoteInspectRegistry(t, manifest, nil)
+	t.Cleanup(srv.Close)
+
+	out, err := InspectRemoteImage(context.Background(), "ghcr.io/me/dev-vm:v1", remoteInspectOptions{RegistryBaseURL: srv.URL})
+	if err != nil {
+		t.Fatalf("InspectRemoteImage: %v", err)
+	}
+	if out.ManifestDigest != manifestDigest || string(out.manifestRaw) != string(manifestData) {
+		t.Fatalf("manifest = digest:%q raw:%q, want digest %q raw %q", out.ManifestDigest, string(out.manifestRaw), manifestDigest, string(manifestData))
+	}
+	path := filepath.Join(t.TempDir(), "selected-manifest.json")
+	if err := writeRemoteInspectManifestOut(out, path); err != nil {
+		t.Fatalf("writeRemoteInspectManifestOut: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read manifest-out: %v", err)
+	}
+	if string(got) != string(manifestData) || digestData(got) != manifestDigest {
+		t.Fatalf("manifest-out = %q digest=%s, want registry bytes digest %s", string(got), digestData(got), manifestDigest)
 	}
 }
 
@@ -690,9 +718,10 @@ func TestMoveImageInspectFlagsFirst(t *testing.T) {
 		"-json",
 		"-verify-blobs",
 		"-all-platforms",
+		"-manifest-out", "manifest.json",
 		"-platform", "linux/arm64",
 	}), " ")
-	want := "-remote -json -verify-blobs -all-platforms -platform linux/arm64 registry.example.com/team/vm:v1"
+	want := "-remote -json -verify-blobs -all-platforms -manifest-out manifest.json -platform linux/arm64 registry.example.com/team/vm:v1"
 	if got != want {
 		t.Fatalf("args = %q, want %q", got, want)
 	}
@@ -702,6 +731,20 @@ func TestRunImageInspectAllPlatformsRequiresRemote(t *testing.T) {
 	err := runImageInspect(imageTestEnv(), []string{"-all-platforms", "local:latest"})
 	if err == nil || !strings.Contains(err.Error(), "-all-platforms requires -remote") {
 		t.Fatalf("runImageInspect() error = %v, want -all-platforms requires -remote", err)
+	}
+}
+
+func TestRunImageInspectManifestOutRequiresRemote(t *testing.T) {
+	err := runImageInspect(imageTestEnv(), []string{"-manifest-out", "manifest.json", "local:latest"})
+	if err == nil || !strings.Contains(err.Error(), "-manifest-out requires -remote") {
+		t.Fatalf("runImageInspect() error = %v, want -manifest-out requires -remote", err)
+	}
+}
+
+func TestRunImageInspectManifestOutRejectsBatch(t *testing.T) {
+	err := runImageInspect(imageTestEnv(), []string{"-remote", "-manifest-out", "manifest.json", "registry.example.com/team/a:v1", "registry.example.com/team/b:v1"})
+	if err == nil || !strings.Contains(err.Error(), "-manifest-out requires exactly one remote ref") {
+		t.Fatalf("runImageInspect() error = %v, want single-ref manifest-out error", err)
 	}
 }
 

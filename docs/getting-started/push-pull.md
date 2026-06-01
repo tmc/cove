@@ -29,6 +29,7 @@ cove pull <ref> --dry-run --fetch-manifest --manifest-out manifest.json # save s
 cove pull <ref> --dry-run --fetch-manifest --verify-blobs # HEAD referenced blobs
 cove pull <ref> --dry-run --fetch-manifest --all-platforms --verify-blobs --json # audit every index child
 cove image inspect -remote <ref> -json            # inspect registry metadata only
+cove image inspect -remote <ref> -manifest-out manifest.json # save selected manifest
 cove image inspect -remote <ref> -platform linux/arm64 -json # inspect one platform
 cove image inspect -remote <ref> -all-platforms -json # classify and audit every index child
 cove image inspect -remote -verify-blobs <ref>    # HEAD every referenced blob
@@ -51,9 +52,11 @@ cove/Tart/Lume/image-store artifacts, cove base-chain
 availability/compatibility when a base manifest is declared, and the
 verification work cove will perform during pull/import. It also prints
 copy-pasteable digest refs for the selected manifest and, when a tag resolved
-through an index/list, the top-level index digest ref. Add `-all-platforms` to
-fetch each child manifest, classify every platform, and audit cove base chains
-for each cove-native child without downloading disk blobs. Combine
+through an index/list, the top-level index digest ref. Add
+`-manifest-out <path>` to write the exact selected registry manifest bytes after
+index resolution without creating a pull target. Add `-all-platforms` to fetch
+each child manifest, classify every platform, and audit cove base chains for
+each cove-native child without downloading disk blobs. Combine
 `-all-platforms` with `-verify-blobs` to HEAD-audit every child manifest's
 config and layer descriptors and report per-child blob status in the index
 manifest list.

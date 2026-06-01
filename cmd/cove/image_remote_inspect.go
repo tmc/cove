@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -70,6 +71,7 @@ type ImageRemoteInspectOutput struct {
 	ImageTag            string                     `json:"image_tag,omitempty"`
 	Created             string                     `json:"created,omitempty"`
 	BuiltAt             string                     `json:"built_at,omitempty"`
+	manifestRaw         []byte
 }
 
 type ImageRemoteIndexManifest struct {
@@ -208,6 +210,7 @@ func remoteInspectBase(ref ociimage.Reference, resolution ociimage.ManifestResol
 		ConfigMediaType:   manifest.Config.MediaType,
 		LayerCount:        len(manifest.Layers),
 		TotalLayerBytes:   total,
+		manifestRaw:       append([]byte(nil), resolution.ManifestData...),
 	}
 }
 
@@ -219,6 +222,23 @@ func registryDigestRef(ref ociimage.Reference, digest string) string {
 	ref.Tag = ""
 	ref.Digest = digest
 	return ref.String()
+}
+
+func writeRemoteInspectManifestOut(out ImageRemoteInspectOutput, path string) error {
+	if strings.TrimSpace(path) == "" {
+		return nil
+	}
+	if len(out.manifestRaw) == 0 {
+		return fmt.Errorf("image inspect remote: -manifest-out requires a fetched manifest")
+	}
+	tmp, err := atomicWriteFile(path, out.manifestRaw, 0644)
+	if err != nil {
+		if tmp != "" {
+			_ = os.Remove(tmp)
+		}
+		return fmt.Errorf("image inspect remote: write manifest-out: %w", err)
+	}
+	return nil
 }
 
 func remoteIndexManifestOutputs(resolution ociimage.ManifestResolution) []ImageRemoteIndexManifest {

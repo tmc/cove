@@ -125,6 +125,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `cove image inspect -remote` and manifest-backed `cove pull --dry-run` now
   report digest-pinned selected refs, plus top-level index digest refs when a
   tag resolves through an OCI image index or Docker manifest list.
+- `cove image inspect -remote -manifest-out <path>` now writes the exact
+  selected registry manifest bytes after index resolution for catalog audits
+  that should not create a pull target.
 - `cove pull --platform <os/arch[/variant]>` and
   `cove image inspect -remote -platform <os/arch[/variant]>` now select an OCI
   image-index or Docker manifest-list child explicitly, and pull dry-runs report
