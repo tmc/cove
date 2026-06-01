@@ -570,6 +570,7 @@ curl -X POST http://127.0.0.1:9758/v1/warm-pools/claim \
   -H 'content-type: application/json' \
   -d '{"name":"runner-14","command":["/bin/sh","-lc","make test"],"env":{"CI":"1"}}'
 curl http://127.0.0.1:9758/v1/warm-pools
+curl 'http://127.0.0.1:9758/v1/warm-pools?image_manifest_digest=sha256:...&required_capability=ram-overlay&limit=20'
 curl http://127.0.0.1:9758/v1/warm-pools/runner-14
 curl 'http://127.0.0.1:9758/v1/warm-pools/runner-14/events?limit=20'
 curl -X DELETE http://127.0.0.1:9758/v1/warm-pools/runner-14
@@ -613,6 +614,11 @@ per-state counts (`pending`, `leased`, `running`, `ready`, `claimed`,
 Claimed and draining slots stay visible even after a replacement slot is
 queued, so operators can distinguish ready capacity from in-flight guest work
 and cleanup.
+`GET /v1/warm-pools` returns `warm_pools`, `count`, `offset`, `limit`, and
+`next_offset`, and accepts `namespace`, `image_ref`,
+`image_manifest_digest`, `image_digest_ref`, `image_platform`,
+`required_capability`, `offset`, and `limit` filters. Scoped service-account
+tokens only see warm pools in their namespace.
 
 `GET /v1/warm-pools/{name}/events` returns the warm-pool-scoped slice of the
 hash-chained controller audit feed. It includes ensure, claim, and delete
@@ -1141,6 +1147,19 @@ if err != nil {
 	log.Fatal(err)
 }
 log.Printf("warm pool ready=%d active=%d", pool.Pool.Ready, pool.Pool.Active)
+poolPage, err := agentsandbox.ListWarmPoolsPage(ctx, agentsandbox.WarmPoolListOptions{
+	FleetURL:            "https://fleet.internal.example",
+	APIKey:              os.Getenv("COVE_API_KEY"),
+	Namespace:           "team-a",
+	ImageRef:            "macos-base:latest",
+	ImagePlatform:       "darwin/arm64",
+	RequiredCapability:  "ram-overlay",
+	Limit:               20,
+})
+if err != nil {
+	log.Fatal(err)
+}
+log.Printf("warm pool page count=%d next=%d", poolPage.Count, poolPage.NextOffset)
 
 plan, err := agentsandbox.Plan(ctx, agentsandbox.ClientOptions{
 	Provider:             agentsandbox.ProviderCloud,

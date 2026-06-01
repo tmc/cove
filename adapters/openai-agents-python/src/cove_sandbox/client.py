@@ -2167,8 +2167,50 @@ class CoveFleetClient:
         fleet_url: str | None = None,
         api_key: str | None = None,
         namespace: str | None = None,
+        image_ref: str | None = None,
+        image_manifest_digest: str | None = None,
+        image_digest_ref: str | None = None,
+        image_platform: str | None = None,
+        required_capability: str | None = None,
+        offset: int | None = None,
+        limit: int | None = None,
         timeout: float = 30.0,
     ) -> list[dict[str, Any]]:
+        page = cls.list_warm_pools_page(
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            image_ref=image_ref,
+            image_manifest_digest=image_manifest_digest,
+            image_digest_ref=image_digest_ref,
+            image_platform=image_platform,
+            required_capability=required_capability,
+            offset=offset,
+            limit=limit,
+            timeout=timeout,
+        )
+        return [dict(item) for item in page["warm_pools"] if isinstance(item, dict)]
+
+    @classmethod
+    def list_warm_pools_page(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        image_ref: str | None = None,
+        image_manifest_digest: str | None = None,
+        image_digest_ref: str | None = None,
+        image_platform: str | None = None,
+        required_capability: str | None = None,
+        offset: int | None = None,
+        limit: int | None = None,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        if offset is not None and offset < 0:
+            raise ValueError("warm pool list offset must be non-negative")
+        if limit is not None and limit < 0:
+            raise ValueError("warm pool list limit must be non-negative")
         seed = cls(
             sandbox_id="warm-pools",
             fleet_url=fleet_url,
@@ -2176,11 +2218,24 @@ class CoveFleetClient:
             namespace=namespace,
             timeout=timeout,
         )
-        data = seed._request("GET", _query_path("/v1/warm-pools", {"namespace": namespace or ""}), timeout=timeout)
+        query = {
+            "namespace": namespace or "",
+            "image_ref": image_ref or "",
+            "image_manifest_digest": image_manifest_digest or "",
+            "image_digest_ref": image_digest_ref or "",
+            "image_platform": image_platform or "",
+            "required_capability": required_capability or "",
+            "offset": str(offset) if offset else "",
+            "limit": str(limit) if limit else "",
+        }
+        data = seed._request("GET", _query_path("/v1/warm-pools", query), timeout=timeout)
         pools = data.get("warm_pools") or []
         if not isinstance(pools, list):
             raise CoveError("GET /v1/warm-pools: expected warm_pools list")
-        return [dict(item) for item in pools if isinstance(item, dict)]
+        page = dict(data)
+        page["warm_pools"] = [dict(item) for item in pools if isinstance(item, dict)]
+        page["count"] = int(page.get("count") or len(page["warm_pools"]))
+        return page
 
     @classmethod
     def get_warm_pool(

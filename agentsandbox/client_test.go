@@ -1713,6 +1713,8 @@ func TestCloudClientWarmPools(t *testing.T) {
 		Name:                 "runner",
 		ImageRef:             "base:v1",
 		ManifestBundle:       "manifests",
+		ImageManifestDigest:  "sha256:base",
+		ImageDigestRef:       "registry.example/base@sha256:base",
 		ImagePlatform:        "darwin/arm64",
 		Size:                 2,
 		Policy:               "bin-pack",
@@ -1728,12 +1730,24 @@ func TestCloudClientWarmPools(t *testing.T) {
 	if result.Pool.Name != "runner" || result.Pool.Ready != 1 || len(result.Created) != 1 {
 		t.Fatalf("EnsureWarmPool = %+v, want runner with created slot", result)
 	}
-	pools, err := ListWarmPools(ctx, WarmPoolListOptions{FleetURL: server.URL, APIKey: "secret", Namespace: "team-a", Timeout: time.Second})
+	pools, err := ListWarmPoolsPage(ctx, WarmPoolListOptions{
+		FleetURL:            server.URL,
+		APIKey:              "secret",
+		Namespace:           "team-a",
+		ImageRef:            "base:v1",
+		ImageManifestDigest: "sha256:base",
+		ImageDigestRef:      "registry.example/base@sha256:base",
+		ImagePlatform:       "darwin/arm64",
+		RequiredCapability:  "ram-overlay",
+		Offset:              1,
+		Limit:               2,
+		Timeout:             time.Second,
+	})
 	if err != nil {
-		t.Fatalf("ListWarmPools: %v", err)
+		t.Fatalf("ListWarmPoolsPage: %v", err)
 	}
-	if len(pools) != 1 || pools[0].Name != "runner" {
-		t.Fatalf("ListWarmPools = %+v, want runner", pools)
+	if pools.Count != 1 || pools.Offset != 1 || pools.Limit != 2 || len(pools.WarmPools) != 1 || pools.WarmPools[0].Name != "runner" {
+		t.Fatalf("ListWarmPoolsPage = %+v, want runner page", pools)
 	}
 	status, err := GetWarmPool(ctx, WarmPoolGetOptions{FleetURL: server.URL, APIKey: "secret", Name: "runner", Timeout: time.Second})
 	if err != nil {
@@ -1805,7 +1819,7 @@ func TestCloudClientWarmPools(t *testing.T) {
 	if ensure["namespace"] != "team-a" || ensure["name"] != "runner" || ensure["image_ref"] != "base:v1" || ensure["size"] != float64(2) || ensure["policy"] != "bin-pack" {
 		t.Fatalf("warm pool body = %+v, want identity and size", ensure)
 	}
-	if ensure["manifest_bundle"] != "manifests" || ensure["image_platform"] != "darwin/arm64" {
+	if ensure["manifest_bundle"] != "manifests" || ensure["image_manifest_digest"] != "sha256:base" || ensure["image_digest_ref"] != "registry.example/base@sha256:base" || ensure["image_platform"] != "darwin/arm64" {
 		t.Fatalf("warm pool image identity = %+v, want manifest bundle fields", ensure)
 	}
 	labels, ok := ensure["required_labels"].(map[string]any)
@@ -1822,8 +1836,9 @@ func TestCloudClientWarmPools(t *testing.T) {
 	if !equalAnyStringSlice(ensure["args"], []string{"-memory", "8G"}) {
 		t.Fatalf("warm pool args = %+v, want memory arg", ensure["args"])
 	}
-	if server.requests[1].query.Get("namespace") != "team-a" {
-		t.Fatalf("warm pool list query = %q, want namespace", server.requests[1].query.Encode())
+	listQuery := server.requests[1].query
+	if listQuery.Get("namespace") != "team-a" || listQuery.Get("image_ref") != "base:v1" || listQuery.Get("image_manifest_digest") != "sha256:base" || listQuery.Get("image_digest_ref") != "registry.example/base@sha256:base" || listQuery.Get("image_platform") != "darwin/arm64" || listQuery.Get("required_capability") != "ram-overlay" || listQuery.Get("offset") != "1" || listQuery.Get("limit") != "2" {
+		t.Fatalf("warm pool list query = %q", listQuery.Encode())
 	}
 	claimBody := server.requests[3].body
 	if claimBody["namespace"] != "team-a" || claimBody["name"] != "runner" {
@@ -1849,6 +1864,9 @@ func TestCloudClientWarmPoolValidation(t *testing.T) {
 	}
 	if _, err := EnsureWarmPool(ctx, WarmPoolOptions{FleetURL: "https://fleet.example", APIKey: "secret", Name: "runner", ImageRef: "base:v1", Size: -1}); err == nil || !strings.Contains(err.Error(), "size must be non-negative") {
 		t.Fatalf("EnsureWarmPool negative size err = %v, want validation error", err)
+	}
+	if _, err := ListWarmPoolsPage(ctx, WarmPoolListOptions{FleetURL: "https://fleet.example", APIKey: "secret", Limit: -1}); err == nil || !strings.Contains(err.Error(), "limit must be non-negative") {
+		t.Fatalf("ListWarmPoolsPage negative limit err = %v, want validation error", err)
 	}
 	if _, err := ClaimWarmPool(ctx, WarmPoolClaimOptions{FleetURL: "https://fleet.example", APIKey: "secret", Name: "runner"}); err == nil || !strings.Contains(err.Error(), "claim command required") {
 		t.Fatalf("ClaimWarmPool missing command err = %v, want validation error", err)
@@ -2345,7 +2363,12 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 				Created: []Assignment{status.Assignments[0]},
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/warm-pools":
-			writeSDKJSON(t, w, WarmPoolListResult{WarmPools: []WarmPoolStatus{sdkWarmPoolStatus()}})
+			writeSDKJSON(t, w, WarmPoolListResult{
+				WarmPools: []WarmPoolStatus{sdkWarmPoolStatus()},
+				Count:     1,
+				Offset:    atoiDefault(r.URL.Query().Get("offset"), 0),
+				Limit:     atoiDefault(r.URL.Query().Get("limit"), 0),
+			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/warm-pools/runner/events":
 			writeSDKJSON(t, w, SandboxEventListResult{
 				Events: []SandboxEvent{{

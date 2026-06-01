@@ -1322,11 +1322,18 @@ type WarmPoolOptions struct {
 }
 
 type WarmPoolListOptions struct {
-	FleetURL  string
-	APIKey    string
-	Namespace string
-	Timeout   time.Duration
-	HTTP      *http.Client
+	FleetURL            string
+	APIKey              string
+	Namespace           string
+	ImageRef            string
+	ImageManifestDigest string
+	ImageDigestRef      string
+	ImagePlatform       string
+	RequiredCapability  string
+	Offset              int
+	Limit               int
+	Timeout             time.Duration
+	HTTP                *http.Client
 }
 
 type WarmPoolGetOptions struct {
@@ -1404,7 +1411,11 @@ type WarmPoolResult struct {
 }
 
 type WarmPoolListResult struct {
-	WarmPools []WarmPoolStatus `json:"warm_pools"`
+	WarmPools  []WarmPoolStatus `json:"warm_pools"`
+	Count      int              `json:"count"`
+	Offset     int              `json:"offset,omitempty"`
+	Limit      int              `json:"limit,omitempty"`
+	NextOffset int              `json:"next_offset,omitempty"`
 }
 
 type WarmPoolDeleteResult struct {
@@ -3331,17 +3342,60 @@ func EnsureWarmPool(ctx context.Context, opts WarmPoolOptions) (WarmPoolResult, 
 	return result, nil
 }
 
+func (opts WarmPoolListOptions) query() (map[string]string, error) {
+	if opts.Limit < 0 {
+		return nil, errors.New("agentsandbox: warm pool list limit must be non-negative")
+	}
+	if opts.Offset < 0 {
+		return nil, errors.New("agentsandbox: warm pool list offset must be non-negative")
+	}
+	query := map[string]string{
+		"namespace": opts.Namespace,
+		"image_ref": opts.ImageRef,
+	}
+	if digest := strings.TrimSpace(opts.ImageManifestDigest); digest != "" {
+		query["image_manifest_digest"] = digest
+	}
+	if ref := strings.TrimSpace(opts.ImageDigestRef); ref != "" {
+		query["image_digest_ref"] = ref
+	}
+	if platform := strings.TrimSpace(opts.ImagePlatform); platform != "" {
+		query["image_platform"] = platform
+	}
+	if capability := strings.TrimSpace(opts.RequiredCapability); capability != "" {
+		query["required_capability"] = capability
+	}
+	if opts.Offset > 0 {
+		query["offset"] = strconv.Itoa(opts.Offset)
+	}
+	if opts.Limit > 0 {
+		query["limit"] = strconv.Itoa(opts.Limit)
+	}
+	return query, nil
+}
+
 func ListWarmPools(ctx context.Context, opts WarmPoolListOptions) ([]WarmPoolStatus, error) {
-	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "warm-pools")
+	result, err := ListWarmPoolsPage(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
-	query := map[string]string{"namespace": opts.Namespace}
+	return result.WarmPools, nil
+}
+
+func ListWarmPoolsPage(ctx context.Context, opts WarmPoolListOptions) (WarmPoolListResult, error) {
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "warm-pools")
+	if err != nil {
+		return WarmPoolListResult{}, err
+	}
+	query, err := opts.query()
+	if err != nil {
+		return WarmPoolListResult{}, err
+	}
 	var result WarmPoolListResult
 	if err := c.request(ctx, http.MethodGet, c.queryPath("/v1/warm-pools", query), nil, &result, c.timeout); err != nil {
-		return nil, err
+		return WarmPoolListResult{}, err
 	}
-	return result.WarmPools, nil
+	return result, nil
 }
 
 func GetWarmPool(ctx context.Context, opts WarmPoolGetOptions) (WarmPoolStatus, error) {

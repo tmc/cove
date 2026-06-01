@@ -3707,18 +3707,62 @@ func (s *Store) ListWarmPools() []WarmPoolStatus {
 }
 
 func (s *Store) ListWarmPoolsNamespace(namespace string) []WarmPoolStatus {
-	namespace = normalizeNamespace(namespace)
+	return s.ListWarmPoolsFiltered(WarmPoolListFilter{Namespace: namespace})
+}
+
+func (s *Store) ListWarmPoolsFiltered(filter WarmPoolListFilter) []WarmPoolStatus {
+	return s.ListWarmPoolsPage(filter).WarmPools
+}
+
+func (s *Store) ListWarmPoolsPage(filter WarmPoolListFilter) WarmPoolListResult {
+	filter.Namespace = normalizeNamespace(filter.Namespace)
+	filter.ImageRef = strings.TrimSpace(filter.ImageRef)
+	filter.ImageManifestDigest = strings.TrimSpace(filter.ImageManifestDigest)
+	filter.ImageDigestRef = strings.TrimSpace(filter.ImageDigestRef)
+	filter.ImagePlatform = strings.TrimSpace(filter.ImagePlatform)
+	filter.RequiredCapability = strings.TrimSpace(filter.RequiredCapability)
+	if filter.Offset < 0 {
+		filter.Offset = 0
+	}
+	if filter.Limit < 0 {
+		filter.Limit = 0
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	pools := s.sortedWarmPoolsLocked()
-	out := make([]WarmPoolStatus, 0, len(pools))
+	result := WarmPoolListResult{Offset: filter.Offset, Limit: filter.Limit}
+	offset := 0
 	for _, pool := range pools {
-		if !namespaceMatches(pool.Namespace, namespace) {
+		if !namespaceMatches(pool.Namespace, filter.Namespace) {
 			continue
 		}
-		out = append(out, s.warmPoolStatusLocked(pool.Name))
+		if filter.ImageRef != "" && pool.ImageRef != filter.ImageRef {
+			continue
+		}
+		if filter.ImageManifestDigest != "" && pool.ImageManifestDigest != filter.ImageManifestDigest {
+			continue
+		}
+		if filter.ImageDigestRef != "" && pool.ImageDigestRef != filter.ImageDigestRef {
+			continue
+		}
+		if filter.ImagePlatform != "" && pool.ImagePlatform != filter.ImagePlatform {
+			continue
+		}
+		if filter.RequiredCapability != "" && !containsString(pool.RequiredCapabilities, filter.RequiredCapability) {
+			continue
+		}
+		if offset < filter.Offset {
+			offset++
+			continue
+		}
+		if filter.Limit > 0 && len(result.WarmPools) >= filter.Limit {
+			result.NextOffset = filter.Offset + len(result.WarmPools)
+			break
+		}
+		result.WarmPools = append(result.WarmPools, s.warmPoolStatusLocked(pool.Name))
 	}
-	return out
+	result.Count = len(result.WarmPools)
+	return result
 }
 
 func (s *Store) ListAudit(limit int) []AuditEvent {

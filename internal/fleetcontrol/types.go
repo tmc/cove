@@ -783,6 +783,25 @@ type WarmPoolStatus struct {
 	Assignments []Assignment   `json:"assignments,omitempty"`
 }
 
+type WarmPoolListFilter struct {
+	Namespace           string `json:"namespace,omitempty"`
+	ImageRef            string `json:"image_ref,omitempty"`
+	ImageManifestDigest string `json:"image_manifest_digest,omitempty"`
+	ImageDigestRef      string `json:"image_digest_ref,omitempty"`
+	ImagePlatform       string `json:"image_platform,omitempty"`
+	RequiredCapability  string `json:"required_capability,omitempty"`
+	Offset              int    `json:"offset,omitempty"`
+	Limit               int    `json:"limit,omitempty"`
+}
+
+type WarmPoolListResult struct {
+	WarmPools  []WarmPoolStatus `json:"warm_pools"`
+	Count      int              `json:"count"`
+	Offset     int              `json:"offset,omitempty"`
+	Limit      int              `json:"limit,omitempty"`
+	NextOffset int              `json:"next_offset,omitempty"`
+}
+
 type WarmPoolResult struct {
 	Pool     WarmPoolStatus `json:"pool"`
 	Created  []Assignment   `json:"created,omitempty"`

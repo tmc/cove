@@ -2511,10 +2511,15 @@ func handleWarmPools(w http.ResponseWriter, r *http.Request, store *Store) {
 		if !requireRole(w, identity, ServiceAccountRoleViewer) {
 			return
 		}
+		filter, err := warmPoolListFilterFromRequest(r, namespaceFilterFromRequest(r, identity))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		if !reconcile(w, store) {
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"warm_pools": store.ListWarmPoolsNamespace(namespaceFilterFromRequest(r, identity))})
+		writeJSON(w, http.StatusOK, store.ListWarmPoolsPage(filter))
 	case http.MethodPost:
 		if !requireRole(w, identity, ServiceAccountRoleOperator) {
 			return
@@ -2540,6 +2545,32 @@ func handleWarmPools(w http.ResponseWriter, r *http.Request, store *Store) {
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+func warmPoolListFilterFromRequest(r *http.Request, namespace string) (WarmPoolListFilter, error) {
+	filter := WarmPoolListFilter{
+		Namespace:           namespace,
+		ImageRef:            strings.TrimSpace(r.URL.Query().Get("image_ref")),
+		ImageManifestDigest: strings.TrimSpace(r.URL.Query().Get("image_manifest_digest")),
+		ImageDigestRef:      strings.TrimSpace(r.URL.Query().Get("image_digest_ref")),
+		ImagePlatform:       strings.TrimSpace(r.URL.Query().Get("image_platform")),
+		RequiredCapability:  strings.TrimSpace(r.URL.Query().Get("required_capability")),
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 0 {
+			return WarmPoolListFilter{}, fmt.Errorf("warm pool limit must be non-negative")
+		}
+		filter.Limit = limit
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		offset, err := strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			return WarmPoolListFilter{}, fmt.Errorf("warm pool offset must be non-negative")
+		}
+		filter.Offset = offset
+	}
+	return filter, nil
 }
 
 func handleWarmPool(w http.ResponseWriter, r *http.Request, store *Store) {

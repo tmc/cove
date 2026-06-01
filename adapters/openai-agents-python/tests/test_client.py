@@ -1432,12 +1432,22 @@ def test_fleet_client_warm_pools() -> None:
         assert result["pool"]["ready"] == 1
         assert result["created"][0]["id"] == "warm-slot-1"
 
-        pools = CoveFleetClient.list_warm_pools(
+        pools_page = CoveFleetClient.list_warm_pools_page(
             fleet_url=server.url,
             api_key="secret",
             namespace="team-a",
+            image_ref="base:v1",
+            image_manifest_digest="sha256:base",
+            image_digest_ref="registry.example/base@sha256:base",
+            image_platform="darwin/arm64",
+            required_capability="ram-overlay",
+            offset=1,
+            limit=2,
         )
-        assert pools[0]["name"] == "runner"
+        assert pools_page["warm_pools"][0]["name"] == "runner"
+        assert pools_page["count"] == 1
+        assert pools_page["offset"] == 1
+        assert pools_page["limit"] == 2
 
         status = CoveFleetClient.get_warm_pool(
             fleet_url=server.url,
@@ -1500,7 +1510,15 @@ def test_fleet_client_warm_pools() -> None:
         assert ensure["required_capabilities"] == ["ram-overlay", "asif"]
         assert ensure["resources"] == {"vms": 1, "cpus": 4}
         assert ensure["args"] == ["-memory", "8G"]
-        assert server.requests[-5]["query"]["namespace"] == ["team-a"]
+        list_query = server.requests[-5]["query"]
+        assert list_query["namespace"] == ["team-a"]
+        assert list_query["image_ref"] == ["base:v1"]
+        assert list_query["image_manifest_digest"] == ["sha256:base"]
+        assert list_query["image_digest_ref"] == ["registry.example/base@sha256:base"]
+        assert list_query["image_platform"] == ["darwin/arm64"]
+        assert list_query["required_capability"] == ["ram-overlay"]
+        assert list_query["offset"] == ["1"]
+        assert list_query["limit"] == ["2"]
         claim_body = server.requests[-3]["body"]
         assert claim_body["namespace"] == "team-a"
         assert claim_body["command"] == ["/bin/sh", "-lc", "make test"]
@@ -1512,6 +1530,8 @@ def test_fleet_client_warm_pools() -> None:
         assert event_query["assignment_id"] == ["claim-1"]
         assert event_query["offset"] == ["1"]
         assert event_query["limit"] == ["2"]
+        with pytest.raises(ValueError, match="warm pool list limit must be non-negative"):
+            CoveFleetClient.list_warm_pools_page(fleet_url=server.url, api_key="secret", limit=-1)
     finally:
         server.stop()
 
@@ -2382,7 +2402,14 @@ class _FleetHTTPServer:
                     }
                 )
                 if path == "/v1/warm-pools":
-                    self._write({"warm_pools": [_warm_pool_status()]})
+                    self._write(
+                        {
+                            "warm_pools": [_warm_pool_status()],
+                            "count": 1,
+                            "offset": int(query.get("offset", ["0"])[0]),
+                            "limit": int(query.get("limit", ["0"])[0]),
+                        }
+                    )
                     return
                 if path == "/v1/warm-pools/runner/events":
                     self._write(

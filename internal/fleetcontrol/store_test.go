@@ -588,6 +588,66 @@ func TestStoreWarmPoolRequiresManifestDigestMatch(t *testing.T) {
 	}
 }
 
+func TestStoreListWarmPoolsFiltered(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	for _, req := range []WarmPoolRequest{
+		{
+			Namespace:            "team-a",
+			Name:                 "runner-a",
+			ImageRef:             "base:v1",
+			ImageManifestDigest:  "sha256:one",
+			ImageDigestRef:       "registry.example/base@sha256:one",
+			ImagePlatform:        "darwin/arm64",
+			RequiredCapabilities: []string{"ram-overlay"},
+		},
+		{
+			Namespace:            "team-a",
+			Name:                 "runner-b",
+			ImageRef:             "base:v2",
+			ImageManifestDigest:  "sha256:two",
+			ImageDigestRef:       "registry.example/base@sha256:two",
+			ImagePlatform:        "linux/arm64",
+			RequiredCapabilities: []string{"asif"},
+		},
+		{
+			Namespace:            "team-b",
+			Name:                 "runner-c",
+			ImageRef:             "base:v1",
+			ImageManifestDigest:  "sha256:three",
+			ImageDigestRef:       "registry.example/base@sha256:three",
+			ImagePlatform:        "darwin/arm64",
+			RequiredCapabilities: []string{"ram-overlay"},
+		},
+	} {
+		if _, err := store.EnsureWarmPool(req); err != nil {
+			t.Fatalf("EnsureWarmPool(%q): %v", req.Name, err)
+		}
+	}
+
+	if got := store.ListWarmPoolsFiltered(WarmPoolListFilter{Namespace: "team-a"}); len(got) != 2 {
+		t.Fatalf("team-a warm pools = %+v, want 2", got)
+	}
+	if got := store.ListWarmPoolsFiltered(WarmPoolListFilter{Namespace: "team-a", ImageRef: "base:v2"}); len(got) != 1 || got[0].Name != "runner-b" {
+		t.Fatalf("image ref warm pools = %+v, want runner-b", got)
+	}
+	if got := store.ListWarmPoolsFiltered(WarmPoolListFilter{Namespace: "team-a", ImageManifestDigest: "sha256:one"}); len(got) != 1 || got[0].Name != "runner-a" {
+		t.Fatalf("manifest digest warm pools = %+v, want runner-a", got)
+	}
+	if got := store.ListWarmPoolsFiltered(WarmPoolListFilter{Namespace: "team-a", ImageDigestRef: "registry.example/base@sha256:two"}); len(got) != 1 || got[0].Name != "runner-b" {
+		t.Fatalf("digest ref warm pools = %+v, want runner-b", got)
+	}
+	if got := store.ListWarmPoolsFiltered(WarmPoolListFilter{Namespace: "team-a", ImagePlatform: "darwin/arm64"}); len(got) != 1 || got[0].Name != "runner-a" {
+		t.Fatalf("platform warm pools = %+v, want runner-a", got)
+	}
+	if got := store.ListWarmPoolsFiltered(WarmPoolListFilter{Namespace: "team-a", RequiredCapability: "ram-overlay"}); len(got) != 1 || got[0].Name != "runner-a" {
+		t.Fatalf("capability warm pools = %+v, want runner-a", got)
+	}
+	page := store.ListWarmPoolsPage(WarmPoolListFilter{Namespace: "team-a", Limit: 1})
+	if page.Count != 1 || page.NextOffset != 1 || len(page.WarmPools) != 1 || page.WarmPools[0].Name != "runner-a" {
+		t.Fatalf("warm pool page = %+v, want first page", page)
+	}
+}
+
 func TestStoreListSandboxesFiltered(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	if _, err := store.UpsertHeartbeat(WorkerHeartbeat{
@@ -6538,12 +6598,15 @@ func TestHandlerWarmPools(t *testing.T) {
 	defer server.Close()
 
 	var record HostRecord
-	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-0", ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 2}}, &record)
-	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", Capabilities: []string{"ram-overlay"}, ImageRefs: []string{"base:v1"}, Capacity: Capacity{VMs: 0, MaxVMs: 2}}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-0", ImageRefs: []string{"base:v1"}, ImageDetails: []WorkerImage{{Ref: "base:v1", SourceManifestDigest: "sha256:base"}}, Capacity: Capacity{VMs: 0, MaxVMs: 2}}, &record)
+	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", Capabilities: []string{"ram-overlay"}, ImageRefs: []string{"base:v1"}, ImageDetails: []WorkerImage{{Ref: "base:v1", SourceManifestDigest: "sha256:base"}}, Capacity: Capacity{VMs: 0, MaxVMs: 2}}, &record)
 	var result WarmPoolResult
 	postJSON(t, server.URL+"/v1/warm-pools", WarmPoolRequest{
 		Name:                 "runner",
 		ImageRef:             "base:v1",
+		ImageManifestDigest:  "sha256:base",
+		ImageDigestRef:       "registry.example/base@sha256:base",
+		ImagePlatform:        "darwin/arm64",
 		Size:                 1,
 		RequiredCapabilities: []string{"ram-overlay"},
 	}, &result)
@@ -6559,10 +6622,15 @@ func TestHandlerWarmPools(t *testing.T) {
 
 	var list struct {
 		WarmPools []WarmPoolStatus `json:"warm_pools"`
+		Count     int              `json:"count"`
+		Limit     int              `json:"limit"`
 	}
-	getJSON(t, server.URL+"/v1/warm-pools", &list)
-	if len(list.WarmPools) != 1 || list.WarmPools[0].Name != "runner" || list.WarmPools[0].Active != 1 || list.WarmPools[0].Slots != 1 || len(list.WarmPools[0].RequiredCapabilities) != 1 {
+	getJSON(t, server.URL+"/v1/warm-pools?image_ref=base:v1&image_manifest_digest=sha256:base&image_digest_ref=registry.example%2Fbase%40sha256:base&image_platform=darwin%2Farm64&required_capability=ram-overlay&limit=1", &list)
+	if len(list.WarmPools) != 1 || list.Count != 1 || list.Limit != 1 || list.WarmPools[0].Name != "runner" || list.WarmPools[0].Active != 1 || list.WarmPools[0].Slots != 1 || len(list.WarmPools[0].RequiredCapabilities) != 1 {
 		t.Fatalf("warm pool list = %+v", list)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/warm-pools?limit=-1", ""); code != http.StatusBadRequest {
+		t.Fatalf("bad warm pool list limit status = %d, want %d", code, http.StatusBadRequest)
 	}
 
 	var leased Assignment
