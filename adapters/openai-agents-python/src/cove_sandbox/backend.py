@@ -65,6 +65,10 @@ if _AGENTS_AVAILABLE:
         parent: str | None = None
         name: str | None = None
         image_ref: str | None = None
+        manifest_bundle: str | None = None
+        image_manifest_digest: str | None = None
+        image_digest_ref: str | None = None
+        image_platform: str | None = None
         sandbox_id: str | None = None
         cove: str = "cove"
         token: str | None = None
@@ -88,6 +92,10 @@ if _AGENTS_AVAILABLE:
             parent: str | None = None,
             name: str | None = None,
             image_ref: str | None = None,
+            manifest_bundle: str | None = None,
+            image_manifest_digest: str | None = None,
+            image_digest_ref: str | None = None,
+            image_platform: str | None = None,
             sandbox_id: str | None = None,
             cove: str = "cove",
             token: str | None = None,
@@ -111,6 +119,10 @@ if _AGENTS_AVAILABLE:
                 parent=parent,
                 name=name,
                 image_ref=image_ref,
+                manifest_bundle=manifest_bundle,
+                image_manifest_digest=image_manifest_digest,
+                image_digest_ref=image_digest_ref,
+                image_platform=image_platform,
                 sandbox_id=sandbox_id,
                 cove=cove,
                 token=token,
@@ -136,6 +148,10 @@ else:
         parent: str | None = None
         name: str | None = None
         image_ref: str | None = None
+        manifest_bundle: str | None = None
+        image_manifest_digest: str | None = None
+        image_digest_ref: str | None = None
+        image_platform: str | None = None
         sandbox_id: str | None = None
         cove: str = "cove"
         token: str | None = None
@@ -508,6 +524,10 @@ class CoveSandboxClient(BaseSandboxClient):
                 CoveFleetClient.create_sandbox,
                 fleet_url=opts.fleet_url,
                 image_ref=image_ref,
+                manifest_bundle=opts.manifest_bundle,
+                image_manifest_digest=opts.image_manifest_digest,
+                image_digest_ref=opts.image_digest_ref,
+                image_platform=opts.image_platform,
                 sandbox_id=sandbox_id or f"sandbox-{session_id.hex[:8]}",
                 api_key=opts.api_key,
                 namespace=opts.namespace,

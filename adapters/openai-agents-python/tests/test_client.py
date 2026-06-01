@@ -99,6 +99,8 @@ def test_backend_options_round_trip_without_agents() -> None:
         provider="cloud",
         parent="base",
         name="eval-001",
+        manifest_bundle="manifests",
+        image_platform="darwin/arm64",
         fleet_url="http://127.0.0.1:9758",
         workspace_root="/tmp/work",
         gui=True,
@@ -107,6 +109,8 @@ def test_backend_options_round_trip_without_agents() -> None:
     assert opts.model_dump()["type"] == "cove"
     assert opts.model_dump()["provider"] == "cloud"
     assert opts.model_dump()["parent"] == "base"
+    assert opts.model_dump()["manifest_bundle"] == "manifests"
+    assert opts.model_dump()["image_platform"] == "darwin/arm64"
     assert opts.model_dump()["fleet_url"] == "http://127.0.0.1:9758"
     assert opts.model_dump()["extra_run_args"] == ("-disposable",)
 
@@ -130,6 +134,10 @@ def test_fleet_client_create_wait_exec_and_delete() -> None:
             fleet_url=server.url,
             api_key="secret",
             image_ref="base:v1",
+            manifest_bundle="manifests",
+            image_manifest_digest="sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            image_digest_ref="ghcr.io/me/dev-vm@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            image_platform="darwin/arm64",
             sandbox_id="job-1",
             namespace="team-a",
         )
@@ -177,6 +185,10 @@ def test_fleet_client_create_wait_exec_and_delete() -> None:
         create = server.requests[0]
         assert create["authorization"] == "Bearer secret"
         assert create["body"]["image_ref"] == "base:v1"
+        assert create["body"]["manifest_bundle"] == "manifests"
+        assert create["body"]["image_manifest_digest"].startswith("sha256:")
+        assert create["body"]["image_digest_ref"].startswith("ghcr.io/me/dev-vm@sha256:")
+        assert create["body"]["image_platform"] == "darwin/arm64"
         assert create["body"]["namespace"] == "team-a"
         assert server.requests[1]["query"]["namespace"] == ["team-a"]
         assert server.requests[2]["query"]["namespace"] == ["team-a"]

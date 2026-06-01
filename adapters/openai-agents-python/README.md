@@ -149,6 +149,8 @@ run_config = RunConfig(
             fleet_url="https://fleet.internal.example",
             api_key="cove_...",
             image_ref="macos-base:latest",
+            manifest_bundle="manifests",
+            image_platform="darwin/arm64",
             name="eval-001",
             delete_on_close=True,
         ),
@@ -164,7 +166,10 @@ exposes sandbox audit history through `GET /v1/sandboxes/{id}/events` and
 worker reports through `GET /v1/sandboxes/{id}/reports`. It deletes the sandbox
 handle on close when `delete_on_close=True`. Set
 `COVE_FLEET_URL` and `COVE_API_KEY` (or `COVE_FLEET_TOKEN`) instead of passing
-`fleet_url` and `api_key` directly.
+`fleet_url` and `api_key` directly. For registry-audited hosted sandboxes, pass
+`manifest_bundle` plus optional `image_platform`; the controller verifies the
+offline bundle and admits the sandbox only on workers with matching image
+provenance.
 
 For direct fleet-client code, `CoveFleetClient` covers the hosted lifecycle:
 
@@ -176,6 +181,8 @@ client = CoveFleetClient.create_sandbox(
     api_key="cove_...",
     namespace="team-a",
     image_ref="macos-base:latest",
+    manifest_bundle="manifests",
+    image_platform="darwin/arm64",
     sandbox_id="eval-001",
 )
 ready = client.list_page(status="ready", image_ref="macos-base:latest", offset=0, limit=10)

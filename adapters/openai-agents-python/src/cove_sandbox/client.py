@@ -292,6 +292,10 @@ class CoveFleetClient:
         *,
         fleet_url: str | None = None,
         image_ref: str,
+        manifest_bundle: str | None = None,
+        image_manifest_digest: str | None = None,
+        image_digest_ref: str | None = None,
+        image_platform: str | None = None,
         sandbox_id: str | None = None,
         api_key: str | None = None,
         namespace: str | None = None,
@@ -308,6 +312,14 @@ class CoveFleetClient:
             body["namespace"] = namespace
         if vm_name:
             body["vm_name"] = vm_name
+        if manifest_bundle and manifest_bundle.strip():
+            body["manifest_bundle"] = manifest_bundle.strip()
+        if image_manifest_digest and image_manifest_digest.strip():
+            body["image_manifest_digest"] = image_manifest_digest.strip()
+        if image_digest_ref and image_digest_ref.strip():
+            body["image_digest_ref"] = image_digest_ref.strip()
+        if image_platform and image_platform.strip():
+            body["image_platform"] = image_platform.strip()
         seed = cls(
             sandbox_id=sandbox_id or "pending",
             fleet_url=fleet_url,

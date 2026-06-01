@@ -483,7 +483,9 @@ cloud/control-plane path, including hosted lifecycle helpers, leases,
 metering, sandbox event and report history, and ComputerTool-style
 screenshot/key/text/mouse events. Both SDKs remember the holder returned by
 `lease` and include it on later hosted sandbox mutations until
-`release_lease`/`ReleaseLease` succeeds.
+`release_lease`/`ReleaseLease` succeeds. Hosted create helpers expose the same
+exact-image fields as the REST API: pass `manifest_bundle`/`ManifestBundle` or
+the resolved digest fields to request a registry-verified mutable image ref.
 
 Go SDK example:
 
@@ -494,6 +496,8 @@ sb, err := agentsandbox.Create(ctx, agentsandbox.ClientOptions{
 	FleetURL: "https://fleet.internal.example",
 	APIKey:   os.Getenv("COVE_API_KEY"),
 	ImageRef: "macos-base:latest",
+	ManifestBundle: "manifests",
+	ImagePlatform:  "darwin/arm64",
 })
 if err != nil {
 	log.Fatal(err)

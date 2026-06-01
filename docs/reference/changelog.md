@@ -250,6 +250,11 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   selects `image_platform` when supplied, resolves digest metadata before
   placement, and image preparation queues `cove image pull` from the selected
   digest ref instead of the mutable source tag.
+- The public Go `agentsandbox` client and OpenAI Agents Python adapter now
+  expose hosted sandbox exact-image fields (`manifest_bundle`,
+  `image_manifest_digest`, `image_digest_ref`, and `image_platform`) on create,
+  so SDK callers can request the same controller-verified registry identity as
+  the raw REST API.
 - `cove-fleetd` now reconciles stale workers and expired assignment leases,
   exposes `POST /v1/reconcile`, and `coved` renews active `cove` assignments
   with `running` reports so long jobs do not get reclaimed while still alive.

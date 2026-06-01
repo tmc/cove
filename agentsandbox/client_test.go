@@ -18,13 +18,17 @@ func TestCloudClientCreateExecControlDelete(t *testing.T) {
 	server := newSDKFleetServer(t)
 	ctx := context.Background()
 	client, err := Create(ctx, ClientOptions{
-		Provider:  ProviderCloud,
-		FleetURL:  server.URL,
-		APIKey:    "secret",
-		Namespace: "team-a",
-		SandboxID: "job-1",
-		ImageRef:  "base:v1",
-		Timeout:   time.Second,
+		Provider:            ProviderCloud,
+		FleetURL:            server.URL,
+		APIKey:              "secret",
+		Namespace:           "team-a",
+		SandboxID:           "job-1",
+		ImageRef:            "base:v1",
+		ManifestBundle:      "manifests",
+		ImageManifestDigest: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+		ImageDigestRef:      "ghcr.io/me/dev-vm@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+		ImagePlatform:       "darwin/arm64",
+		Timeout:             time.Second,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -36,7 +40,7 @@ func TestCloudClientCreateExecControlDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if len(list) != 1 || list[0].ID != "job-1" || list[0].ImageRef != "base:v1" {
+	if len(list) != 1 || list[0].ID != "job-1" || list[0].ImageRef != "base:v1" || list[0].ImageManifestDigest == "" {
 		t.Fatalf("List = %+v, want job-1 base:v1", list)
 	}
 	wait, err := client.Wait(ctx, 2500*time.Millisecond)
@@ -147,6 +151,9 @@ func TestCloudClientCreateExecControlDelete(t *testing.T) {
 	create := server.requests[0].body
 	if create["image_ref"] != "base:v1" || create["namespace"] != "team-a" || create["id"] != "job-1" {
 		t.Fatalf("create body = %+v", create)
+	}
+	if create["manifest_bundle"] != "manifests" || create["image_manifest_digest"] == "" || create["image_digest_ref"] == "" || create["image_platform"] != "darwin/arm64" {
+		t.Fatalf("create image identity = %+v, want manifest bundle fields", create)
 	}
 	if server.requests[1].query.Get("namespace") != "team-a" {
 		t.Fatalf("list query = %q, want team-a", server.requests[1].query.Encode())
@@ -410,7 +417,7 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 			writeSDKJSON(t, w, SandboxStatus{Namespace: "team-a", ID: "job-1", VMName: "cove-sandbox-job-1", Status: "pending"})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/sandboxes":
 			writeSDKJSON(t, w, map[string]any{
-				"sandboxes": []SandboxStatus{{Namespace: "team-a", ID: "job-1", VMName: "cove-sandbox-job-1", ImageRef: "base:v1", Status: "ready"}},
+				"sandboxes": []SandboxStatus{{Namespace: "team-a", ID: "job-1", VMName: "cove-sandbox-job-1", ImageRef: "base:v1", ImageManifestDigest: "sha256:1111111111111111111111111111111111111111111111111111111111111111", ImageDigestRef: "ghcr.io/me/dev-vm@sha256:1111111111111111111111111111111111111111111111111111111111111111", ImagePlatform: "darwin/arm64", Status: "ready"}},
 				"count":     1,
 				"offset":    atoiDefault(r.URL.Query().Get("offset"), 0),
 				"limit":     atoiDefault(r.URL.Query().Get("limit"), 0),
