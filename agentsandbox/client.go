@@ -252,6 +252,7 @@ type ImageGCOptions struct {
 	RequiredCapabilities []string
 	OlderThan            string
 	Apply                bool
+	DryRun               bool
 	Timeout              time.Duration
 	HTTP                 *http.Client
 }
@@ -284,13 +285,17 @@ type ImageGCResult struct {
 	RequiredCapabilities []string          `json:"required_capabilities,omitempty"`
 	OlderThan            string            `json:"older_than,omitempty"`
 	Apply                bool              `json:"apply"`
+	DryRun               bool              `json:"dry_run,omitempty"`
 	Assignments          []Assignment      `json:"assignments,omitempty"`
 	Skipped              []ImageGCSkip     `json:"skipped,omitempty"`
 }
 
 type ImageGCSkip struct {
-	WorkerID string `json:"worker_id"`
-	Reason   string `json:"reason"`
+	WorkerID            string            `json:"worker_id"`
+	Reason              string            `json:"reason"`
+	Status              string            `json:"status,omitempty"`
+	MissingLabels       map[string]string `json:"missing_labels,omitempty"`
+	MissingCapabilities []string          `json:"missing_capabilities,omitempty"`
 }
 
 type ImageGCListResult struct {
@@ -312,6 +317,7 @@ type LifecyclePolicyOptions struct {
 	IdleTimeout          string
 	MaxAge               string
 	RunBudget            int
+	DryRun               bool
 	Timeout              time.Duration
 	HTTP                 *http.Client
 }
@@ -347,13 +353,17 @@ type LifecyclePolicyResult struct {
 	IdleTimeout          string                `json:"idle_timeout,omitempty"`
 	MaxAge               string                `json:"max_age,omitempty"`
 	RunBudget            int                   `json:"run_budget,omitempty"`
+	DryRun               bool                  `json:"dry_run,omitempty"`
 	Assignments          []Assignment          `json:"assignments,omitempty"`
 	Skipped              []LifecyclePolicySkip `json:"skipped,omitempty"`
 }
 
 type LifecyclePolicySkip struct {
-	WorkerID string `json:"worker_id"`
-	Reason   string `json:"reason"`
+	WorkerID            string            `json:"worker_id"`
+	Reason              string            `json:"reason"`
+	Status              string            `json:"status,omitempty"`
+	MissingLabels       map[string]string `json:"missing_labels,omitempty"`
+	MissingCapabilities []string          `json:"missing_capabilities,omitempty"`
 }
 
 type LifecyclePolicyListResult struct {
@@ -374,6 +384,7 @@ type StorageBudgetOptions struct {
 	Target               string
 	WarnPct              *int
 	HardPct              *int
+	DryRun               bool
 	Timeout              time.Duration
 	HTTP                 *http.Client
 }
@@ -408,6 +419,7 @@ type StorageBudgetResult struct {
 	Target               string              `json:"target,omitempty"`
 	WarnPct              *int                `json:"warn_pct,omitempty"`
 	HardPct              *int                `json:"hard_pct,omitempty"`
+	DryRun               bool                `json:"dry_run,omitempty"`
 	Assignments          []Assignment        `json:"assignments,omitempty"`
 	Skipped              []StoragePolicySkip `json:"skipped,omitempty"`
 }
@@ -429,6 +441,7 @@ type StoragePruneOptions struct {
 	Category             string
 	OlderThan            string
 	Apply                bool
+	DryRun               bool
 	Timeout              time.Duration
 	HTTP                 *http.Client
 }
@@ -463,13 +476,17 @@ type StoragePruneResult struct {
 	Category             string              `json:"category,omitempty"`
 	OlderThan            string              `json:"older_than,omitempty"`
 	Apply                bool                `json:"apply"`
+	DryRun               bool                `json:"dry_run,omitempty"`
 	Assignments          []Assignment        `json:"assignments,omitempty"`
 	Skipped              []StoragePolicySkip `json:"skipped,omitempty"`
 }
 
 type StoragePolicySkip struct {
-	WorkerID string `json:"worker_id"`
-	Reason   string `json:"reason"`
+	WorkerID            string            `json:"worker_id"`
+	Reason              string            `json:"reason"`
+	Status              string            `json:"status,omitempty"`
+	MissingLabels       map[string]string `json:"missing_labels,omitempty"`
+	MissingCapabilities []string          `json:"missing_capabilities,omitempty"`
 }
 
 type StoragePruneListResult struct {
@@ -1076,6 +1093,9 @@ func PushImageGC(ctx context.Context, opts ImageGCOptions) (ImageGCResult, error
 	if opts.Apply {
 		body["apply"] = true
 	}
+	if opts.DryRun {
+		body["dry_run"] = true
+	}
 	var result ImageGCResult
 	if err := c.request(ctx, http.MethodPost, "/v1/images/gc", body, &result, c.timeout); err != nil {
 		return ImageGCResult{}, err
@@ -1165,6 +1185,9 @@ func PushLifecyclePolicy(ctx context.Context, opts LifecyclePolicyOptions) (Life
 	if opts.RunBudget > 0 {
 		body["run_budget"] = opts.RunBudget
 	}
+	if opts.DryRun {
+		body["dry_run"] = true
+	}
 	var result LifecyclePolicyResult
 	if err := c.request(ctx, http.MethodPost, "/v1/policies/lifecycle", body, &result, c.timeout); err != nil {
 		return LifecyclePolicyResult{}, err
@@ -1247,6 +1270,9 @@ func PushStorageBudget(ctx context.Context, opts StorageBudgetOptions) (StorageB
 	if opts.HardPct != nil {
 		body["hard_pct"] = *opts.HardPct
 	}
+	if opts.DryRun {
+		body["dry_run"] = true
+	}
 	var result StorageBudgetResult
 	if err := c.request(ctx, http.MethodPost, "/v1/storage/budget", body, &result, c.timeout); err != nil {
 		return StorageBudgetResult{}, err
@@ -1318,6 +1344,9 @@ func PushStoragePrune(ctx context.Context, opts StoragePruneOptions) (StoragePru
 	}
 	if opts.Apply {
 		body["apply"] = true
+	}
+	if opts.DryRun {
+		body["dry_run"] = true
 	}
 	var result StoragePruneResult
 	if err := c.request(ctx, http.MethodPost, "/v1/storage/prune", body, &result, c.timeout); err != nil {

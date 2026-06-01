@@ -540,6 +540,7 @@ class CoveFleetClient:
         required_capabilities: Sequence[str] | str | None = None,
         older_than: str = "",
         apply: bool = False,
+        dry_run: bool = False,
         api_key: str | None = None,
         namespace: str | None = None,
         timeout: float = 30.0,
@@ -549,6 +550,8 @@ class CoveFleetClient:
             body["older_than"] = older_than.strip()
         if apply:
             body["apply"] = True
+        if dry_run:
+            body["dry_run"] = True
         seed = cls(
             sandbox_id="image-gc",
             fleet_url=fleet_url,
@@ -621,6 +624,7 @@ class CoveFleetClient:
         idle_timeout: str = "",
         max_age: str = "",
         run_budget: int = 0,
+        dry_run: bool = False,
         api_key: str | None = None,
         namespace: str | None = None,
         timeout: float = 30.0,
@@ -644,6 +648,8 @@ class CoveFleetClient:
             body["max_age"] = max_age.strip()
         if run_budget:
             body["run_budget"] = run_budget
+        if dry_run:
+            body["dry_run"] = True
         seed = cls(
             sandbox_id="lifecycle-policy",
             fleet_url=fleet_url,
@@ -715,6 +721,7 @@ class CoveFleetClient:
         target: str = "",
         warn_pct: int | None = None,
         hard_pct: int | None = None,
+        dry_run: bool = False,
         api_key: str | None = None,
         namespace: str | None = None,
         timeout: float = 30.0,
@@ -733,6 +740,8 @@ class CoveFleetClient:
             body["warn_pct"] = warn_pct
         if hard_pct is not None:
             body["hard_pct"] = hard_pct
+        if dry_run:
+            body["dry_run"] = True
         seed = cls(
             sandbox_id="storage-budget",
             fleet_url=fleet_url,
@@ -803,6 +812,7 @@ class CoveFleetClient:
         category: str = "",
         older_than: str = "",
         apply: bool = False,
+        dry_run: bool = False,
         api_key: str | None = None,
         namespace: str | None = None,
         timeout: float = 30.0,
@@ -814,6 +824,8 @@ class CoveFleetClient:
             body["older_than"] = older_than.strip()
         if apply:
             body["apply"] = True
+        if dry_run:
+            body["dry_run"] = True
         seed = cls(
             sandbox_id="storage-prune",
             fleet_url=fleet_url,

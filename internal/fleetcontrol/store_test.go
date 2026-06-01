@@ -3563,8 +3563,14 @@ func TestStorePushesImageGCAssignments(t *testing.T) {
 	if !equalStrings(assignment.RequiredCapabilities, []string{"ram-overlay"}) {
 		t.Fatalf("assignment required capabilities = %+v, want ram-overlay", assignment.RequiredCapabilities)
 	}
-	if skipImageGCReason(result.Skipped, "drain") != "cordoned" || skipImageGCReason(result.Skipped, "stale") != "stale" || skipImageGCReason(result.Skipped, "plain") != "" || skipImageGCReason(result.Skipped, "rack") != "" {
+	if skipImageGCReason(result.Skipped, "drain") != "status" || skipImageGCStatus(result.Skipped, "drain") != "cordoned" || skipImageGCReason(result.Skipped, "stale") != "status" || skipImageGCStatus(result.Skipped, "stale") != "stale" || skipImageGCReason(result.Skipped, "plain") != "capability" || skipImageGCReason(result.Skipped, "rack") != "label" {
 		t.Fatalf("skipped = %+v", result.Skipped)
+	}
+	if missing := skipImageGCMissingCapabilities(result.Skipped, "plain"); !equalStrings(missing, []string{"ram-overlay"}) {
+		t.Fatalf("plain missing capabilities = %+v, want ram-overlay", missing)
+	}
+	if missing := skipImageGCMissingLabels(result.Skipped, "rack"); missing["zone"] != "desk" {
+		t.Fatalf("rack missing labels = %+v, want zone=desk", missing)
 	}
 
 	result, err = store.PushImageGC(ImageGCRequest{
@@ -3668,8 +3674,14 @@ func TestStorePushesLifecyclePolicyAssignments(t *testing.T) {
 	if !equalStrings(assignment.RequiredCapabilities, []string{"ram-overlay"}) {
 		t.Fatalf("assignment required capabilities = %+v, want ram-overlay", assignment.RequiredCapabilities)
 	}
-	if skipLifecyclePolicyReason(result.Skipped, "drain") != "cordoned" || skipLifecyclePolicyReason(result.Skipped, "stale") != "stale" || skipLifecyclePolicyReason(result.Skipped, "plain") != "" || skipLifecyclePolicyReason(result.Skipped, "rack") != "" {
+	if skipLifecyclePolicyReason(result.Skipped, "drain") != "status" || skipLifecyclePolicyStatus(result.Skipped, "drain") != "cordoned" || skipLifecyclePolicyReason(result.Skipped, "stale") != "status" || skipLifecyclePolicyStatus(result.Skipped, "stale") != "stale" || skipLifecyclePolicyReason(result.Skipped, "plain") != "capability" || skipLifecyclePolicyReason(result.Skipped, "rack") != "label" {
 		t.Fatalf("skipped = %+v", result.Skipped)
+	}
+	if missing := skipLifecyclePolicyMissingCapabilities(result.Skipped, "plain"); !equalStrings(missing, []string{"ram-overlay"}) {
+		t.Fatalf("plain missing capabilities = %+v, want ram-overlay", missing)
+	}
+	if missing := skipLifecyclePolicyMissingLabels(result.Skipped, "rack"); missing["zone"] != "desk" {
+		t.Fatalf("rack missing labels = %+v, want zone=desk", missing)
 	}
 
 	result, err = store.PushLifecyclePolicy(LifecyclePolicyRequest{
@@ -3808,8 +3820,14 @@ func TestStorePushesStorageBudgetAssignments(t *testing.T) {
 	if !equalStrings(assignment.RequiredCapabilities, []string{"ram-overlay"}) {
 		t.Fatalf("assignment required capabilities = %+v, want ram-overlay", assignment.RequiredCapabilities)
 	}
-	if skipStoragePolicyReason(result.Skipped, "drain") != "cordoned" || skipStoragePolicyReason(result.Skipped, "stale") != "stale" || skipStoragePolicyReason(result.Skipped, "plain") != "" || skipStoragePolicyReason(result.Skipped, "rack") != "" {
+	if skipStoragePolicyReason(result.Skipped, "drain") != "status" || skipStoragePolicyStatus(result.Skipped, "drain") != "cordoned" || skipStoragePolicyReason(result.Skipped, "stale") != "status" || skipStoragePolicyStatus(result.Skipped, "stale") != "stale" || skipStoragePolicyReason(result.Skipped, "plain") != "capability" || skipStoragePolicyReason(result.Skipped, "rack") != "label" {
 		t.Fatalf("skipped = %+v", result.Skipped)
+	}
+	if missing := skipStoragePolicyMissingCapabilities(result.Skipped, "plain"); !equalStrings(missing, []string{"ram-overlay"}) {
+		t.Fatalf("plain missing capabilities = %+v, want ram-overlay", missing)
+	}
+	if missing := skipStoragePolicyMissingLabels(result.Skipped, "rack"); missing["zone"] != "desk" {
+		t.Fatalf("rack missing labels = %+v, want zone=desk", missing)
 	}
 
 	result, err = store.PushStorageBudget(StorageBudgetRequest{
@@ -3916,8 +3934,14 @@ func TestStorePushesStoragePruneAssignments(t *testing.T) {
 	if !equalStrings(assignment.RequiredCapabilities, []string{"ram-overlay"}) {
 		t.Fatalf("assignment required capabilities = %+v, want ram-overlay", assignment.RequiredCapabilities)
 	}
-	if skipStoragePolicyReason(result.Skipped, "drain") != "cordoned" || skipStoragePolicyReason(result.Skipped, "stale") != "stale" || skipStoragePolicyReason(result.Skipped, "plain") != "" || skipStoragePolicyReason(result.Skipped, "rack") != "" {
+	if skipStoragePolicyReason(result.Skipped, "drain") != "status" || skipStoragePolicyStatus(result.Skipped, "drain") != "cordoned" || skipStoragePolicyReason(result.Skipped, "stale") != "status" || skipStoragePolicyStatus(result.Skipped, "stale") != "stale" || skipStoragePolicyReason(result.Skipped, "plain") != "capability" || skipStoragePolicyReason(result.Skipped, "rack") != "label" {
 		t.Fatalf("skipped = %+v", result.Skipped)
+	}
+	if missing := skipStoragePolicyMissingCapabilities(result.Skipped, "plain"); !equalStrings(missing, []string{"ram-overlay"}) {
+		t.Fatalf("plain missing capabilities = %+v, want ram-overlay", missing)
+	}
+	if missing := skipStoragePolicyMissingLabels(result.Skipped, "rack"); missing["zone"] != "desk" {
+		t.Fatalf("rack missing labels = %+v, want zone=desk", missing)
 	}
 
 	result, err = store.PushStoragePrune(StoragePruneRequest{
@@ -3955,6 +3979,136 @@ func TestStorePushesStoragePruneAssignments(t *testing.T) {
 	persisted, ok := reopened.GetStoragePruneRun(result.ID)
 	if !ok || persisted.ID != result.ID || skipStoragePolicyReason(persisted.Skipped, "desk") != "active" || persisted.Apply || !equalStrings(persisted.RequiredCapabilities, []string{"ram-overlay"}) {
 		t.Fatalf("reopened storage prune = %+v ok=%v, want active skip dry-run history", persisted, ok)
+	}
+}
+
+func TestStoreMaintenanceDryRunDoesNotMutate(t *testing.T) {
+	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
+	path := filepath.Join(t.TempDir(), "fleet.json")
+	store, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.now = func() time.Time { return now }
+	for _, hb := range []WorkerHeartbeat{
+		{ID: "desk", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}},
+		{ID: "plain", Labels: map[string]string{"zone": "desk"}},
+		{ID: "rack", Labels: map[string]string{"zone": "rack"}},
+		{ID: "drain", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}},
+	} {
+		if _, err := store.UpsertHeartbeat(hb); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.CordonWorker("drain", "maintenance"); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(2 * time.Minute)
+	for _, hb := range []WorkerHeartbeat{
+		{ID: "desk", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}},
+		{ID: "plain", Labels: map[string]string{"zone": "desk"}},
+		{ID: "rack", Labels: map[string]string{"zone": "rack"}},
+		{ID: "drain", Labels: map[string]string{"zone": "desk"}, Capabilities: []string{"ram-overlay"}},
+	} {
+		if _, err := store.UpsertHeartbeat(hb); err != nil {
+			t.Fatal(err)
+		}
+	}
+	auditCount := len(store.ListAudit(0))
+	labels := map[string]string{"zone": "desk"}
+	capabilities := []string{"ram-overlay"}
+
+	gc, err := store.PushImageGC(ImageGCRequest{
+		RequiredLabels:       labels,
+		RequiredCapabilities: capabilities,
+		OlderThan:            "24h",
+		Apply:                true,
+		DryRun:               true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !gc.DryRun || len(gc.Assignments) != 1 || !strings.HasPrefix(gc.Assignments[0].ID, "planned-assignment-") {
+		t.Fatalf("image gc dry-run = %+v, want one planned assignment", gc)
+	}
+	if skipImageGCReason(gc.Skipped, "drain") != "status" || skipImageGCStatus(gc.Skipped, "drain") != "cordoned" || skipImageGCReason(gc.Skipped, "plain") != "capability" || skipImageGCReason(gc.Skipped, "rack") != "label" {
+		t.Fatalf("image gc skipped = %+v, want structured dry-run skips", gc.Skipped)
+	}
+	if missing := skipImageGCMissingLabels(gc.Skipped, "rack"); missing["zone"] != "desk" {
+		t.Fatalf("image gc rack missing labels = %+v, want zone=desk", missing)
+	}
+
+	policy, err := store.PushLifecyclePolicy(LifecyclePolicyRequest{
+		VMName:               "ci-runner",
+		RequiredLabels:       labels,
+		RequiredCapabilities: capabilities,
+		IdleTimeout:          "30m",
+		DryRun:               true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !policy.DryRun || len(policy.Assignments) != 1 || !strings.HasPrefix(policy.Assignments[0].ID, "planned-assignment-") {
+		t.Fatalf("lifecycle dry-run = %+v, want one planned assignment", policy)
+	}
+	if skipLifecyclePolicyReason(policy.Skipped, "plain") != "capability" || skipLifecyclePolicyReason(policy.Skipped, "rack") != "label" {
+		t.Fatalf("lifecycle skipped = %+v, want selector diagnostics", policy.Skipped)
+	}
+
+	warn, hard := 75, 90
+	budget, err := store.PushStorageBudget(StorageBudgetRequest{
+		RequiredLabels:       labels,
+		RequiredCapabilities: capabilities,
+		Target:               "500GB",
+		WarnPct:              &warn,
+		HardPct:              &hard,
+		DryRun:               true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !budget.DryRun || len(budget.Assignments) != 1 || !strings.HasPrefix(budget.Assignments[0].ID, "planned-assignment-") {
+		t.Fatalf("storage budget dry-run = %+v, want one planned assignment", budget)
+	}
+	if skipStoragePolicyReason(budget.Skipped, "plain") != "capability" || skipStoragePolicyReason(budget.Skipped, "rack") != "label" {
+		t.Fatalf("storage budget skipped = %+v, want selector diagnostics", budget.Skipped)
+	}
+
+	prune, err := store.PushStoragePrune(StoragePruneRequest{
+		RequiredLabels:       labels,
+		RequiredCapabilities: capabilities,
+		Category:             "build-scratch",
+		OlderThan:            "48h",
+		Apply:                true,
+		DryRun:               true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !prune.DryRun || len(prune.Assignments) != 1 || !strings.HasPrefix(prune.Assignments[0].ID, "planned-assignment-") {
+		t.Fatalf("storage prune dry-run = %+v, want one planned assignment", prune)
+	}
+	if skipStoragePolicyReason(prune.Skipped, "plain") != "capability" || skipStoragePolicyReason(prune.Skipped, "rack") != "label" {
+		t.Fatalf("storage prune skipped = %+v, want selector diagnostics", prune.Skipped)
+	}
+
+	if got := len(store.ListAssignments()); got != 0 {
+		t.Fatalf("assignments after dry-runs = %d, want 0", got)
+	}
+	if got := store.ListImageGCRunsPage(ImageGCListFilter{}).Count; got != 0 {
+		t.Fatalf("image gc history after dry-run = %d, want 0", got)
+	}
+	if got := store.ListLifecyclePolicyRunsPage(LifecyclePolicyListFilter{}).Count; got != 0 {
+		t.Fatalf("lifecycle history after dry-run = %d, want 0", got)
+	}
+	if got := store.ListStorageBudgetRunsPage(StorageBudgetListFilter{}).Count; got != 0 {
+		t.Fatalf("storage budget history after dry-run = %d, want 0", got)
+	}
+	if got := store.ListStoragePruneRunsPage(StoragePruneListFilter{}).Count; got != 0 {
+		t.Fatalf("storage prune history after dry-run = %d, want 0", got)
+	}
+	if got := len(store.ListAudit(0)); got != auditCount {
+		t.Fatalf("audit events after dry-runs = %d, want %d", got, auditCount)
 	}
 }
 
@@ -7371,28 +7525,76 @@ func skipMissingCapabilities(skipped []ImagePrepareSkip, workerID string) []stri
 }
 
 func skipImageGCReason(skipped []ImageGCSkip, workerID string) string {
+	return imageGCSkip(skipped, workerID).Reason
+}
+
+func skipImageGCStatus(skipped []ImageGCSkip, workerID string) string {
+	return imageGCSkip(skipped, workerID).Status
+}
+
+func skipImageGCMissingLabels(skipped []ImageGCSkip, workerID string) map[string]string {
+	return imageGCSkip(skipped, workerID).MissingLabels
+}
+
+func skipImageGCMissingCapabilities(skipped []ImageGCSkip, workerID string) []string {
+	return imageGCSkip(skipped, workerID).MissingCapabilities
+}
+
+func imageGCSkip(skipped []ImageGCSkip, workerID string) ImageGCSkip {
 	for _, skip := range skipped {
 		if skip.WorkerID == workerID {
-			return skip.Reason
+			return skip
 		}
 	}
-	return ""
+	return ImageGCSkip{}
 }
 
 func skipLifecyclePolicyReason(skipped []LifecyclePolicySkip, workerID string) string {
+	return lifecyclePolicySkip(skipped, workerID).Reason
+}
+
+func skipLifecyclePolicyStatus(skipped []LifecyclePolicySkip, workerID string) string {
+	return lifecyclePolicySkip(skipped, workerID).Status
+}
+
+func skipLifecyclePolicyMissingLabels(skipped []LifecyclePolicySkip, workerID string) map[string]string {
+	return lifecyclePolicySkip(skipped, workerID).MissingLabels
+}
+
+func skipLifecyclePolicyMissingCapabilities(skipped []LifecyclePolicySkip, workerID string) []string {
+	return lifecyclePolicySkip(skipped, workerID).MissingCapabilities
+}
+
+func lifecyclePolicySkip(skipped []LifecyclePolicySkip, workerID string) LifecyclePolicySkip {
 	for _, skip := range skipped {
 		if skip.WorkerID == workerID {
-			return skip.Reason
+			return skip
 		}
 	}
-	return ""
+	return LifecyclePolicySkip{}
 }
 
 func skipStoragePolicyReason(skipped []StoragePolicySkip, workerID string) string {
+	return storagePolicySkip(skipped, workerID).Reason
+}
+
+func skipStoragePolicyStatus(skipped []StoragePolicySkip, workerID string) string {
+	return storagePolicySkip(skipped, workerID).Status
+}
+
+func skipStoragePolicyMissingLabels(skipped []StoragePolicySkip, workerID string) map[string]string {
+	return storagePolicySkip(skipped, workerID).MissingLabels
+}
+
+func skipStoragePolicyMissingCapabilities(skipped []StoragePolicySkip, workerID string) []string {
+	return storagePolicySkip(skipped, workerID).MissingCapabilities
+}
+
+func storagePolicySkip(skipped []StoragePolicySkip, workerID string) StoragePolicySkip {
 	for _, skip := range skipped {
 		if skip.WorkerID == workerID {
-			return skip.Reason
+			return skip
 		}
 	}
-	return ""
+	return StoragePolicySkip{}
 }

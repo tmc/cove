@@ -205,6 +205,7 @@ prune = CoveFleetClient.push_storage_prune(
     category="build-scratch",
     older_than="168h",
     apply=True,
+    dry_run=True,
 )
 print(len(prune["assignments"]), len(prune["skipped"]))
 
@@ -280,7 +281,9 @@ client.delete_vm()
 Maintenance helpers include `push_image_gc`, `push_lifecycle_policy`,
 `push_storage_budget`, `push_storage_prune`, the matching `list_*_runs` /
 `get_*_run` methods, and `list_controller_runs` for the aggregate operations
-timeline.
+timeline. Pass `dry_run=True` to maintenance pushes to inspect planned
+assignments and structured skipped-worker diagnostics without mutating the
+controller.
 
 For a copy-paste helper that returns the SDK `RunConfig` wrapper directly,
 import `sandbox_run_config` from `cove_sandbox`.

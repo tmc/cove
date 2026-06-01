@@ -346,11 +346,16 @@ def test_fleet_client_maintenance_runs() -> None:
             required_capabilities=("ram-overlay", "asif", ""),
             older_than="168h",
             apply=True,
+            dry_run=True,
         )
         assert gc["id"] == "image-gc-1"
         assert gc["apply"] is True
+        assert gc["dry_run"] is True
         assert gc["assignments"][0]["worker_id"] == "worker-1"
-        assert gc["skipped"][0]["reason"] == "cordoned"
+        assert gc["skipped"][0]["reason"] == "status"
+        assert gc["skipped"][0]["status"] == "cordoned"
+        assert gc["skipped"][1]["missing_labels"] == {"zone": "desk"}
+        assert gc["skipped"][2]["missing_capabilities"] == ["asif"]
         gc_page = CoveFleetClient.list_image_gc_runs(
             fleet_url=server.url,
             api_key="secret",
@@ -374,9 +379,11 @@ def test_fleet_client_maintenance_runs() -> None:
             required_capabilities=("ram-overlay", "asif"),
             idle_timeout="30m",
             run_budget=100,
+            dry_run=True,
         )
         assert policy["id"] == "lifecycle-policy-1"
         assert policy["vm_name"] == "ci-runner"
+        assert policy["dry_run"] is True
         policy_page = CoveFleetClient.list_lifecycle_policy_runs(
             fleet_url=server.url,
             api_key="secret",
@@ -403,9 +410,11 @@ def test_fleet_client_maintenance_runs() -> None:
             target="750GB",
             warn_pct=70,
             hard_pct=90,
+            dry_run=True,
         )
         assert budget["id"] == "storage-budget-1"
         assert budget["target"] == "750GB"
+        assert budget["dry_run"] is True
         budget_page = CoveFleetClient.list_storage_budget_runs(
             fleet_url=server.url,
             api_key="secret",
@@ -432,9 +441,11 @@ def test_fleet_client_maintenance_runs() -> None:
             category="build-scratch",
             older_than="48h",
             apply=True,
+            dry_run=True,
         )
         assert prune["id"] == "storage-prune-1"
         assert prune["category"] == "build-scratch"
+        assert prune["dry_run"] is True
         prune_page = CoveFleetClient.list_storage_prune_runs(
             fleet_url=server.url,
             api_key="secret",
@@ -482,12 +493,16 @@ def test_fleet_client_maintenance_runs() -> None:
             "/v1/operations/runs",
         ]
         assert server.requests[-13]["body"]["required_capabilities"] == ["ram-overlay", "asif"]
+        assert server.requests[-13]["body"]["dry_run"] is True
         assert server.requests[-12]["query"]["apply"] == ["true"]
         assert server.requests[-10]["body"]["run_budget"] == 100
+        assert server.requests[-10]["body"]["dry_run"] is True
         assert server.requests[-9]["query"]["clear"] == ["false"]
         assert server.requests[-7]["body"]["warn_pct"] == 70
+        assert server.requests[-7]["body"]["dry_run"] is True
         assert server.requests[-6]["query"]["target"] == ["750GB"]
         assert server.requests[-4]["body"]["category"] == "build-scratch"
+        assert server.requests[-4]["body"]["dry_run"] is True
         assert server.requests[-1]["query"]["kind"] == ["storage.prune"]
     finally:
         server.stop()
@@ -826,7 +841,7 @@ def _image_prepare_result(*, dry_run: bool = False) -> dict[str, object]:
     }
 
 
-def _image_gc_result() -> dict[str, object]:
+def _image_gc_result(*, dry_run: bool = False) -> dict[str, object]:
     return {
         "id": "image-gc-1",
         "created": "2026-05-31T10:00:00Z",
@@ -835,12 +850,17 @@ def _image_gc_result() -> dict[str, object]:
         "required_capabilities": ["ram-overlay", "asif"],
         "older_than": "168h",
         "apply": True,
+        "dry_run": dry_run,
         "assignments": [_maintenance_assignment("assignment-image-gc-1", ["image", "gc", "-yes", "-older-than", "168h"])],
-        "skipped": [{"worker_id": "worker-2", "reason": "cordoned"}],
+        "skipped": [
+            {"worker_id": "worker-2", "reason": "status", "status": "cordoned"},
+            {"worker_id": "worker-3", "reason": "label", "missing_labels": {"zone": "desk"}},
+            {"worker_id": "worker-4", "reason": "capability", "missing_capabilities": ["asif"]},
+        ],
     }
 
 
-def _lifecycle_policy_result() -> dict[str, object]:
+def _lifecycle_policy_result(*, dry_run: bool = False) -> dict[str, object]:
     return {
         "id": "lifecycle-policy-1",
         "created": "2026-05-31T10:00:00Z",
@@ -850,17 +870,22 @@ def _lifecycle_policy_result() -> dict[str, object]:
         "required_capabilities": ["ram-overlay", "asif"],
         "idle_timeout": "30m",
         "run_budget": 100,
+        "dry_run": dry_run,
         "assignments": [
             _maintenance_assignment(
                 "assignment-lifecycle-policy-1",
                 ["policy", "ci-runner", "set", "-idle-timeout", "30m", "-run-budget", "100"],
             )
         ],
-        "skipped": [{"worker_id": "worker-2", "reason": "cordoned"}],
+        "skipped": [
+            {"worker_id": "worker-2", "reason": "status", "status": "cordoned"},
+            {"worker_id": "worker-3", "reason": "label", "missing_labels": {"zone": "desk"}},
+            {"worker_id": "worker-4", "reason": "capability", "missing_capabilities": ["asif"]},
+        ],
     }
 
 
-def _storage_budget_result() -> dict[str, object]:
+def _storage_budget_result(*, dry_run: bool = False) -> dict[str, object]:
     return {
         "id": "storage-budget-1",
         "created": "2026-05-31T10:00:00Z",
@@ -870,17 +895,22 @@ def _storage_budget_result() -> dict[str, object]:
         "target": "750GB",
         "warn_pct": 70,
         "hard_pct": 90,
+        "dry_run": dry_run,
         "assignments": [
             _maintenance_assignment(
                 "assignment-storage-budget-1",
                 ["storage", "budget", "set", "-target", "750GB", "-warn", "70", "-hard", "90"],
             )
         ],
-        "skipped": [{"worker_id": "worker-2", "reason": "cordoned"}],
+        "skipped": [
+            {"worker_id": "worker-2", "reason": "status", "status": "cordoned"},
+            {"worker_id": "worker-3", "reason": "label", "missing_labels": {"zone": "desk"}},
+            {"worker_id": "worker-4", "reason": "capability", "missing_capabilities": ["ram-overlay"]},
+        ],
     }
 
 
-def _storage_prune_result() -> dict[str, object]:
+def _storage_prune_result(*, dry_run: bool = False) -> dict[str, object]:
     return {
         "id": "storage-prune-1",
         "created": "2026-05-31T10:00:00Z",
@@ -890,13 +920,18 @@ def _storage_prune_result() -> dict[str, object]:
         "category": "build-scratch",
         "older_than": "48h",
         "apply": True,
+        "dry_run": dry_run,
         "assignments": [
             _maintenance_assignment(
                 "assignment-storage-prune-1",
                 ["storage", "prune", "build-scratch", "-apply", "-older-than", "48h"],
             )
         ],
-        "skipped": [{"worker_id": "worker-2", "reason": "cordoned"}],
+        "skipped": [
+            {"worker_id": "worker-2", "reason": "status", "status": "cordoned"},
+            {"worker_id": "worker-3", "reason": "label", "missing_labels": {"zone": "desk"}},
+            {"worker_id": "worker-4", "reason": "capability", "missing_capabilities": ["ram-overlay"]},
+        ],
     }
 
 
@@ -1259,16 +1294,16 @@ class _FleetHTTPServer:
                     self._write(_image_prepare_result(dry_run=body.get("dry_run") is True))
                     return
                 if path == "/v1/images/gc":
-                    self._write(_image_gc_result())
+                    self._write(_image_gc_result(dry_run=body.get("dry_run") is True))
                     return
                 if path == "/v1/policies/lifecycle":
-                    self._write(_lifecycle_policy_result())
+                    self._write(_lifecycle_policy_result(dry_run=body.get("dry_run") is True))
                     return
                 if path == "/v1/storage/budget":
-                    self._write(_storage_budget_result())
+                    self._write(_storage_budget_result(dry_run=body.get("dry_run") is True))
                     return
                 if path == "/v1/storage/prune":
-                    self._write(_storage_prune_result())
+                    self._write(_storage_prune_result(dry_run=body.get("dry_run") is True))
                     return
                 if path == "/v1/placements/plan":
                     self._write(

@@ -387,13 +387,17 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 		RequiredCapabilities: []string{"ram-overlay", "asif", ""},
 		OlderThan:            "168h",
 		Apply:                true,
+		DryRun:               true,
 		Timeout:              time.Second,
 	})
 	if err != nil {
 		t.Fatalf("PushImageGC: %v", err)
 	}
-	if gc.ID != "image-gc-1" || !gc.Apply || gc.Assignments[0].WorkerID != "worker-1" || gc.Skipped[0].Reason != "cordoned" {
-		t.Fatalf("PushImageGC = %+v, want applied run", gc)
+	if gc.ID != "image-gc-1" || !gc.Apply || !gc.DryRun || gc.Assignments[0].WorkerID != "worker-1" || gc.Skipped[0].Reason != "status" || gc.Skipped[0].Status != "cordoned" {
+		t.Fatalf("PushImageGC = %+v, want dry-run plan", gc)
+	}
+	if len(gc.Skipped) != 3 || gc.Skipped[1].MissingLabels["zone"] != "desk" || !equalStringSlices(gc.Skipped[2].MissingCapabilities, []string{"asif"}) {
+		t.Fatalf("PushImageGC skipped = %+v, want structured selector skips", gc.Skipped)
 	}
 	gcPage, err := ListImageGCRuns(ctx, ImageGCListOptions{FleetURL: server.URL, APIKey: "secret", Namespace: "team-a", OlderThan: "168h", Apply: &apply, Offset: 1, Limit: 2, Timeout: time.Second})
 	if err != nil {
@@ -419,12 +423,13 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 		RequiredCapabilities: []string{"ram-overlay", "asif"},
 		IdleTimeout:          "30m",
 		RunBudget:            100,
+		DryRun:               true,
 		Timeout:              time.Second,
 	})
 	if err != nil {
 		t.Fatalf("PushLifecyclePolicy: %v", err)
 	}
-	if policy.ID != "lifecycle-policy-1" || policy.VMName != "ci-runner" || policy.RunBudget != 100 {
+	if policy.ID != "lifecycle-policy-1" || policy.VMName != "ci-runner" || policy.RunBudget != 100 || !policy.DryRun {
 		t.Fatalf("PushLifecyclePolicy = %+v, want ci-runner policy", policy)
 	}
 	policyPage, err := ListLifecyclePolicyRuns(ctx, LifecyclePolicyListOptions{FleetURL: server.URL, APIKey: "secret", Namespace: "team-a", VMName: "ci-runner", Clear: &clear, Offset: 1, Limit: 2, Timeout: time.Second})
@@ -451,12 +456,13 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 		Target:               "750GB",
 		WarnPct:              &warn,
 		HardPct:              &hard,
+		DryRun:               true,
 		Timeout:              time.Second,
 	})
 	if err != nil {
 		t.Fatalf("PushStorageBudget: %v", err)
 	}
-	if budget.ID != "storage-budget-1" || budget.Target != "750GB" || budget.WarnPct == nil || *budget.WarnPct != 70 {
+	if budget.ID != "storage-budget-1" || budget.Target != "750GB" || budget.WarnPct == nil || *budget.WarnPct != 70 || !budget.DryRun {
 		t.Fatalf("PushStorageBudget = %+v, want storage-budget-1", budget)
 	}
 	budgetPage, err := ListStorageBudgetRuns(ctx, StorageBudgetListOptions{FleetURL: server.URL, APIKey: "secret", Namespace: "team-a", Target: "750GB", Clear: &clear, Offset: 1, Limit: 2, Timeout: time.Second})
@@ -483,12 +489,13 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 		Category:             "build-scratch",
 		OlderThan:            "48h",
 		Apply:                true,
+		DryRun:               true,
 		Timeout:              time.Second,
 	})
 	if err != nil {
 		t.Fatalf("PushStoragePrune: %v", err)
 	}
-	if prune.ID != "storage-prune-1" || !prune.Apply || prune.Category != "build-scratch" {
+	if prune.ID != "storage-prune-1" || !prune.Apply || !prune.DryRun || prune.Category != "build-scratch" {
 		t.Fatalf("PushStoragePrune = %+v, want storage-prune-1", prune)
 	}
 	prunePage, err := ListStoragePruneRuns(ctx, StoragePruneListOptions{FleetURL: server.URL, APIKey: "secret", Namespace: "team-a", Category: "build-scratch", OlderThan: "48h", Apply: &apply, Offset: 1, Limit: 2, Timeout: time.Second})
@@ -539,25 +546,25 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 	if !equalStringSlices(paths, wantPaths) {
 		t.Fatalf("paths = %+v, want %+v", paths, wantPaths)
 	}
-	if body := server.requests[0].body; body["namespace"] != "team-a" || body["older_than"] != "168h" || body["apply"] != true || !equalAnyStringSlice(body["required_capabilities"], []string{"ram-overlay", "asif"}) {
+	if body := server.requests[0].body; body["namespace"] != "team-a" || body["older_than"] != "168h" || body["apply"] != true || body["dry_run"] != true || !equalAnyStringSlice(body["required_capabilities"], []string{"ram-overlay", "asif"}) {
 		t.Fatalf("image gc body = %+v", body)
 	}
 	if query := server.requests[1].query; query.Get("namespace") != "team-a" || query.Get("older_than") != "168h" || query.Get("apply") != "true" || query.Get("offset") != "1" || query.Get("limit") != "2" {
 		t.Fatalf("image gc query = %q", query.Encode())
 	}
-	if body := server.requests[3].body; body["vm_name"] != "ci-runner" || body["idle_timeout"] != "30m" || body["run_budget"] != float64(100) {
+	if body := server.requests[3].body; body["vm_name"] != "ci-runner" || body["idle_timeout"] != "30m" || body["run_budget"] != float64(100) || body["dry_run"] != true {
 		t.Fatalf("lifecycle body = %+v", body)
 	}
 	if query := server.requests[4].query; query.Get("vm_name") != "ci-runner" || query.Get("clear") != "false" {
 		t.Fatalf("lifecycle query = %q", query.Encode())
 	}
-	if body := server.requests[6].body; body["target"] != "750GB" || body["warn_pct"] != float64(70) || body["hard_pct"] != float64(90) {
+	if body := server.requests[6].body; body["target"] != "750GB" || body["warn_pct"] != float64(70) || body["hard_pct"] != float64(90) || body["dry_run"] != true {
 		t.Fatalf("storage budget body = %+v", body)
 	}
 	if query := server.requests[7].query; query.Get("target") != "750GB" || query.Get("clear") != "false" {
 		t.Fatalf("storage budget query = %q", query.Encode())
 	}
-	if body := server.requests[9].body; body["category"] != "build-scratch" || body["older_than"] != "48h" || body["apply"] != true {
+	if body := server.requests[9].body; body["category"] != "build-scratch" || body["older_than"] != "48h" || body["apply"] != true || body["dry_run"] != true {
 		t.Fatalf("storage prune body = %+v", body)
 	}
 	if query := server.requests[12].query; query.Get("kind") != "storage.prune" || query.Get("target_type") != "storage" || query.Get("namespace") != "team-a" {
@@ -981,49 +988,49 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/images/preparations/image-prepare-1":
 			writeSDKJSON(t, w, sdkImagePrepareResult(false))
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/images/gc":
-			writeSDKJSON(t, w, sdkImageGCResult())
+			writeSDKJSON(t, w, sdkImageGCResult(req.body["dry_run"] == true))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/images/gc/runs":
 			writeSDKJSON(t, w, ImageGCListResult{
-				Runs:   []ImageGCResult{sdkImageGCResult()},
+				Runs:   []ImageGCResult{sdkImageGCResult(false)},
 				Count:  1,
 				Offset: atoiDefault(r.URL.Query().Get("offset"), 0),
 				Limit:  atoiDefault(r.URL.Query().Get("limit"), 0),
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/images/gc/runs/image-gc-1":
-			writeSDKJSON(t, w, sdkImageGCResult())
+			writeSDKJSON(t, w, sdkImageGCResult(false))
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/policies/lifecycle":
-			writeSDKJSON(t, w, sdkLifecyclePolicyResult())
+			writeSDKJSON(t, w, sdkLifecyclePolicyResult(req.body["dry_run"] == true))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/policies/lifecycle/runs":
 			writeSDKJSON(t, w, LifecyclePolicyListResult{
-				Runs:   []LifecyclePolicyResult{sdkLifecyclePolicyResult()},
+				Runs:   []LifecyclePolicyResult{sdkLifecyclePolicyResult(false)},
 				Count:  1,
 				Offset: atoiDefault(r.URL.Query().Get("offset"), 0),
 				Limit:  atoiDefault(r.URL.Query().Get("limit"), 0),
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/policies/lifecycle/runs/lifecycle-policy-1":
-			writeSDKJSON(t, w, sdkLifecyclePolicyResult())
+			writeSDKJSON(t, w, sdkLifecyclePolicyResult(false))
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/storage/budget":
-			writeSDKJSON(t, w, sdkStorageBudgetResult())
+			writeSDKJSON(t, w, sdkStorageBudgetResult(req.body["dry_run"] == true))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/storage/budget/runs":
 			writeSDKJSON(t, w, StorageBudgetListResult{
-				Runs:   []StorageBudgetResult{sdkStorageBudgetResult()},
+				Runs:   []StorageBudgetResult{sdkStorageBudgetResult(false)},
 				Count:  1,
 				Offset: atoiDefault(r.URL.Query().Get("offset"), 0),
 				Limit:  atoiDefault(r.URL.Query().Get("limit"), 0),
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/storage/budget/runs/storage-budget-1":
-			writeSDKJSON(t, w, sdkStorageBudgetResult())
+			writeSDKJSON(t, w, sdkStorageBudgetResult(false))
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/storage/prune":
-			writeSDKJSON(t, w, sdkStoragePruneResult())
+			writeSDKJSON(t, w, sdkStoragePruneResult(req.body["dry_run"] == true))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/storage/prune/runs":
 			writeSDKJSON(t, w, StoragePruneListResult{
-				Runs:   []StoragePruneResult{sdkStoragePruneResult()},
+				Runs:   []StoragePruneResult{sdkStoragePruneResult(false)},
 				Count:  1,
 				Offset: atoiDefault(r.URL.Query().Get("offset"), 0),
 				Limit:  atoiDefault(r.URL.Query().Get("limit"), 0),
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/storage/prune/runs/storage-prune-1":
-			writeSDKJSON(t, w, sdkStoragePruneResult())
+			writeSDKJSON(t, w, sdkStoragePruneResult(false))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/operations/runs":
 			writeSDKJSON(t, w, ControllerRunListResult{
 				Runs: []ControllerRunSummary{{
@@ -1218,7 +1225,7 @@ func sdkImagePrepareResult(dryRun bool) ImagePrepareResult {
 	}
 }
 
-func sdkImageGCResult() ImageGCResult {
+func sdkImageGCResult(dryRun bool) ImageGCResult {
 	return ImageGCResult{
 		ID:                   "image-gc-1",
 		Created:              time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC),
@@ -1227,12 +1234,17 @@ func sdkImageGCResult() ImageGCResult {
 		RequiredCapabilities: []string{"ram-overlay", "asif"},
 		OlderThan:            "168h",
 		Apply:                true,
+		DryRun:               dryRun,
 		Assignments:          []Assignment{sdkMaintenanceAssignment("assignment-image-gc-1", "image", "gc", "-yes", "-older-than", "168h")},
-		Skipped:              []ImageGCSkip{{WorkerID: "worker-2", Reason: "cordoned"}},
+		Skipped: []ImageGCSkip{
+			{WorkerID: "worker-2", Reason: "status", Status: "cordoned"},
+			{WorkerID: "worker-3", Reason: "label", MissingLabels: map[string]string{"zone": "desk"}},
+			{WorkerID: "worker-4", Reason: "capability", MissingCapabilities: []string{"asif"}},
+		},
 	}
 }
 
-func sdkLifecyclePolicyResult() LifecyclePolicyResult {
+func sdkLifecyclePolicyResult(dryRun bool) LifecyclePolicyResult {
 	return LifecyclePolicyResult{
 		ID:                   "lifecycle-policy-1",
 		Created:              time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC),
@@ -1242,12 +1254,17 @@ func sdkLifecyclePolicyResult() LifecyclePolicyResult {
 		RequiredCapabilities: []string{"ram-overlay", "asif"},
 		IdleTimeout:          "30m",
 		RunBudget:            100,
+		DryRun:               dryRun,
 		Assignments:          []Assignment{sdkMaintenanceAssignment("assignment-lifecycle-policy-1", "policy", "ci-runner", "set", "-idle-timeout", "30m", "-run-budget", "100")},
-		Skipped:              []LifecyclePolicySkip{{WorkerID: "worker-2", Reason: "cordoned"}},
+		Skipped: []LifecyclePolicySkip{
+			{WorkerID: "worker-2", Reason: "status", Status: "cordoned"},
+			{WorkerID: "worker-3", Reason: "label", MissingLabels: map[string]string{"zone": "desk"}},
+			{WorkerID: "worker-4", Reason: "capability", MissingCapabilities: []string{"asif"}},
+		},
 	}
 }
 
-func sdkStorageBudgetResult() StorageBudgetResult {
+func sdkStorageBudgetResult(dryRun bool) StorageBudgetResult {
 	warn := 70
 	hard := 90
 	return StorageBudgetResult{
@@ -1259,12 +1276,17 @@ func sdkStorageBudgetResult() StorageBudgetResult {
 		Target:               "750GB",
 		WarnPct:              &warn,
 		HardPct:              &hard,
+		DryRun:               dryRun,
 		Assignments:          []Assignment{sdkMaintenanceAssignment("assignment-storage-budget-1", "storage", "budget", "set", "-target", "750GB", "-warn", "70", "-hard", "90")},
-		Skipped:              []StoragePolicySkip{{WorkerID: "worker-2", Reason: "cordoned"}},
+		Skipped: []StoragePolicySkip{
+			{WorkerID: "worker-2", Reason: "status", Status: "cordoned"},
+			{WorkerID: "worker-3", Reason: "label", MissingLabels: map[string]string{"zone": "desk"}},
+			{WorkerID: "worker-4", Reason: "capability", MissingCapabilities: []string{"ram-overlay"}},
+		},
 	}
 }
 
-func sdkStoragePruneResult() StoragePruneResult {
+func sdkStoragePruneResult(dryRun bool) StoragePruneResult {
 	return StoragePruneResult{
 		ID:                   "storage-prune-1",
 		Created:              time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC),
@@ -1274,8 +1296,13 @@ func sdkStoragePruneResult() StoragePruneResult {
 		Category:             "build-scratch",
 		OlderThan:            "48h",
 		Apply:                true,
+		DryRun:               dryRun,
 		Assignments:          []Assignment{sdkMaintenanceAssignment("assignment-storage-prune-1", "storage", "prune", "build-scratch", "-apply", "-older-than", "48h")},
-		Skipped:              []StoragePolicySkip{{WorkerID: "worker-2", Reason: "cordoned"}},
+		Skipped: []StoragePolicySkip{
+			{WorkerID: "worker-2", Reason: "status", Status: "cordoned"},
+			{WorkerID: "worker-3", Reason: "label", MissingLabels: map[string]string{"zone": "desk"}},
+			{WorkerID: "worker-4", Reason: "capability", MissingCapabilities: []string{"ram-overlay"}},
+		},
 	}
 }
 

@@ -450,6 +450,7 @@ type ImageGCRequest struct {
 	RequiredCapabilities []string          `json:"required_capabilities,omitempty"`
 	OlderThan            string            `json:"older_than,omitempty"`
 	Apply                bool              `json:"apply,omitempty"`
+	DryRun               bool              `json:"dry_run,omitempty"`
 }
 
 type ImageGCResult struct {
@@ -460,13 +461,17 @@ type ImageGCResult struct {
 	RequiredCapabilities []string          `json:"required_capabilities,omitempty"`
 	OlderThan            string            `json:"older_than,omitempty"`
 	Apply                bool              `json:"apply"`
+	DryRun               bool              `json:"dry_run,omitempty"`
 	Assignments          []Assignment      `json:"assignments,omitempty"`
 	Skipped              []ImageGCSkip     `json:"skipped,omitempty"`
 }
 
 type ImageGCSkip struct {
-	WorkerID string `json:"worker_id"`
-	Reason   string `json:"reason"`
+	WorkerID            string            `json:"worker_id"`
+	Reason              string            `json:"reason"`
+	Status              string            `json:"status,omitempty"`
+	MissingLabels       map[string]string `json:"missing_labels,omitempty"`
+	MissingCapabilities []string          `json:"missing_capabilities,omitempty"`
 }
 
 type ImageGCListFilter struct {
@@ -494,6 +499,7 @@ type LifecyclePolicyRequest struct {
 	IdleTimeout          string            `json:"idle_timeout,omitempty"`
 	MaxAge               string            `json:"max_age,omitempty"`
 	RunBudget            int               `json:"run_budget,omitempty"`
+	DryRun               bool              `json:"dry_run,omitempty"`
 }
 
 type LifecyclePolicyResult struct {
@@ -507,13 +513,17 @@ type LifecyclePolicyResult struct {
 	IdleTimeout          string                `json:"idle_timeout,omitempty"`
 	MaxAge               string                `json:"max_age,omitempty"`
 	RunBudget            int                   `json:"run_budget,omitempty"`
+	DryRun               bool                  `json:"dry_run,omitempty"`
 	Assignments          []Assignment          `json:"assignments,omitempty"`
 	Skipped              []LifecyclePolicySkip `json:"skipped,omitempty"`
 }
 
 type LifecyclePolicySkip struct {
-	WorkerID string `json:"worker_id"`
-	Reason   string `json:"reason"`
+	WorkerID            string            `json:"worker_id"`
+	Reason              string            `json:"reason"`
+	Status              string            `json:"status,omitempty"`
+	MissingLabels       map[string]string `json:"missing_labels,omitempty"`
+	MissingCapabilities []string          `json:"missing_capabilities,omitempty"`
 }
 
 type LifecyclePolicyListFilter struct {
@@ -540,6 +550,7 @@ type StorageBudgetRequest struct {
 	Target               string            `json:"target,omitempty"`
 	WarnPct              *int              `json:"warn_pct,omitempty"`
 	HardPct              *int              `json:"hard_pct,omitempty"`
+	DryRun               bool              `json:"dry_run,omitempty"`
 }
 
 type StorageBudgetResult struct {
@@ -552,6 +563,7 @@ type StorageBudgetResult struct {
 	Target               string              `json:"target,omitempty"`
 	WarnPct              *int                `json:"warn_pct,omitempty"`
 	HardPct              *int                `json:"hard_pct,omitempty"`
+	DryRun               bool                `json:"dry_run,omitempty"`
 	Assignments          []Assignment        `json:"assignments,omitempty"`
 	Skipped              []StoragePolicySkip `json:"skipped,omitempty"`
 }
@@ -579,6 +591,7 @@ type StoragePruneRequest struct {
 	Category             string            `json:"category,omitempty"`
 	OlderThan            string            `json:"older_than,omitempty"`
 	Apply                bool              `json:"apply,omitempty"`
+	DryRun               bool              `json:"dry_run,omitempty"`
 }
 
 type StoragePruneResult struct {
@@ -590,6 +603,7 @@ type StoragePruneResult struct {
 	Category             string              `json:"category,omitempty"`
 	OlderThan            string              `json:"older_than,omitempty"`
 	Apply                bool                `json:"apply"`
+	DryRun               bool                `json:"dry_run,omitempty"`
 	Assignments          []Assignment        `json:"assignments,omitempty"`
 	Skipped              []StoragePolicySkip `json:"skipped,omitempty"`
 }
@@ -612,8 +626,11 @@ type StoragePruneListResult struct {
 }
 
 type StoragePolicySkip struct {
-	WorkerID string `json:"worker_id"`
-	Reason   string `json:"reason"`
+	WorkerID            string            `json:"worker_id"`
+	Reason              string            `json:"reason"`
+	Status              string            `json:"status,omitempty"`
+	MissingLabels       map[string]string `json:"missing_labels,omitempty"`
+	MissingCapabilities []string          `json:"missing_capabilities,omitempty"`
 }
 
 const (

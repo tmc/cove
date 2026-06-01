@@ -2654,7 +2654,9 @@ func (s *Store) PushImageGCActor(actor string, req ImageGCRequest) (ImageGCResul
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.reconcileLocked(now)
+	if !req.DryRun {
+		s.reconcileLocked(now)
+	}
 	result := ImageGCResult{
 		ID:                   s.nextImageGCIDLocked(now),
 		Created:              now,
@@ -2663,25 +2665,40 @@ func (s *Store) PushImageGCActor(actor string, req ImageGCRequest) (ImageGCResul
 		RequiredCapabilities: capabilities,
 		OlderThan:            olderThan,
 		Apply:                req.Apply,
+		DryRun:               req.DryRun,
 	}
 	for _, host := range s.sortedHostsLocked() {
 		host = s.statusLocked(host)
-		if !labelsMatch(host.Labels, labels) {
+		if missing := missingLabels(host.Labels, labels); len(missing) > 0 {
+			result.Skipped = append(result.Skipped, ImageGCSkip{
+				WorkerID:      host.ID,
+				Reason:        "label",
+				MissingLabels: missing,
+			})
 			continue
 		}
-		if !capabilitiesMatch(host.Capabilities, capabilities) {
+		if missing := missingCapabilities(host.Capabilities, capabilities); len(missing) > 0 {
+			result.Skipped = append(result.Skipped, ImageGCSkip{
+				WorkerID:            host.ID,
+				Reason:              "capability",
+				MissingCapabilities: missing,
+			})
 			continue
 		}
 		if host.Status != "ready" {
-			result.Skipped = append(result.Skipped, ImageGCSkip{WorkerID: host.ID, Reason: host.Status})
+			result.Skipped = append(result.Skipped, ImageGCSkip{WorkerID: host.ID, Reason: "status", Status: host.Status})
 			continue
 		}
 		if s.activeImageGCLocked(host.ID) {
 			result.Skipped = append(result.Skipped, ImageGCSkip{WorkerID: host.ID, Reason: "active"})
 			continue
 		}
+		id := s.nextAssignmentIDLocked(now)
+		if req.DryRun {
+			id = fmt.Sprintf("planned-%s-%d", id, len(result.Assignments)+1)
+		}
 		assignment := Assignment{
-			ID:                   s.nextAssignmentIDLocked(now),
+			ID:                   id,
 			Namespace:            namespace,
 			WorkerID:             host.ID,
 			RequiredLabels:       labels,
@@ -2692,13 +2709,18 @@ func (s *Store) PushImageGCActor(actor string, req ImageGCRequest) (ImageGCResul
 			Created:              now,
 			Updated:              now,
 		}
-		s.assignments[assignment.ID] = assignment
+		if !req.DryRun {
+			s.assignments[assignment.ID] = assignment
+		}
 		result.Assignments = append(result.Assignments, cloneAssignment(assignment))
 	}
 	if len(result.Assignments) == 0 && len(result.Skipped) == 0 {
 		return result, fmt.Errorf("no workers match image gc")
 	}
 	result = normalizeImageGCResult(result)
+	if req.DryRun {
+		return result, nil
+	}
 	s.imageGCRuns = append(s.imageGCRuns, cloneImageGCResult(result))
 	if len(result.Assignments) > 0 {
 		s.appendAuditLocked(now, AuditEvent{
@@ -2793,7 +2815,9 @@ func (s *Store) PushLifecyclePolicyActor(actor string, req LifecyclePolicyReques
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.reconcileLocked(now)
+	if !req.DryRun {
+		s.reconcileLocked(now)
+	}
 	result := LifecyclePolicyResult{
 		ID:                   s.nextLifecyclePolicyIDLocked(now),
 		Created:              now,
@@ -2805,25 +2829,40 @@ func (s *Store) PushLifecyclePolicyActor(actor string, req LifecyclePolicyReques
 		IdleTimeout:          idleTimeout,
 		MaxAge:               maxAge,
 		RunBudget:            req.RunBudget,
+		DryRun:               req.DryRun,
 	}
 	for _, host := range s.sortedHostsLocked() {
 		host = s.statusLocked(host)
-		if !labelsMatch(host.Labels, labels) {
+		if missing := missingLabels(host.Labels, labels); len(missing) > 0 {
+			result.Skipped = append(result.Skipped, LifecyclePolicySkip{
+				WorkerID:      host.ID,
+				Reason:        "label",
+				MissingLabels: missing,
+			})
 			continue
 		}
-		if !capabilitiesMatch(host.Capabilities, capabilities) {
+		if missing := missingCapabilities(host.Capabilities, capabilities); len(missing) > 0 {
+			result.Skipped = append(result.Skipped, LifecyclePolicySkip{
+				WorkerID:            host.ID,
+				Reason:              "capability",
+				MissingCapabilities: missing,
+			})
 			continue
 		}
 		if host.Status != "ready" {
-			result.Skipped = append(result.Skipped, LifecyclePolicySkip{WorkerID: host.ID, Reason: host.Status})
+			result.Skipped = append(result.Skipped, LifecyclePolicySkip{WorkerID: host.ID, Reason: "status", Status: host.Status})
 			continue
 		}
 		if s.activeLifecyclePolicyLocked(host.ID, vmName) {
 			result.Skipped = append(result.Skipped, LifecyclePolicySkip{WorkerID: host.ID, Reason: "active"})
 			continue
 		}
+		id := s.nextAssignmentIDLocked(now)
+		if req.DryRun {
+			id = fmt.Sprintf("planned-%s-%d", id, len(result.Assignments)+1)
+		}
 		assignment := Assignment{
-			ID:                   s.nextAssignmentIDLocked(now),
+			ID:                   id,
 			Namespace:            namespace,
 			WorkerID:             host.ID,
 			RequiredLabels:       labels,
@@ -2834,13 +2873,18 @@ func (s *Store) PushLifecyclePolicyActor(actor string, req LifecyclePolicyReques
 			Created:              now,
 			Updated:              now,
 		}
-		s.assignments[assignment.ID] = assignment
+		if !req.DryRun {
+			s.assignments[assignment.ID] = assignment
+		}
 		result.Assignments = append(result.Assignments, cloneAssignment(assignment))
 	}
 	if len(result.Assignments) == 0 && len(result.Skipped) == 0 {
 		return result, fmt.Errorf("no workers match lifecycle policy")
 	}
 	result = normalizeLifecyclePolicyResult(result)
+	if req.DryRun {
+		return result, nil
+	}
 	s.lifecycleRuns = append(s.lifecycleRuns, cloneLifecyclePolicyResult(result))
 	if len(result.Assignments) > 0 {
 		s.appendAuditLocked(now, AuditEvent{
@@ -2936,7 +2980,9 @@ func (s *Store) PushStorageBudgetActor(actor string, req StorageBudgetRequest) (
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.reconcileLocked(now)
+	if !req.DryRun {
+		s.reconcileLocked(now)
+	}
 	result := StorageBudgetResult{
 		ID:                   s.nextStorageBudgetIDLocked(now),
 		Created:              now,
@@ -2947,25 +2993,40 @@ func (s *Store) PushStorageBudgetActor(actor string, req StorageBudgetRequest) (
 		Target:               target,
 		WarnPct:              warnPct,
 		HardPct:              hardPct,
+		DryRun:               req.DryRun,
 	}
 	for _, host := range s.sortedHostsLocked() {
 		host = s.statusLocked(host)
-		if !labelsMatch(host.Labels, labels) {
+		if missing := missingLabels(host.Labels, labels); len(missing) > 0 {
+			result.Skipped = append(result.Skipped, StoragePolicySkip{
+				WorkerID:      host.ID,
+				Reason:        "label",
+				MissingLabels: missing,
+			})
 			continue
 		}
-		if !capabilitiesMatch(host.Capabilities, capabilities) {
+		if missing := missingCapabilities(host.Capabilities, capabilities); len(missing) > 0 {
+			result.Skipped = append(result.Skipped, StoragePolicySkip{
+				WorkerID:            host.ID,
+				Reason:              "capability",
+				MissingCapabilities: missing,
+			})
 			continue
 		}
 		if host.Status != "ready" {
-			result.Skipped = append(result.Skipped, StoragePolicySkip{WorkerID: host.ID, Reason: host.Status})
+			result.Skipped = append(result.Skipped, StoragePolicySkip{WorkerID: host.ID, Reason: "status", Status: host.Status})
 			continue
 		}
 		if s.activeStorageBudgetLocked(host.ID) {
 			result.Skipped = append(result.Skipped, StoragePolicySkip{WorkerID: host.ID, Reason: "active"})
 			continue
 		}
+		id := s.nextAssignmentIDLocked(now)
+		if req.DryRun {
+			id = fmt.Sprintf("planned-%s-%d", id, len(result.Assignments)+1)
+		}
 		assignment := Assignment{
-			ID:                   s.nextAssignmentIDLocked(now),
+			ID:                   id,
 			Namespace:            namespace,
 			WorkerID:             host.ID,
 			RequiredLabels:       labels,
@@ -2976,13 +3037,18 @@ func (s *Store) PushStorageBudgetActor(actor string, req StorageBudgetRequest) (
 			Created:              now,
 			Updated:              now,
 		}
-		s.assignments[assignment.ID] = assignment
+		if !req.DryRun {
+			s.assignments[assignment.ID] = assignment
+		}
 		result.Assignments = append(result.Assignments, cloneAssignment(assignment))
 	}
 	if len(result.Assignments) == 0 && len(result.Skipped) == 0 {
 		return result, fmt.Errorf("no workers match storage budget")
 	}
 	result = normalizeStorageBudgetResult(result)
+	if req.DryRun {
+		return result, nil
+	}
 	s.storageBudgetRuns = append(s.storageBudgetRuns, cloneStorageBudgetResult(result))
 	if len(result.Assignments) > 0 {
 		s.appendAuditLocked(now, AuditEvent{
@@ -3077,7 +3143,9 @@ func (s *Store) PushStoragePruneActor(actor string, req StoragePruneRequest) (St
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.reconcileLocked(now)
+	if !req.DryRun {
+		s.reconcileLocked(now)
+	}
 	result := StoragePruneResult{
 		ID:                   s.nextStoragePruneIDLocked(now),
 		Created:              now,
@@ -3087,25 +3155,40 @@ func (s *Store) PushStoragePruneActor(actor string, req StoragePruneRequest) (St
 		Category:             category,
 		OlderThan:            olderThan,
 		Apply:                req.Apply,
+		DryRun:               req.DryRun,
 	}
 	for _, host := range s.sortedHostsLocked() {
 		host = s.statusLocked(host)
-		if !labelsMatch(host.Labels, labels) {
+		if missing := missingLabels(host.Labels, labels); len(missing) > 0 {
+			result.Skipped = append(result.Skipped, StoragePolicySkip{
+				WorkerID:      host.ID,
+				Reason:        "label",
+				MissingLabels: missing,
+			})
 			continue
 		}
-		if !capabilitiesMatch(host.Capabilities, capabilities) {
+		if missing := missingCapabilities(host.Capabilities, capabilities); len(missing) > 0 {
+			result.Skipped = append(result.Skipped, StoragePolicySkip{
+				WorkerID:            host.ID,
+				Reason:              "capability",
+				MissingCapabilities: missing,
+			})
 			continue
 		}
 		if host.Status != "ready" {
-			result.Skipped = append(result.Skipped, StoragePolicySkip{WorkerID: host.ID, Reason: host.Status})
+			result.Skipped = append(result.Skipped, StoragePolicySkip{WorkerID: host.ID, Reason: "status", Status: host.Status})
 			continue
 		}
 		if s.activeStoragePruneLocked(host.ID) {
 			result.Skipped = append(result.Skipped, StoragePolicySkip{WorkerID: host.ID, Reason: "active"})
 			continue
 		}
+		id := s.nextAssignmentIDLocked(now)
+		if req.DryRun {
+			id = fmt.Sprintf("planned-%s-%d", id, len(result.Assignments)+1)
+		}
 		assignment := Assignment{
-			ID:                   s.nextAssignmentIDLocked(now),
+			ID:                   id,
 			Namespace:            namespace,
 			WorkerID:             host.ID,
 			RequiredLabels:       labels,
@@ -3116,13 +3199,18 @@ func (s *Store) PushStoragePruneActor(actor string, req StoragePruneRequest) (St
 			Created:              now,
 			Updated:              now,
 		}
-		s.assignments[assignment.ID] = assignment
+		if !req.DryRun {
+			s.assignments[assignment.ID] = assignment
+		}
 		result.Assignments = append(result.Assignments, cloneAssignment(assignment))
 	}
 	if len(result.Assignments) == 0 && len(result.Skipped) == 0 {
 		return result, fmt.Errorf("no workers match storage prune")
 	}
 	result = normalizeStoragePruneResult(result)
+	if req.DryRun {
+		return result, nil
+	}
 	s.storagePruneRuns = append(s.storagePruneRuns, cloneStoragePruneResult(result))
 	if len(result.Assignments) > 0 {
 		s.appendAuditLocked(now, AuditEvent{
@@ -4851,7 +4939,11 @@ func cloneImageGCSkips(in []ImageGCSkip) []ImageGCSkip {
 		return nil
 	}
 	out := make([]ImageGCSkip, len(in))
-	copy(out, in)
+	for i := range in {
+		out[i] = in[i]
+		out[i].MissingLabels = cloneLabels(in[i].MissingLabels)
+		out[i].MissingCapabilities = cloneStrings(in[i].MissingCapabilities)
+	}
 	return out
 }
 
@@ -4883,7 +4975,11 @@ func cloneLifecyclePolicySkips(in []LifecyclePolicySkip) []LifecyclePolicySkip {
 		return nil
 	}
 	out := make([]LifecyclePolicySkip, len(in))
-	copy(out, in)
+	for i := range in {
+		out[i] = in[i]
+		out[i].MissingLabels = cloneLabels(in[i].MissingLabels)
+		out[i].MissingCapabilities = cloneStrings(in[i].MissingCapabilities)
+	}
 	return out
 }
 
@@ -4940,7 +5036,11 @@ func cloneStoragePolicySkips(in []StoragePolicySkip) []StoragePolicySkip {
 		return nil
 	}
 	out := make([]StoragePolicySkip, len(in))
-	copy(out, in)
+	for i := range in {
+		out[i] = in[i]
+		out[i].MissingLabels = cloneLabels(in[i].MissingLabels)
+		out[i].MissingCapabilities = cloneStrings(in[i].MissingCapabilities)
+	}
 	return out
 }
 
@@ -6582,6 +6682,9 @@ func normalizeImageGCResult(result ImageGCResult) ImageGCResult {
 	for i := range result.Skipped {
 		result.Skipped[i].WorkerID = strings.TrimSpace(result.Skipped[i].WorkerID)
 		result.Skipped[i].Reason = strings.TrimSpace(result.Skipped[i].Reason)
+		result.Skipped[i].Status = strings.TrimSpace(result.Skipped[i].Status)
+		result.Skipped[i].MissingLabels = cloneLabels(result.Skipped[i].MissingLabels)
+		result.Skipped[i].MissingCapabilities = sortedUniqueStrings(result.Skipped[i].MissingCapabilities)
 	}
 	return result
 }
@@ -6605,6 +6708,9 @@ func normalizeLifecyclePolicyResult(result LifecyclePolicyResult) LifecyclePolic
 	for i := range result.Skipped {
 		result.Skipped[i].WorkerID = strings.TrimSpace(result.Skipped[i].WorkerID)
 		result.Skipped[i].Reason = strings.TrimSpace(result.Skipped[i].Reason)
+		result.Skipped[i].Status = strings.TrimSpace(result.Skipped[i].Status)
+		result.Skipped[i].MissingLabels = cloneLabels(result.Skipped[i].MissingLabels)
+		result.Skipped[i].MissingCapabilities = sortedUniqueStrings(result.Skipped[i].MissingCapabilities)
 	}
 	return result
 }
@@ -6631,6 +6737,9 @@ func normalizeStorageBudgetResult(result StorageBudgetResult) StorageBudgetResul
 	for i := range result.Skipped {
 		result.Skipped[i].WorkerID = strings.TrimSpace(result.Skipped[i].WorkerID)
 		result.Skipped[i].Reason = strings.TrimSpace(result.Skipped[i].Reason)
+		result.Skipped[i].Status = strings.TrimSpace(result.Skipped[i].Status)
+		result.Skipped[i].MissingLabels = cloneLabels(result.Skipped[i].MissingLabels)
+		result.Skipped[i].MissingCapabilities = sortedUniqueStrings(result.Skipped[i].MissingCapabilities)
 	}
 	return result
 }
@@ -6650,6 +6759,9 @@ func normalizeStoragePruneResult(result StoragePruneResult) StoragePruneResult {
 	for i := range result.Skipped {
 		result.Skipped[i].WorkerID = strings.TrimSpace(result.Skipped[i].WorkerID)
 		result.Skipped[i].Reason = strings.TrimSpace(result.Skipped[i].Reason)
+		result.Skipped[i].Status = strings.TrimSpace(result.Skipped[i].Status)
+		result.Skipped[i].MissingLabels = cloneLabels(result.Skipped[i].MissingLabels)
+		result.Skipped[i].MissingCapabilities = sortedUniqueStrings(result.Skipped[i].MissingCapabilities)
 	}
 	return result
 }

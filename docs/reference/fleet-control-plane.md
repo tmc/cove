@@ -413,6 +413,9 @@ Image GC endpoint:
 curl -X POST http://127.0.0.1:9758/v1/images/gc \
   -H 'content-type: application/json' \
   -d '{"required_labels":{"zone":"desk"},"required_capabilities":["ram-overlay"],"older_than":"168h","apply":true}'
+curl -X POST http://127.0.0.1:9758/v1/images/gc \
+  -H 'content-type: application/json' \
+  -d '{"required_labels":{"zone":"desk"},"required_capabilities":["ram-overlay"],"older_than":"168h","apply":true,"dry_run":true}'
 curl 'http://127.0.0.1:9758/v1/images/gc/runs?older_than=168h&apply=true&limit=20'
 curl http://127.0.0.1:9758/v1/images/gc/runs/image-gc-...
 ```
@@ -422,17 +425,19 @@ worker that matches `required_labels` and `required_capabilities`. `apply`
 defaults to false, which queues `cove image gc -dry-run`; set `apply:true` to
 queue `cove image gc -yes`.
 `older_than` is an optional Go duration string passed through as `-older-than`.
-Workers that are cordoned or stale, or already have an active image-GC
-assignment, are returned in `skipped`. After a successful image-GC assignment,
-`coved` sends an extra heartbeat so the controller's image refs reflect the
-post-GC store.
+The `skipped` list includes structured reasons for status, label, capability,
+or active image-GC mismatches; status skips include `status`, label skips
+include `missing_labels`, and capability skips include
+`missing_capabilities`. After a successful image-GC assignment, `coved` sends
+an extra heartbeat so the controller's image refs reflect the post-GC store.
 Each successful image-GC response is persisted with `id`, `created`, label
 selector, required-capability selector, `older_than`, and `apply`, including
-skipped-only no-op runs. `GET
-/v1/images/gc/runs` returns paginated GC history with `older_than`, `apply`,
-`offset`, and `limit` filters; scoped service-account tokens only see runs in
-their namespace. The `GET /v1/images/gc/runs/{id}` endpoint returns one
-retained GC result or `404` across namespace boundaries.
+skipped-only no-op runs. Set `dry_run:true` to return planned assignments and
+skipped workers without creating assignments, audit events, or retained GC
+history. `GET /v1/images/gc/runs` returns paginated GC history with
+`older_than`, `apply`, `offset`, and `limit` filters; scoped service-account
+tokens only see runs in their namespace. The `GET /v1/images/gc/runs/{id}`
+endpoint returns one retained GC result or `404` across namespace boundaries.
 
 Lifecycle policy endpoint:
 
@@ -443,6 +448,9 @@ curl -X POST http://127.0.0.1:9758/v1/policies/lifecycle \
 curl -X POST http://127.0.0.1:9758/v1/policies/lifecycle \
   -H 'content-type: application/json' \
   -d '{"vm_name":"ci-runner","required_labels":{"zone":"desk"},"required_capabilities":["ram-overlay"],"clear":true}'
+curl -X POST http://127.0.0.1:9758/v1/policies/lifecycle \
+  -H 'content-type: application/json' \
+  -d '{"vm_name":"ci-runner","required_labels":{"zone":"desk"},"required_capabilities":["ram-overlay"],"idle_timeout":"30m","dry_run":true}'
 curl 'http://127.0.0.1:9758/v1/policies/lifecycle/runs?vm_name=ci-runner&clear=false&limit=20'
 curl http://127.0.0.1:9758/v1/policies/lifecycle/runs/lifecycle-policy-...
 ```
@@ -452,15 +460,19 @@ each non-cordoned ready worker that matches `required_labels` and
 `required_capabilities`. The controller passes `idle_timeout` and `max_age` as
 Go duration strings and `run_budget` as the guest exec count. `clear:true`
 queues `cove policy <vm> clear` and cannot be combined with thresholds. Workers
-that are cordoned or stale, or already have an active lifecycle-policy
-assignment for the same VM, are returned in `skipped`.
+that are excluded by status, label, capability, or an active lifecycle-policy
+assignment for the same VM are returned in `skipped` with structured status,
+`missing_labels`, or `missing_capabilities` details when applicable.
 Each successful lifecycle-policy response is persisted with `id`, `created`,
 the VM name, label selector, required-capability selector, clear/set mode,
-thresholds, and queued assignment or skip details, including skipped-only no-op runs. `GET
-/v1/policies/lifecycle/runs` returns paginated policy history with `vm_name`,
-`clear`, `offset`, and `limit` filters; scoped service-account tokens only see
-runs in their namespace. The `GET /v1/policies/lifecycle/runs/{id}` endpoint
-returns one retained policy result or `404` across namespace boundaries.
+thresholds, and queued assignment or skip details, including skipped-only
+no-op runs. Set `dry_run:true` to return planned assignments and skipped
+workers without creating assignments, audit events, or retained policy
+history. `GET /v1/policies/lifecycle/runs` returns paginated policy history
+with `vm_name`, `clear`, `offset`, and `limit` filters; scoped service-account
+tokens only see runs in their namespace. The `GET
+/v1/policies/lifecycle/runs/{id}` endpoint returns one retained policy result
+or `404` across namespace boundaries.
 
 Storage policy endpoints:
 
@@ -474,6 +486,9 @@ curl -X POST http://127.0.0.1:9758/v1/storage/budget \
 curl -X POST http://127.0.0.1:9758/v1/storage/prune \
   -H 'content-type: application/json' \
   -d '{"required_labels":{"zone":"desk"},"required_capabilities":["ram-overlay"],"older_than":"168h","apply":true}'
+curl -X POST http://127.0.0.1:9758/v1/storage/prune \
+  -H 'content-type: application/json' \
+  -d '{"required_labels":{"zone":"desk"},"required_capabilities":["ram-overlay"],"older_than":"168h","apply":true,"dry_run":true}'
 curl 'http://127.0.0.1:9758/v1/storage/budget/runs?target=750GB&clear=false&limit=20'
 curl http://127.0.0.1:9758/v1/storage/budget/runs/storage-budget-...
 curl 'http://127.0.0.1:9758/v1/storage/prune/runs?older_than=168h&apply=true&limit=20'
@@ -489,22 +504,30 @@ Storage prune push creates one `cove storage prune` assignment per matching
 ready worker. It is dry-run by default; `apply:true` adds `-apply`, and
 `older_than` is an optional Go duration string passed through as `-older-than`.
 Set `category:"build-scratch"` to target `cove storage prune build-scratch`.
-Workers that are cordoned or stale, or already have an active storage
-budget/prune assignment for the same operation, are returned in `skipped`.
+Workers that are excluded by status, label, capability, or an active storage
+budget/prune assignment for the same operation are returned in `skipped` with
+structured status, `missing_labels`, or `missing_capabilities` details when
+applicable.
 Each successful storage budget response is persisted with `id`, `created`,
 label selector, required-capability selector, clear/set mode, target, warn and
-hard percentages, and queued assignment or skip details, including skipped-only no-op runs. `GET
-/v1/storage/budget/runs` returns paginated budget history with `target`,
-`clear`, `offset`, and `limit` filters; scoped service-account tokens only see
-runs in their namespace. The `GET /v1/storage/budget/runs/{id}` endpoint
-returns one retained budget result or `404` across namespace boundaries.
+hard percentages, and queued assignment or skip details, including
+skipped-only no-op runs. Set `dry_run:true` to return planned budget
+assignments and skipped workers without creating assignments, audit events, or
+retained budget history. `GET /v1/storage/budget/runs` returns paginated
+budget history with `target`, `clear`, `offset`, and `limit` filters; scoped
+service-account tokens only see runs in their namespace. The `GET
+/v1/storage/budget/runs/{id}` endpoint returns one retained budget result or
+`404` across namespace boundaries.
 Each successful storage prune response is persisted with `id`, `created`, label
 selector, required-capability selector, category, `older_than`, `apply`, and
-queued assignment or skip details, including skipped-only no-op runs. `GET /v1/storage/prune/runs`
-returns paginated prune history with `category`, `older_than`, `apply`,
-`offset`, and `limit` filters; scoped service-account tokens only see runs in
-their namespace. The `GET /v1/storage/prune/runs/{id}` endpoint returns one
-retained prune result or `404` across namespace boundaries.
+queued assignment or skip details, including skipped-only no-op runs. Set
+`dry_run:true` to return planned prune assignments and skipped workers without
+creating assignments, audit events, or retained prune history. `GET
+/v1/storage/prune/runs` returns paginated prune history with `category`,
+`older_than`, `apply`, `offset`, and `limit` filters; scoped service-account
+tokens only see runs in their namespace. The `GET
+/v1/storage/prune/runs/{id}` endpoint returns one retained prune result or
+`404` across namespace boundaries.
 
 Placement planning endpoint:
 
@@ -748,7 +771,9 @@ history, prewarm RAM-overlay slots, claim a ready slot for a guest command,
 read pool events, and delete the pool through the same fleet credentials.
 Maintenance helpers include `PushImageGC`, `PushLifecyclePolicy`,
 `PushStorageBudget`, `PushStoragePrune`, their list/get run companions, and
-`ListControllerRuns` for the aggregate operations timeline.
+`ListControllerRuns` for the aggregate operations timeline. Pass `DryRun` to
+maintenance pushes to inspect planned assignments and structured
+skipped-worker diagnostics without mutating the controller.
 
 Go SDK example:
 
@@ -779,6 +804,7 @@ prune, err := agentsandbox.PushStoragePrune(ctx, agentsandbox.StoragePruneOption
 	Category:             "build-scratch",
 	OlderThan:            "168h",
 	Apply:                true,
+	DryRun:               true,
 })
 if err != nil {
 	log.Fatal(err)
