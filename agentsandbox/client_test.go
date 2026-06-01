@@ -685,6 +685,76 @@ func TestCloudClientAudit(t *testing.T) {
 	}
 }
 
+func TestCloudClientServiceAccounts(t *testing.T) {
+	server := newSDKFleetServer(t)
+	ctx := context.Background()
+	page, err := ListServiceAccounts(ctx, ServiceAccountListOptions{
+		FleetURL:  server.URL,
+		APIKey:    "secret",
+		Namespace: "team-a",
+		Timeout:   time.Second,
+	})
+	if err != nil {
+		t.Fatalf("ListServiceAccounts: %v", err)
+	}
+	if page.Count != 1 || len(page.ServiceAccounts) != 1 || page.ServiceAccounts[0].Name != "ci" {
+		t.Fatalf("ListServiceAccounts = %+v, want ci account page", page)
+	}
+	upsert, err := UpsertServiceAccount(ctx, ServiceAccountUpsertOptions{
+		FleetURL:  server.URL,
+		APIKey:    "secret",
+		Name:      "ci",
+		Namespace: "team-a",
+		Role:      "operator",
+		Token:     "next-secret",
+		Timeout:   time.Second,
+	})
+	if err != nil {
+		t.Fatalf("UpsertServiceAccount: %v", err)
+	}
+	if upsert.ServiceAccount.Name != "ci" || upsert.ServiceAccount.Namespace != "team-a" || upsert.ServiceAccount.Role != "operator" {
+		t.Fatalf("UpsertServiceAccount = %+v, want team-a operator", upsert)
+	}
+	deleted, err := DeleteServiceAccount(ctx, ServiceAccountDeleteOptions{
+		FleetURL: server.URL,
+		APIKey:   "secret",
+		Name:     "ci",
+		Timeout:  time.Second,
+	})
+	if err != nil {
+		t.Fatalf("DeleteServiceAccount: %v", err)
+	}
+	if deleted.ServiceAccount.Name != "ci" {
+		t.Fatalf("DeleteServiceAccount = %+v, want ci account", deleted)
+	}
+	if len(server.requests) != 3 {
+		t.Fatalf("requests = %+v, want 3", server.requests)
+	}
+	for _, req := range server.requests {
+		if req.authorization != "Bearer secret" {
+			t.Fatalf("authorization for %s = %q, want bearer token", req.path, req.authorization)
+		}
+	}
+	if paths := []string{server.requests[0].path, server.requests[1].path, server.requests[2].path}; !equalStringSlices(paths, []string{"/v1/service-accounts", "/v1/service-accounts", "/v1/service-accounts/ci"}) {
+		t.Fatalf("paths = %+v", paths)
+	}
+	if query := server.requests[0].query; query.Get("namespace") != "team-a" {
+		t.Fatalf("service account query = %q", query.Encode())
+	}
+	if body := server.requests[1].body; body["name"] != "ci" || body["namespace"] != "team-a" || body["role"] != "operator" || body["token"] != "next-secret" {
+		t.Fatalf("service account body = %+v", body)
+	}
+	if _, err := UpsertServiceAccount(ctx, ServiceAccountUpsertOptions{FleetURL: "https://fleet.example", APIKey: "secret", Token: "x"}); err == nil || !strings.Contains(err.Error(), "service account name required") {
+		t.Fatalf("missing service account name err = %v, want validation error", err)
+	}
+	if _, err := UpsertServiceAccount(ctx, ServiceAccountUpsertOptions{FleetURL: "https://fleet.example", APIKey: "secret", Name: "ci"}); err == nil || !strings.Contains(err.Error(), "service account token required") {
+		t.Fatalf("missing service account token err = %v, want validation error", err)
+	}
+	if _, err := DeleteServiceAccount(ctx, ServiceAccountDeleteOptions{FleetURL: "https://fleet.example", APIKey: "secret"}); err == nil || !strings.Contains(err.Error(), "service account name required") {
+		t.Fatalf("missing service account delete name err = %v, want validation error", err)
+	}
+}
+
 func TestCloudClientScopedObservability(t *testing.T) {
 	server := newSDKFleetServer(t)
 	ctx := context.Background()
@@ -1721,6 +1791,18 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 			writeSDKJSON(t, w, sdkAssignmentCancel(req.body))
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/assignments/assignment-1/retry":
 			writeSDKJSON(t, w, sdkAssignmentRetry(req.body))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/service-accounts":
+			writeSDKJSON(t, w, ServiceAccountListResult{ServiceAccounts: []ServiceAccount{sdkServiceAccount()}})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/service-accounts":
+			writeSDKJSON(t, w, ServiceAccountResult{ServiceAccount: ServiceAccount{
+				Name:      stringValue(req.body["name"]),
+				Namespace: stringValue(req.body["namespace"]),
+				Role:      stringValue(req.body["role"]),
+				Created:   time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC),
+				Updated:   time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC),
+			}})
+		case r.Method == http.MethodDelete && r.URL.Path == "/v1/service-accounts/ci":
+			writeSDKJSON(t, w, ServiceAccountResult{ServiceAccount: sdkServiceAccount()})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/workers/worker-1/cordon":
 			record := sdkHostRecord()
 			record.Cordoned = true
@@ -1940,6 +2022,16 @@ func sdkPlacementPlan() PlacementPlan {
 		Limit:                3,
 		Candidates:           []PlacementCandidate{{Rank: 1, WorkerID: "worker-1", Load: 1, MaxVMs: 4, RequestedVMs: 1, HasImage: true}},
 		Skipped:              []PlacementSkip{{WorkerID: "worker-2", Reason: "capability", MissingCapabilities: []string{"asif"}}},
+	}
+}
+
+func sdkServiceAccount() ServiceAccount {
+	return ServiceAccount{
+		Name:      "ci",
+		Namespace: "team-a",
+		Role:      "operator",
+		Created:   time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC),
+		Updated:   time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC),
 	}
 }
 

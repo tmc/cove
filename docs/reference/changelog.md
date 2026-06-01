@@ -9,6 +9,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 
 ### Added
 - The public Go `agentsandbox` package and OpenAI Agents Python adapter now
+  expose hosted service-account list/upsert/delete helpers, so SDK operators
+  can bootstrap and rotate namespace-scoped controller bearer tokens.
+- The public Go `agentsandbox` package and OpenAI Agents Python adapter now
   expose scoped hosted observability for worker sandboxes plus worker and
   assignment events, reports, and metering.
 - The public Go `agentsandbox` package and OpenAI Agents Python adapter now

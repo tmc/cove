@@ -766,14 +766,14 @@ same SDKs can dry-run hosted placement before creating a sandbox:
 the controller's feasible candidates and skipped-worker reasons. They also
 expose retained placement-plan history, image-preparation, maintenance fan-out,
 the operations dashboard summary, worker/assignment inventory, scoped
-worker/assignment observability, retained controller-run history, and fork
-warm-pool lifecycle controls, so
+worker/assignment observability, retained controller-run history, service-account
+management, and fork warm-pool lifecycle controls, so
 hosted agent clients can pre-stage exact images, push image GC/lifecycle/storage
 policy work, inspect fleet pressure, enumerate current work, drill into
-per-worker and per-assignment timelines, verify audit-chain continuity, inspect
-operations history, prewarm RAM-overlay slots, claim a ready slot for a guest
-command, read pool events, and delete the pool through the same fleet
-credentials.
+per-worker and per-assignment timelines, verify audit-chain continuity, rotate
+scoped controller credentials, inspect operations history, prewarm RAM-overlay
+slots, claim a ready slot for a guest command, read pool events, and delete the
+pool through the same fleet credentials.
 Placement helpers include `Plan`, `ListPlacementPlans`, and `GetPlacementPlan`
 for read-only admission checks plus the retained placement history that records
 feasible candidates and skipped-worker diagnostics.
@@ -789,7 +789,9 @@ lifecycle helpers include `CordonWorker`,
 `DrainWorker`, and `DecommissionWorker`, so hosted operators can plan or apply
 maintenance without dropping to raw HTTP. Audit helpers include
 `ListAuditEvents` for the filtered hash-chained feed and `VerifyAuditLog` for
-global chain verification. Scoped observability helpers include
+global chain verification. Identity helpers include `ListServiceAccounts`,
+`UpsertServiceAccount`, and `DeleteServiceAccount` for scoped bearer-token
+bootstrap and rotation. Scoped observability helpers include
 `ListWorkerSandboxes`, `ListWorkerEvents`, `ListWorkerReports`,
 `GetWorkerMetering`, `ListAssignmentEvents`, `ListAssignmentReports`, and
 `GetAssignmentMetering`. Pass `DryRun` to maintenance pushes to inspect planned
@@ -979,6 +981,27 @@ if err != nil {
 	log.Fatal(err)
 }
 log.Printf("audit events=%d chain_ok=%t", audit.Count, verify.OK)
+
+accounts, err := agentsandbox.ListServiceAccounts(ctx, agentsandbox.ServiceAccountListOptions{
+	FleetURL:  "https://fleet.internal.example",
+	APIKey:    os.Getenv("COVE_API_KEY"),
+	Namespace: "team-a",
+})
+if err != nil {
+	log.Fatal(err)
+}
+rotated, err := agentsandbox.UpsertServiceAccount(ctx, agentsandbox.ServiceAccountUpsertOptions{
+	FleetURL:  "https://fleet.internal.example",
+	APIKey:    os.Getenv("COVE_API_KEY"),
+	Name:      "ci",
+	Namespace: "team-a",
+	Role:      "operator",
+	Token:     os.Getenv("COVE_CI_TOKEN"),
+})
+if err != nil {
+	log.Fatal(err)
+}
+log.Printf("service accounts=%d rotated=%s", accounts.Count, rotated.ServiceAccount.Name)
 
 pool, err := agentsandbox.EnsureWarmPool(ctx, agentsandbox.WarmPoolOptions{
 	FleetURL:             "https://fleet.internal.example",

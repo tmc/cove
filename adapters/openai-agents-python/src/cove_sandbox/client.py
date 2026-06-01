@@ -1048,6 +1048,79 @@ class CoveFleetClient:
         return _normalize_audit_verify(result, "GET /v1/audit/verify")
 
     @classmethod
+    def list_service_accounts(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        seed = cls(
+            sandbox_id="service-accounts",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        result = seed._request(
+            "GET",
+            _query_path("/v1/service-accounts", {"namespace": namespace or ""}),
+            timeout=timeout,
+        )
+        return _normalize_service_account_page(result, "GET /v1/service-accounts")
+
+    @classmethod
+    def upsert_service_account(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        name: str,
+        token: str,
+        namespace: str | None = None,
+        role: str = "",
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        name = name.strip()
+        token = token.strip()
+        if not name:
+            raise ValueError("service account name is required")
+        if not token:
+            raise ValueError("service account token is required")
+        seed = cls(
+            sandbox_id="service-account",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        body: dict[str, object] = {"name": name, "token": token}
+        if namespace:
+            body["namespace"] = namespace
+        role = role.strip()
+        if role:
+            body["role"] = role
+        result = seed._request("POST", "/v1/service-accounts", body, timeout=timeout)
+        return _normalize_service_account_result(result, "POST /v1/service-accounts")
+
+    @classmethod
+    def delete_service_account(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        name: str,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        name = name.strip()
+        if not name:
+            raise ValueError("service account name is required")
+        seed = cls(sandbox_id="service-account", fleet_url=fleet_url, api_key=api_key, timeout=timeout)
+        result = seed._request("DELETE", _service_account_path(name), timeout=timeout)
+        return _normalize_service_account_result(result, "DELETE /v1/service-accounts/{name}")
+
+    @classmethod
     def list_workers(
         cls,
         *,
@@ -2356,6 +2429,22 @@ def _normalize_audit_verify(data: dict[str, Any], endpoint: str) -> dict[str, An
     return result
 
 
+def _normalize_service_account_page(data: dict[str, Any], endpoint: str) -> dict[str, Any]:
+    page = dict(data)
+    _normalize_dict_list(page, "service_accounts", endpoint)
+    page["count"] = int(page.get("count") or len(page["service_accounts"]))
+    return page
+
+
+def _normalize_service_account_result(data: dict[str, Any], endpoint: str) -> dict[str, Any]:
+    result = dict(data)
+    account = result.get("service_account") or {}
+    if not isinstance(account, dict):
+        raise CoveError(f"{endpoint}: expected service_account object")
+    result["service_account"] = dict(account)
+    return result
+
+
 def _normalize_report_page(data: dict[str, Any], endpoint: str) -> dict[str, Any]:
     page = dict(data)
     _normalize_dict_list(page, "reports", endpoint)
@@ -2438,6 +2527,10 @@ def _warm_pool_path(name: str, action: str = "") -> str:
 
 def _placement_plan_path(plan_id: str) -> str:
     return "/v1/placements/plans/" + urllib.parse.quote(plan_id, safe="")
+
+
+def _service_account_path(name: str) -> str:
+    return "/v1/service-accounts/" + urllib.parse.quote(name, safe="")
 
 
 def _image_preparation_path(preparation_id: str) -> str:

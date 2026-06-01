@@ -613,6 +613,50 @@ type AuditChainIssue struct {
 	Reason string `json:"reason"`
 }
 
+type ServiceAccount struct {
+	Name      string    `json:"name"`
+	Namespace string    `json:"namespace,omitempty"`
+	Role      string    `json:"role,omitempty"`
+	Created   time.Time `json:"created,omitempty"`
+	Updated   time.Time `json:"updated,omitempty"`
+}
+
+type ServiceAccountListOptions struct {
+	FleetURL  string
+	APIKey    string
+	Namespace string
+	Timeout   time.Duration
+	HTTP      *http.Client
+}
+
+type ServiceAccountUpsertOptions struct {
+	FleetURL  string
+	APIKey    string
+	Name      string
+	Namespace string
+	Role      string
+	Token     string
+	Timeout   time.Duration
+	HTTP      *http.Client
+}
+
+type ServiceAccountDeleteOptions struct {
+	FleetURL string
+	APIKey   string
+	Name     string
+	Timeout  time.Duration
+	HTTP     *http.Client
+}
+
+type ServiceAccountListResult struct {
+	ServiceAccounts []ServiceAccount `json:"service_accounts"`
+	Count           int              `json:"count,omitempty"`
+}
+
+type ServiceAccountResult struct {
+	ServiceAccount ServiceAccount `json:"service_account"`
+}
+
 type WorkerImage struct {
 	Ref                  string `json:"ref"`
 	SourceManifestDigest string `json:"source_manifest_digest,omitempty"`
@@ -2013,6 +2057,64 @@ func VerifyAuditLog(ctx context.Context, opts AuditVerifyOptions) (AuditVerifyRe
 	var result AuditVerifyResult
 	if err := c.request(ctx, http.MethodGet, "/v1/audit/verify", nil, &result, c.timeout); err != nil {
 		return AuditVerifyResult{}, err
+	}
+	return result, nil
+}
+
+func ListServiceAccounts(ctx context.Context, opts ServiceAccountListOptions) (ServiceAccountListResult, error) {
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "service-accounts")
+	if err != nil {
+		return ServiceAccountListResult{}, err
+	}
+	var result ServiceAccountListResult
+	if err := c.request(ctx, http.MethodGet, c.queryPath("/v1/service-accounts", map[string]string{"namespace": opts.Namespace}), nil, &result, c.timeout); err != nil {
+		return ServiceAccountListResult{}, err
+	}
+	if result.Count == 0 && len(result.ServiceAccounts) > 0 {
+		result.Count = len(result.ServiceAccounts)
+	}
+	return result, nil
+}
+
+func UpsertServiceAccount(ctx context.Context, opts ServiceAccountUpsertOptions) (ServiceAccountResult, error) {
+	name := strings.TrimSpace(opts.Name)
+	if name == "" {
+		return ServiceAccountResult{}, errors.New("agentsandbox: service account name required")
+	}
+	token := strings.TrimSpace(opts.Token)
+	if token == "" {
+		return ServiceAccountResult{}, errors.New("agentsandbox: service account token required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "service-account")
+	if err != nil {
+		return ServiceAccountResult{}, err
+	}
+	body := map[string]any{"name": name, "token": token}
+	if ns := strings.TrimSpace(opts.Namespace); ns != "" {
+		body["namespace"] = ns
+	}
+	if role := strings.TrimSpace(opts.Role); role != "" {
+		body["role"] = role
+	}
+	var result ServiceAccountResult
+	if err := c.request(ctx, http.MethodPost, "/v1/service-accounts", body, &result, c.timeout); err != nil {
+		return ServiceAccountResult{}, err
+	}
+	return result, nil
+}
+
+func DeleteServiceAccount(ctx context.Context, opts ServiceAccountDeleteOptions) (ServiceAccountResult, error) {
+	name := strings.TrimSpace(opts.Name)
+	if name == "" {
+		return ServiceAccountResult{}, errors.New("agentsandbox: service account name required")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, "", opts.Timeout, opts.HTTP, "service-account")
+	if err != nil {
+		return ServiceAccountResult{}, err
+	}
+	var result ServiceAccountResult
+	if err := c.request(ctx, http.MethodDelete, serviceAccountPath(name), nil, &result, c.timeout); err != nil {
+		return ServiceAccountResult{}, err
 	}
 	return result, nil
 }
@@ -3496,6 +3598,10 @@ func warmPoolPath(name, action string) string {
 
 func placementPlanPath(id string) string {
 	return "/v1/placements/plans/" + url.PathEscape(id)
+}
+
+func serviceAccountPath(name string) string {
+	return "/v1/service-accounts/" + url.PathEscape(name)
 }
 
 func imagePreparationPath(id string) string {

@@ -607,6 +607,59 @@ def test_fleet_client_audit() -> None:
         server.stop()
 
 
+def test_fleet_client_service_accounts() -> None:
+    server = _FleetHTTPServer()
+    server.start()
+    try:
+        page = CoveFleetClient.list_service_accounts(
+            fleet_url=server.url,
+            api_key="secret",
+            namespace="team-a",
+        )
+        assert page["count"] == 1
+        assert page["service_accounts"][0]["name"] == "ci"
+        assert page["service_accounts"][0]["role"] == "operator"
+
+        upsert = CoveFleetClient.upsert_service_account(
+            fleet_url=server.url,
+            api_key="secret",
+            name="ci",
+            namespace="team-a",
+            role="operator",
+            token="next-secret",
+        )
+        assert upsert["service_account"]["name"] == "ci"
+        assert upsert["service_account"]["namespace"] == "team-a"
+        assert upsert["service_account"]["role"] == "operator"
+
+        deleted = CoveFleetClient.delete_service_account(
+            fleet_url=server.url,
+            api_key="secret",
+            name="ci",
+        )
+        assert deleted["service_account"]["name"] == "ci"
+
+        paths = [request["path"] for request in server.requests[-3:]]
+        assert paths == ["/v1/service-accounts", "/v1/service-accounts", "/v1/service-accounts/ci"]
+        assert server.requests[-3]["query"]["namespace"] == ["team-a"]
+        assert server.requests[-2]["body"] == {
+            "name": "ci",
+            "namespace": "team-a",
+            "role": "operator",
+            "token": "next-secret",
+        }
+        assert all(request["authorization"] == "Bearer secret" for request in server.requests[-3:])
+
+        with pytest.raises(ValueError, match="service account name is required"):
+            CoveFleetClient.upsert_service_account(fleet_url="https://fleet.example", api_key="secret", name="", token="x")
+        with pytest.raises(ValueError, match="service account token is required"):
+            CoveFleetClient.upsert_service_account(fleet_url="https://fleet.example", api_key="secret", name="ci", token="")
+        with pytest.raises(ValueError, match="service account name is required"):
+            CoveFleetClient.delete_service_account(fleet_url="https://fleet.example", api_key="secret", name="")
+    finally:
+        server.stop()
+
+
 def test_fleet_client_scoped_observability() -> None:
     server = _FleetHTTPServer()
     server.start()
@@ -1575,6 +1628,16 @@ def _audit_event() -> dict[str, object]:
     }
 
 
+def _service_account() -> dict[str, object]:
+    return {
+        "name": "ci",
+        "namespace": "team-a",
+        "role": "operator",
+        "created": "2026-05-31T10:00:00Z",
+        "updated": "2026-05-31T10:00:00Z",
+    }
+
+
 def _assignment_report() -> dict[str, object]:
     return {
         "namespace": "team-a",
@@ -1993,6 +2056,9 @@ class _FleetHTTPServer:
                 if path == "/v1/audit/verify":
                     self._write({"ok": True, "events": 7, "head_hash": "hash-1"})
                     return
+                if path == "/v1/service-accounts":
+                    self._write({"service_accounts": [_service_account()]})
+                    return
                 if path == "/v1/workers":
                     self._write(
                         {
@@ -2228,6 +2294,19 @@ class _FleetHTTPServer:
                 if path == "/v1/assignments/assignment-1/retry":
                     self._write(_assignment_retry(body))
                     return
+                if path == "/v1/service-accounts":
+                    self._write(
+                        {
+                            "service_account": {
+                                "name": str(body.get("name") or ""),
+                                "namespace": str(body.get("namespace") or ""),
+                                "role": str(body.get("role") or ""),
+                                "created": "2026-05-31T10:00:00Z",
+                                "updated": "2026-05-31T10:00:00Z",
+                            }
+                        }
+                    )
+                    return
                 if path == "/v1/workers/worker-1/cordon":
                     self._write(_host_record(cordoned=True, cordon_reason=str(body.get("reason") or "")))
                     return
@@ -2328,6 +2407,9 @@ class _FleetHTTPServer:
                             ],
                         }
                     )
+                    return
+                if path == "/v1/service-accounts/ci":
+                    self._write({"service_account": _service_account()})
                     return
                 self.send_error(404)
 
