@@ -2571,7 +2571,11 @@ func TestStoreSchedulesBinPackWithAntiAffinity(t *testing.T) {
 }
 
 func TestStorePlansPlacementCandidates(t *testing.T) {
-	store := NewMemoryStore(time.Minute)
+	path := filepath.Join(t.TempDir(), "fleet.json")
+	store, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, hb := range []WorkerHeartbeat{
 		{ID: "dense", Labels: map[string]string{"zone": "desk"}, ImageRefs: []string{"macos-runner:latest"}, Capacity: Capacity{VMs: 3, MaxVMs: 5}},
 		{ID: "open", Labels: map[string]string{"zone": "desk"}, Capacity: Capacity{VMs: 2, MaxVMs: 5}},
@@ -2603,6 +2607,9 @@ func TestStorePlansPlacementCandidates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if plan.ID == "" || plan.Created.IsZero() || plan.Limit != 2 {
+		t.Fatalf("plan identity = %+v, want persisted id/created/limit", plan)
+	}
 	if plan.Policy != PolicyBinPack || plan.ImageRef != "macos-runner:latest" || plan.Resources.VMs != 1 {
 		t.Fatalf("plan = %+v", plan)
 	}
@@ -2614,6 +2621,18 @@ func TestStorePlansPlacementCandidates(t *testing.T) {
 	}
 	if got := plan.Candidates[1]; got.Rank != 2 || got.WorkerID != "dense" || got.Load != 4 || got.RequestedVMs != 1 || got.AntiAffinityLoad != 1 || !got.HasImage {
 		t.Fatalf("second candidate = %+v, want dense", got)
+	}
+	page := store.ListPlacementPlansPage(PlacementPlanListFilter{Policy: PolicyBinPack, ImageRef: "macos-runner:latest", Limit: 1})
+	if page.Count != 1 || len(page.Plans) != 1 || page.Plans[0].ID != plan.ID {
+		t.Fatalf("placement plan page = %+v, want persisted plan %s", page, plan.ID)
+	}
+	reopened, err := OpenStore(path, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	persisted, ok := reopened.GetPlacementPlan(plan.ID)
+	if !ok || persisted.ID != plan.ID || len(persisted.Candidates) != 2 {
+		t.Fatalf("reopened placement plan = %+v ok=%v, want %s", persisted, ok, plan.ID)
 	}
 	created, err := store.CreateAssignment(request)
 	if err != nil {
@@ -4517,12 +4536,15 @@ func TestHandlerPlansPlacement(t *testing.T) {
 	server := httptest.NewServer(Handler(store))
 	defer server.Close()
 
+	var account ServiceAccountResult
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-a", Namespace: "team-a", Token: "token-a"}, &account)
+	postJSON(t, server.URL+"/v1/service-accounts", ServiceAccountRequest{Name: "team-b", Namespace: "team-b", Token: "token-b"}, &account)
 	var record HostRecord
 	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "warm", ImageRefs: []string{"macos-runner:latest"}, Capacity: Capacity{VMs: 1, MaxVMs: 3}}, &record)
 	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "cold", Capacity: Capacity{VMs: 0, MaxVMs: 3}}, &record)
 
 	var plan PlacementPlan
-	postJSON(t, server.URL+"/v1/placements/plan", PlacementPlanRequest{
+	postJSONAuth(t, server.URL+"/v1/placements/plan", "token-a", PlacementPlanRequest{
 		Assignment: Assignment{
 			Policy:    PolicyImageAffinity,
 			ImageRef:  "macos-runner:latest",
@@ -4534,8 +4556,32 @@ func TestHandlerPlansPlacement(t *testing.T) {
 	if plan.Policy != PolicyImageAffinity || len(plan.Candidates) != 1 {
 		t.Fatalf("plan = %+v", plan)
 	}
+	if plan.ID == "" || plan.Namespace != "team-a" || plan.Limit != 1 {
+		t.Fatalf("plan identity = %+v, want team-a retained plan", plan)
+	}
 	if got := plan.Candidates[0]; got.WorkerID != "warm" || got.Rank != 1 || got.RequestedVMs != 2 || !got.HasImage {
 		t.Fatalf("candidate = %+v, want warm image candidate", got)
+	}
+	var list PlacementPlanListResult
+	getJSONAuth(t, server.URL+"/v1/placements/plans?policy=image-affinity&image_ref=macos-runner:latest&limit=1", "token-a", &list)
+	if list.Count != 1 || len(list.Plans) != 1 || list.Plans[0].ID != plan.ID {
+		t.Fatalf("placement plan list = %+v, want %s", list, plan.ID)
+	}
+	var got PlacementPlan
+	getJSONAuth(t, server.URL+"/v1/placements/plans/"+plan.ID, "token-a", &got)
+	if got.ID != plan.ID || len(got.Candidates) != 1 {
+		t.Fatalf("placement plan get = %+v, want %s", got, plan.ID)
+	}
+	list = PlacementPlanListResult{}
+	getJSONAuth(t, server.URL+"/v1/placements/plans", "token-b", &list)
+	if list.Count != 0 || len(list.Plans) != 0 {
+		t.Fatalf("team-b placement plans = %+v, want none", list)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/placements/plans/"+plan.ID, "token-b"); code != http.StatusNotFound {
+		t.Fatalf("cross-namespace placement plan status = %d, want %d", code, http.StatusNotFound)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/placements/plans?offset=-1", "token-a"); code != http.StatusBadRequest {
+		t.Fatalf("bad placement plan offset status = %d, want %d", code, http.StatusBadRequest)
 	}
 }
 

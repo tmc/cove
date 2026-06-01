@@ -23,6 +23,10 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - `cove-fleetd` now exposes `GET /v1/warm-pools/{name}/events` for
   warm-pool lifecycle audit history with actor, action, worker, assignment,
   offset, and limit filters.
+- `cove-fleetd` now persists placement-plan responses and exposes
+  `GET /v1/placements/plans` plus `GET /v1/placements/plans/{id}` for
+  namespace-scoped placement history with policy, image ref, offset, and limit
+  filters.
 - `cove-fleetd` now exposes `GET /v1/assignments/{id}/events` for
   assignment-scoped audit history, and global audit queries now accept
   `assignment_id`.

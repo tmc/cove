@@ -35,6 +35,7 @@ type Store struct {
 	hosts         map[string]HostRecord
 	assignments   map[string]Assignment
 	warmPools     map[string]WarmPool
+	plans         []PlacementPlan
 	audit         []AuditEvent
 	metering      []SandboxMeteringRecord
 	reports       []AssignmentReport
@@ -49,6 +50,7 @@ type storeFile struct {
 	Hosts             []HostRecord            `json:"hosts"`
 	Assignments       []Assignment            `json:"assignments,omitempty"`
 	WarmPools         []WarmPool              `json:"warm_pools,omitempty"`
+	PlacementPlans    []PlacementPlan         `json:"placement_plans,omitempty"`
 	AuditEvents       []AuditEvent            `json:"audit_events,omitempty"`
 	MeteringRecords   []SandboxMeteringRecord `json:"metering_records,omitempty"`
 	AssignmentReports []AssignmentReport      `json:"assignment_reports,omitempty"`
@@ -139,6 +141,7 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 		hosts:         make(map[string]HostRecord),
 		assignments:   make(map[string]Assignment),
 		warmPools:     make(map[string]WarmPool),
+		plans:         nil,
 		audit:         nil,
 		metering:      nil,
 		reports:       nil,
@@ -204,6 +207,13 @@ func OpenStore(path string, ttl time.Duration) (*Store, error) {
 			continue
 		}
 		s.warmPools[pool.Name] = pool
+	}
+	for _, plan := range file.PlacementPlans {
+		plan = normalizePlacementPlan(plan)
+		if plan.ID == "" || plan.Created.IsZero() || plan.Policy == "" {
+			continue
+		}
+		s.plans = append(s.plans, plan)
 	}
 	for _, event := range file.AuditEvents {
 		event = normalizeAuditEvent(event)
@@ -300,6 +310,7 @@ func (s *Store) ReconcilePlan() ReconcileResult {
 		hosts:         cloneHostMap(s.hosts),
 		assignments:   cloneAssignmentMap(s.assignments),
 		warmPools:     cloneWarmPoolMap(s.warmPools),
+		plans:         clonePlacementPlans(s.plans),
 		metering:      cloneSandboxMeteringRecords(s.metering),
 		reports:       cloneAssignmentReports(s.reports),
 	}
@@ -1221,12 +1232,14 @@ func (s *Store) PlanAssignment(a Assignment, limit int) (PlacementPlan, error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	reconciled := s.reconcileLocked(now)
+	s.reconcileLocked(now)
 	candidates := s.placementCandidatesLocked(policy, imageRef, imageManifestDigest, requiredLabels, antiAffinityKey, resources)
 	if len(candidates) > limit {
 		candidates = candidates[:limit]
 	}
 	plan := PlacementPlan{
+		ID:                  s.nextPlacementPlanIDLocked(now),
+		Created:             now,
 		Namespace:           normalizeNamespace(a.Namespace),
 		Policy:              policy,
 		ImageRef:            imageRef,
@@ -1236,14 +1249,70 @@ func (s *Store) PlanAssignment(a Assignment, limit int) (PlacementPlan, error) {
 		RequiredLabels:      cloneLabels(requiredLabels),
 		AntiAffinityKey:     antiAffinityKey,
 		Resources:           normalizeResources(resources),
+		Limit:               limit,
 		Candidates:          clonePlacementCandidates(candidates),
 	}
-	if reconciled.changed() {
-		if err := s.persistLocked(); err != nil {
-			return plan, err
-		}
+	s.plans = append(s.plans, clonePlacementPlan(plan))
+	if err := s.persistLocked(); err != nil {
+		return plan, err
 	}
 	return plan, nil
+}
+
+func (s *Store) GetPlacementPlan(id string) (PlacementPlan, bool) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return PlacementPlan{}, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, plan := range s.plans {
+		if plan.ID == id {
+			return clonePlacementPlan(plan), true
+		}
+	}
+	return PlacementPlan{}, false
+}
+
+func (s *Store) ListPlacementPlansPage(filter PlacementPlanListFilter) PlacementPlanListResult {
+	filter.Namespace = normalizeNamespace(filter.Namespace)
+	filter.Policy = strings.TrimSpace(filter.Policy)
+	filter.ImageRef = strings.TrimSpace(filter.ImageRef)
+	if filter.Offset < 0 {
+		filter.Offset = 0
+	}
+	if filter.Limit < 0 {
+		filter.Limit = 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	plans := s.sortedPlacementPlansLocked()
+	filtered := plans[:0]
+	for _, plan := range plans {
+		if !namespaceMatches(plan.Namespace, filter.Namespace) {
+			continue
+		}
+		if filter.Policy != "" && plan.Policy != filter.Policy {
+			continue
+		}
+		if filter.ImageRef != "" && plan.ImageRef != filter.ImageRef {
+			continue
+		}
+		filtered = append(filtered, plan)
+	}
+	result := PlacementPlanListResult{Offset: filter.Offset, Limit: filter.Limit}
+	if filter.Offset >= len(filtered) {
+		return result
+	}
+	end := len(filtered) - filter.Offset
+	start := 0
+	if filter.Limit > 0 && end > filter.Limit {
+		start = end - filter.Limit
+		result.NextOffset = filter.Offset + filter.Limit
+	}
+	result.Plans = clonePlacementPlans(filtered[start:end])
+	result.Count = len(result.Plans)
+	return result
 }
 
 func (s *Store) EnsureWarmPool(req WarmPoolRequest) (WarmPoolResult, error) {
@@ -3701,6 +3770,7 @@ func (s *Store) persistLocked() error {
 	})
 	assignments := s.sortedAssignmentsLocked()
 	warmPools := s.sortedWarmPoolsLocked()
+	plans := s.sortedPlacementPlansLocked()
 	audit := cloneAuditEvents(s.audit)
 	metering := s.sortedMeteringLocked()
 	reports := s.sortedAssignmentReportsLocked()
@@ -3709,7 +3779,7 @@ func (s *Store) persistLocked() error {
 	samlBindings := s.sortedSAMLBindingsLocked()
 	samlReplays := s.sortedSAMLReplaysLocked()
 	samlSessions := s.sortedSAMLSessionRecordsLocked()
-	data, err := json.MarshalIndent(storeFile{Hosts: hosts, Assignments: assignments, WarmPools: warmPools, AuditEvents: audit, MeteringRecords: metering, AssignmentReports: reports, ServiceAccounts: accounts, OIDCBindings: oidcBindings, SAMLBindings: samlBindings, SAMLReplays: samlReplays, SAMLSessions: samlSessions}, "", "  ")
+	data, err := json.MarshalIndent(storeFile{Hosts: hosts, Assignments: assignments, WarmPools: warmPools, PlacementPlans: plans, AuditEvents: audit, MeteringRecords: metering, AssignmentReports: reports, ServiceAccounts: accounts, OIDCBindings: oidcBindings, SAMLBindings: samlBindings, SAMLReplays: samlReplays, SAMLSessions: samlSessions}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode fleet store: %w", err)
 	}
@@ -3769,6 +3839,17 @@ func (s *Store) sortedAuditLocked() []AuditEvent {
 		return events[i].ID < events[j].ID
 	})
 	return events
+}
+
+func (s *Store) sortedPlacementPlansLocked() []PlacementPlan {
+	plans := clonePlacementPlans(s.plans)
+	sort.Slice(plans, func(i, j int) bool {
+		if !plans[i].Created.Equal(plans[j].Created) {
+			return plans[i].Created.Before(plans[j].Created)
+		}
+		return plans[i].ID < plans[j].ID
+	})
+	return plans
 }
 
 func (s *Store) sortedMeteringLocked() []SandboxMeteringRecord {
@@ -3889,6 +3970,24 @@ func (s *Store) nextAuditIDLocked(now time.Time) string {
 	}
 }
 
+func (s *Store) nextPlacementPlanIDLocked(now time.Time) string {
+	base := fmt.Sprintf("placement-plan-%d", now.UnixNano())
+	id := base
+	for i := 2; ; i++ {
+		found := false
+		for _, plan := range s.plans {
+			if plan.ID == id {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return id
+		}
+		id = fmt.Sprintf("%s-%d", base, i)
+	}
+}
+
 func (s *Store) nextMeteringIDLocked(now time.Time) string {
 	base := fmt.Sprintf("metering-%d", now.UnixNano())
 	id := base
@@ -3925,6 +4024,27 @@ func cloneAssignments(in []Assignment) []Assignment {
 	out := make([]Assignment, len(in))
 	for i := range in {
 		out[i] = cloneAssignment(in[i])
+	}
+	return out
+}
+
+func clonePlacementPlan(in PlacementPlan) PlacementPlan {
+	out := in
+	out.RequiredLabels = cloneLabels(in.RequiredLabels)
+	out.Candidates = clonePlacementCandidates(in.Candidates)
+	if !out.Created.IsZero() {
+		out.Created = out.Created.UTC()
+	}
+	return out
+}
+
+func clonePlacementPlans(in []PlacementPlan) []PlacementPlan {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]PlacementPlan, len(in))
+	for i := range in {
+		out[i] = clonePlacementPlan(in[i])
 	}
 	return out
 }
@@ -5393,6 +5513,27 @@ func normalizeSandboxMeteringRecord(record SandboxMeteringRecord) SandboxMeterin
 		record.CPUMillis = 0
 	}
 	return record
+}
+
+func normalizePlacementPlan(plan PlacementPlan) PlacementPlan {
+	plan.ID = strings.TrimSpace(plan.ID)
+	plan.Namespace = normalizeNamespace(plan.Namespace)
+	plan.Policy = strings.TrimSpace(plan.Policy)
+	plan.ImageRef = strings.TrimSpace(plan.ImageRef)
+	plan.ImageManifestDigest = strings.TrimSpace(plan.ImageManifestDigest)
+	plan.ImageDigestRef = strings.TrimSpace(plan.ImageDigestRef)
+	plan.ImagePlatform = strings.TrimSpace(plan.ImagePlatform)
+	plan.RequiredLabels = cloneLabels(plan.RequiredLabels)
+	plan.AntiAffinityKey = strings.TrimSpace(plan.AntiAffinityKey)
+	plan.Resources = normalizeResources(plan.Resources)
+	if !plan.Created.IsZero() {
+		plan.Created = plan.Created.UTC()
+	}
+	if plan.Limit < 0 {
+		plan.Limit = 0
+	}
+	plan.Candidates = clonePlacementCandidates(plan.Candidates)
+	return plan
 }
 
 func normalizeAssignmentReport(report AssignmentReport) AssignmentReport {

@@ -494,6 +494,8 @@ type PlacementPlanRequest struct {
 }
 
 type PlacementPlan struct {
+	ID                  string               `json:"id,omitempty"`
+	Created             time.Time            `json:"created,omitempty"`
 	Namespace           string               `json:"namespace,omitempty"`
 	Policy              string               `json:"policy"`
 	ImageRef            string               `json:"image_ref,omitempty"`
@@ -503,7 +505,24 @@ type PlacementPlan struct {
 	RequiredLabels      map[string]string    `json:"required_labels,omitempty"`
 	AntiAffinityKey     string               `json:"anti_affinity_key,omitempty"`
 	Resources           Capacity             `json:"resources,omitempty"`
+	Limit               int                  `json:"limit,omitempty"`
 	Candidates          []PlacementCandidate `json:"candidates,omitempty"`
+}
+
+type PlacementPlanListFilter struct {
+	Namespace string `json:"namespace,omitempty"`
+	Policy    string `json:"policy,omitempty"`
+	ImageRef  string `json:"image_ref,omitempty"`
+	Offset    int    `json:"offset,omitempty"`
+	Limit     int    `json:"limit,omitempty"`
+}
+
+type PlacementPlanListResult struct {
+	Plans      []PlacementPlan `json:"plans"`
+	Count      int             `json:"count"`
+	Offset     int             `json:"offset,omitempty"`
+	Limit      int             `json:"limit,omitempty"`
+	NextOffset int             `json:"next_offset,omitempty"`
 }
 
 type PlacementCandidate struct {

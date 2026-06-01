@@ -431,6 +431,8 @@ Placement planning endpoint:
 curl -X POST http://127.0.0.1:9758/v1/placements/plan \
   -H 'content-type: application/json' \
   -d '{"policy":"image-affinity","image_ref":"macos-runner:latest","manifest_bundle":"manifests","image_platform":"darwin/arm64","anti_affinity_key":"ci/buildkite","resources":{"vms":1},"limit":5}'
+curl 'http://127.0.0.1:9758/v1/placements/plans?policy=image-affinity&limit=20'
+curl http://127.0.0.1:9758/v1/placements/plans/placement-plan-...
 ```
 
 Placement planning returns the retained ranked feasible workers without storing
@@ -443,6 +445,12 @@ heartbeat reports that exact source manifest digest for the requested
 `manifest_bundle` may be used instead of hand-supplying digest fields; the
 handler verifies the offline bundle and resolves the selected manifest digest
 before ranking workers.
+Each plan response is persisted with `id`, `created`, and the requested
+candidate `limit`. `GET /v1/placements/plans` returns paginated plan history
+with `policy`, `image_ref`, `offset`, and `limit` filters; scoped
+service-account tokens only see plans in their namespace. The
+`GET /v1/placements/plans/{id}` endpoint returns one retained plan or `404`
+across namespace boundaries.
 
 Warm-pool endpoint:
 

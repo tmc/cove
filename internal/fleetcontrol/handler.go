@@ -133,6 +133,12 @@ func Handler(store *Store) http.Handler {
 	mux.HandleFunc("/v1/policies/lifecycle", func(w http.ResponseWriter, r *http.Request) {
 		handleLifecyclePolicy(w, r, store)
 	})
+	mux.HandleFunc("/v1/placements/plans/", func(w http.ResponseWriter, r *http.Request) {
+		handlePlacementPlanRecord(w, r, store)
+	})
+	mux.HandleFunc("/v1/placements/plans", func(w http.ResponseWriter, r *http.Request) {
+		handlePlacementPlans(w, r, store)
+	})
 	mux.HandleFunc("/v1/placements/plan", func(w http.ResponseWriter, r *http.Request) {
 		handlePlacementPlan(w, r, store)
 	})
@@ -1853,6 +1859,68 @@ func handlePlacementPlan(w http.ResponseWriter, r *http.Request, store *Store) {
 		return
 	}
 	writeJSON(w, http.StatusOK, plan)
+}
+
+func handlePlacementPlans(w http.ResponseWriter, r *http.Request, store *Store) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	filter, err := placementPlanListFilterFromRequest(r, namespaceFilterFromRequest(r, identity))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, store.ListPlacementPlansPage(filter))
+}
+
+func handlePlacementPlanRecord(w http.ResponseWriter, r *http.Request, store *Store) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	id, err := nameFromPath(r.URL.Path, "/v1/placements/plans/", "placement plan")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	plan, ok := store.GetPlacementPlan(id)
+	if !ok || !canAccessNamespace(identity, plan.Namespace) {
+		writeError(w, http.StatusNotFound, "placement plan not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, plan)
+}
+
+func placementPlanListFilterFromRequest(r *http.Request, namespace string) (PlacementPlanListFilter, error) {
+	filter := PlacementPlanListFilter{
+		Namespace: namespace,
+		Policy:    strings.TrimSpace(r.URL.Query().Get("policy")),
+		ImageRef:  strings.TrimSpace(r.URL.Query().Get("image_ref")),
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 0 {
+			return PlacementPlanListFilter{}, fmt.Errorf("placement plan limit must be non-negative")
+		}
+		filter.Limit = limit
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		offset, err := strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			return PlacementPlanListFilter{}, fmt.Errorf("placement plan offset must be non-negative")
+		}
+		filter.Offset = offset
+	}
+	return filter, nil
 }
 
 func handleWarmPools(w http.ResponseWriter, r *http.Request, store *Store) {
