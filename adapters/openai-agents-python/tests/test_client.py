@@ -434,6 +434,9 @@ def test_fleet_client_image_preparation() -> None:
             source_ref=digest_ref,
             image_ref="base:v1",
             image_manifest_digest=digest,
+            image_digest_ref=digest_ref,
+            image_platform="darwin/arm64",
+            required_capability="ram-overlay",
             offset=2,
             limit=5,
         )
@@ -457,6 +460,16 @@ def test_fleet_client_image_preparation() -> None:
             "/v1/images/preparations",
             "/v1/images/preparations/image-prepare-1",
         ]
+        query = server.requests[-2]["query"]
+        assert query["namespace"] == ["team-a"]
+        assert query["source_ref"] == [digest_ref]
+        assert query["image_ref"] == ["base:v1"]
+        assert query["image_manifest_digest"] == [digest]
+        assert query["image_digest_ref"] == [digest_ref]
+        assert query["image_platform"] == ["darwin/arm64"]
+        assert query["required_capability"] == ["ram-overlay"]
+        assert query["offset"] == ["2"]
+        assert query["limit"] == ["5"]
         prepare = server.requests[-3]["body"]
         assert prepare["namespace"] == "team-a"
         assert "source_ref" not in prepare

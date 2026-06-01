@@ -263,6 +263,9 @@ type ImagePrepareListOptions struct {
 	SourceRef           string
 	ImageRef            string
 	ImageManifestDigest string
+	ImageDigestRef      string
+	ImagePlatform       string
+	RequiredCapability  string
 	Offset              int
 	Limit               int
 	Timeout             time.Duration
@@ -1949,6 +1952,9 @@ func ListImagePreparations(ctx context.Context, opts ImagePrepareListOptions) (I
 		"source_ref":            opts.SourceRef,
 		"image_ref":             opts.ImageRef,
 		"image_manifest_digest": opts.ImageManifestDigest,
+		"image_digest_ref":      opts.ImageDigestRef,
+		"image_platform":        opts.ImagePlatform,
+		"required_capability":   opts.RequiredCapability,
 	}
 	if opts.Offset > 0 {
 		query["offset"] = strconv.Itoa(opts.Offset)

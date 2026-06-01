@@ -2829,6 +2829,9 @@ func (s *Store) ListImagePreparationsPage(filter ImagePrepareListFilter) ImagePr
 	filter.SourceRef = strings.TrimSpace(filter.SourceRef)
 	filter.ImageRef = strings.TrimSpace(filter.ImageRef)
 	filter.ImageManifestDigest = strings.TrimSpace(filter.ImageManifestDigest)
+	filter.ImageDigestRef = strings.TrimSpace(filter.ImageDigestRef)
+	filter.ImagePlatform = strings.TrimSpace(filter.ImagePlatform)
+	filter.RequiredCapability = strings.TrimSpace(filter.RequiredCapability)
 	if filter.Offset < 0 {
 		filter.Offset = 0
 	}
@@ -2850,6 +2853,15 @@ func (s *Store) ListImagePreparationsPage(filter ImagePrepareListFilter) ImagePr
 			continue
 		}
 		if filter.ImageManifestDigest != "" && prep.ImageManifestDigest != filter.ImageManifestDigest {
+			continue
+		}
+		if filter.ImageDigestRef != "" && prep.ImageDigestRef != filter.ImageDigestRef {
+			continue
+		}
+		if filter.ImagePlatform != "" && prep.ImagePlatform != filter.ImagePlatform {
+			continue
+		}
+		if filter.RequiredCapability != "" && !containsString(prep.RequiredCapabilities, filter.RequiredCapability) {
 			continue
 		}
 		filtered = append(filtered, prep)

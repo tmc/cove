@@ -4192,7 +4192,12 @@ func TestStorePrepareImageCreatesMissingWorkerAssignments(t *testing.T) {
 	if len(result.Assignments) != 0 || skipReason(result.Skipped, "cold") != "active" {
 		t.Fatalf("second prepare result = %+v", result)
 	}
-	page := store.ListImagePreparationsPage(ImagePrepareListFilter{ImageRef: "macos-runner:latest", Limit: 1})
+	page := store.ListImagePreparationsPage(ImagePrepareListFilter{
+		SourceRef:          "registry.example/cove/macos-runner:latest",
+		ImageRef:           "macos-runner:latest",
+		RequiredCapability: "ram-overlay",
+		Limit:              1,
+	})
 	if page.Count != 1 || page.NextOffset != 1 || len(page.Preparations) != 1 || page.Preparations[0].ID != result.ID {
 		t.Fatalf("prepare history page = %+v, want latest prepare %s", page, result.ID)
 	}
@@ -4294,6 +4299,14 @@ func TestStorePrepareImageUsesManifestDigest(t *testing.T) {
 	wantArgs := []string{"image", "pull", "-tag", "base:v1", "-force", "registry.example/base:v1"}
 	if !equalStrings(result.Assignments[0].Args, wantArgs) {
 		t.Fatalf("assignment args = %+v, want stale refresh with force", result.Assignments[0].Args)
+	}
+	page := store.ListImagePreparationsPage(ImagePrepareListFilter{
+		ImageManifestDigest: "sha256:new",
+		ImageDigestRef:      "registry.example/base@sha256:new",
+		ImagePlatform:       "darwin/arm64",
+	})
+	if page.Count != 1 || len(page.Preparations) != 1 || page.Preparations[0].ID != result.ID {
+		t.Fatalf("manifest prepare history = %+v, want %s", page, result.ID)
 	}
 }
 
@@ -6367,6 +6380,9 @@ func TestHandlerPrepareImage(t *testing.T) {
 	postJSONAuth(t, server.URL+"/v1/images/prepare", "token-a", ImagePrepareRequest{
 		SourceRef:            "registry.example/cove/macos-runner:latest",
 		ImageRef:             "macos-runner:latest",
+		ImageManifestDigest:  "sha256:runner",
+		ImageDigestRef:       "registry.example/macos-runner@sha256:runner",
+		ImagePlatform:        "darwin/arm64",
 		RequiredCapabilities: []string{"ram-overlay"},
 	}, &result)
 	if len(result.Assignments) != 1 || result.Assignments[0].WorkerID != "worker-1" {
@@ -6379,7 +6395,7 @@ func TestHandlerPrepareImage(t *testing.T) {
 		t.Fatalf("prepare identity = %+v, want team-a retained prepare", result)
 	}
 	var list ImagePrepareListResult
-	getJSONAuth(t, server.URL+"/v1/images/preparations?image_ref=macos-runner:latest&limit=1", "token-a", &list)
+	getJSONAuth(t, server.URL+"/v1/images/preparations?image_ref=macos-runner:latest&image_manifest_digest=sha256:runner&image_digest_ref=registry.example%2Fmacos-runner%40sha256:runner&image_platform=darwin%2Farm64&required_capability=ram-overlay&limit=1", "token-a", &list)
 	if list.Count != 1 || len(list.Preparations) != 1 || list.Preparations[0].ID != result.ID {
 		t.Fatalf("prepare history = %+v, want %s", list, result.ID)
 	}

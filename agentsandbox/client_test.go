@@ -504,6 +504,9 @@ func TestCloudClientImagePreparation(t *testing.T) {
 		SourceRef:           "ghcr.io/me/base@sha256:1111111111111111111111111111111111111111111111111111111111111111",
 		ImageRef:            "base:v1",
 		ImageManifestDigest: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+		ImageDigestRef:      "ghcr.io/me/base@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+		ImagePlatform:       "darwin/arm64",
+		RequiredCapability:  "ram-overlay",
 		Offset:              2,
 		Limit:               5,
 		Timeout:             time.Second,
@@ -531,6 +534,10 @@ func TestCloudClientImagePreparation(t *testing.T) {
 	wantPaths := []string{"/v1/images/prepare", "/v1/images/preparations", "/v1/images/preparations/image-prepare-1"}
 	if !equalStringSlices(paths, wantPaths) {
 		t.Fatalf("paths = %+v, want %+v", paths, wantPaths)
+	}
+	listQuery := server.requests[1].query
+	if listQuery.Get("namespace") != "team-a" || listQuery.Get("source_ref") == "" || listQuery.Get("image_ref") != "base:v1" || listQuery.Get("image_manifest_digest") == "" || listQuery.Get("image_digest_ref") == "" || listQuery.Get("image_platform") != "darwin/arm64" || listQuery.Get("required_capability") != "ram-overlay" || listQuery.Get("offset") != "2" || listQuery.Get("limit") != "5" {
+		t.Fatalf("image preparation list query = %q", listQuery.Encode())
 	}
 	for _, req := range server.requests[:3] {
 		if req.authorization != "Bearer secret" {

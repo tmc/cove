@@ -373,7 +373,7 @@ curl -X POST http://127.0.0.1:9758/v1/images/prepare \
 curl -X POST http://127.0.0.1:9758/v1/images/prepare \
   -H 'content-type: application/json' \
   -d '{"manifest_bundle":"manifests","image_ref":"macos-runner:latest","image_platform":"darwin/arm64","required_capabilities":["ram-overlay"],"dry_run":true}'
-curl 'http://127.0.0.1:9758/v1/images/preparations?image_ref=macos-runner:latest&limit=20'
+curl 'http://127.0.0.1:9758/v1/images/preparations?image_manifest_digest=sha256:...&required_capability=ram-overlay&limit=20'
 curl http://127.0.0.1:9758/v1/images/preparations/image-prepare-...
 ```
 
@@ -403,7 +403,8 @@ workers without creating assignments, audit events, or retained preparation
 history.
 `GET /v1/images/preparations` returns
 paginated preparation history with `source_ref`, `image_ref`,
-`image_manifest_digest`, `offset`, and `limit` filters; scoped service-account
+`image_manifest_digest`, `image_digest_ref`, `image_platform`,
+`required_capability`, `offset`, and `limit` filters; scoped service-account
 tokens only see preparations in their namespace. The `GET
 /v1/images/preparations/{id}` endpoint returns one retained preparation result
 or `404` across namespace boundaries.
