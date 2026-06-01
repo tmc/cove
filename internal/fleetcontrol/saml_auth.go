@@ -2,11 +2,15 @@ package fleetcontrol
 
 import (
 	"bytes"
+	"compress/flate"
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/pem"
+	"encoding/xml"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -268,6 +272,110 @@ func newSAMLSessionToken() (string, error) {
 		return "", fmt.Errorf("create saml session token: %w", err)
 	}
 	return samlSessionTokenPrefix + base64.RawURLEncoding.EncodeToString(raw[:]), nil
+}
+
+type samlAuthnRequestXML struct {
+	XMLName                     xml.Name      `xml:"samlp:AuthnRequest"`
+	XMLNSSAMLP                  string        `xml:"xmlns:samlp,attr"`
+	XMLNSSAML                   string        `xml:"xmlns:saml,attr"`
+	ID                          string        `xml:"ID,attr"`
+	Version                     string        `xml:"Version,attr"`
+	IssueInstant                string        `xml:"IssueInstant,attr"`
+	Destination                 string        `xml:"Destination,attr"`
+	AssertionConsumerServiceURL string        `xml:"AssertionConsumerServiceURL,attr"`
+	ProtocolBinding             string        `xml:"ProtocolBinding,attr"`
+	Issuer                      samlIssuerXML `xml:"saml:Issuer"`
+	NameIDPolicy                samlNameIDXML `xml:"samlp:NameIDPolicy"`
+}
+
+type samlIssuerXML struct {
+	Value string `xml:",chardata"`
+}
+
+type samlNameIDXML struct {
+	Format      string `xml:"Format,attr"`
+	AllowCreate string `xml:"AllowCreate,attr"`
+}
+
+func samlAuthnRequestResult(binding SAMLBinding, issueInstant time.Time, relayState string) (SAMLAuthnRequestResult, error) {
+	id, err := newSAMLRequestID()
+	if err != nil {
+		return SAMLAuthnRequestResult{}, err
+	}
+	request := samlAuthnRequestXML{
+		XMLNSSAMLP:                  "urn:oasis:names:tc:SAML:2.0:protocol",
+		XMLNSSAML:                   "urn:oasis:names:tc:SAML:2.0:assertion",
+		ID:                          id,
+		Version:                     "2.0",
+		IssueInstant:                issueInstant.UTC().Format(time.RFC3339Nano),
+		Destination:                 binding.SSOURL,
+		AssertionConsumerServiceURL: binding.Audience,
+		ProtocolBinding:             "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST",
+		Issuer:                      samlIssuerXML{Value: binding.Audience},
+		NameIDPolicy: samlNameIDXML{
+			Format:      "urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified",
+			AllowCreate: "true",
+		},
+	}
+	xmlData, err := xml.Marshal(request)
+	if err != nil {
+		return SAMLAuthnRequestResult{}, fmt.Errorf("marshal saml authn request: %w", err)
+	}
+	encoded, err := deflateSAMLRequest(xmlData)
+	if err != nil {
+		return SAMLAuthnRequestResult{}, err
+	}
+	redirectURL, err := samlRedirectURL(binding.SSOURL, encoded, relayState)
+	if err != nil {
+		return SAMLAuthnRequestResult{}, err
+	}
+	return SAMLAuthnRequestResult{
+		Binding:      binding,
+		RequestID:    id,
+		IssueInstant: issueInstant.UTC(),
+		RelayState:   strings.TrimSpace(relayState),
+		XML:          string(xmlData),
+		SAMLRequest:  encoded,
+		RedirectURL:  redirectURL,
+	}, nil
+}
+
+func newSAMLRequestID() (string, error) {
+	var raw [16]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", fmt.Errorf("create saml request id: %w", err)
+	}
+	return "_cove-" + hex.EncodeToString(raw[:]), nil
+}
+
+func deflateSAMLRequest(data []byte) (string, error) {
+	var buf bytes.Buffer
+	writer, err := flate.NewWriter(&buf, flate.DefaultCompression)
+	if err != nil {
+		return "", fmt.Errorf("compress saml request: %w", err)
+	}
+	if _, err := writer.Write(data); err != nil {
+		_ = writer.Close()
+		return "", fmt.Errorf("compress saml request: %w", err)
+	}
+	if err := writer.Close(); err != nil {
+		return "", fmt.Errorf("compress saml request: %w", err)
+	}
+	return base64.StdEncoding.EncodeToString(buf.Bytes()), nil
+}
+
+func samlRedirectURL(rawURL, samlRequest, relayState string) (string, error) {
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return "", fmt.Errorf("parse saml sso url: %w", err)
+	}
+	values := u.Query()
+	values.Set("SAMLRequest", samlRequest)
+	if relayState = strings.TrimSpace(relayState); relayState != "" {
+		values.Set("RelayState", relayState)
+	}
+	u.RawQuery = values.Encode()
+	return u.String(), nil
 }
 
 func validatedSAMLAssertions(root *etree.Element, certPEM string, now time.Time) []*etree.Element {

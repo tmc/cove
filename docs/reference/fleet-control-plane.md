@@ -192,6 +192,8 @@ curl -X POST http://127.0.0.1:9758/v1/saml-bindings \
   }'
 curl http://127.0.0.1:9758/v1/saml-bindings
 curl http://127.0.0.1:9758/v1/saml-bindings/okta/metadata
+curl 'http://127.0.0.1:9758/v1/saml-bindings/okta/login?relay_state=cli'
+curl -i 'http://127.0.0.1:9758/v1/saml-bindings/okta/login?redirect=true&relay_state=cli'
 curl -X POST http://127.0.0.1:9758/v1/saml/acs \
   -H 'content-type: application/json' \
   -d '{"saml_response":"<base64-saml-response>","relay_state":"cli","ttl":"1h"}'
@@ -241,6 +243,11 @@ assertions record audit actor `saml:<binding-name>` and inherit the binding's
 namespace and role. `GET /v1/saml-bindings/{name}/metadata` returns SAML 2.0 SP
 metadata XML using the binding audience as the SP entity ID and HTTP-POST ACS
 location, so IdP setup can be driven from the controller record.
+`GET /v1/saml-bindings/{name}/login` creates an unsigned SAML 2.0
+AuthnRequest, deflates and base64-encodes it for the HTTP-Redirect binding,
+and returns the IdP redirect URL plus the request ID and XML. Add
+`redirect=true` to receive a `302 Found` to the IdP SSO URL; `relay_state` or
+`RelayState` is copied into the redirect query when present.
 `POST /v1/saml/acs` accepts either JSON fields `saml_response` /
 `saml_assertion` or browser-style form fields `SAMLResponse` /
 `SAMLAssertion`, plus optional `RelayState` and `ttl`. It consumes the same
@@ -249,9 +256,8 @@ signed, replay-checked assertion path and returns a short-lived
 that session token record audit actor `saml-session:<binding-name>` and inherit
 the binding's namespace and role. The controller records accepted assertion IDs
 until their time window expires and rejects replayed assertions across process
-restarts. Keep assertions short lived; SP-initiated AuthnRequest/redirect
-generation and IdP metadata import/refresh are still out of scope for this
-private controller surface.
+restarts. Keep assertions short lived; IdP metadata import/refresh is still out
+of scope for this private controller surface.
 If a service account has `namespace` set, assignment, warm-pool, sandbox,
 service-account, and audit list/read/mutation requests through that bearer token
 are scoped to that namespace; attempts to write another namespace are rejected.

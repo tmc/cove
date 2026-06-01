@@ -461,6 +461,14 @@ func firstValue(values url.Values, keys ...string) string {
 }
 
 func handleSAMLBinding(w http.ResponseWriter, r *http.Request, store *Store) {
+	if name, ok, err := samlBindingSubresourcePath(r.URL.Path, "login"); ok || err != nil {
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		handleSAMLBindingLogin(w, r, store, name)
+		return
+	}
 	if name, ok, err := samlBindingMetadataPath(r.URL.Path); ok || err != nil {
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
@@ -503,9 +511,13 @@ func handleSAMLBinding(w http.ResponseWriter, r *http.Request, store *Store) {
 }
 
 func samlBindingMetadataPath(path string) (string, bool, error) {
+	return samlBindingSubresourcePath(path, "metadata")
+}
+
+func samlBindingSubresourcePath(path, subresource string) (string, bool, error) {
 	raw := strings.TrimPrefix(path, "/v1/saml-bindings/")
 	parts := strings.Split(raw, "/")
-	if len(parts) != 2 || parts[1] != "metadata" {
+	if len(parts) != 2 || parts[1] != subresource {
 		return "", false, nil
 	}
 	name, err := url.PathUnescape(parts[0])
@@ -517,6 +529,36 @@ func samlBindingMetadataPath(path string) (string, bool, error) {
 		return "", true, fmt.Errorf("saml binding name required")
 	}
 	return name, true, nil
+}
+
+func handleSAMLBindingLogin(w http.ResponseWriter, r *http.Request, store *Store, name string) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	namespace := ""
+	if identity.Scoped {
+		namespace = identity.Namespace
+	}
+	result, err := store.SAMLAuthnRequestNamespace(name, namespace, firstValue(r.URL.Query(), "relay_state", "RelayState"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if redirectRequested(r.URL.Query()) {
+		http.Redirect(w, r, result.RedirectURL, http.StatusFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func redirectRequested(values url.Values) bool {
+	raw := strings.TrimSpace(values.Get("redirect"))
+	return raw == "1" || strings.EqualFold(raw, "true") || strings.EqualFold(raw, "yes")
 }
 
 func handleSAMLBindingMetadata(w http.ResponseWriter, r *http.Request, store *Store, name string) {

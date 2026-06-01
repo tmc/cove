@@ -2,6 +2,7 @@ package fleetcontrol
 
 import (
 	"bytes"
+	"compress/flate"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
@@ -4983,6 +4984,75 @@ func TestHandlerSAMLBindingRBACScopes(t *testing.T) {
 	if code := postJSONStatus(t, server.URL+"/v1/saml-bindings/okta/metadata", "admin-a", map[string]string{}); code != http.StatusMethodNotAllowed {
 		t.Fatalf("saml metadata POST status = %d, want 405", code)
 	}
+	var login SAMLAuthnRequestResult
+	getJSONAuth(t, server.URL+"/v1/saml-bindings/okta/login?relay_state=relay-login", "admin-a", &login)
+	if login.Binding.Name != "okta" || login.RequestID == "" || login.SAMLRequest == "" || login.RedirectURL == "" || login.RelayState != "relay-login" {
+		t.Fatalf("saml login = %+v", login)
+	}
+	if !strings.HasPrefix(login.RequestID, "_cove-") || !login.IssueInstant.Equal(now) {
+		t.Fatalf("saml login request identity = %+v", login)
+	}
+	redirectURL, err := url.Parse(login.RedirectURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if redirectURL.Scheme != "https" || redirectURL.Host != "idp.example" || redirectURL.Path != "/sso" {
+		t.Fatalf("saml login redirect url = %q", login.RedirectURL)
+	}
+	if redirectURL.Query().Get("SAMLRequest") != login.SAMLRequest || redirectURL.Query().Get("RelayState") != "relay-login" {
+		t.Fatalf("saml login query = %v", redirectURL.Query())
+	}
+	authnXML := inflateSAMLRequest(t, login.SAMLRequest)
+	if string(authnXML) != login.XML {
+		t.Fatalf("saml request deflate mismatch:\n%s\n%s", authnXML, login.XML)
+	}
+	doc = etree.NewDocument()
+	if err := doc.ReadFromBytes(authnXML); err != nil {
+		t.Fatalf("parse saml authn request: %v\n%s", err, authnXML)
+	}
+	root = doc.Root()
+	if !samlElementIs(root, "AuthnRequest") || samlAttr(root, "ID") != login.RequestID || samlAttr(root, "Version") != "2.0" {
+		t.Fatalf("authn request root = %s id=%q version=%q", root.Tag, samlAttr(root, "ID"), samlAttr(root, "Version"))
+	}
+	if samlAttr(root, "Destination") != "https://idp.example/sso" || samlAttr(root, "AssertionConsumerServiceURL") != "https://fleet.example/saml/acs" {
+		t.Fatalf("authn request endpoints destination=%q acs=%q", samlAttr(root, "Destination"), samlAttr(root, "AssertionConsumerServiceURL"))
+	}
+	if samlAttr(root, "ProtocolBinding") != "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" {
+		t.Fatalf("authn request protocol binding = %q", samlAttr(root, "ProtocolBinding"))
+	}
+	if issuer := samlFirstChild(root, "Issuer"); issuer == nil || strings.TrimSpace(issuer.Text()) != "https://fleet.example/saml/acs" {
+		t.Fatalf("authn request issuer = %+v", issuer)
+	}
+	redirectClient := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	redirectReq, err := http.NewRequest(http.MethodGet, server.URL+"/v1/saml-bindings/okta/login?redirect=true&RelayState=relay-302", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	redirectReq.Header.Set("authorization", "Bearer admin-a")
+	redirectResp, err := redirectClient.Do(redirectReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	redirectResp.Body.Close()
+	if redirectResp.StatusCode != http.StatusFound {
+		t.Fatalf("saml login redirect status = %d, want 302", redirectResp.StatusCode)
+	}
+	location, err := url.Parse(redirectResp.Header.Get("location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if location.Host != "idp.example" || location.Query().Get("SAMLRequest") == "" || location.Query().Get("RelayState") != "relay-302" {
+		t.Fatalf("saml login redirect location = %q", redirectResp.Header.Get("location"))
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/saml-bindings/okta/login", "admin-b"); code != http.StatusNotFound {
+		t.Fatalf("cross-namespace saml login status = %d, want 404", code)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/saml-bindings/missing/login", "admin-a"); code != http.StatusNotFound {
+		t.Fatalf("missing saml login status = %d, want 404", code)
+	}
+	if code := postJSONStatus(t, server.URL+"/v1/saml-bindings/okta/login", "admin-a", map[string]string{}); code != http.StatusMethodNotAllowed {
+		t.Fatalf("saml login POST status = %d, want 405", code)
+	}
 	var record HostRecord
 	postJSON(t, server.URL+"/v1/workers/register", WorkerHeartbeat{ID: "worker-1", ImageRefs: []string{"base:v1"}, Capacity: Capacity{MaxVMs: 2}}, &record)
 	form := url.Values{}
@@ -5396,6 +5466,21 @@ func signedSAMLResponse(t *testing.T, key *rsa.PrivateKey, cert *x509.Certificat
 	response.CreateElement("saml:Issuer").SetText(issuer)
 	response.AddChild(testSAMLAssertionElement("_assertion-response", issuer, subject, audience, notBefore, notOnOrAfter))
 	return signedSAMLElement(t, key, cert, response)
+}
+
+func inflateSAMLRequest(t *testing.T, raw string) []byte {
+	t.Helper()
+	data, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader := flate.NewReader(bytes.NewReader(data))
+	defer reader.Close()
+	out, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
 }
 
 func testSAMLAssertionElement(id, issuer, subject, audience string, notBefore, notOnOrAfter time.Time) *etree.Element {

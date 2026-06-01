@@ -2934,6 +2934,28 @@ func (s *Store) SAMLMetadataNamespace(name, namespace string) ([]byte, error) {
 	return samlMetadataXML(binding)
 }
 
+func (s *Store) SAMLAuthnRequest(name, relayState string) (SAMLAuthnRequestResult, error) {
+	return s.SAMLAuthnRequestNamespace(name, "", relayState)
+}
+
+func (s *Store) SAMLAuthnRequestNamespace(name, namespace, relayState string) (SAMLAuthnRequestResult, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return SAMLAuthnRequestResult{}, fmt.Errorf("saml binding name required")
+	}
+	namespace = normalizeNamespace(namespace)
+	now := s.now().UTC()
+	s.mu.Lock()
+	record, ok := s.samlBindings[name]
+	if !ok || !namespaceMatches(record.Namespace, namespace) {
+		s.mu.Unlock()
+		return SAMLAuthnRequestResult{}, fmt.Errorf("saml binding %q not found", name)
+	}
+	binding := publicSAMLBinding(record)
+	s.mu.Unlock()
+	return samlAuthnRequestResult(binding, now, relayState)
+}
+
 func (s *Store) Get(id string) (HostRecord, bool) {
 	id = strings.TrimSpace(id)
 	s.mu.Lock()

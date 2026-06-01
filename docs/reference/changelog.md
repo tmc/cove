@@ -8,6 +8,9 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 ## Unreleased
 
 ### Added
+- `cove-fleetd` now exposes `GET /v1/saml-bindings/{name}/login` to generate
+  unsigned SAML 2.0 AuthnRequest redirect URLs from stored bindings, with JSON
+  inspection by default and optional `302` redirect mode.
 - `cove-fleetd` now exposes `POST /v1/saml/acs` for JSON or browser-style form
   SAML response exchange. It reuses signed assertion and replay validation,
   stores only hashed `saml-session:` tokens, and authenticates later controller

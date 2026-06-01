@@ -239,6 +239,16 @@ type SAMLSessionResult struct {
 	RelayState string      `json:"relay_state,omitempty"`
 }
 
+type SAMLAuthnRequestResult struct {
+	Binding      SAMLBinding `json:"binding"`
+	RequestID    string      `json:"request_id"`
+	IssueInstant time.Time   `json:"issue_instant"`
+	RelayState   string      `json:"relay_state,omitempty"`
+	XML          string      `json:"xml"`
+	SAMLRequest  string      `json:"saml_request"`
+	RedirectURL  string      `json:"redirect_url"`
+}
+
 type WorkerLifecycle struct {
 	Reason string `json:"reason,omitempty"`
 	Force  bool   `json:"force,omitempty"`
