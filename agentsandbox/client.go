@@ -688,6 +688,20 @@ type OperationsTrendOptions struct {
 	HTTP      *http.Client
 }
 
+type OperationsReadinessOptions struct {
+	FleetURL             string
+	APIKey               string
+	Namespace            string
+	RequiredCapabilities []string
+	MinReadyWorkers      int
+	MaxAttentionRuns     *int
+	Since                time.Time
+	Until                time.Time
+	FailOnRegression     bool
+	Timeout              time.Duration
+	HTTP                 *http.Client
+}
+
 type AuditListOptions struct {
 	FleetURL     string
 	APIKey       string
@@ -1409,6 +1423,32 @@ type OperationsTrendRegression struct {
 	First int    `json:"first"`
 	Last  int    `json:"last"`
 	Delta int    `json:"delta"`
+}
+
+type OperationsReadinessResult struct {
+	Time                 time.Time                  `json:"time"`
+	Namespace            string                     `json:"namespace,omitempty"`
+	Ready                bool                       `json:"ready"`
+	RequiredCapabilities []string                   `json:"required_capabilities,omitempty"`
+	MinReadyWorkers      int                        `json:"min_ready_workers,omitempty"`
+	MaxAttentionRuns     *int                       `json:"max_attention_runs,omitempty"`
+	FailOnRegression     bool                       `json:"fail_on_regression,omitempty"`
+	Issues               []OperationsReadinessIssue `json:"issues,omitempty"`
+	Summary              OperationsSummary          `json:"summary"`
+	Trend                OperationsTrendResult      `json:"trend"`
+}
+
+type OperationsReadinessIssue struct {
+	Severity   string `json:"severity"`
+	Area       string `json:"area"`
+	Reason     string `json:"reason"`
+	Capability string `json:"capability,omitempty"`
+	Field      string `json:"field,omitempty"`
+	Key        string `json:"key,omitempty"`
+	Current    int    `json:"current,omitempty"`
+	Required   int    `json:"required,omitempty"`
+	Delta      int    `json:"delta,omitempty"`
+	Message    string `json:"message,omitempty"`
 }
 
 type OperationsSummarySnapshot struct {
@@ -2698,6 +2738,44 @@ func GetOperationsTrend(ctx context.Context, opts OperationsTrendOptions) (Opera
 	var result OperationsTrendResult
 	if err := c.request(ctx, http.MethodGet, c.queryPath("/v1/operations/summary/trend", query), nil, &result, c.timeout); err != nil {
 		return OperationsTrendResult{}, err
+	}
+	return result, nil
+}
+
+func CheckOperationsReadiness(ctx context.Context, opts OperationsReadinessOptions) (OperationsReadinessResult, error) {
+	if opts.MinReadyWorkers < 0 {
+		return OperationsReadinessResult{}, errors.New("agentsandbox: operations readiness min ready workers must be non-negative")
+	}
+	if opts.MaxAttentionRuns != nil && *opts.MaxAttentionRuns < 0 {
+		return OperationsReadinessResult{}, errors.New("agentsandbox: operations readiness max attention runs must be non-negative")
+	}
+	c, err := newFleetClient(opts.FleetURL, opts.APIKey, opts.Namespace, opts.Timeout, opts.HTTP, "operations-readiness")
+	if err != nil {
+		return OperationsReadinessResult{}, err
+	}
+	query := make(url.Values)
+	setQuery(query, "namespace", opts.Namespace)
+	for _, capability := range cleanStrings(opts.RequiredCapabilities) {
+		query.Add("required_capability", capability)
+	}
+	if opts.MinReadyWorkers > 0 {
+		query.Set("min_ready_workers", strconv.Itoa(opts.MinReadyWorkers))
+	}
+	if opts.MaxAttentionRuns != nil {
+		query.Set("max_attention_runs", strconv.Itoa(*opts.MaxAttentionRuns))
+	}
+	if !opts.Since.IsZero() {
+		query.Set("since", opts.Since.UTC().Format(time.RFC3339Nano))
+	}
+	if !opts.Until.IsZero() {
+		query.Set("until", opts.Until.UTC().Format(time.RFC3339Nano))
+	}
+	if opts.FailOnRegression {
+		query.Set("fail_on_regression", "true")
+	}
+	var result OperationsReadinessResult
+	if err := c.request(ctx, http.MethodGet, queryPathValues("/v1/operations/readiness", query), nil, &result, c.timeout); err != nil {
+		return OperationsReadinessResult{}, err
 	}
 	return result, nil
 }

@@ -800,6 +800,17 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 	if trend.SampleCount != 2 || trend.Workers.Ready.Delta != -2 || trend.ControllerRuns.ByMissingCapability["ram-overlay"].Delta != 2 || len(trend.Regressions) != 2 {
 		t.Fatalf("GetOperationsTrend = %+v, want operations regressions", trend)
 	}
+	maxAttentionRuns := 0
+	readiness, err := CheckOperationsReadiness(ctx, OperationsReadinessOptions{FleetURL: server.URL, APIKey: "secret", Namespace: "team-a", RequiredCapabilities: []string{"ram-overlay", "asif"}, MinReadyWorkers: 2, MaxAttentionRuns: &maxAttentionRuns, Since: time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC), Until: time.Date(2026, 5, 31, 10, 10, 0, 0, time.UTC), FailOnRegression: true, Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("CheckOperationsReadiness: %v", err)
+	}
+	if readiness.Ready || readiness.MinReadyWorkers != 2 || readiness.Trend.SampleCount != 2 || len(readiness.Issues) != 2 {
+		t.Fatalf("CheckOperationsReadiness = %+v, want blocked readiness", readiness)
+	}
+	if _, err := CheckOperationsReadiness(ctx, OperationsReadinessOptions{FleetURL: server.URL, APIKey: "secret", MinReadyWorkers: -1, Timeout: time.Second}); err == nil || !strings.Contains(err.Error(), "min ready workers must be non-negative") {
+		t.Fatalf("CheckOperationsReadiness negative min err = %v, want validation error", err)
+	}
 
 	paths := make([]string, 0, len(server.requests))
 	for _, req := range server.requests {
@@ -828,6 +839,7 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 		"/v1/operations/summary",
 		"/v1/operations/summary/history",
 		"/v1/operations/summary/trend",
+		"/v1/operations/readiness",
 	}
 	if !equalStringSlices(paths, wantPaths) {
 		t.Fatalf("paths = %+v, want %+v", paths, wantPaths)
@@ -867,6 +879,9 @@ func TestCloudClientMaintenanceRuns(t *testing.T) {
 	}
 	if query := server.requests[18].query; query.Get("namespace") != "team-a" || query.Get("since") != "2026-05-31T10:00:00Z" || query.Get("until") != "2026-05-31T10:10:00Z" {
 		t.Fatalf("operations trend query = %q", query.Encode())
+	}
+	if query := server.requests[19].query; query.Get("namespace") != "team-a" || !equalStringSlices(query["required_capability"], []string{"ram-overlay", "asif"}) || query.Get("min_ready_workers") != "2" || query.Get("max_attention_runs") != "0" || query.Get("fail_on_regression") != "true" || query.Get("since") != "2026-05-31T10:00:00Z" || query.Get("until") != "2026-05-31T10:10:00Z" {
+		t.Fatalf("operations readiness query = %q", query.Encode())
 	}
 }
 
@@ -2290,6 +2305,8 @@ func newSDKFleetServer(t *testing.T) *sdkFleetServer {
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/operations/summary/trend":
 			writeSDKJSON(t, w, sdkOperationsTrend())
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/operations/readiness":
+			writeSDKJSON(t, w, sdkOperationsReadiness())
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/audit":
 			writeSDKJSON(t, w, AuditListResult{
 				Events: []AuditEvent{sdkAuditEvent()},
@@ -3059,6 +3076,25 @@ func sdkOperationsTrend() OperationsTrendResult {
 			{Area: "controller_runs", Field: "by_missing_capability", Key: "ram-overlay", First: 0, Last: 2, Delta: 2},
 			{Area: "workers", Field: "ready", First: 3, Last: 1, Delta: -2},
 		},
+	}
+}
+
+func sdkOperationsReadiness() OperationsReadinessResult {
+	maxAttentionRuns := 0
+	return OperationsReadinessResult{
+		Time:                 time.Date(2026, 5, 31, 10, 5, 0, 0, time.UTC),
+		Namespace:            "team-a",
+		Ready:                false,
+		RequiredCapabilities: []string{"ram-overlay", "asif"},
+		MinReadyWorkers:      2,
+		MaxAttentionRuns:     &maxAttentionRuns,
+		FailOnRegression:     true,
+		Issues: []OperationsReadinessIssue{
+			{Severity: "blocker", Area: "workers", Reason: "insufficient_ready_workers", Current: 1, Required: 2},
+			{Severity: "blocker", Area: "workers", Reason: "insufficient_capability_ready_workers", Capability: "asif", Current: 1, Required: 2},
+		},
+		Summary: sdkOperationsSummary(),
+		Trend:   sdkOperationsTrend(),
 	}
 }
 
