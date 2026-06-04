@@ -208,6 +208,47 @@ func TestForkVM_CreatesChildWithUniqueIdentity(t *testing.T) {
 	}
 }
 
+func TestForkVMOptsPreserveIdentity(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	parent := "preserve-parent"
+	parentDir := filepath.Join(vmconfig.BaseDir(), parent)
+	if err := os.MkdirAll(parentDir, 0o755); err != nil {
+		t.Fatalf("mkdir parent: %v", err)
+	}
+	files := map[string][]byte{
+		"disk.img":     bytes64KCounting(),
+		"aux.img":      []byte("parent-aux-bytes"),
+		"hw.model":     []byte("parent-hw-model"),
+		"machine.id":   []byte("PARENT-MACHINE-ID-VALUE-32BYTES!"),
+		"mac.address":  []byte("aa:bb:cc:dd:ee:ff"),
+		"config.json":  []byte("{}"),
+		"extra.ignore": []byte("ignored"),
+	}
+	for name, data := range files {
+		if err := os.WriteFile(filepath.Join(parentDir, name), data, 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+
+	if err := ForkVMOpts(ForkVMOptions{
+		Parent:           parent,
+		Child:            "preserve-child",
+		PreserveIdentity: true,
+	}); err != nil {
+		t.Fatalf("ForkVMOpts: %v", err)
+	}
+	childDir := filepath.Join(vmconfig.BaseDir(), "preserve-child")
+	for _, name := range []string{"machine.id", "mac.address"} {
+		got, err := os.ReadFile(filepath.Join(childDir, name))
+		if err != nil {
+			t.Fatalf("read child %s: %v", name, err)
+		}
+		if string(got) != string(files[name]) {
+			t.Fatalf("child %s = %q, want parent %q", name, got, files[name])
+		}
+	}
+}
+
 func TestForkVM_RejectsBadArgs(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -223,6 +264,32 @@ func TestForkVM_RejectsBadArgs(t *testing.T) {
 	}
 	if err := ForkVM("does-not-exist", "child"); err == nil {
 		t.Error("expected error when parent VM is missing")
+	}
+}
+
+func TestForkVMWithSnapshotPreserveIdentity(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	parent := "preserve-snap-parent"
+	parentDir, _ := stageParentVMForSnapshotFork(t, parent, "clean")
+	parentMachineID, err := os.ReadFile(filepath.Join(parentDir, "machine.id"))
+	if err != nil {
+		t.Fatalf("read parent machine.id: %v", err)
+	}
+
+	if err := ForkVMWithSnapshot(ForkVMOptions{
+		Parent:           parent,
+		Child:            "preserve-snap-child",
+		Snapshot:         "clean",
+		PreserveIdentity: true,
+	}); err != nil {
+		t.Fatalf("ForkVMWithSnapshot: %v", err)
+	}
+	childMachineID, err := os.ReadFile(filepath.Join(vmconfig.BaseDir(), "preserve-snap-child", "machine.id"))
+	if err != nil {
+		t.Fatalf("read child machine.id: %v", err)
+	}
+	if string(childMachineID) != string(parentMachineID) {
+		t.Fatalf("child machine.id = %q, want parent %q", childMachineID, parentMachineID)
 	}
 }
 

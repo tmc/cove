@@ -62,33 +62,40 @@ func ForkVMDisk(parent, child string) error {
 // parent must exist and child must not. The child's config records lineage
 // metadata so cove vm tree and future GC policy can trace fork ancestry.
 //
-// This is a thin convenience wrapper over CloneVM that hard-codes
-// fork semantics: linked-by-default (CoW) and never copy machine.id.
+// This is a thin convenience wrapper over ForkVMOpts with default
+// identity-rotating semantics.
 func ForkVM(parent, child string) error {
-	if parent == "" {
+	return ForkVMOpts(ForkVMOptions{Parent: parent, Child: child})
+}
+
+// ForkVMOpts creates a child VM as a CoW fork of parent.
+func ForkVMOpts(opts ForkVMOptions) error {
+	if opts.Parent == "" {
 		return errors.New("fork: parent VM name required")
 	}
-	if child == "" {
+	if opts.Child == "" {
 		return errors.New("fork: child VM name required")
 	}
-	if parent == child {
+	if opts.Parent == opts.Child {
 		return errors.New("fork: parent and child must differ")
 	}
-	if !vmconfig.Validate(vmconfig.Path(parent)) {
-		return fmt.Errorf("fork: parent VM not found: %s", parent)
+	if !vmconfig.Validate(vmconfig.Path(opts.Parent)) {
+		return fmt.Errorf("fork: parent VM not found: %s", opts.Parent)
 	}
 	if err := CloneVM(CloneOptions{
-		Source:        parent,
-		Target:        child,
+		Source:        opts.Parent,
+		Target:        opts.Child,
 		Linked:        true,
-		CopyMachineID: false,
+		CopyMachineID: opts.PreserveIdentity,
 	}); err != nil {
 		return err
 	}
-	if err := removeForkMACAddress(child); err != nil {
-		return err
+	if !opts.PreserveIdentity {
+		if err := removeForkMACAddress(opts.Child); err != nil {
+			return err
+		}
 	}
-	if err := recordForkLineage(parent, child, "", time.Now().UTC()); err != nil {
+	if err := recordForkLineage(opts.Parent, opts.Child, "", time.Now().UTC()); err != nil {
 		return fmt.Errorf("fork: record lineage: %w", err)
 	}
 	return nil
@@ -110,9 +117,10 @@ func recordForkLineage(parent, child, snapshot string, forkedAt time.Time) error
 // of an existing parent snapshot (vmDir/snapshots/<name>.vmstate); if
 // empty, ForkVMWithSnapshot is equivalent to ForkVM.
 type ForkVMOptions struct {
-	Parent   string
-	Child    string
-	Snapshot string
+	Parent           string
+	Child            string
+	Snapshot         string
+	PreserveIdentity bool
 }
 
 // ForkVMWithSnapshot creates a child VM as a CoW fork of parent and,
@@ -190,19 +198,31 @@ func ForkVMWithSnapshot(opts ForkVMOptions) error {
 		Source:        opts.Parent,
 		Target:        opts.Child,
 		Linked:        true,
-		CopyMachineID: false,
+		CopyMachineID: opts.PreserveIdentity,
 	}); err != nil {
 		return err
 	}
 	childDir := vmconfig.Path(opts.Child)
-	if err := removeForkMACAddress(opts.Child); err != nil {
-		os.RemoveAll(childDir)
-		return err
+	if !opts.PreserveIdentity {
+		if err := removeForkMACAddress(opts.Child); err != nil {
+			os.RemoveAll(childDir)
+			return err
+		}
 	}
 	if err := copyFile(snapshotPath, filepath.Join(childDir, "suspend.vmstate")); err != nil {
 		// Roll back the partial clone so we don't leave a half-forked VM.
 		os.RemoveAll(childDir)
 		return fmt.Errorf("fork: seed suspend.vmstate from snapshot %q: %w", opts.Snapshot, err)
+	}
+	auxSidecar := auxSnapshotPath(parentDir, opts.Snapshot)
+	if _, err := os.Stat(auxSidecar); err == nil {
+		if err := copyFile(auxSidecar, filepath.Join(childDir, "aux.img")); err != nil {
+			os.RemoveAll(childDir)
+			return fmt.Errorf("fork: replay aux sidecar from snapshot %q: %w", opts.Snapshot, err)
+		}
+	} else if err != nil && !os.IsNotExist(err) {
+		os.RemoveAll(childDir)
+		return fmt.Errorf("fork: stat aux sidecar: %w", err)
 	}
 	if err := recordForkLineage(opts.Parent, opts.Child, opts.Snapshot, time.Now().UTC()); err != nil {
 		return fmt.Errorf("fork: record lineage: %w", err)

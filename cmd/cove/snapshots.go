@@ -294,6 +294,9 @@ func (s *ControlServer) handleSnapshotCommand(cmd *controlpb.SnapshotCommand) *c
 		if err := mgr.Save(s.vm, vmruntime.WrapQueue(s.vmQueue), cmd.Name); err != nil {
 			return &controlpb.ControlResponse{Error: err.Error()}
 		}
+		if err := captureAuxSidecar(vmDir, cmd.Name); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: %v\n", err)
+		}
 		msg := fmt.Sprintf("snapshot '%s' saved", cmd.Name)
 		return &controlpb.ControlResponse{Success: true, Data: msg, Result: &controlpb.ControlResponse_SnapshotAction{SnapshotAction: &controlpb.SnapshotActionResponse{Message: msg}}}
 
@@ -332,6 +335,9 @@ func (s *ControlServer) handleSnapshotCommand(cmd *controlpb.SnapshotCommand) *c
 		if err := mgr.Delete(cmd.Name); err != nil {
 			return &controlpb.ControlResponse{Error: err.Error()}
 		}
+		if err := removeAuxSidecar(vmDir, cmd.Name); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: %v\n", err)
+		}
 		msg := fmt.Sprintf("snapshot '%s' deleted", cmd.Name)
 		return &controlpb.ControlResponse{Success: true, Data: msg, Result: &controlpb.ControlResponse_SnapshotAction{SnapshotAction: &controlpb.SnapshotActionResponse{Message: msg}}}
 
@@ -364,10 +370,14 @@ func (s *ControlServer) handleSnapshotSaveAsync(mgr *snapshotx.Manager, name str
 
 	vm := s.vm
 	queue := s.vmQueue
+	dir := vmDir
 	go func() {
 		if err := mgr.Save(vm, vmruntime.WrapQueue(queue), name); err != nil {
 			_ = reg.Fail(op.ID, "snapshot_save", err.Error())
 			return
+		}
+		if err := captureAuxSidecar(dir, name); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: %v\n", err)
 		}
 		_ = reg.Succeed(op.ID, map[string]any{"snapshot": name})
 	}()

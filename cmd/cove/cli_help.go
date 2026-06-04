@@ -910,6 +910,9 @@ Ephemeral fork:
                           after exit so logs / control.sock persist
   -ephemeral              with -fork-from <image-ref>, destroy the
                           materialized child on stop
+  -preserve-identity      with -fork-from <vm>, copy the parent's
+                          machine.id and MAC; do not run siblings cold
+                          concurrently
 
 Examples:
   cove run -gui
@@ -961,15 +964,22 @@ Examples:
 }
 
 func printForkUsage(w io.Writer) {
-	fmt.Fprintln(w, `Usage: cove fork <parent> <child> [-snapshot <name>]
-       cove fork --from <parent[@snapshot]> <child> [-snapshot <name>]
+	fmt.Fprintln(w, `Usage: cove fork <parent> <child> [-snapshot <name>] [-preserve-identity]
+       cove fork --from <parent[@snapshot]> <child> [-snapshot <name>] [-preserve-identity]
 
 Create a child VM as an APFS copy-on-write fork of <parent>. The child
-shares disk blocks with the parent until either side writes, and gets a
-fresh machine identity and MAC address.
+shares disk blocks with the parent until either side writes. By default
+the child gets a fresh machine identity and MAC address.
 
-This is "cove clone --linked" with explicit lineage and forced fresh
-identity — see docs/designs/013-vm-fork.md for the model.
+This is "cove clone --linked" with explicit lineage — see
+docs/designs/013-vm-fork.md for the model.
+
+Flags:
+  -snapshot <name>       seed child's suspend.vmstate from parent's snapshot
+  -preserve-identity     copy parent's machine.id and MAC instead of rotating
+                         identity. Required for instant-resume from a
+                         parent-captured snapshot. Do not run preserved
+                         identity siblings cold concurrently.
 
 Plain fork (no -snapshot, no @snap):
   Permitted while parent is running, but best-effort: APFS clonefile
@@ -986,19 +996,17 @@ Snapshot-seeded fork (-snapshot <name> or --from parent@<name>):
     - parent has a saved snapshot — create one first while the parent
       is running with: cove snapshot save <name>
 
-  Current behavior (Phase 2): the child's machine.id is rotated like
-  any fork, so VZ rejects the seeded state and the existing
-  suspend-restore fallback in macos.go moves the seed aside and
-  cold-boots from the cloned disk. The seeded state is best-effort
-  today; reaching instant-resume requires a future identity-preserving
-  fork option that copies the parent's machine.id alongside the
-  vmstate. See docs/designs/013-vm-fork.md and the Phase 2 bench notes
-  for details.
+  Without -preserve-identity, the child's machine.id is rotated and VZ
+  rejects the seeded vmstate; the suspend-restore fallback moves the
+  seed aside and cold-boots from the cloned disk. With
+  -preserve-identity, the child shares the parent's identity so the
+  seeded state can instant-resume.
 
 Examples:
   cove fork macos-base scratch-1
   cove fork macos-base scratch-1 -snapshot clean
-  cove fork --from macos-base@clean scratch-1`)
+  cove fork macos-base scratch-1 -snapshot clean -preserve-identity
+  cove fork --from macos-base@clean scratch-1 -preserve-identity`)
 }
 
 func printAgentUpgradeUsage(w io.Writer) {

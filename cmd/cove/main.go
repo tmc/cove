@@ -104,6 +104,7 @@ var (
 	ephemeralForkParent string
 	ephemeralForkName   string
 	ephemeralForkKeep   bool
+	preserveIdentity    bool
 	// runEphemeral marks an image-fork-from child for destroy-on-stop
 	// using the .ephemeral sentinel from fork_ephemeral.go. Slice 1 of
 	// design 024.
@@ -251,6 +252,7 @@ func init() {
 	flag.StringVar(&ephemeralForkParent, "fork-from", "", "boot a short-lived fork from a local image ref or stopped VM")
 	flag.StringVar(&ephemeralForkName, "fork-name", "", "explicit name for the forked VM")
 	flag.BoolVar(&ephemeralForkKeep, "keep", false, "with -fork-from, retain the ephemeral vmDir after exit")
+	flag.BoolVar(&preserveIdentity, "preserve-identity", false, "with -fork-from or fork -snapshot, copy the parent's VM identity")
 	flag.BoolVar(&runEphemeral, "ephemeral", false, "with -fork-from <image-ref>, destroy the materialized child on stop and skip vm tree registration")
 	// Network mode
 	flag.StringVar(&networkMode, "network", "nat", "network mode: nat, bridged:<iface>, vmnet, filehandle, none")
@@ -1511,11 +1513,13 @@ func handleFork(args []string) {
 	fs := flag.NewFlagSet("fork", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	var (
-		fromRef  string
-		snapshot string
+		fromRef          string
+		snapshot         string
+		preserveIdentity bool
 	)
 	fs.StringVar(&fromRef, "from", "", "fork from parent[@snapshot] (alternative to positional <parent>)")
 	fs.StringVar(&snapshot, "snapshot", "", "seed child suspend.vmstate from parent's named snapshot")
+	fs.BoolVar(&preserveIdentity, "preserve-identity", false, "copy parent's machine.id and MAC instead of rotating identity")
 	fs.Usage = func() { printForkUsage(os.Stderr) }
 	if err := fs.Parse(flagArgs); err != nil {
 		os.Exit(2)
@@ -1526,7 +1530,12 @@ func handleFork(args []string) {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
-	if err := ForkVMWithSnapshot(ForkVMOptions{Parent: parent, Child: child, Snapshot: snap}); err != nil {
+	if err := ForkVMWithSnapshot(ForkVMOptions{
+		Parent:           parent,
+		Child:            child,
+		Snapshot:         snap,
+		PreserveIdentity: preserveIdentity,
+	}); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}

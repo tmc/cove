@@ -40,6 +40,9 @@ type RunConfig struct {
 	EphemeralForkParent string
 	EphemeralForkName   string
 	EphemeralForkKeep   bool
+	// EphemeralForkIdentity preserves the parent's VM identity for
+	// snapshot-fidelity fork-from runs. Default is false.
+	EphemeralForkIdentity bool
 	// Ephemeral marks an image-fork-from child for destroy-on-stop
 	// using the .ephemeral sentinel. Slice 1 of design 024.
 	Ephemeral bool
@@ -146,6 +149,7 @@ func (opts runtimeOptions) runConfig() RunConfig {
 		EphemeralForkParent:        opts.EphemeralForkParent,
 		EphemeralForkName:          opts.EphemeralForkName,
 		EphemeralForkKeep:          opts.EphemeralForkKeep,
+		EphemeralForkIdentity:      opts.EphemeralForkIdentity,
 		Ephemeral:                  opts.Ephemeral,
 	}
 }
@@ -608,7 +612,7 @@ func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 		Source:        cfg.EphemeralForkParent,
 		Target:        cfg.EphemeralForkName,
 		Linked:        true,
-		CopyMachineID: false,
+		CopyMachineID: cfg.EphemeralForkIdentity,
 	})
 	if err != nil {
 		return err
@@ -634,6 +638,9 @@ func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 	fmt.Fprintf(cfg.Stdout, "Ephemeral path: %s\n", clone.Path)
 	fmt.Fprintf(cfg.Stdout, "Parent:         %s\n", cfg.EphemeralForkParent)
 	fmt.Fprintf(cfg.Stdout, "Mode:           linked clone (temporary RAM overlay disabled)\n")
+	if cfg.EphemeralForkIdentity {
+		fmt.Fprintf(cfg.Stdout, "Identity:       parent's identity preserved\n")
+	}
 	bundle.EmitMetricEvent("fork_created", forkStarted, "ok", map[string]any{
 		"source_kind": "vm",
 		"source_ref":  cfg.EphemeralForkParent,
@@ -645,6 +652,7 @@ func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 		"keep":        cfg.EphemeralForkKeep,
 		"cleanup":     forkCleanupMode(cfg.EphemeralForkKeep),
 		"limitation":  "temporary RAM overlay disabled",
+		"identity":    forkIdentityMode(cfg.EphemeralForkIdentity),
 	})
 
 	vmName = clone.Name
@@ -693,6 +701,13 @@ func forkCleanupMode(keep bool) string {
 		return "retained"
 	}
 	return "remove-on-stop"
+}
+
+func forkIdentityMode(preserve bool) string {
+	if preserve {
+		return "preserved"
+	}
+	return "rotated"
 }
 
 func markEphemeralForkPath(path string) error {

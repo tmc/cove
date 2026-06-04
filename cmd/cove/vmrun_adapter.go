@@ -95,6 +95,7 @@ type runtimeOptions struct {
 	EphemeralForkParent      string
 	EphemeralForkName        string
 	EphemeralForkKeep        bool
+	EphemeralForkIdentity    bool
 	Ephemeral                bool
 
 	Displays            displayx.Slice
@@ -192,6 +193,7 @@ func currentRuntimeOptions() runtimeOptions {
 		EphemeralForkParent:      ephemeralForkParent,
 		EphemeralForkName:        ephemeralForkName,
 		EphemeralForkKeep:        ephemeralForkKeep,
+		EphemeralForkIdentity:    preserveIdentity,
 		Ephemeral:                runEphemeral,
 
 		Displays:            displays,

@@ -546,6 +546,45 @@ func TestRunEphemeralForkUsesLinkedCloneForMacOSVMParent(t *testing.T) {
 	}
 }
 
+func TestRunEphemeralForkCanPreserveIdentity(t *testing.T) {
+	hooks, _ := stubAcquireRunLockHook(t)
+	t.Setenv("HOME", t.TempDir())
+	parent := "preserve-run-parent"
+	stageParentVMForEphemeralFork(t, parent)
+	clonePath := filepath.Join(vmconfig.BaseDir(), "preserve-run-child")
+
+	var gotOpts DisposableSetupOptions
+	hooks.SetupDisposableClone = func(opts DisposableSetupOptions) (disposable.Clone, error) {
+		gotOpts = opts
+		if err := os.MkdirAll(clonePath, 0o755); err != nil {
+			return disposable.Clone{}, err
+		}
+		return disposable.Clone{Name: "preserve-run-child", Path: clonePath, Source: opts.Source}, nil
+	}
+	hooks.CleanupDisposableClone = func(string) error { return nil }
+	hooks.RunMacOSVM = func(vmrun.RunConfig, vmrun.HostConfig, *RunBundle, runMetricRecorder) error {
+		return nil
+	}
+
+	cfg := RunConfig{
+		VM:                    vmSelection{Name: "original", Directory: filepath.Join(vmconfig.BaseDir(), "original")},
+		Hooks:                 hooks,
+		EphemeralForkParent:   parent,
+		EphemeralForkName:     "preserve-run-child",
+		EphemeralForkIdentity: true,
+	}
+	out, err := captureStdoutResult(t, func() error { return runVMWithConfig(cfg) })
+	if err != nil {
+		t.Fatalf("runVMWithConfig() error = %v", err)
+	}
+	if !gotOpts.CopyMachineID {
+		t.Fatalf("CopyMachineID = false, want true")
+	}
+	if !strings.Contains(out, "Identity:       parent's identity preserved") {
+		t.Fatalf("run output %q missing preserved identity line", out)
+	}
+}
+
 func TestRunEphemeralForkUsesLinkedCloneForLinuxVMParent(t *testing.T) {
 	hooks, _ := stubAcquireRunLockHook(t)
 	t.Setenv("HOME", t.TempDir())
