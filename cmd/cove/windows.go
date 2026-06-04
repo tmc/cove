@@ -355,7 +355,7 @@ func runWindowsVMWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig, bundle *Run
 	if backend, err := parseWindowsBackend(rc.WindowsBackendMode); err != nil {
 		return err
 	} else if backend == windowsBackendQEMU {
-		return runWindowsQEMUVMWithConfig(rc, hc)
+		return runWindowsQEMUVMWithConfigLocked(rc, hc)
 	}
 	fmt.Println("=== Windows VM Runner (experimental) ===")
 	if err := validateVMSettings(); err != nil {

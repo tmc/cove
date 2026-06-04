@@ -56,6 +56,23 @@ func TestRunWindowsQEMUVMWithConfigRespectsRunLock(t *testing.T) {
 	}
 }
 
+func TestRunWindowsQEMUVMWithConfigLockedDoesNotAcquireRunLock(t *testing.T) {
+	dir := t.TempDir()
+	lock, err := AcquireRunLock(dir)
+	if err != nil {
+		t.Fatalf("AcquireRunLock: %v", err)
+	}
+	defer lock.Release()
+
+	err = runWindowsQEMUVMWithConfigLocked(vmrun.RunConfig{}, vmrun.HostConfig{VMDir: dir})
+	if err == nil {
+		t.Fatal("runWindowsQEMUVMWithConfigLocked succeeded with incomplete config")
+	}
+	if strings.Contains(err.Error(), "run.lock") {
+		t.Fatalf("runWindowsQEMUVMWithConfigLocked error = %v, want non-lock error", err)
+	}
+}
+
 func TestWindowsQEMUArgsInstallShape(t *testing.T) {
 	dir := t.TempDir()
 	iso := filepath.Join(dir, "windows.iso")

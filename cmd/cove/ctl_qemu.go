@@ -58,6 +58,8 @@ type windowsQEMUAgentStatus struct {
 	UserAgentHealth   string `json:"userAgentHealth,omitempty"`
 }
 
+const qemuAgentHealthTimeout = 3 * time.Second
+
 func ctlMaybeHandleWindowsQEMU(vmDir, cmdType string, args []string, timeout, wait time.Duration, raw bool, outputFile string) (bool, error) {
 	if !windowsQEMUCTLVM(vmDir) {
 		return false, nil
@@ -668,7 +670,7 @@ func qemuAgentHealth(address string) string {
 	if strings.TrimSpace(address) == "" {
 		return ""
 	}
-	version, err := qemuAgentPing(address, 750*time.Millisecond)
+	version, err := qemuAgentPing(address, qemuAgentHealthTimeout)
 	if err != nil {
 		return "unresponsive: " + err.Error()
 	}
@@ -682,7 +684,7 @@ func qemuUserAgentHealth(address string) string {
 	if strings.TrimSpace(address) == "" {
 		return ""
 	}
-	_, _, exitCode, err := qemuUserAgentExec(address, []string{"cmd.exe", "/c", "echo ok"}, nil, 750*time.Millisecond)
+	_, _, exitCode, err := qemuUserAgentExec(address, []string{"cmd.exe", "/c", "echo ok"}, nil, qemuAgentHealthTimeout)
 	if err != nil {
 		return "unresponsive: " + err.Error()
 	}

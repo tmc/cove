@@ -201,6 +201,13 @@ func runWindowsQEMUVMWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig) error {
 			fmt.Fprintf(os.Stderr, "warning: release run.lock: %v\n", releaseErr)
 		}
 	}()
+
+	return runWindowsQEMUVMWithConfigLocked(rc, hc)
+}
+
+func runWindowsQEMUVMWithConfigLocked(rc vmrun.RunConfig, hc vmrun.HostConfig) error {
+	fmt.Println("=== Windows VM Runner (QEMU/HVF) ===")
+
 	noteVMRuntimePhase(hc.VMDir, "starting", "qemu-run-prepare")
 
 	saveHardwareConfig(hc.VMDir)
