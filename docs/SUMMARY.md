@@ -97,6 +97,7 @@
 * [ScreenCaptureKit migration](designs/041-screencapturekit-migration.md)
 * [Integration harness goal](designs/044-integration-harness-goal.md)
 * [Apple App Sandbox proof lane](designs/045-app-sandbox.md)
+* [Plan 9 on Virtualization.framework](designs/049-plan9-virtualization-framework.md)
 
 ## Contributing
 * [purego Bindings](architecture/purego.md)
