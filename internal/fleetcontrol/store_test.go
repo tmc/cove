@@ -1798,6 +1798,64 @@ func TestStoreOperationsTrend(t *testing.T) {
 	}
 }
 
+func TestStoreOperationsReadiness(t *testing.T) {
+	store := NewMemoryStore(time.Minute)
+	firstTime := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	first := OperationsSummary{
+		Time:      firstTime,
+		Namespace: "team-a",
+		Workers: WorkerOperationsSummary{
+			Total:    3,
+			Ready:    3,
+			ByStatus: map[string]int{"ready": 3},
+		},
+	}
+	second := OperationsSummary{
+		Time:      firstTime.Add(time.Minute),
+		Namespace: "team-a",
+		Workers: WorkerOperationsSummary{
+			Total:    3,
+			Ready:    1,
+			Cordoned: 1,
+			ByStatus: map[string]int{"ready": 1, "cordoned": 1},
+			Capabilities: []WorkerCapabilitySummary{
+				{Name: "asif", Ready: 0},
+				{Name: "ram-overlay", Ready: 1},
+			},
+		},
+		ControllerRuns: ControllerRunOperationsSummary{
+			Attention:           1,
+			ByMissingCapability: map[string]int{"ram-overlay": 2},
+		},
+	}
+	if err := store.RecordOperationsSummary(first); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordOperationsSummary(second); err != nil {
+		t.Fatal(err)
+	}
+	maxAttentionRuns := 0
+	readiness := store.operationsReadiness(OperationsReadinessFilter{
+		Namespace:            "team-a",
+		RequiredCapabilities: []string{"ram-overlay", "asif", "ram-overlay"},
+		MinReadyWorkers:      2,
+		MaxAttentionRuns:     &maxAttentionRuns,
+		Since:                firstTime,
+		FailOnRegression:     true,
+	}, second)
+	if readiness.Ready || readiness.Trend.SampleCount != 2 || !equalStrings(readiness.RequiredCapabilities, []string{"asif", "ram-overlay"}) {
+		t.Fatalf("operations readiness = %+v, want blocked two-sample readiness with sorted capabilities", readiness)
+	}
+	if !hasReadinessIssue(readiness.Issues, "blocker", "insufficient_ready_workers", "") || !hasReadinessIssue(readiness.Issues, "blocker", "insufficient_capability_ready_workers", "asif") || !hasReadinessIssue(readiness.Issues, "blocker", "attention_runs_exceed_threshold", "") || !hasReadinessIssue(readiness.Issues, "blocker", "trend_regression", "") {
+		t.Fatalf("operations readiness issues = %+v, want readiness, capability, attention, and trend blockers", readiness.Issues)
+	}
+
+	relaxed := store.operationsReadiness(OperationsReadinessFilter{Namespace: "team-a", MinReadyWorkers: 1, Since: firstTime}, second)
+	if !relaxed.Ready || !hasReadinessIssue(relaxed.Issues, "warning", "attention_runs_present", "") || !hasReadinessIssue(relaxed.Issues, "warning", "trend_regression", "") {
+		t.Fatalf("relaxed operations readiness = %+v, want ready with warnings", relaxed)
+	}
+}
+
 func TestStoreSandboxExecQueuesSameWorkerShell(t *testing.T) {
 	store := NewMemoryStore(time.Minute)
 	now := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
@@ -6709,8 +6767,16 @@ func TestHandlerOperationsSummary(t *testing.T) {
 	if trend.SampleCount != 2 || trend.Workers.Ready.Delta != -1 || trend.Workers.Cordoned.Delta != 1 || len(trend.Regressions) == 0 {
 		t.Fatalf("operations summary trend = %+v, want ready drop and cordoned regression", trend)
 	}
+	var readiness OperationsReadinessResult
+	getJSON(t, server.URL+"/v1/operations/readiness?namespace=team-a&required_capability=ram-overlay&required_capability=asif&min_ready_workers=1&max_attention_runs=0&fail_on_regression=true", &readiness)
+	if readiness.Ready || readiness.Namespace != "team-a" || readiness.MinReadyWorkers != 1 || !equalStrings(readiness.RequiredCapabilities, []string{"asif", "ram-overlay"}) || !hasReadinessIssue(readiness.Issues, "blocker", "insufficient_ready_workers", "") || !hasReadinessIssue(readiness.Issues, "blocker", "insufficient_capability_ready_workers", "asif") {
+		t.Fatalf("operations readiness = %+v, want blocked readiness with missing asif and no ready workers", readiness)
+	}
 	if code := getJSONStatus(t, server.URL+"/v1/operations/summary", "token-a"); code != http.StatusForbidden {
 		t.Fatalf("scoped operations summary status = %d, want %d", code, http.StatusForbidden)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/operations/readiness", "token-a"); code != http.StatusForbidden {
+		t.Fatalf("scoped operations readiness status = %d, want %d", code, http.StatusForbidden)
 	}
 	if code := getJSONStatus(t, server.URL+"/v1/operations/summary/history", "token-a"); code != http.StatusForbidden {
 		t.Fatalf("scoped operations summary history status = %d, want %d", code, http.StatusForbidden)
@@ -6720,6 +6786,9 @@ func TestHandlerOperationsSummary(t *testing.T) {
 	}
 	if code := getJSONStatus(t, server.URL+"/v1/operations/summary/history?since=soon", ""); code != http.StatusBadRequest {
 		t.Fatalf("bad operations summary history since status = %d, want %d", code, http.StatusBadRequest)
+	}
+	if code := getJSONStatus(t, server.URL+"/v1/operations/readiness?min_ready_workers=-1", ""); code != http.StatusBadRequest {
+		t.Fatalf("bad operations readiness min status = %d, want %d", code, http.StatusBadRequest)
 	}
 	if code := getJSONStatus(t, server.URL+"/v1/operations/summary/trend?since=soon", ""); code != http.StatusBadRequest {
 		t.Fatalf("bad operations summary trend since status = %d, want %d", code, http.StatusBadRequest)
@@ -9198,6 +9267,15 @@ func equalStrings(a, b []string) bool {
 func hasOperationsRegression(regressions []OperationsTrendRegression, area, field, key string, delta int) bool {
 	for _, regression := range regressions {
 		if regression.Area == area && regression.Field == field && regression.Key == key && regression.Delta == delta {
+			return true
+		}
+	}
+	return false
+}
+
+func hasReadinessIssue(issues []OperationsReadinessIssue, severity, reason, capability string) bool {
+	for _, issue := range issues {
+		if issue.Severity == severity && issue.Reason == reason && issue.Capability == capability {
 			return true
 		}
 	}

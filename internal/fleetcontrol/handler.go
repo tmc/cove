@@ -106,6 +106,9 @@ func Handler(store *Store) http.Handler {
 	mux.HandleFunc("/v1/saml-bindings", func(w http.ResponseWriter, r *http.Request) {
 		handleSAMLBindings(w, r, store)
 	})
+	mux.HandleFunc("/v1/operations/readiness", func(w http.ResponseWriter, r *http.Request) {
+		handleOperationsReadiness(w, r, store)
+	})
 	mux.HandleFunc("/v1/operations/summary/trend", func(w http.ResponseWriter, r *http.Request) {
 		handleOperationsSummaryTrend(w, r, store)
 	})
@@ -312,6 +315,34 @@ func handleOperationsSummary(w http.ResponseWriter, r *http.Request, store *Stor
 	writeJSON(w, http.StatusOK, summary)
 }
 
+func handleOperationsReadiness(w http.ResponseWriter, r *http.Request, store *Store) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	identity := identityFromRequest(r, store)
+	if !requireRole(w, identity, ServiceAccountRoleViewer) {
+		return
+	}
+	if !requireUnscoped(w, r, store) {
+		return
+	}
+	if !reconcile(w, store) {
+		return
+	}
+	filter, err := operationsReadinessFilterFromRequest(r, namespaceFilterFromRequest(r, identity))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	summary := store.OperationsSummary(filter.Namespace)
+	if err := store.RecordOperationsSummary(summary); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, store.operationsReadiness(filter, summary))
+}
+
 func handleOperationsSummaryHistory(w http.ResponseWriter, r *http.Request, store *Store) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -417,6 +448,36 @@ func operationsSummarySnapshotListFilterFromRequest(r *http.Request, namespace s
 	return filter, nil
 }
 
+func operationsReadinessFilterFromRequest(r *http.Request, namespace string) (OperationsReadinessFilter, error) {
+	filter := OperationsReadinessFilter{
+		Namespace:            namespace,
+		RequiredCapabilities: sortedUniqueStrings(r.URL.Query()["required_capability"]),
+	}
+	var err error
+	if filter.MinReadyWorkers, err = intFilterFromRequest(r, "operations readiness", "min_ready_workers"); err != nil {
+		return OperationsReadinessFilter{}, err
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("max_attention_runs")); raw != "" {
+		maxAttentionRuns, err := intFilterFromRequest(r, "operations readiness", "max_attention_runs")
+		if err != nil {
+			return OperationsReadinessFilter{}, err
+		}
+		filter.MaxAttentionRuns = &maxAttentionRuns
+	}
+	if fail, err := boolFilterFromRequest(r, "operations readiness", "fail_on_regression"); err != nil {
+		return OperationsReadinessFilter{}, err
+	} else if fail != nil {
+		filter.FailOnRegression = *fail
+	}
+	if filter.Since, err = timeFilterFromRequest(r, "operations readiness", "since"); err != nil {
+		return OperationsReadinessFilter{}, err
+	}
+	if filter.Until, err = timeFilterFromRequest(r, "operations readiness", "until"); err != nil {
+		return OperationsReadinessFilter{}, err
+	}
+	return filter, nil
+}
+
 func operationsTrendFilterFromRequest(r *http.Request, namespace string) (OperationsTrendFilter, error) {
 	filter := OperationsTrendFilter{Namespace: namespace}
 	var err error
@@ -439,6 +500,18 @@ func timeFilterFromRequest(r *http.Request, subject, name string) (time.Time, er
 		return time.Time{}, fmt.Errorf("%s %s must be RFC3339 time", subject, name)
 	}
 	return parsed.UTC(), nil
+}
+
+func intFilterFromRequest(r *http.Request, subject, name string) (int, error) {
+	raw := strings.TrimSpace(r.URL.Query().Get(name))
+	if raw == "" {
+		return 0, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 0 {
+		return 0, fmt.Errorf("%s %s must be non-negative", subject, name)
+	}
+	return value, nil
 }
 
 func controllerRunListFilterFromRequest(r *http.Request, namespace string) (ControllerRunListFilter, error) {

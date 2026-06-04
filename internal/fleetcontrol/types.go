@@ -1124,6 +1124,42 @@ type OperationsTrendFilter struct {
 	Until     time.Time `json:"until,omitempty"`
 }
 
+type OperationsReadinessFilter struct {
+	Namespace            string    `json:"namespace,omitempty"`
+	RequiredCapabilities []string  `json:"required_capabilities,omitempty"`
+	MinReadyWorkers      int       `json:"min_ready_workers,omitempty"`
+	MaxAttentionRuns     *int      `json:"max_attention_runs,omitempty"`
+	Since                time.Time `json:"since,omitempty"`
+	Until                time.Time `json:"until,omitempty"`
+	FailOnRegression     bool      `json:"fail_on_regression,omitempty"`
+}
+
+type OperationsReadinessResult struct {
+	Time                 time.Time                  `json:"time"`
+	Namespace            string                     `json:"namespace,omitempty"`
+	Ready                bool                       `json:"ready"`
+	RequiredCapabilities []string                   `json:"required_capabilities,omitempty"`
+	MinReadyWorkers      int                        `json:"min_ready_workers,omitempty"`
+	MaxAttentionRuns     *int                       `json:"max_attention_runs,omitempty"`
+	FailOnRegression     bool                       `json:"fail_on_regression,omitempty"`
+	Issues               []OperationsReadinessIssue `json:"issues,omitempty"`
+	Summary              OperationsSummary          `json:"summary"`
+	Trend                OperationsTrendResult      `json:"trend"`
+}
+
+type OperationsReadinessIssue struct {
+	Severity   string `json:"severity"`
+	Area       string `json:"area"`
+	Reason     string `json:"reason"`
+	Capability string `json:"capability,omitempty"`
+	Field      string `json:"field,omitempty"`
+	Key        string `json:"key,omitempty"`
+	Current    int    `json:"current,omitempty"`
+	Required   int    `json:"required,omitempty"`
+	Delta      int    `json:"delta,omitempty"`
+	Message    string `json:"message,omitempty"`
+}
+
 type OperationsTrendResult struct {
 	Namespace      string                       `json:"namespace,omitempty"`
 	Since          time.Time                    `json:"since,omitempty"`

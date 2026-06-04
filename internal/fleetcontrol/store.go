@@ -2399,6 +2399,130 @@ func (s *Store) OperationsTrend(filter OperationsTrendFilter) OperationsTrendRes
 	return result
 }
 
+func (s *Store) OperationsReadiness(filter OperationsReadinessFilter) OperationsReadinessResult {
+	filter = normalizeOperationsReadinessFilter(filter)
+	return s.operationsReadiness(filter, s.OperationsSummary(filter.Namespace))
+}
+
+func (s *Store) operationsReadiness(filter OperationsReadinessFilter, summary OperationsSummary) OperationsReadinessResult {
+	filter = normalizeOperationsReadinessFilter(filter)
+	trend := s.OperationsTrend(OperationsTrendFilter{
+		Namespace: filter.Namespace,
+		Since:     filter.Since,
+		Until:     filter.Until,
+	})
+	result := OperationsReadinessResult{
+		Time:                 summary.Time,
+		Namespace:            filter.Namespace,
+		Ready:                true,
+		RequiredCapabilities: cloneStrings(filter.RequiredCapabilities),
+		MinReadyWorkers:      filter.MinReadyWorkers,
+		MaxAttentionRuns:     cloneIntPtr(filter.MaxAttentionRuns),
+		FailOnRegression:     filter.FailOnRegression,
+		Summary:              summary,
+		Trend:                trend,
+	}
+	if filter.MinReadyWorkers > 0 && summary.Workers.Ready < filter.MinReadyWorkers {
+		result.addReadinessIssue(OperationsReadinessIssue{
+			Severity: "blocker",
+			Area:     "workers",
+			Reason:   "insufficient_ready_workers",
+			Current:  summary.Workers.Ready,
+			Required: filter.MinReadyWorkers,
+			Message:  "ready workers below requested threshold",
+		})
+	}
+	capabilities := workerCapabilitiesByName(summary.Workers.Capabilities)
+	for _, capability := range filter.RequiredCapabilities {
+		current := capabilities[capability].Ready
+		if current >= filter.MinReadyWorkers {
+			continue
+		}
+		result.addReadinessIssue(OperationsReadinessIssue{
+			Severity:   "blocker",
+			Area:       "workers",
+			Reason:     "insufficient_capability_ready_workers",
+			Capability: capability,
+			Current:    current,
+			Required:   filter.MinReadyWorkers,
+			Message:    "ready workers for required capability below requested threshold",
+		})
+	}
+	if filter.MaxAttentionRuns != nil {
+		if summary.ControllerRuns.Attention > *filter.MaxAttentionRuns {
+			result.addReadinessIssue(OperationsReadinessIssue{
+				Severity: "blocker",
+				Area:     "controller_runs",
+				Reason:   "attention_runs_exceed_threshold",
+				Current:  summary.ControllerRuns.Attention,
+				Required: *filter.MaxAttentionRuns,
+				Message:  "controller runs needing attention exceed requested threshold",
+			})
+		}
+	} else if summary.ControllerRuns.Attention > 0 {
+		result.addReadinessIssue(OperationsReadinessIssue{
+			Severity: "warning",
+			Area:     "controller_runs",
+			Reason:   "attention_runs_present",
+			Current:  summary.ControllerRuns.Attention,
+			Message:  "controller runs need attention",
+		})
+	}
+	for _, regression := range trend.Regressions {
+		severity := "warning"
+		if filter.FailOnRegression {
+			severity = "blocker"
+		}
+		result.addReadinessIssue(OperationsReadinessIssue{
+			Severity: severity,
+			Area:     regression.Area,
+			Reason:   "trend_regression",
+			Field:    regression.Field,
+			Key:      regression.Key,
+			Current:  regression.Last,
+			Delta:    regression.Delta,
+			Message:  "operations trend regressed over requested window",
+		})
+	}
+	if len(result.Issues) == 0 {
+		result.Issues = nil
+	}
+	return result
+}
+
+func normalizeOperationsReadinessFilter(filter OperationsReadinessFilter) OperationsReadinessFilter {
+	filter.Namespace = normalizeNamespace(filter.Namespace)
+	filter.RequiredCapabilities = sortedUniqueStrings(filter.RequiredCapabilities)
+	if filter.MinReadyWorkers < 0 {
+		filter.MinReadyWorkers = 0
+	}
+	if !filter.Since.IsZero() {
+		filter.Since = filter.Since.UTC()
+	}
+	if !filter.Until.IsZero() {
+		filter.Until = filter.Until.UTC()
+	}
+	if filter.MinReadyWorkers == 0 && len(filter.RequiredCapabilities) > 0 {
+		filter.MinReadyWorkers = 1
+	}
+	return filter
+}
+
+func (result *OperationsReadinessResult) addReadinessIssue(issue OperationsReadinessIssue) {
+	result.Issues = append(result.Issues, issue)
+	if issue.Severity == "blocker" {
+		result.Ready = false
+	}
+}
+
+func workerCapabilitiesByName(capabilities []WorkerCapabilitySummary) map[string]WorkerCapabilitySummary {
+	out := make(map[string]WorkerCapabilitySummary, len(capabilities))
+	for _, capability := range capabilities {
+		out[capability.Name] = capability
+	}
+	return out
+}
+
 func operationsSummarySnapshot(summary OperationsSummary) OperationsSummarySnapshot {
 	return normalizeOperationsSummarySnapshot(OperationsSummarySnapshot{
 		Time:      summary.Time,
