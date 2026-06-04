@@ -729,8 +729,23 @@ def test_fleet_client_maintenance_runs() -> None:
         assert trend["workers"]["ready"]["delta"] == -2
         assert trend["controller_runs"]["by_missing_capability"]["ram-overlay"]["delta"] == 2
         assert len(trend["regressions"]) == 2
+        readiness = CoveFleetClient.check_operations_readiness(
+            fleet_url=server.url,
+            api_key="secret",
+            namespace="team-a",
+            required_capabilities=("ram-overlay", "asif"),
+            min_ready_workers=2,
+            max_attention_runs=0,
+            since="2026-05-31T10:00:00Z",
+            until="2026-05-31T10:10:00Z",
+            fail_on_regression=True,
+        )
+        assert readiness["ready"] is False
+        assert readiness["min_ready_workers"] == 2
+        assert readiness["trend"]["sample_count"] == 2
+        assert len(readiness["issues"]) == 2
 
-        paths = [request["path"] for request in server.requests[-19:]]
+        paths = [request["path"] for request in server.requests[-20:]]
         assert paths == [
             "/v1/images/gc",
             "/v1/images/gc/runs",
@@ -751,43 +766,51 @@ def test_fleet_client_maintenance_runs() -> None:
             "/v1/operations/summary",
             "/v1/operations/summary/history",
             "/v1/operations/summary/trend",
+            "/v1/operations/readiness",
         ]
-        assert server.requests[-19]["body"]["required_capabilities"] == ["ram-overlay", "asif"]
-        assert server.requests[-19]["body"]["dry_run"] is True
-        assert server.requests[-18]["query"]["apply"] == ["true"]
-        assert server.requests[-16]["body"]["run_budget"] == 100
-        assert server.requests[-16]["body"]["dry_run"] is True
-        assert server.requests[-15]["query"]["clear"] == ["false"]
-        assert server.requests[-13]["body"]["warn_pct"] == 70
-        assert server.requests[-13]["body"]["dry_run"] is True
-        assert server.requests[-12]["query"]["target"] == ["750GB"]
-        assert server.requests[-10]["body"]["category"] == "build-scratch"
-        assert server.requests[-10]["body"]["dry_run"] is True
-        assert server.requests[-7]["query"]["kind"] == ["storage.prune"]
-        assert server.requests[-7]["query"]["source_ref"] == ["registry.example/base:v1"]
-        assert server.requests[-7]["query"]["image_ref"] == ["base:v1"]
-        assert server.requests[-7]["query"]["image_manifest_digest"] == ["sha256:base"]
-        assert server.requests[-7]["query"]["image_digest_ref"] == ["registry.example/base@sha256:base"]
-        assert server.requests[-7]["query"]["image_platform"] == ["darwin/arm64"]
-        assert server.requests[-7]["query"]["required_capability"] == ["ram-overlay"]
-        assert server.requests[-7]["query"]["assignment_id"] == ["assignment-storage-prune-1"]
-        assert server.requests[-7]["query"]["assignment_status"] == ["running"]
-        assert server.requests[-7]["query"]["has_active_assignments"] == ["true"]
-        assert server.requests[-7]["query"]["worker_id"] == ["worker-1"]
-        assert server.requests[-7]["query"]["candidate_worker_id"] == ["worker-1"]
-        assert server.requests[-7]["query"]["skipped_worker_id"] == ["worker-2"]
-        assert server.requests[-7]["query"]["skip_reason"] == ["capability"]
-        assert server.requests[-7]["query"]["skip_status"] == ["cordoned"]
-        assert server.requests[-7]["query"]["missing_capability"] == ["ram-overlay"]
-        assert server.requests[-7]["query"]["has_skips"] == ["true"]
-        assert server.requests[-4]["body"] == {}
+        assert server.requests[-20]["body"]["required_capabilities"] == ["ram-overlay", "asif"]
+        assert server.requests[-20]["body"]["dry_run"] is True
+        assert server.requests[-19]["query"]["apply"] == ["true"]
+        assert server.requests[-17]["body"]["run_budget"] == 100
+        assert server.requests[-17]["body"]["dry_run"] is True
+        assert server.requests[-16]["query"]["clear"] == ["false"]
+        assert server.requests[-14]["body"]["warn_pct"] == 70
+        assert server.requests[-14]["body"]["dry_run"] is True
+        assert server.requests[-13]["query"]["target"] == ["750GB"]
+        assert server.requests[-11]["body"]["category"] == "build-scratch"
+        assert server.requests[-11]["body"]["dry_run"] is True
+        assert server.requests[-8]["query"]["kind"] == ["storage.prune"]
+        assert server.requests[-8]["query"]["source_ref"] == ["registry.example/base:v1"]
+        assert server.requests[-8]["query"]["image_ref"] == ["base:v1"]
+        assert server.requests[-8]["query"]["image_manifest_digest"] == ["sha256:base"]
+        assert server.requests[-8]["query"]["image_digest_ref"] == ["registry.example/base@sha256:base"]
+        assert server.requests[-8]["query"]["image_platform"] == ["darwin/arm64"]
+        assert server.requests[-8]["query"]["required_capability"] == ["ram-overlay"]
+        assert server.requests[-8]["query"]["assignment_id"] == ["assignment-storage-prune-1"]
+        assert server.requests[-8]["query"]["assignment_status"] == ["running"]
+        assert server.requests[-8]["query"]["has_active_assignments"] == ["true"]
+        assert server.requests[-8]["query"]["worker_id"] == ["worker-1"]
+        assert server.requests[-8]["query"]["candidate_worker_id"] == ["worker-1"]
+        assert server.requests[-8]["query"]["skipped_worker_id"] == ["worker-2"]
+        assert server.requests[-8]["query"]["skip_reason"] == ["capability"]
+        assert server.requests[-8]["query"]["skip_status"] == ["cordoned"]
+        assert server.requests[-8]["query"]["missing_capability"] == ["ram-overlay"]
+        assert server.requests[-8]["query"]["has_skips"] == ["true"]
+        assert server.requests[-5]["body"] == {}
+        assert server.requests[-4]["query"]["namespace"] == ["team-a"]
         assert server.requests[-3]["query"]["namespace"] == ["team-a"]
+        assert server.requests[-3]["query"]["since"] == ["2026-05-31T10:00:00Z"]
+        assert server.requests[-3]["query"]["until"] == ["2026-05-31T10:10:00Z"]
+        assert server.requests[-3]["query"]["offset"] == ["1"]
+        assert server.requests[-3]["query"]["limit"] == ["2"]
         assert server.requests[-2]["query"]["namespace"] == ["team-a"]
         assert server.requests[-2]["query"]["since"] == ["2026-05-31T10:00:00Z"]
         assert server.requests[-2]["query"]["until"] == ["2026-05-31T10:10:00Z"]
-        assert server.requests[-2]["query"]["offset"] == ["1"]
-        assert server.requests[-2]["query"]["limit"] == ["2"]
         assert server.requests[-1]["query"]["namespace"] == ["team-a"]
+        assert server.requests[-1]["query"]["required_capability"] == ["ram-overlay", "asif"]
+        assert server.requests[-1]["query"]["min_ready_workers"] == ["2"]
+        assert server.requests[-1]["query"]["max_attention_runs"] == ["0"]
+        assert server.requests[-1]["query"]["fail_on_regression"] == ["true"]
         assert server.requests[-1]["query"]["since"] == ["2026-05-31T10:00:00Z"]
         assert server.requests[-1]["query"]["until"] == ["2026-05-31T10:10:00Z"]
     finally:
@@ -1534,6 +1557,8 @@ def test_fleet_client_maintenance_validation() -> None:
         CoveFleetClient.list_controller_runs(fleet_url="https://fleet.example", api_key="secret", offset=-1)
     with pytest.raises(ValueError, match="operations summary history offset must be non-negative"):
         CoveFleetClient.list_operations_summary_snapshots(fleet_url="https://fleet.example", api_key="secret", offset=-1)
+    with pytest.raises(ValueError, match="operations readiness min_ready_workers must be non-negative"):
+        CoveFleetClient.check_operations_readiness(fleet_url="https://fleet.example", api_key="secret", min_ready_workers=-1)
     with pytest.raises(ValueError, match="controller run id is required"):
         CoveFleetClient.get_controller_run(fleet_url="https://fleet.example", api_key="secret", run_id="")
 
@@ -2284,6 +2309,37 @@ def _operations_trend() -> dict[str, object]:
     }
 
 
+def _operations_readiness() -> dict[str, object]:
+    return {
+        "time": "2026-05-31T10:05:00Z",
+        "namespace": "team-a",
+        "ready": False,
+        "required_capabilities": ["ram-overlay", "asif"],
+        "min_ready_workers": 2,
+        "max_attention_runs": 0,
+        "fail_on_regression": True,
+        "issues": [
+            {
+                "severity": "blocker",
+                "area": "workers",
+                "reason": "insufficient_ready_workers",
+                "current": 1,
+                "required": 2,
+            },
+            {
+                "severity": "blocker",
+                "area": "workers",
+                "reason": "insufficient_capability_ready_workers",
+                "capability": "asif",
+                "current": 1,
+                "required": 2,
+            },
+        ],
+        "summary": _operations_summary(),
+        "trend": _operations_trend(),
+    }
+
+
 def _audit_event() -> dict[str, object]:
     return {
         "id": "audit-1",
@@ -2827,6 +2883,9 @@ class _FleetHTTPServer:
                     return
                 if path == "/v1/operations/summary/trend":
                     self._write(_operations_trend())
+                    return
+                if path == "/v1/operations/readiness":
+                    self._write(_operations_readiness())
                     return
                 if path == "/v1/placements/plans":
                     self._write(

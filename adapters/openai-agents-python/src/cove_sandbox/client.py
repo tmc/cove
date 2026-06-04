@@ -1189,6 +1189,51 @@ class CoveFleetClient:
         return trend
 
     @classmethod
+    def check_operations_readiness(
+        cls,
+        *,
+        fleet_url: str | None = None,
+        api_key: str | None = None,
+        namespace: str | None = None,
+        required_capabilities: Sequence[str] | str | None = None,
+        min_ready_workers: int = 0,
+        max_attention_runs: int | None = None,
+        since: str = "",
+        until: str = "",
+        fail_on_regression: bool = False,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        if min_ready_workers < 0:
+            raise ValueError("operations readiness min_ready_workers must be non-negative")
+        if max_attention_runs is not None and max_attention_runs < 0:
+            raise ValueError("operations readiness max_attention_runs must be non-negative")
+        seed = cls(
+            sandbox_id="operations-readiness",
+            fleet_url=fleet_url,
+            api_key=api_key,
+            namespace=namespace,
+            timeout=timeout,
+        )
+        query = [
+            ("namespace", namespace or ""),
+            ("min_ready_workers", str(min_ready_workers) if min_ready_workers else ""),
+            ("max_attention_runs", str(max_attention_runs) if max_attention_runs is not None else ""),
+            ("since", since),
+            ("until", until),
+            ("fail_on_regression", "true" if fail_on_regression else ""),
+        ]
+        for capability in _clean_string_list(required_capabilities):
+            query.append(("required_capability", capability))
+        result = seed._request("GET", _query_path_pairs("/v1/operations/readiness", query), timeout=timeout)
+        issues = result.get("issues") or []
+        if not isinstance(issues, list):
+            raise CoveError("GET /v1/operations/readiness: expected issues list")
+        readiness = dict(result)
+        readiness["ready"] = bool(readiness.get("ready"))
+        readiness["issues"] = [dict(item) for item in issues if isinstance(item, dict)]
+        return readiness
+
+    @classmethod
     def list_sandbox_metering(
         cls,
         *,
