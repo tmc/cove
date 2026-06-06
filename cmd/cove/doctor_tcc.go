@@ -28,7 +28,7 @@ func verifyTCCFDAProbe(sock, explicitPath string, verbose bool) bool {
 		return true
 	}
 
-	result, err := agentUserExec(sock, []string{"/bin/sh", "-c", tccProbeScript(), "cove-tcc-probe", path}, 30*time.Second)
+	result, err := runTCCFDAProbe(sock, path)
 	if err != nil {
 		fmt.Printf("  ! %s: error (%v)\n", path, err)
 		printFDAHint()
@@ -51,6 +51,10 @@ func verifyTCCFDAProbe(sock, explicitPath string, verbose bool) bool {
 	}
 	printFDAHint()
 	return false
+}
+
+func runTCCFDAProbe(sock, path string) (*controlpb.AgentExecResponse, error) {
+	return agentUserExec(sock, []string{"/bin/sh", "-c", tccProbeScript(), "cove-tcc-probe", path}, 30*time.Second)
 }
 
 func verifyTCCAppleEventsProbe(sock string) bool {

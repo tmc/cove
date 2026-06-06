@@ -57,8 +57,11 @@ On macOS guests, cove mounts the aggregate VirtioFS share at
 creates `~/<tag>` as a user-session symlink to that system mount path. The
 symlink is created through the user agent, so a fresh desktop VM must complete
 login before the link can be installed. If the user agent is connected but
-macOS still refuses to enumerate the mount, run `cove doctor`; that is the
-existing Full Disk Access diagnostic for non-system `/Volumes` mounts.
+macOS still refuses to enumerate the mount, cove prints
+`COVE_TCC_FDA_REQUIRED`. Run `cove doctor tcc-fda -tcc-path
+/Volumes/<tag> -password <guest-password>` to guide Full Disk Access for
+`/usr/local/bin/vz-agent`, then verify with `cove doctor --tcc-path
+/Volumes/<tag>`.
 
 On Linux guests, VirtioFS mounts are explicit unless the guest agent is already
 installed and healthy. Cove prints the manual command when the VM starts:
@@ -102,7 +105,7 @@ corresponding VirtioFS device.
 
 > [!WARNING]
 > VirtioFS devices must be present at VM boot time. Folders added after suspend/resume require a VM reboot.
-- TCC blocks `vz-agent` from accessing VirtioFS mounts as a daemon. The daemon lacks Full Disk Access. Cove routes path-aware `agent-exec` calls for `/Volumes/My Shared Files/...` through the user agent and uses `cove doctor` for FDA failures that remain after routing.
+- TCC blocks `vz-agent` from accessing VirtioFS mounts as a daemon. The daemon lacks Full Disk Access. Cove routes path-aware `agent-exec` calls for `/Volumes/My Shared Files/...` through the user agent and uses `cove doctor tcc-fda` for FDA failures that remain after routing.
 - Clipboard sync is separate from screenshot, OCR, keyboard, and mouse control.
   Check `cove ctl -vm <vm> capabilities` before assuming host-to-guest or
   guest-to-host clipboard support is available for a given VM.

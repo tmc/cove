@@ -265,11 +265,12 @@ func (b *AgentBridge) bootstrapUserAgentLocked() error {
 set -e
 chown root:wheel %q 2>/dev/null || chown root:0 %q
 chmod 644 %q
-launchctl print gui/%d/%s >/dev/null 2>&1 && launchctl bootout gui/%d/%s >/dev/null 2>&1 || true
-launchctl bootstrap gui/%d %q
+if ! launchctl print gui/%d/%s >/dev/null 2>&1; then
+	launchctl bootstrap gui/%d %q
+fi
 launchctl enable gui/%d/%s
-launchctl kickstart -k gui/%d/%s
-`, plistPath, plistPath, plistPath, uid, label, uid, label, uid, plistPath, uid, label, uid, label)
+launchctl kickstart gui/%d/%s
+`, plistPath, plistPath, plistPath, uid, label, uid, plistPath, uid, label, uid, label)
 
 	result, err := b.agent.Exec(ctx, []string{"sh", "-lc", script}, nil, "")
 	if err != nil {

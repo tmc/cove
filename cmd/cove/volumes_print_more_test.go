@@ -83,3 +83,20 @@ func TestPrintVolumeMountInfoMultipleUntaggedLinux(t *testing.T) {
 		}
 	}
 }
+
+func TestPrintMountedVolumeFDAWarning(t *testing.T) {
+	out := captureStdout(t, func() error {
+		printMountedVolumeFDAWarning("/Volumes/ml-explore", "timed out waiting for Full Disk Access approval")
+		return nil
+	})
+	for _, want := range []string{
+		"COVE_TCC_FDA_REQUIRED path='/Volumes/ml-explore' agent=/usr/local/bin/vz-agent",
+		"Full Disk Access needed for /Volumes/ml-explore",
+		"guided fix: cove doctor tcc-fda -tcc-path '/Volumes/ml-explore' -password <guest-admin-password>",
+		"cove doctor --tcc-path '/Volumes/ml-explore'",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}

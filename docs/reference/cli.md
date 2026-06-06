@@ -237,6 +237,7 @@ Diagnose host readiness or VM health.
 
 ```
 cove doctor host [-json]
+cove doctor tcc-fda -tcc-path /Volumes/<tag> [-password pass]
 cove doctor [options]
 ```
 
@@ -247,10 +248,14 @@ Tools. `-json` emits a machine-readable report.
 
 Plain `cove doctor` remains VM-focused. It checks provisioning, guest agent, TCC
 paths, and file ownership for the active VM or `-vm <name>`.
+When a macOS shared folder needs Full Disk Access, `cove doctor tcc-fda`
+guides adding `/usr/local/bin/vz-agent` in System Settings and verifies with
+the same bounded readdir probe.
 
 ```bash
 cove doctor host
 cove doctor host -json
+cove doctor tcc-fda -tcc-path /Volumes/work -password <guest-password>
 cove doctor -vm dev -v
 ```
 
@@ -369,6 +374,7 @@ Diagnose VM health: provisioning, agent, and file ownership.
 
 ```
 cove doctor [flags]
+cove doctor tcc-fda -tcc-path /Volumes/<tag> [-password pass] [-upgrade-agent]
 cove doctor tcc-preauth
 cove doctor sckit-preauth [-json]
 cove doctor sckit-spike [-n N] [-threshold DUR] [-title-prefix STR] [-owner STR]
@@ -382,6 +388,7 @@ cove doctor sckit-spike [-n N] [-threshold DUR] [-title-prefix STR] [-owner STR]
 
 | Subcommand | Description |
 |------------|-------------|
+| `tcc-fda -tcc-path PATH [-password PASS] [-upgrade-agent]` | Guide guest Full Disk Access for `/usr/local/bin/vz-agent` and verify by bounded readdir. |
 | `tcc-preauth` | Pre-auth Apple Events services cove uses on the host. |
 | `sckit-preauth [-json]` | Report ScreenCaptureKit availability and Screen Recording authorization (design 041). |
 | `sckit-spike` | A/B harness comparing SCKit and CGWindow capture latency. |
@@ -390,6 +397,7 @@ cove doctor sckit-spike [-n N] [-threshold DUR] [-title-prefix STR] [-owner STR]
 cove doctor
 cove doctor --fix
 cove doctor --tcc-path /Volumes/work
+cove doctor tcc-fda -tcc-path /Volumes/work -password <guest-password>
 cove doctor sckit-preauth
 cove doctor sckit-preauth -json
 ```

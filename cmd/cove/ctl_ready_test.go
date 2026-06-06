@@ -186,6 +186,28 @@ func TestPickReadyDetail(t *testing.T) {
 	}
 }
 
+func TestReadyFailureDetailGoCommandNotFound(t *testing.T) {
+	tests := []struct {
+		name   string
+		check  string
+		detail string
+		want   string
+	}{
+		{"zsh", "go", "zsh:1: command not found: go", "provision with vzscripts/golang.vzscript"},
+		{"sh", "go", "/bin/sh: go: command not found", "provision with vzscripts/golang.vzscript"},
+		{"other-check", "node", "command not found: node", "command not found: node"},
+		{"other-go-error", "go", "go: permission denied", "go: permission denied"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := readyFailureDetail(tt.check, tt.detail)
+			if !strings.Contains(got, tt.want) {
+				t.Fatalf("readyFailureDetail(%q, %q) = %q, want substring %q", tt.check, tt.detail, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestAgentStatus(t *testing.T) {
 	if agentStatus(true) != "ok" {
 		t.Fatalf("agentStatus(true) != ok")

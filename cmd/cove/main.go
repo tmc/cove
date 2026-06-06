@@ -818,6 +818,14 @@ Avoiding repeated password dialogs:
     native admin dialog, so they REQUIRE the helper. Without it, 'cove up'
     stops early and tells you to install it or re-run from a normal terminal.
 
+Using shared folders:
+  - A macOS guest may require Full Disk Access for /usr/local/bin/vz-agent
+    before it can read /Volumes/<tag>. If cove prints COVE_TCC_FDA_REQUIRED,
+    run:
+      cove doctor tcc-fda -tcc-path /Volumes/<tag> -password <guest-password>
+  - Success is verified by:
+      cove doctor --tcc-path /Volumes/<tag>
+
 Support:
   cove support bundle
   cove support bundle -vm <name>`)

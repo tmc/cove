@@ -175,7 +175,9 @@ cove agent-upgrade
 
 **Fix:** run `cove doctor` while the VM is running. It probes the first non-system `/Volumes` mount through the user agent and reports the Full Disk Access grant path if directory enumeration is blocked. You can also probe a specific path with `cove doctor --tcc-path /Volumes/<tag>`.
 
-If the probe fails, grant Full Disk Access to `/usr/local/bin/vz-agent` inside the guest in System Settings → Privacy & Security → Full Disk Access. Alternatives:
+Stock SIP-enabled macOS does not provide a silent local preauthorization path for Full Disk Access without MDM PPPC enrollment. `tccutil` can reset grants, not create them.
+
+If the probe fails, use `cove doctor tcc-fda -tcc-path /Volumes/<tag> -password <guest-admin-password>` to guide System Settings, add `/usr/local/bin/vz-agent`, and verify success with the same bounded readdir probe. Alternatives:
 
 - Disable SIP on the guest.
 - Proxy commands through a logged-in user session via `cove ctl agent-user-exec`.

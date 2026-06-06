@@ -267,6 +267,9 @@ func readyResultFromResp(name string, resp *controlpb.ControlResponse) readyResu
 	}
 	ok := exec.ExitCode == 0
 	detail := pickReadyDetail(exec.Stdout, exec.Stderr, int(exec.ExitCode))
+	if !ok {
+		detail = readyFailureDetail(name, detail)
+	}
 	return readyResult{Name: name, OK: ok, Detail: detail}
 }
 
@@ -284,7 +287,11 @@ func readyResultFromData(name, data string) readyResult {
 		return readyResult{Name: name, OK: false, Detail: fmt.Sprintf("parse response: %v", err)}
 	}
 	ok := parsed.ExitCode == 0
-	return readyResult{Name: name, OK: ok, Detail: pickReadyDetail(parsed.Stdout, parsed.Stderr, parsed.ExitCode)}
+	detail := pickReadyDetail(parsed.Stdout, parsed.Stderr, parsed.ExitCode)
+	if !ok {
+		detail = readyFailureDetail(name, detail)
+	}
+	return readyResult{Name: name, OK: ok, Detail: detail}
 }
 
 // readyExecArgs prepares a readiness probe command for execution in the guest.
@@ -319,6 +326,23 @@ func pickReadyDetail(stdout, stderr string, exitCode int) string {
 		return fmt.Sprintf("exit status %d", exitCode)
 	}
 	return ""
+}
+
+func readyFailureDetail(name, detail string) string {
+	if name != "go" || !looksCommandNotFound(detail, "go") {
+		return detail
+	}
+	return "go command not found; install Go in the guest or provision with vzscripts/golang.vzscript before requiring go"
+}
+
+func looksCommandNotFound(detail, command string) bool {
+	lower := strings.ToLower(detail)
+	if lower == "" {
+		return false
+	}
+	return strings.Contains(lower, command+": command not found") ||
+		strings.Contains(lower, "command not found: "+command) ||
+		strings.Contains(lower, "executable file not found")
 }
 
 // firstLine returns the first non-empty line of s, trimmed.

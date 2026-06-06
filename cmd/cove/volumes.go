@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	vz "github.com/tmc/apple/virtualization"
@@ -17,6 +18,8 @@ import (
 type volumeSlice []vmconfig.VolumeMount
 
 var rosettaRuntimeSetup bool
+
+var tccVolumeWarnings sync.Map
 
 func (v *volumeSlice) String() string {
 	if v == nil || len(*v) == 0 {
@@ -238,6 +241,7 @@ func autoMountTaggedVolumes(ctx context.Context, cs *ControlServer, mounts []vmc
 				fmt.Printf("auto-mount shared folders: %v\n", err)
 			} else if mounted {
 				fmt.Printf("Auto-mounted shared folders at %s\n", defaultSharedFoldersMountPoint)
+				go warnWhenTCCFDABlocked(ctx, defaultSharedFoldersMountPoint)
 			} else if verbose {
 				fmt.Printf("Shared folders already mounted at %s\n", defaultSharedFoldersMountPoint)
 			}
@@ -374,7 +378,62 @@ func mountTaggedVolumesOnce(ctx context.Context, cs *ControlServer, tagged []vmc
 			mode = "ro"
 		}
 		fmt.Printf("  mounted %s at %s (%s)\n", m.Tag, mountPoint, mode)
+		if !linuxMode {
+			go warnWhenTCCFDABlocked(ctx, mountPoint)
+		}
 	}
+}
+
+func warnWhenTCCFDABlocked(ctx context.Context, guestPath string) {
+	if guestPath == "" {
+		return
+	}
+	if _, loaded := tccVolumeWarnings.LoadOrStore(guestPath, struct{}{}); loaded {
+		return
+	}
+
+	sock := GetControlSocketPathForVM(vmDir)
+	for attempt := 0; attempt < 12; attempt++ {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Duration(min(attempt+1, 5)) * time.Second):
+		}
+
+		result, err := runTCCFDAProbe(sock, guestPath)
+		if err != nil {
+			if verbose {
+				fmt.Printf("Full Disk Access probe for %s: waiting for user agent: %v\n", guestPath, err)
+			}
+			continue
+		}
+		if result.ExitCode == 0 {
+			if verbose {
+				fmt.Printf("Full Disk Access probe for %s: readable via user agent\n", guestPath)
+			}
+			return
+		}
+		stderr := strings.TrimSpace(result.Stderr)
+		if stderr == "" {
+			stderr = fmt.Sprintf("exit %d", result.ExitCode)
+		}
+		if isENOENTStderr(stderr) {
+			if verbose {
+				fmt.Printf("Full Disk Access probe for %s: path missing: %s\n", guestPath, stderr)
+			}
+			return
+		}
+		printMountedVolumeFDAWarning(guestPath, stderr)
+		return
+	}
+	printMountedVolumeFDAWarning(guestPath, "user agent unavailable")
+}
+
+func printMountedVolumeFDAWarning(guestPath, detail string) {
+	fmt.Printf("COVE_TCC_FDA_REQUIRED path=%s agent=/usr/local/bin/vz-agent detail=%s\n", shellQuote(guestPath), shellQuote(detail))
+	fmt.Printf("Full Disk Access needed for %s: mounted but not readable via user agent (%s)\n", guestPath, detail)
+	fmt.Printf("  guided fix: cove doctor tcc-fda -tcc-path %s -password <guest-admin-password>\n", shellQuote(guestPath))
+	fmt.Printf("  verify with: cove doctor --tcc-path %s\n", shellQuote(guestPath))
 }
 
 func setupRosettaInGuest(ctx context.Context, cs *ControlServer) {

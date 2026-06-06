@@ -37,7 +37,7 @@ func TestHelpAdvancedIncludesFullInventory(t *testing.T) {
 func TestFirstRunHelp(t *testing.T) {
 	var buf bytes.Buffer
 	printFirstRunUsage(&buf)
-	for _, want := range []string{"cove doctor host", "cove up -user <name>", "prompts for the guest account password", "cove support bundle"} {
+	for _, want := range []string{"cove doctor host", "cove up -user <name>", "prompts for the guest account password", "COVE_TCC_FDA_REQUIRED", "cove doctor tcc-fda", "cove support bundle"} {
 		if !strings.Contains(buf.String(), want) {
 			t.Fatalf("first-run help missing %q:\n%s", want, buf.String())
 		}
