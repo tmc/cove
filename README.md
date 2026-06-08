@@ -2,7 +2,7 @@
 
 macOS VMs that suspend, snapshot, and script.
 
-[![Go](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white)](https://go.dev)
+[![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![Platform](https://img.shields.io/badge/Platform-Apple%20Silicon-000000?logo=apple&logoColor=white)](https://developer.apple.com/documentation/virtualization)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
@@ -163,24 +163,6 @@ VirtioFS volume mounts with runtime hot-add.
 ```bash
 cove run -share ~/projects -share /data:ro
 ```
-
-## Comparison
-
-| | cove | [Lume](https://github.com/trycua/lume) | [Tart](https://github.com/cirruslabs/tart) | [UTM](https://mac.getutm.app) |
-|---|---|---|---|---|
-| Language | Go (purego) | Swift | Swift | Swift/Obj-C |
-| Suspend/resume | Yes | No | No | Yes |
-| VM state snapshots | Yes | No | No | Yes |
-| Disk snapshots (APFS COW) | Yes | No | No | No |
-| Script engine | VZScript (rsc.io/script) | No | No | No |
-| Guest agent | vsock gRPC | vsock gRPC | No | SPICE agent |
-| SIP management | Automated | No | No | Manual |
-| Unattended provisioning | Disk injection + OCR | Cloud-init | Packer | Manual |
-| Linux VMs | Yes | Yes | Yes | Yes (QEMU) |
-| x86 guests | No | No | No | Yes (QEMU) |
-| GUI | Native AppKit | Electron | None | Native AppKit |
-| Control API | Unix socket (protobuf JSON) | HTTP REST | None | AppleScript |
-| Open source | MIT | MIT | Fair Source 0.9 | Apache-2.0 |
 
 ## Usage Examples
 
