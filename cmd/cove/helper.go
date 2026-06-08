@@ -183,6 +183,68 @@ func helperInstalledImpl() bool {
 	return true
 }
 
+type helperProcessSample struct {
+	PID        int
+	CPUPercent float64
+	Command    string
+}
+
+var helperProcessSampleHook = helperProcessSampleImpl
+
+func helperProcessSampleImpl() (helperProcessSample, bool, error) {
+	if runtime.GOOS != "darwin" {
+		return helperProcessSample{}, false, nil
+	}
+	out, err := exec.Command("pgrep", "-f", helperBinaryPath).Output()
+	if err != nil {
+		return helperProcessSample{}, false, nil
+	}
+	pid := firstHelperPID(string(out))
+	if pid == 0 {
+		return helperProcessSample{}, false, nil
+	}
+	psOut, err := exec.Command("ps", "-o", "pid=,pcpu=,command=", "-p", strconv.Itoa(pid)).Output()
+	if err != nil {
+		return helperProcessSample{}, true, err
+	}
+	sample, ok := parseHelperPSSample(string(psOut))
+	return sample, ok, nil
+}
+
+func firstHelperPID(out string) int {
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		pid, err := strconv.Atoi(line)
+		if err == nil && pid > 0 {
+			return pid
+		}
+	}
+	return 0
+}
+
+func parseHelperPSSample(out string) (helperProcessSample, bool) {
+	fields := strings.Fields(strings.TrimSpace(out))
+	if len(fields) < 2 {
+		return helperProcessSample{}, false
+	}
+	pid, err := strconv.Atoi(fields[0])
+	if err != nil {
+		return helperProcessSample{}, false
+	}
+	cpu, err := strconv.ParseFloat(fields[1], 64)
+	if err != nil {
+		return helperProcessSample{}, false
+	}
+	cmd := ""
+	if len(fields) > 2 {
+		cmd = strings.Join(fields[2:], " ")
+	}
+	return helperProcessSample{PID: pid, CPUPercent: cpu, Command: cmd}, true
+}
+
 // runHelperCmd dispatches `cove helper <subcommand>`.
 func runHelperCmd(args []string) error {
 	if len(args) == 0 {
@@ -493,6 +555,13 @@ func helperStatus() error {
 	}
 	if data, err := os.ReadFile(helperUIDPath); err == nil {
 		fmt.Printf("Owner UID: %s", string(data))
+	}
+	if sample, ok, err := helperProcessSampleHook(); err != nil {
+		fmt.Printf("Process: unavailable (%v)\n", err)
+	} else if ok {
+		fmt.Printf("Process: pid=%d cpu=%.1f%% command=%s\n", sample.PID, sample.CPUPercent, sample.Command)
+	} else {
+		fmt.Println("Process: not running")
 	}
 
 	conn, err := dialHelper()

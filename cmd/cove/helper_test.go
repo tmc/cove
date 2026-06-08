@@ -53,6 +53,46 @@ func TestHelperInstallDeniedByAppleAppSandbox(t *testing.T) {
 	}
 }
 
+func TestParseHelperPSSample(t *testing.T) {
+	got, ok := parseHelperPSSample("123 64.2 /usr/local/libexec/cove-helper helper daemon\n")
+	if !ok {
+		t.Fatal("parseHelperPSSample ok=false")
+	}
+	if got.PID != 123 || got.CPUPercent != 64.2 || got.Command != "/usr/local/libexec/cove-helper helper daemon" {
+		t.Fatalf("parseHelperPSSample = %+v", got)
+	}
+}
+
+func TestFirstHelperPID(t *testing.T) {
+	if got := firstHelperPID("\nabc\n456\n789\n"); got != 456 {
+		t.Fatalf("firstHelperPID = %d, want 456", got)
+	}
+}
+
+func TestHelperStatusReportsProcessSample(t *testing.T) {
+	oldSample := helperProcessSampleHook
+	oldFreshness := helperBinaryFreshness
+	t.Cleanup(func() {
+		helperProcessSampleHook = oldSample
+		helperBinaryFreshness = oldFreshness
+	})
+	helperProcessSampleHook = func() (helperProcessSample, bool, error) {
+		return helperProcessSample{PID: 123, CPUPercent: 64.2, Command: helperBinaryPath}, true, nil
+	}
+	helperBinaryFreshness = func() (bool, string, error) {
+		return true, "up to date", nil
+	}
+
+	out := captureStdoutString(t, func() {
+		if err := helperStatus(); err != nil {
+			t.Fatalf("helperStatus: %v", err)
+		}
+	})
+	if !strings.Contains(out, "Process: pid=123 cpu=64.2%") {
+		t.Fatalf("helperStatus output missing process sample:\n%s", out)
+	}
+}
+
 func captureStdoutString(t *testing.T, fn func()) string {
 	t.Helper()
 	old := os.Stdout
