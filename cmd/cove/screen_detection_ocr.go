@@ -10,13 +10,12 @@ import (
 )
 
 var helloContinueMarkers = []string{
-	"continue", "continua", "continuar", "fortfahren", "fortsæt", "fortsett",
-	"fortsätt", "ga door", "proceed", "продолжить",
+	"continue",
 }
 
 // setupAssistantPageMarkers maps page names to their characteristic text.
 var setupAssistantPageMarkers = map[string][]string{
-	"language":           {"English", "Deutsch", "Francais"},
+	"language":           {"English"},
 	"country_region":     {"Select Your Country", "Country or Region"},
 	"voiceover_tutorial": {"VoiceOver Tutorial", "VoiceOver Modifier"},
 	"accessibility":      {"Accessibility", "Accessibility Options"},
@@ -123,8 +122,8 @@ var ocrPageDetectionOrder = []struct {
 	{"wifi", []string{"select a wi-fi network"}},
 	{"privacy", []string{"data & privacy", "data and privacy"}},
 	{"welcome", []string{"get started"}},
-	{"language", []string{"select your language", "choose your language", "language", "idioma"}},
-	{"hello", []string{"hello", "hollo", "bonjour"}},
+	{"language", []string{"select your language", "choose your language", "language"}},
+	{"hello", []string{"hello", "hollo"}},
 }
 
 // OCRDetectSetupAssistantPage uses OCR to identify the current Setup Assistant page.
