@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -561,15 +562,127 @@ func sharedFolderStatus(vmDirectory, mountPoint string) error {
 			} else {
 				fmt.Printf("Guest mount %s: not mounted at %s\n", f.Tag, tagMountPoint)
 			}
+			printSharedFolderProbeStatus(client, vmDirectory, f)
 		}
 		return nil
 	}
 	if strings.Contains(mountRes.Stdout, " on "+mountPoint+" ") {
 		fmt.Printf("Guest mount: mounted at %s\n", mountPoint)
-		return nil
+	} else {
+		fmt.Printf("Guest mount: not mounted at %s\n", mountPoint)
 	}
-	fmt.Printf("Guest mount: not mounted at %s\n", mountPoint)
+	for _, f := range folders {
+		printSharedFolderProbeStatus(client, vmDirectory, f)
+	}
 	return nil
+}
+
+type sharedFolderProbeResult struct {
+	Readable bool
+	Writable bool
+	Detail   string
+}
+
+func printSharedFolderProbeStatus(client *ControlClient, vmDirectory string, f SharedFolderEntry) {
+	guestPath := defaultSharedFolderMountPoint(vmDirectory, f.Tag)
+	res := probeSharedFolder(client, guestPath, f.ReadOnly, 5*time.Second)
+	read := "FAIL"
+	if res.Readable {
+		read = "OK"
+	}
+	write := "SKIP"
+	if !f.ReadOnly {
+		write = "FAIL"
+		if res.Writable {
+			write = "OK"
+		}
+	}
+	fmt.Printf("Guest probe %s: read=%s write=%s", f.Tag, read, write)
+	if res.Detail != "" {
+		fmt.Printf(" (%s)", res.Detail)
+	}
+	fmt.Println()
+	if hint := sharedFolderProbeHint(vmDirectory, guestPath, res); hint != "" {
+		fmt.Printf("  hint: %s\n", hint)
+	}
+}
+
+func probeSharedFolder(client *ControlClient, guestPath string, readOnly bool, timeout time.Duration) sharedFolderProbeResult {
+	args := []string{"/bin/sh", "-c", sharedFolderProbeScript(), "cove-shared-folder-probe", guestPath, strconv.FormatBool(readOnly)}
+	res, err := client.AgentUserExecTypedTimeout(args, nil, "", timeout)
+	if err != nil {
+		return sharedFolderProbeResult{Detail: err.Error()}
+	}
+	out := strings.TrimSpace(res.Stdout)
+	errText := strings.TrimSpace(res.Stderr)
+	probe := parseSharedFolderProbeOutput(out)
+	if res.ExitCode != 0 {
+		detail := errText
+		if detail == "" {
+			detail = out
+		}
+		if detail == "" {
+			detail = fmt.Sprintf("exit %d", res.ExitCode)
+		}
+		probe.Detail = firstLine(detail)
+		return probe
+	}
+	return probe
+}
+
+func sharedFolderProbeScript() string {
+	return `set -eu
+path=$1
+readonly=$2
+token=cove-probe-$$
+probe="$path/.cove-write-probe-$$"
+ls -ld "$path" >/dev/null
+printf 'readable=1\n'
+if [ "$readonly" = "true" ]; then
+	printf 'writable=skip\n'
+	exit 0
+fi
+printf '%s\n' "$token" > "$probe"
+got=$(cat "$probe")
+rm -f "$probe"
+if [ "$got" != "$token" ]; then
+	printf 'write probe readback mismatch\n' >&2
+	exit 1
+fi
+printf 'writable=1\n'`
+}
+
+func parseSharedFolderProbeOutput(out string) sharedFolderProbeResult {
+	var res sharedFolderProbeResult
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		switch line {
+		case "readable=1":
+			res.Readable = true
+		case "writable=1":
+			res.Writable = true
+		case "writable=skip":
+			res.Writable = false
+		}
+	}
+	if !res.Readable {
+		res.Detail = firstLine(out)
+	}
+	return res
+}
+
+func sharedFolderProbeHint(vmDirectory, guestPath string, res sharedFolderProbeResult) string {
+	if res.Readable && (res.Writable || res.Detail == "") {
+		return ""
+	}
+	detail := strings.ToLower(res.Detail)
+	if vmconfig.DetectOSType(vmDirectory) != "Linux" && (strings.Contains(detail, "operation not permitted") || strings.Contains(detail, "permission denied") || strings.Contains(detail, "full disk access") || strings.Contains(detail, "user agent")) {
+		return fmt.Sprintf("macOS privacy may be blocking vz-agent; run: cove doctor --tcc-path %s or cove doctor tcc-fda -tcc-path %s", shellQuote(guestPath), shellQuote(guestPath))
+	}
+	if strings.Contains(detail, "read-only") || strings.Contains(detail, "read only") {
+		return "share is effectively read-only in the guest"
+	}
+	return ""
 }
 
 func pendingSharedFolders(vmDirectory, mountPoint string) error {

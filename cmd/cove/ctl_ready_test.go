@@ -1,6 +1,7 @@
 package main
 
 import (
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -223,5 +224,41 @@ func TestReadyMode(t *testing.T) {
 	}
 	if got := readyMode(true); got != "daemon-agent" {
 		t.Fatalf("readyMode(true) = %q, want daemon-agent", got)
+	}
+}
+
+func TestVMDirFromControlSocket(t *testing.T) {
+	vmDir := t.TempDir()
+	sock := filepath.Join(vmDir, "control.sock")
+	if got := vmDirFromControlSocket(sock); got != vmDir {
+		t.Fatalf("vmDirFromControlSocket(%q) = %q, want %q", sock, got, vmDir)
+	}
+}
+
+func TestSharedFolderProbeOK(t *testing.T) {
+	rw := SharedFolderEntry{Tag: "work"}
+	ro := SharedFolderEntry{Tag: "src", ReadOnly: true}
+	if !sharedFolderProbeOK(rw, sharedFolderProbeResult{Readable: true, Writable: true}) {
+		t.Fatal("rw readable+writable should pass")
+	}
+	if sharedFolderProbeOK(rw, sharedFolderProbeResult{Readable: true}) {
+		t.Fatal("rw readable-only should fail")
+	}
+	if !sharedFolderProbeOK(ro, sharedFolderProbeResult{Readable: true}) {
+		t.Fatal("ro readable should pass")
+	}
+}
+
+func TestSharedFolderProbeFailureDetail(t *testing.T) {
+	vmDir := shortSharedFolderVMDir(t)
+	f := SharedFolderEntry{Tag: "work"}
+	got := sharedFolderProbeFailureDetail(vmDir, "/Volumes/My Shared Files/work", f, sharedFolderProbeResult{
+		Readable: true,
+		Detail:   "Operation not permitted",
+	})
+	for _, want := range []string{"work", "not writable", "Operation not permitted", "cove doctor tcc-fda"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("sharedFolderProbeFailureDetail missing %q: %q", want, got)
+		}
 	}
 }

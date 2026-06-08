@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -55,6 +56,8 @@ var readyChecks = map[string]readyCheck{
 	"node":       {Name: "node", Args: []string{"which", "node"}},
 	"docker":     {Name: "docker", Args: []string{"which", "docker"}},
 }
+
+const readyCheckSharedFolders = "shared-folders"
 
 // genericReadyCheck returns a "which <name>" probe for an unknown check name.
 func genericReadyCheck(name string) readyCheck {
@@ -110,7 +113,10 @@ func printReadyUsage(w io.Writer) {
 
 Run readiness checks through the guest agent. Exit codes are 0 when all checks
 pass, 1 when at least one reachable-agent check fails, and 2 when the agent is
-unreachable.`)
+unreachable.
+
+Built-in checks: agent-ping, can-exec, xcode-cli, go, homebrew, node, docker,
+shared-folders.`)
 }
 
 // parseRequireList splits "a,b,,c" into ["a","b","c"], trimming whitespace
@@ -184,6 +190,10 @@ func ctlReady(sock string, args []string) error {
 				results = append(results, readyResult{Name: n, OK: true})
 				continue
 			}
+			if n == readyCheckSharedFolders {
+				results = append(results, runSharedFoldersReadyCheck(sock, timeout))
+				continue
+			}
 			results = append(results, runReadyCheck(sock, resolveReadyCheck(n), timeout, useDaemon))
 		}
 	}
@@ -254,6 +264,63 @@ func runReadyCheck(sock string, c readyCheck, timeout time.Duration, useDaemon b
 		return readyResult{Name: c.Name, OK: false, Detail: strings.TrimSpace(resp.Error)}
 	}
 	return readyResultFromResp(c.Name, resp)
+}
+
+func runSharedFoldersReadyCheck(sock string, timeout time.Duration) readyResult {
+	vmDirectory := vmDirFromControlSocket(sock)
+	folders := LoadSharedFolders(vmDirectory)
+	if len(folders) == 0 {
+		return readyResult{Name: readyCheckSharedFolders, OK: true, Detail: "no shared folders configured"}
+	}
+	client := NewControlClient(sock)
+	client.SetTimeout(timeout)
+	failures := make([]string, 0)
+	for _, f := range folders {
+		guestPath := defaultSharedFolderMountPoint(vmDirectory, f.Tag)
+		probe := probeSharedFolder(client, guestPath, f.ReadOnly, timeout)
+		if sharedFolderProbeOK(f, probe) {
+			continue
+		}
+		detail := sharedFolderProbeFailureDetail(vmDirectory, guestPath, f, probe)
+		failures = append(failures, detail)
+	}
+	if len(failures) > 0 {
+		return readyResult{Name: readyCheckSharedFolders, OK: false, Detail: strings.Join(failures, "; ")}
+	}
+	return readyResult{Name: readyCheckSharedFolders, OK: true, Detail: fmt.Sprintf("%d shared folder(s) readable/writable", len(folders))}
+}
+
+func vmDirFromControlSocket(sock string) string {
+	if strings.TrimSpace(sock) == "" {
+		return sharedFolderCommandVMDirNoCreate()
+	}
+	if filepath.Base(sock) == "control.sock" {
+		return filepath.Dir(sock)
+	}
+	return sharedFolderCommandVMDirNoCreate()
+}
+
+func sharedFolderProbeOK(f SharedFolderEntry, probe sharedFolderProbeResult) bool {
+	if !probe.Readable {
+		return false
+	}
+	return f.ReadOnly || probe.Writable
+}
+
+func sharedFolderProbeFailureDetail(vmDirectory, guestPath string, f SharedFolderEntry, probe sharedFolderProbeResult) string {
+	parts := []string{fmt.Sprintf("%s %s", f.Tag, guestPath)}
+	if !probe.Readable {
+		parts = append(parts, "not readable")
+	} else if !f.ReadOnly && !probe.Writable {
+		parts = append(parts, "not writable")
+	}
+	if probe.Detail != "" {
+		parts = append(parts, probe.Detail)
+	}
+	if hint := sharedFolderProbeHint(vmDirectory, guestPath, probe); hint != "" {
+		parts = append(parts, hint)
+	}
+	return strings.Join(parts, ": ")
 }
 
 // readyResultFromResp extracts the per-check verdict from an agent-exec response.

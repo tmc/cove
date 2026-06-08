@@ -228,6 +228,44 @@ func TestExpectedSharedFolderTagsFiltersInvalidEntries(t *testing.T) {
 	}
 }
 
+func TestParseSharedFolderProbeOutput(t *testing.T) {
+	got := parseSharedFolderProbeOutput("readable=1\nwritable=1\n")
+	if !got.Readable || !got.Writable || got.Detail != "" {
+		t.Fatalf("parseSharedFolderProbeOutput rw = %+v, want readable writable", got)
+	}
+
+	got = parseSharedFolderProbeOutput("readable=1\nwritable=skip\n")
+	if !got.Readable || got.Writable || got.Detail != "" {
+		t.Fatalf("parseSharedFolderProbeOutput ro = %+v, want readable only", got)
+	}
+}
+
+func TestParseSharedFolderProbeOutputPartialFailure(t *testing.T) {
+	got := parseSharedFolderProbeOutput("readable=1\n")
+	got.Detail = "Operation not permitted"
+	if !got.Readable || got.Writable || got.Detail == "" {
+		t.Fatalf("partial probe = %+v, want readable failure detail", got)
+	}
+}
+
+func TestSharedFolderProbeHintMacOSPermission(t *testing.T) {
+	vmDir := shortSharedFolderVMDir(t)
+	res := sharedFolderProbeResult{Detail: "mkdir: .cove-write-probe: Operation not permitted"}
+	got := sharedFolderProbeHint(vmDir, "/Volumes/My Shared Files/work", res)
+	if !strings.Contains(got, "cove doctor tcc-fda") || !strings.Contains(got, "'/Volumes/My Shared Files/work'") {
+		t.Fatalf("sharedFolderProbeHint() = %q, want tcc-fda hint", got)
+	}
+}
+
+func TestSharedFolderProbeHintLinuxNoTCCHint(t *testing.T) {
+	vmDir := linuxTestVMDir(t)
+	res := sharedFolderProbeResult{Detail: "mkdir: .cove-write-probe: Operation not permitted"}
+	got := sharedFolderProbeHint(vmDir, "/mnt/work", res)
+	if got != "" {
+		t.Fatalf("sharedFolderProbeHint(linux) = %q, want empty", got)
+	}
+}
+
 func TestNormalizeSharedFolderPathRejectsFiles(t *testing.T) {
 	filePath := filepath.Join(t.TempDir(), "not-a-directory")
 	if err := os.WriteFile(filePath, []byte("x"), 0644); err != nil {
@@ -699,6 +737,16 @@ func TestSharedFolderStatusLinuxUsesPerTagMountPoint(t *testing.T) {
 				Result:  &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{ExitCode: 0, Stdout: ""}},
 			},
 		},
+		{
+			wantType: "agent-user-exec",
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result: &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{
+					ExitCode: 0,
+					Stdout:   "readable=1\nwritable=1\n",
+				}},
+			},
+		},
 	})
 
 	out := captureStdout(t, func() error {
@@ -708,6 +756,9 @@ func TestSharedFolderStatusLinuxUsesPerTagMountPoint(t *testing.T) {
 
 	if !strings.Contains(out, "Guest mount work: not mounted at /mnt/work") {
 		t.Fatalf("status output missing Linux mount point:\n%s", out)
+	}
+	if !strings.Contains(out, "Guest probe work: read=OK write=OK") {
+		t.Fatalf("status output missing Linux probe:\n%s", out)
 	}
 	if strings.Contains(out, "/Volumes/My Shared Files") {
 		t.Fatalf("status output contains macOS mount point:\n%s", out)
@@ -743,6 +794,16 @@ func TestSharedFolderStatusShowsGuestLink(t *testing.T) {
 				}},
 			},
 		},
+		{
+			wantType: "agent-user-exec",
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Result: &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{
+					ExitCode: 0,
+					Stdout:   "readable=1\nwritable=1\n",
+				}},
+			},
+		},
 	})
 
 	out := captureStdout(t, func() error {
@@ -754,6 +815,7 @@ func TestSharedFolderStatusShowsGuestLink(t *testing.T) {
 		"guest: /Volumes/My Shared Files/work",
 		"link:  ~/work -> /Volumes/My Shared Files/work",
 		"Guest mount: mounted at /Volumes/My Shared Files",
+		"Guest probe work: read=OK write=OK",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("status output missing %q:\n%s", want, out)
