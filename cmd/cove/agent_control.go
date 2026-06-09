@@ -789,11 +789,24 @@ func (s *ControlServer) handleAgentExecStreamConnection(conn net.Conn, req *cont
 	writeResponse(conn, &controlpb.ControlResponse{Success: true, Data: string(donePayload)})
 }
 
-func (s *ControlServer) handleAgentCopy(cmd *controlpb.AgentCopyCommand) *controlpb.ControlResponse {
-	a, err := s.getAgent()
-	if err != nil {
-		return &controlpb.ControlResponse{Error: err.Error()}
+// copyRoute resolves the agent route for a copy command: an explicit route on
+// the command wins, otherwise the guest path is routed automatically (TCC-
+// protected paths go to the user agent). Linux guests always use the daemon.
+func copyRoute(cmd *controlpb.AgentCopyCommand) agentstate.Route {
+	switch cmd.Route {
+	case controlpb.AgentRoute_AGENT_ROUTE_DAEMON:
+		return agentstate.RouteDaemon
+	case controlpb.AgentRoute_AGENT_ROUTE_USER:
+		if linuxMode {
+			return agentstate.RouteDaemon
+		}
+		return agentstate.RouteUser
+	default:
+		return agentstate.RouteFor("cp", cmd.GuestPath, linuxMode)
 	}
+}
+
+func (s *ControlServer) handleAgentCopy(cmd *controlpb.AgentCopyCommand) *controlpb.ControlResponse {
 	if cmd.HostPath == "" || cmd.GuestPath == "" {
 		return &controlpb.ControlResponse{Error: "host_path and guest_path required"}
 	}
@@ -811,6 +824,17 @@ func (s *ControlServer) handleAgentCopy(cmd *controlpb.AgentCopyCommand) *contro
 	}
 	ctx, cancel := s.timeoutContext(timeout)
 	defer cancel()
+
+	route := copyRoute(cmd)
+	if route == agentstate.RouteUser {
+		log.Printf("agent-route: cp %s -> user agent (TCC path or forced)", cmd.GuestPath)
+		return s.handleAgentCopyUser(ctx, cmd)
+	}
+
+	a, err := s.getAgent()
+	if err != nil {
+		return &controlpb.ControlResponse{Error: err.Error()}
+	}
 
 	if cmd.ToGuest {
 		info, _ := os.Stat(cmd.HostPath)
@@ -835,6 +859,64 @@ func (s *ControlServer) handleAgentCopy(cmd *controlpb.AgentCopyCommand) *contro
 	}
 
 	if err := a.CopyFromGuest(ctx, cmd.GuestPath, cmd.HostPath); err != nil {
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("cp: %v", err)}
+	}
+	info, _ := os.Stat(cmd.HostPath)
+	size := int64(0)
+	if info != nil {
+		size = info.Size()
+	}
+	msg := fmt.Sprintf("guest:%s -> %s (%d bytes)", cmd.GuestPath, cmd.HostPath, size)
+	return &controlpb.ControlResponse{
+		Success: true,
+		Data:    msg,
+		Result:  &controlpb.ControlResponse_AgentFile{AgentFile: &controlpb.AgentFileResponse{Message: msg}},
+	}
+}
+
+// handleAgentCopyUser services a copy through the logged-in user agent (vsock
+// 1025), so writes to TCC-protected destinations succeed and a large transfer
+// stays off the daemon channel that interactive exec shares. Single files only;
+// directory copies (which need root tar/exec on the guest) stay on the daemon.
+func (s *ControlServer) handleAgentCopyUser(ctx context.Context, cmd *controlpb.AgentCopyCommand) *controlpb.ControlResponse {
+	if cmd.ToGuest {
+		info, err := os.Stat(cmd.HostPath)
+		if err != nil {
+			return &controlpb.ControlResponse{Error: fmt.Sprintf("stat %s: %v", cmd.HostPath, err)}
+		}
+		if info.IsDir() {
+			a, err := s.getAgent()
+			if err != nil {
+				return &controlpb.ControlResponse{Error: err.Error()}
+			}
+			log.Printf("agent-route: cp dir %s -> daemon (user-agent dir copy unsupported)", cmd.GuestPath)
+			return s.handleAgentCopyDir(ctx, a, cmd.HostPath, cmd.GuestPath, cmd.Overwrite)
+		}
+	}
+
+	ua, err := s.getUserAgent()
+	if err != nil {
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("user agent: %v", err)}
+	}
+
+	if cmd.ToGuest {
+		info, _ := os.Stat(cmd.HostPath)
+		mode := os.FileMode(cmd.Mode)
+		if mode == 0 {
+			mode = info.Mode()
+		}
+		if err := ua.UserCopyToGuest(ctx, cmd.HostPath, cmd.GuestPath, mode); err != nil {
+			return &controlpb.ControlResponse{Error: fmt.Sprintf("cp: %v", err)}
+		}
+		msg := fmt.Sprintf("%s -> guest:%s (%d bytes)", cmd.HostPath, cmd.GuestPath, info.Size())
+		return &controlpb.ControlResponse{
+			Success: true,
+			Data:    msg,
+			Result:  &controlpb.ControlResponse_AgentFile{AgentFile: &controlpb.AgentFileResponse{Message: msg}},
+		}
+	}
+
+	if err := ua.UserCopyFromGuest(ctx, cmd.GuestPath, cmd.HostPath); err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("cp: %v", err)}
 	}
 	info, _ := os.Stat(cmd.HostPath)

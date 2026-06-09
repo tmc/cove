@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/tmc/cove/internal/vmconfig"
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 func TestCpParseSpec(t *testing.T) {
@@ -217,6 +218,54 @@ func TestRunCpAcceptsVMFlagAfterOperands(t *testing.T) {
 	}
 	if got := string(fake.guest["/tmp/data.txt"]); got != "hello\n" {
 		t.Fatalf("guest data = %q", got)
+	}
+}
+
+// routeCpAgent records the route forced via the routableCpAgent interface.
+type routeCpAgent struct {
+	*fakeCpAgent
+	route controlpb.AgentRoute
+}
+
+func (r *routeCpAgent) setRoute(route controlpb.AgentRoute) { r.route = route }
+
+func TestRunCpForcesAgentRoute(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.txt")
+	if err := os.WriteFile(src, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name string
+		flag string
+		want controlpb.AgentRoute
+	}{
+		{name: "default auto", flag: "", want: controlpb.AgentRoute_AGENT_ROUTE_AUTO},
+		{name: "daemon", flag: "-daemon", want: controlpb.AgentRoute_AGENT_ROUTE_DAEMON},
+		{name: "user", flag: "-user", want: controlpb.AgentRoute_AGENT_ROUTE_USER},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			agent := &routeCpAgent{fakeCpAgent: newFakeCpAgent()}
+			args := []string{}
+			if tc.flag != "" {
+				args = append(args, tc.flag)
+			}
+			args = append(args, src, "vm1:/tmp/data.txt")
+			if err := runCp(context.Background(), args, func(string) cpAgent { return agent }); err != nil {
+				t.Fatalf("runCp: %v", err)
+			}
+			if agent.route != tc.want {
+				t.Fatalf("route = %v, want %v", agent.route, tc.want)
+			}
+		})
+	}
+}
+
+func TestRunCpRejectsDaemonAndUserTogether(t *testing.T) {
+	noAgent := func(string) cpAgent { t.Fatal("agent should not be constructed"); return nil }
+	err := runCp(context.Background(), []string{"-daemon", "-user", "a", "vm:/tmp/a"}, noAgent)
+	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Fatalf("runCp err = %v, want mutually exclusive", err)
 	}
 }
 

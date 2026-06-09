@@ -21,6 +21,63 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// AgentRoute selects which guest agent services an operation.
+//   - AGENT_ROUTE_AUTO routes by guest path: TCC-protected paths
+//     (/Volumes/<tag>, ~/Downloads, ...) use the user agent, the rest use the
+//     daemon.
+//   - AGENT_ROUTE_DAEMON forces the root daemon (vsock 1024).
+//   - AGENT_ROUTE_USER forces the logged-in user agent (vsock 1025), a separate
+//     vsock connection — use it to keep a large transfer off the daemon channel
+//     that interactive exec shares.
+type AgentRoute int32
+
+const (
+	AgentRoute_AGENT_ROUTE_AUTO   AgentRoute = 0
+	AgentRoute_AGENT_ROUTE_DAEMON AgentRoute = 1
+	AgentRoute_AGENT_ROUTE_USER   AgentRoute = 2
+)
+
+// Enum value maps for AgentRoute.
+var (
+	AgentRoute_name = map[int32]string{
+		0: "AGENT_ROUTE_AUTO",
+		1: "AGENT_ROUTE_DAEMON",
+		2: "AGENT_ROUTE_USER",
+	}
+	AgentRoute_value = map[string]int32{
+		"AGENT_ROUTE_AUTO":   0,
+		"AGENT_ROUTE_DAEMON": 1,
+		"AGENT_ROUTE_USER":   2,
+	}
+)
+
+func (x AgentRoute) Enum() *AgentRoute {
+	p := new(AgentRoute)
+	*p = x
+	return p
+}
+
+func (x AgentRoute) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (AgentRoute) Descriptor() protoreflect.EnumDescriptor {
+	return file_control_proto_enumTypes[0].Descriptor()
+}
+
+func (AgentRoute) Type() protoreflect.EnumType {
+	return &file_control_proto_enumTypes[0]
+}
+
+func (x AgentRoute) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use AgentRoute.Descriptor instead.
+func (AgentRoute) EnumDescriptor() ([]byte, []int) {
+	return file_control_proto_rawDescGZIP(), []int{0}
+}
+
 // ControlRequest is the envelope for all control socket requests.
 // Every JSON line sent to the socket is unmarshaled into this message.
 // The "type" field selects the handler; the oneof carries the payload.
@@ -1531,12 +1588,15 @@ func (x *AgentSSHDCommand) GetAction() string {
 // Direction is determined by the presence of host_path and guest_path:
 //   - host_path set + guest_path set: copy host→guest (to_guest=true) or guest→host (to_guest=false)
 type AgentCopyCommand struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	HostPath      string                 `protobuf:"bytes,1,opt,name=host_path,json=hostPath,proto3" json:"host_path,omitempty"`
-	GuestPath     string                 `protobuf:"bytes,2,opt,name=guest_path,json=guestPath,proto3" json:"guest_path,omitempty"`
-	ToGuest       bool                   `protobuf:"varint,3,opt,name=to_guest,json=toGuest,proto3" json:"to_guest,omitempty"`
-	Mode          uint32                 `protobuf:"varint,4,opt,name=mode,proto3" json:"mode,omitempty"`
-	Overwrite     bool                   `protobuf:"varint,5,opt,name=overwrite,proto3" json:"overwrite,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	HostPath  string                 `protobuf:"bytes,1,opt,name=host_path,json=hostPath,proto3" json:"host_path,omitempty"`
+	GuestPath string                 `protobuf:"bytes,2,opt,name=guest_path,json=guestPath,proto3" json:"guest_path,omitempty"`
+	ToGuest   bool                   `protobuf:"varint,3,opt,name=to_guest,json=toGuest,proto3" json:"to_guest,omitempty"`
+	Mode      uint32                 `protobuf:"varint,4,opt,name=mode,proto3" json:"mode,omitempty"`
+	Overwrite bool                   `protobuf:"varint,5,opt,name=overwrite,proto3" json:"overwrite,omitempty"`
+	// route selects the daemon or user agent; AGENT_ROUTE_AUTO (default) routes
+	// by guest path.
+	Route         AgentRoute `protobuf:"varint,6,opt,name=route,proto3,enum=vz.control.v1.AgentRoute" json:"route,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1604,6 +1664,13 @@ func (x *AgentCopyCommand) GetOverwrite() bool {
 		return x.Overwrite
 	}
 	return false
+}
+
+func (x *AgentCopyCommand) GetRoute() AgentRoute {
+	if x != nil {
+		return x.Route
+	}
+	return AgentRoute_AGENT_ROUTE_AUTO
 }
 
 // StatusResponse contains VM state and available operations.
@@ -2952,14 +3019,15 @@ const file_control_proto_rawDesc = "" +
 	"\x14AgentShutdownCommand\x12\x14\n" +
 	"\x05force\x18\x01 \x01(\bR\x05force\"*\n" +
 	"\x10AgentSSHDCommand\x12\x16\n" +
-	"\x06action\x18\x01 \x01(\tR\x06action\"\x9b\x01\n" +
+	"\x06action\x18\x01 \x01(\tR\x06action\"\xcc\x01\n" +
 	"\x10AgentCopyCommand\x12\x1b\n" +
 	"\thost_path\x18\x01 \x01(\tR\bhostPath\x12\x1d\n" +
 	"\n" +
 	"guest_path\x18\x02 \x01(\tR\tguestPath\x12\x19\n" +
 	"\bto_guest\x18\x03 \x01(\bR\atoGuest\x12\x12\n" +
 	"\x04mode\x18\x04 \x01(\rR\x04mode\x12\x1c\n" +
-	"\toverwrite\x18\x05 \x01(\bR\toverwrite\"\xa7\x01\n" +
+	"\toverwrite\x18\x05 \x01(\bR\toverwrite\x12/\n" +
+	"\x05route\x18\x06 \x01(\x0e2\x19.vz.control.v1.AgentRouteR\x05route\"\xa7\x01\n" +
 	"\x0eStatusResponse\x12\x14\n" +
 	"\x05state\x18\x01 \x01(\tR\x05state\x12\x1b\n" +
 	"\tcan_pause\x18\x02 \x01(\bR\bcanPause\x12\x1d\n" +
@@ -3051,7 +3119,12 @@ const file_control_proto_rawDesc = "" +
 	"\x05width\x18\x04 \x01(\x01R\x05width\x12\x16\n" +
 	"\x06height\x18\x05 \x01(\x01R\x06height\"/\n" +
 	"\x17ScreenDetectionResponse\x12\x14\n" +
-	"\x05state\x18\x01 \x01(\tR\x05stateB2Z#github.com/tmc/cove/proto/controlpb\xba\x02\n" +
+	"\x05state\x18\x01 \x01(\tR\x05state*P\n" +
+	"\n" +
+	"AgentRoute\x12\x14\n" +
+	"\x10AGENT_ROUTE_AUTO\x10\x00\x12\x16\n" +
+	"\x12AGENT_ROUTE_DAEMON\x10\x01\x12\x14\n" +
+	"\x10AGENT_ROUTE_USER\x10\x02B2Z#github.com/tmc/cove/proto/controlpb\xba\x02\n" +
 	"VZControl_b\x06proto3"
 
 var (
@@ -3066,92 +3139,95 @@ func file_control_proto_rawDescGZIP() []byte {
 	return file_control_proto_rawDescData
 }
 
+var file_control_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_control_proto_msgTypes = make([]protoimpl.MessageInfo, 39)
 var file_control_proto_goTypes = []any{
-	(*ControlRequest)(nil),          // 0: vz.control.v1.ControlRequest
-	(*ControlResponse)(nil),         // 1: vz.control.v1.ControlResponse
-	(*KeyCommand)(nil),              // 2: vz.control.v1.KeyCommand
-	(*MouseCommand)(nil),            // 3: vz.control.v1.MouseCommand
-	(*TextCommand)(nil),             // 4: vz.control.v1.TextCommand
-	(*ScreenshotCommand)(nil),       // 5: vz.control.v1.ScreenshotCommand
-	(*SnapshotCommand)(nil),         // 6: vz.control.v1.SnapshotCommand
-	(*OperationsCommand)(nil),       // 7: vz.control.v1.OperationsCommand
-	(*MemoryCommand)(nil),           // 8: vz.control.v1.MemoryCommand
-	(*OCRCommand)(nil),              // 9: vz.control.v1.OCRCommand
-	(*PortForwardCommand)(nil),      // 10: vz.control.v1.PortForwardCommand
-	(*AgentExecCommand)(nil),        // 11: vz.control.v1.AgentExecCommand
-	(*AgentFileReadCommand)(nil),    // 12: vz.control.v1.AgentFileReadCommand
-	(*AgentFileWriteCommand)(nil),   // 13: vz.control.v1.AgentFileWriteCommand
-	(*AgentShutdownCommand)(nil),    // 14: vz.control.v1.AgentShutdownCommand
-	(*AgentSSHDCommand)(nil),        // 15: vz.control.v1.AgentSSHDCommand
-	(*AgentCopyCommand)(nil),        // 16: vz.control.v1.AgentCopyCommand
-	(*StatusResponse)(nil),          // 17: vz.control.v1.StatusResponse
-	(*CapabilitiesResponse)(nil),    // 18: vz.control.v1.CapabilitiesResponse
-	(*ScreenshotResponse)(nil),      // 19: vz.control.v1.ScreenshotResponse
-	(*EmptyResponse)(nil),           // 20: vz.control.v1.EmptyResponse
-	(*SnapshotListResponse)(nil),    // 21: vz.control.v1.SnapshotListResponse
-	(*SnapshotActionResponse)(nil),  // 22: vz.control.v1.SnapshotActionResponse
-	(*OperationInfo)(nil),           // 23: vz.control.v1.OperationInfo
-	(*OperationsListResponse)(nil),  // 24: vz.control.v1.OperationsListResponse
-	(*MessageResponse)(nil),         // 25: vz.control.v1.MessageResponse
-	(*MemoryInfoResponse)(nil),      // 26: vz.control.v1.MemoryInfoResponse
-	(*NetworkInfoResponse)(nil),     // 27: vz.control.v1.NetworkInfoResponse
-	(*MemoryInfo)(nil),              // 28: vz.control.v1.MemoryInfo
-	(*SnapshotInfo)(nil),            // 29: vz.control.v1.SnapshotInfo
-	(*AgentExecResponse)(nil),       // 30: vz.control.v1.AgentExecResponse
-	(*AgentFileResponse)(nil),       // 31: vz.control.v1.AgentFileResponse
-	(*AgentInfoResponse)(nil),       // 32: vz.control.v1.AgentInfoResponse
-	(*AgentPingResponse)(nil),       // 33: vz.control.v1.AgentPingResponse
-	(*OCRTextResponse)(nil),         // 34: vz.control.v1.OCRTextResponse
-	(*OCRMatch)(nil),                // 35: vz.control.v1.OCRMatch
-	(*ScreenDetectionResponse)(nil), // 36: vz.control.v1.ScreenDetectionResponse
-	nil,                             // 37: vz.control.v1.AgentExecCommand.EnvEntry
-	nil,                             // 38: vz.control.v1.CapabilitiesResponse.FeaturesEntry
+	(AgentRoute)(0),                 // 0: vz.control.v1.AgentRoute
+	(*ControlRequest)(nil),          // 1: vz.control.v1.ControlRequest
+	(*ControlResponse)(nil),         // 2: vz.control.v1.ControlResponse
+	(*KeyCommand)(nil),              // 3: vz.control.v1.KeyCommand
+	(*MouseCommand)(nil),            // 4: vz.control.v1.MouseCommand
+	(*TextCommand)(nil),             // 5: vz.control.v1.TextCommand
+	(*ScreenshotCommand)(nil),       // 6: vz.control.v1.ScreenshotCommand
+	(*SnapshotCommand)(nil),         // 7: vz.control.v1.SnapshotCommand
+	(*OperationsCommand)(nil),       // 8: vz.control.v1.OperationsCommand
+	(*MemoryCommand)(nil),           // 9: vz.control.v1.MemoryCommand
+	(*OCRCommand)(nil),              // 10: vz.control.v1.OCRCommand
+	(*PortForwardCommand)(nil),      // 11: vz.control.v1.PortForwardCommand
+	(*AgentExecCommand)(nil),        // 12: vz.control.v1.AgentExecCommand
+	(*AgentFileReadCommand)(nil),    // 13: vz.control.v1.AgentFileReadCommand
+	(*AgentFileWriteCommand)(nil),   // 14: vz.control.v1.AgentFileWriteCommand
+	(*AgentShutdownCommand)(nil),    // 15: vz.control.v1.AgentShutdownCommand
+	(*AgentSSHDCommand)(nil),        // 16: vz.control.v1.AgentSSHDCommand
+	(*AgentCopyCommand)(nil),        // 17: vz.control.v1.AgentCopyCommand
+	(*StatusResponse)(nil),          // 18: vz.control.v1.StatusResponse
+	(*CapabilitiesResponse)(nil),    // 19: vz.control.v1.CapabilitiesResponse
+	(*ScreenshotResponse)(nil),      // 20: vz.control.v1.ScreenshotResponse
+	(*EmptyResponse)(nil),           // 21: vz.control.v1.EmptyResponse
+	(*SnapshotListResponse)(nil),    // 22: vz.control.v1.SnapshotListResponse
+	(*SnapshotActionResponse)(nil),  // 23: vz.control.v1.SnapshotActionResponse
+	(*OperationInfo)(nil),           // 24: vz.control.v1.OperationInfo
+	(*OperationsListResponse)(nil),  // 25: vz.control.v1.OperationsListResponse
+	(*MessageResponse)(nil),         // 26: vz.control.v1.MessageResponse
+	(*MemoryInfoResponse)(nil),      // 27: vz.control.v1.MemoryInfoResponse
+	(*NetworkInfoResponse)(nil),     // 28: vz.control.v1.NetworkInfoResponse
+	(*MemoryInfo)(nil),              // 29: vz.control.v1.MemoryInfo
+	(*SnapshotInfo)(nil),            // 30: vz.control.v1.SnapshotInfo
+	(*AgentExecResponse)(nil),       // 31: vz.control.v1.AgentExecResponse
+	(*AgentFileResponse)(nil),       // 32: vz.control.v1.AgentFileResponse
+	(*AgentInfoResponse)(nil),       // 33: vz.control.v1.AgentInfoResponse
+	(*AgentPingResponse)(nil),       // 34: vz.control.v1.AgentPingResponse
+	(*OCRTextResponse)(nil),         // 35: vz.control.v1.OCRTextResponse
+	(*OCRMatch)(nil),                // 36: vz.control.v1.OCRMatch
+	(*ScreenDetectionResponse)(nil), // 37: vz.control.v1.ScreenDetectionResponse
+	nil,                             // 38: vz.control.v1.AgentExecCommand.EnvEntry
+	nil,                             // 39: vz.control.v1.CapabilitiesResponse.FeaturesEntry
 }
 var file_control_proto_depIdxs = []int32{
-	2,  // 0: vz.control.v1.ControlRequest.key:type_name -> vz.control.v1.KeyCommand
-	3,  // 1: vz.control.v1.ControlRequest.mouse:type_name -> vz.control.v1.MouseCommand
-	4,  // 2: vz.control.v1.ControlRequest.text:type_name -> vz.control.v1.TextCommand
-	5,  // 3: vz.control.v1.ControlRequest.screenshot:type_name -> vz.control.v1.ScreenshotCommand
-	6,  // 4: vz.control.v1.ControlRequest.snapshot:type_name -> vz.control.v1.SnapshotCommand
-	8,  // 5: vz.control.v1.ControlRequest.memory:type_name -> vz.control.v1.MemoryCommand
-	9,  // 6: vz.control.v1.ControlRequest.ocr:type_name -> vz.control.v1.OCRCommand
-	10, // 7: vz.control.v1.ControlRequest.port_forward:type_name -> vz.control.v1.PortForwardCommand
-	11, // 8: vz.control.v1.ControlRequest.agent_exec:type_name -> vz.control.v1.AgentExecCommand
-	12, // 9: vz.control.v1.ControlRequest.agent_read:type_name -> vz.control.v1.AgentFileReadCommand
-	13, // 10: vz.control.v1.ControlRequest.agent_write:type_name -> vz.control.v1.AgentFileWriteCommand
-	14, // 11: vz.control.v1.ControlRequest.agent_shutdown:type_name -> vz.control.v1.AgentShutdownCommand
-	15, // 12: vz.control.v1.ControlRequest.agent_sshd:type_name -> vz.control.v1.AgentSSHDCommand
-	16, // 13: vz.control.v1.ControlRequest.agent_cp:type_name -> vz.control.v1.AgentCopyCommand
-	7,  // 14: vz.control.v1.ControlRequest.operations:type_name -> vz.control.v1.OperationsCommand
-	17, // 15: vz.control.v1.ControlResponse.status:type_name -> vz.control.v1.StatusResponse
-	18, // 16: vz.control.v1.ControlResponse.capabilities:type_name -> vz.control.v1.CapabilitiesResponse
-	19, // 17: vz.control.v1.ControlResponse.screenshot_result:type_name -> vz.control.v1.ScreenshotResponse
-	20, // 18: vz.control.v1.ControlResponse.empty:type_name -> vz.control.v1.EmptyResponse
-	21, // 19: vz.control.v1.ControlResponse.snapshot_list:type_name -> vz.control.v1.SnapshotListResponse
-	22, // 20: vz.control.v1.ControlResponse.snapshot_action:type_name -> vz.control.v1.SnapshotActionResponse
-	25, // 21: vz.control.v1.ControlResponse.message:type_name -> vz.control.v1.MessageResponse
-	27, // 22: vz.control.v1.ControlResponse.network_info:type_name -> vz.control.v1.NetworkInfoResponse
-	26, // 23: vz.control.v1.ControlResponse.memory_info:type_name -> vz.control.v1.MemoryInfoResponse
-	30, // 24: vz.control.v1.ControlResponse.agent_exec_result:type_name -> vz.control.v1.AgentExecResponse
-	31, // 25: vz.control.v1.ControlResponse.agent_file:type_name -> vz.control.v1.AgentFileResponse
-	32, // 26: vz.control.v1.ControlResponse.agent_info:type_name -> vz.control.v1.AgentInfoResponse
-	33, // 27: vz.control.v1.ControlResponse.agent_ping:type_name -> vz.control.v1.AgentPingResponse
-	34, // 28: vz.control.v1.ControlResponse.ocr_text:type_name -> vz.control.v1.OCRTextResponse
-	36, // 29: vz.control.v1.ControlResponse.screen_detection:type_name -> vz.control.v1.ScreenDetectionResponse
-	23, // 30: vz.control.v1.ControlResponse.operation:type_name -> vz.control.v1.OperationInfo
-	24, // 31: vz.control.v1.ControlResponse.operations_list:type_name -> vz.control.v1.OperationsListResponse
-	37, // 32: vz.control.v1.AgentExecCommand.env:type_name -> vz.control.v1.AgentExecCommand.EnvEntry
-	38, // 33: vz.control.v1.CapabilitiesResponse.features:type_name -> vz.control.v1.CapabilitiesResponse.FeaturesEntry
-	29, // 34: vz.control.v1.SnapshotListResponse.snapshots:type_name -> vz.control.v1.SnapshotInfo
-	23, // 35: vz.control.v1.OperationsListResponse.operations:type_name -> vz.control.v1.OperationInfo
-	28, // 36: vz.control.v1.MemoryInfoResponse.info:type_name -> vz.control.v1.MemoryInfo
-	35, // 37: vz.control.v1.OCRTextResponse.matches:type_name -> vz.control.v1.OCRMatch
-	38, // [38:38] is the sub-list for method output_type
-	38, // [38:38] is the sub-list for method input_type
-	38, // [38:38] is the sub-list for extension type_name
-	38, // [38:38] is the sub-list for extension extendee
-	0,  // [0:38] is the sub-list for field type_name
+	3,  // 0: vz.control.v1.ControlRequest.key:type_name -> vz.control.v1.KeyCommand
+	4,  // 1: vz.control.v1.ControlRequest.mouse:type_name -> vz.control.v1.MouseCommand
+	5,  // 2: vz.control.v1.ControlRequest.text:type_name -> vz.control.v1.TextCommand
+	6,  // 3: vz.control.v1.ControlRequest.screenshot:type_name -> vz.control.v1.ScreenshotCommand
+	7,  // 4: vz.control.v1.ControlRequest.snapshot:type_name -> vz.control.v1.SnapshotCommand
+	9,  // 5: vz.control.v1.ControlRequest.memory:type_name -> vz.control.v1.MemoryCommand
+	10, // 6: vz.control.v1.ControlRequest.ocr:type_name -> vz.control.v1.OCRCommand
+	11, // 7: vz.control.v1.ControlRequest.port_forward:type_name -> vz.control.v1.PortForwardCommand
+	12, // 8: vz.control.v1.ControlRequest.agent_exec:type_name -> vz.control.v1.AgentExecCommand
+	13, // 9: vz.control.v1.ControlRequest.agent_read:type_name -> vz.control.v1.AgentFileReadCommand
+	14, // 10: vz.control.v1.ControlRequest.agent_write:type_name -> vz.control.v1.AgentFileWriteCommand
+	15, // 11: vz.control.v1.ControlRequest.agent_shutdown:type_name -> vz.control.v1.AgentShutdownCommand
+	16, // 12: vz.control.v1.ControlRequest.agent_sshd:type_name -> vz.control.v1.AgentSSHDCommand
+	17, // 13: vz.control.v1.ControlRequest.agent_cp:type_name -> vz.control.v1.AgentCopyCommand
+	8,  // 14: vz.control.v1.ControlRequest.operations:type_name -> vz.control.v1.OperationsCommand
+	18, // 15: vz.control.v1.ControlResponse.status:type_name -> vz.control.v1.StatusResponse
+	19, // 16: vz.control.v1.ControlResponse.capabilities:type_name -> vz.control.v1.CapabilitiesResponse
+	20, // 17: vz.control.v1.ControlResponse.screenshot_result:type_name -> vz.control.v1.ScreenshotResponse
+	21, // 18: vz.control.v1.ControlResponse.empty:type_name -> vz.control.v1.EmptyResponse
+	22, // 19: vz.control.v1.ControlResponse.snapshot_list:type_name -> vz.control.v1.SnapshotListResponse
+	23, // 20: vz.control.v1.ControlResponse.snapshot_action:type_name -> vz.control.v1.SnapshotActionResponse
+	26, // 21: vz.control.v1.ControlResponse.message:type_name -> vz.control.v1.MessageResponse
+	28, // 22: vz.control.v1.ControlResponse.network_info:type_name -> vz.control.v1.NetworkInfoResponse
+	27, // 23: vz.control.v1.ControlResponse.memory_info:type_name -> vz.control.v1.MemoryInfoResponse
+	31, // 24: vz.control.v1.ControlResponse.agent_exec_result:type_name -> vz.control.v1.AgentExecResponse
+	32, // 25: vz.control.v1.ControlResponse.agent_file:type_name -> vz.control.v1.AgentFileResponse
+	33, // 26: vz.control.v1.ControlResponse.agent_info:type_name -> vz.control.v1.AgentInfoResponse
+	34, // 27: vz.control.v1.ControlResponse.agent_ping:type_name -> vz.control.v1.AgentPingResponse
+	35, // 28: vz.control.v1.ControlResponse.ocr_text:type_name -> vz.control.v1.OCRTextResponse
+	37, // 29: vz.control.v1.ControlResponse.screen_detection:type_name -> vz.control.v1.ScreenDetectionResponse
+	24, // 30: vz.control.v1.ControlResponse.operation:type_name -> vz.control.v1.OperationInfo
+	25, // 31: vz.control.v1.ControlResponse.operations_list:type_name -> vz.control.v1.OperationsListResponse
+	38, // 32: vz.control.v1.AgentExecCommand.env:type_name -> vz.control.v1.AgentExecCommand.EnvEntry
+	0,  // 33: vz.control.v1.AgentCopyCommand.route:type_name -> vz.control.v1.AgentRoute
+	39, // 34: vz.control.v1.CapabilitiesResponse.features:type_name -> vz.control.v1.CapabilitiesResponse.FeaturesEntry
+	30, // 35: vz.control.v1.SnapshotListResponse.snapshots:type_name -> vz.control.v1.SnapshotInfo
+	24, // 36: vz.control.v1.OperationsListResponse.operations:type_name -> vz.control.v1.OperationInfo
+	29, // 37: vz.control.v1.MemoryInfoResponse.info:type_name -> vz.control.v1.MemoryInfo
+	36, // 38: vz.control.v1.OCRTextResponse.matches:type_name -> vz.control.v1.OCRMatch
+	39, // [39:39] is the sub-list for method output_type
+	39, // [39:39] is the sub-list for method input_type
+	39, // [39:39] is the sub-list for extension type_name
+	39, // [39:39] is the sub-list for extension extendee
+	0,  // [0:39] is the sub-list for field type_name
 }
 
 func init() { file_control_proto_init() }
@@ -3200,13 +3276,14 @@ func file_control_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_control_proto_rawDesc), len(file_control_proto_rawDesc)),
-			NumEnums:      0,
+			NumEnums:      1,
 			NumMessages:   39,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_control_proto_goTypes,
 		DependencyIndexes: file_control_proto_depIdxs,
+		EnumInfos:         file_control_proto_enumTypes,
 		MessageInfos:      file_control_proto_msgTypes,
 	}.Build()
 	File_control_proto = out.File

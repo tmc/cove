@@ -176,6 +176,20 @@ message AgentSSHDCommand {
   string action = 1;
 }
 
+// AgentRoute selects which guest agent services an operation.
+//   - AGENT_ROUTE_AUTO routes by guest path: TCC-protected paths
+//     (/Volumes/<tag>, ~/Downloads, ...) use the user agent, the rest use the
+//     daemon.
+//   - AGENT_ROUTE_DAEMON forces the root daemon (vsock 1024).
+//   - AGENT_ROUTE_USER forces the logged-in user agent (vsock 1025), a separate
+//     vsock connection — use it to keep a large transfer off the daemon channel
+//     that interactive exec shares.
+enum AgentRoute {
+  AGENT_ROUTE_AUTO = 0;
+  AGENT_ROUTE_DAEMON = 1;
+  AGENT_ROUTE_USER = 2;
+}
+
 // AgentCopyCommand copies files between host and guest using streaming gRPC.
 // Direction is determined by the presence of host_path and guest_path:
 //   - host_path set + guest_path set: copy host→guest (to_guest=true) or guest→host (to_guest=false)
@@ -185,6 +199,9 @@ message AgentCopyCommand {
   bool to_guest = 3;
   uint32 mode = 4;
   bool overwrite = 5;
+  // route selects the daemon or user agent; AGENT_ROUTE_AUTO (default) routes
+  // by guest path.
+  AgentRoute route = 6;
 }
 
 // --------------------------------------------------------------------------
