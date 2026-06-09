@@ -2864,10 +2864,13 @@ const file_agent_proto_rawDesc = "" +
 	"\x05Mount\x12\x19.vz.agent.v1.MountRequest\x1a\x1a.vz.agent.v1.MountResponse\x12D\n" +
 	"\aUnmount\x12\x1b.vz.agent.v1.UnmountRequest\x1a\x1c.vz.agent.v1.UnmountResponse\x12G\n" +
 	"\bShutdown\x12\x1c.vz.agent.v1.ShutdownRequest\x1a\x1d.vz.agent.v1.ShutdownResponse\x12A\n" +
-	"\x06Reboot\x12\x1a.vz.agent.v1.RebootRequest\x1a\x1b.vz.agent.v1.RebootResponse2\x93\x01\n" +
+	"\x06Reboot\x12\x1a.vz.agent.v1.RebootRequest\x1a\x1b.vz.agent.v1.RebootResponse2\xa3\x02\n" +
 	"\tUserAgent\x12?\n" +
 	"\bUserExec\x12\x18.vz.agent.v1.ExecRequest\x1a\x19.vz.agent.v1.ExecResponse\x12E\n" +
-	"\x0eUserExecStream\x12\x18.vz.agent.v1.ExecRequest\x1a\x17.vz.agent.v1.ExecOutput0\x01B#Z!github.com/tmc/cove/proto/agentpbb\x06proto3"
+	"\x0eUserExecStream\x12\x18.vz.agent.v1.ExecRequest\x1a\x17.vz.agent.v1.ExecOutput0\x01\x12E\n" +
+	"\n" +
+	"UserCopyIn\x12\x18.vz.agent.v1.CopyInChunk\x1a\x1b.vz.agent.v1.CopyInResponse(\x01\x12G\n" +
+	"\vUserCopyOut\x12\x1b.vz.agent.v1.CopyOutRequest\x1a\x19.vz.agent.v1.CopyOutChunk0\x01B#Z!github.com/tmc/cove/proto/agentpbb\x06proto3"
 
 var (
 	file_agent_proto_rawDescOnce sync.Once
@@ -2969,28 +2972,32 @@ var file_agent_proto_depIdxs = []int32{
 	44, // 32: vz.agent.v1.Agent.Reboot:input_type -> vz.agent.v1.RebootRequest
 	6,  // 33: vz.agent.v1.UserAgent.UserExec:input_type -> vz.agent.v1.ExecRequest
 	6,  // 34: vz.agent.v1.UserAgent.UserExecStream:input_type -> vz.agent.v1.ExecRequest
-	2,  // 35: vz.agent.v1.Agent.Ping:output_type -> vz.agent.v1.PingResponse
-	4,  // 36: vz.agent.v1.Agent.Info:output_type -> vz.agent.v1.InfoResponse
-	7,  // 37: vz.agent.v1.Agent.Exec:output_type -> vz.agent.v1.ExecResponse
-	8,  // 38: vz.agent.v1.Agent.ExecStream:output_type -> vz.agent.v1.ExecOutput
-	14, // 39: vz.agent.v1.Agent.ExecAttach:output_type -> vz.agent.v1.ExecAttachOutput
-	19, // 40: vz.agent.v1.Agent.ResizeExecTTY:output_type -> vz.agent.v1.ResizeExecTTYResponse
-	21, // 41: vz.agent.v1.Agent.SignalExec:output_type -> vz.agent.v1.SignalExecResponse
-	23, // 42: vz.agent.v1.Agent.SetTime:output_type -> vz.agent.v1.SetTimeResponse
-	25, // 43: vz.agent.v1.Agent.ResizeMacOSAPFS:output_type -> vz.agent.v1.ResizeMacOSAPFSResponse
-	28, // 44: vz.agent.v1.Agent.CopyIn:output_type -> vz.agent.v1.CopyInResponse
-	30, // 45: vz.agent.v1.Agent.CopyOut:output_type -> vz.agent.v1.CopyOutChunk
-	33, // 46: vz.agent.v1.Agent.WriteFile:output_type -> vz.agent.v1.WriteFileResponse
-	35, // 47: vz.agent.v1.Agent.ReadFile:output_type -> vz.agent.v1.ReadFileResponse
-	37, // 48: vz.agent.v1.Agent.Mkdir:output_type -> vz.agent.v1.MkdirResponse
-	39, // 49: vz.agent.v1.Agent.Mount:output_type -> vz.agent.v1.MountResponse
-	41, // 50: vz.agent.v1.Agent.Unmount:output_type -> vz.agent.v1.UnmountResponse
-	43, // 51: vz.agent.v1.Agent.Shutdown:output_type -> vz.agent.v1.ShutdownResponse
-	45, // 52: vz.agent.v1.Agent.Reboot:output_type -> vz.agent.v1.RebootResponse
-	7,  // 53: vz.agent.v1.UserAgent.UserExec:output_type -> vz.agent.v1.ExecResponse
-	8,  // 54: vz.agent.v1.UserAgent.UserExecStream:output_type -> vz.agent.v1.ExecOutput
-	35, // [35:55] is the sub-list for method output_type
-	15, // [15:35] is the sub-list for method input_type
+	26, // 35: vz.agent.v1.UserAgent.UserCopyIn:input_type -> vz.agent.v1.CopyInChunk
+	29, // 36: vz.agent.v1.UserAgent.UserCopyOut:input_type -> vz.agent.v1.CopyOutRequest
+	2,  // 37: vz.agent.v1.Agent.Ping:output_type -> vz.agent.v1.PingResponse
+	4,  // 38: vz.agent.v1.Agent.Info:output_type -> vz.agent.v1.InfoResponse
+	7,  // 39: vz.agent.v1.Agent.Exec:output_type -> vz.agent.v1.ExecResponse
+	8,  // 40: vz.agent.v1.Agent.ExecStream:output_type -> vz.agent.v1.ExecOutput
+	14, // 41: vz.agent.v1.Agent.ExecAttach:output_type -> vz.agent.v1.ExecAttachOutput
+	19, // 42: vz.agent.v1.Agent.ResizeExecTTY:output_type -> vz.agent.v1.ResizeExecTTYResponse
+	21, // 43: vz.agent.v1.Agent.SignalExec:output_type -> vz.agent.v1.SignalExecResponse
+	23, // 44: vz.agent.v1.Agent.SetTime:output_type -> vz.agent.v1.SetTimeResponse
+	25, // 45: vz.agent.v1.Agent.ResizeMacOSAPFS:output_type -> vz.agent.v1.ResizeMacOSAPFSResponse
+	28, // 46: vz.agent.v1.Agent.CopyIn:output_type -> vz.agent.v1.CopyInResponse
+	30, // 47: vz.agent.v1.Agent.CopyOut:output_type -> vz.agent.v1.CopyOutChunk
+	33, // 48: vz.agent.v1.Agent.WriteFile:output_type -> vz.agent.v1.WriteFileResponse
+	35, // 49: vz.agent.v1.Agent.ReadFile:output_type -> vz.agent.v1.ReadFileResponse
+	37, // 50: vz.agent.v1.Agent.Mkdir:output_type -> vz.agent.v1.MkdirResponse
+	39, // 51: vz.agent.v1.Agent.Mount:output_type -> vz.agent.v1.MountResponse
+	41, // 52: vz.agent.v1.Agent.Unmount:output_type -> vz.agent.v1.UnmountResponse
+	43, // 53: vz.agent.v1.Agent.Shutdown:output_type -> vz.agent.v1.ShutdownResponse
+	45, // 54: vz.agent.v1.Agent.Reboot:output_type -> vz.agent.v1.RebootResponse
+	7,  // 55: vz.agent.v1.UserAgent.UserExec:output_type -> vz.agent.v1.ExecResponse
+	8,  // 56: vz.agent.v1.UserAgent.UserExecStream:output_type -> vz.agent.v1.ExecOutput
+	28, // 57: vz.agent.v1.UserAgent.UserCopyIn:output_type -> vz.agent.v1.CopyInResponse
+	30, // 58: vz.agent.v1.UserAgent.UserCopyOut:output_type -> vz.agent.v1.CopyOutChunk
+	37, // [37:59] is the sub-list for method output_type
+	15, // [15:37] is the sub-list for method input_type
 	15, // [15:15] is the sub-list for extension type_name
 	15, // [15:15] is the sub-list for extension extendee
 	0,  // [0:15] is the sub-list for field type_name

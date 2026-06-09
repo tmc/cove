@@ -291,6 +291,15 @@ service UserAgent {
   rpc UserExec(ExecRequest) returns (ExecResponse);
   // UserExecStream runs a command with streaming output as the logged-in user.
   rpc UserExecStream(ExecRequest) returns (stream ExecOutput);
+  // UserCopyIn transfers a file from the host into the guest as the logged-in
+  // user, so writes to TCC-protected destinations (/Volumes/<tag>, ~/Downloads)
+  // succeed where the root daemon is blocked. It streams like CopyIn, on the
+  // user agent's separate vsock connection (1025) so a large transfer does not
+  // share the daemon channel (1024) with interactive exec.
+  rpc UserCopyIn(stream CopyInChunk) returns (CopyInResponse);
+  // UserCopyOut transfers a file from the guest to the host as the logged-in
+  // user. Same TCC and channel rationale as UserCopyIn.
+  rpc UserCopyOut(CopyOutRequest) returns (stream CopyOutChunk);
 }
 
 // Power

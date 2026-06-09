@@ -5,8 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"connectrpc.com/connect"
@@ -109,4 +112,94 @@ func (s *userAgentServer) UserExecStream(ctx context.Context, req *connect.Reque
 		}
 	}
 	return stream.Send(&pb.ExecOutput{ExitCode: &exitCode})
+}
+
+// UserCopyIn streams a file from the host into the guest, writing it as the
+// current (logged-in) user so TCC-protected destinations succeed. The file I/O
+// mirrors the daemon's CopyIn; only the process identity differs.
+func (s *userAgentServer) UserCopyIn(_ context.Context, stream *connect.ClientStream[pb.CopyInChunk]) (*connect.Response[pb.CopyInResponse], error) {
+	if !stream.Receive() {
+		if err := stream.Err(); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("recv init: %v", err))
+		}
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("first message must be init"))
+	}
+	init := stream.Msg().GetInit()
+	if init == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("first message must be init"))
+	}
+
+	if init.CreateParents {
+		if err := os.MkdirAll(filepath.Dir(init.Path), 0o755); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("mkdir: %v", err))
+		}
+	}
+
+	mode := os.FileMode(0o644)
+	if init.Mode != 0 {
+		mode = os.FileMode(init.Mode)
+	}
+	f, err := os.OpenFile(init.Path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("create: %v", err))
+	}
+	defer f.Close()
+
+	for stream.Receive() {
+		if data := stream.Msg().GetData(); len(data) > 0 {
+			if _, err := f.Write(data); err != nil {
+				return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("write: %v", err))
+			}
+		}
+	}
+	if err := stream.Err(); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("recv: %v", err))
+	}
+	return connect.NewResponse(&pb.CopyInResponse{}), nil
+}
+
+// UserCopyOut streams a file from the guest to the host, reading it as the
+// current (logged-in) user. Mirrors the daemon's CopyOut.
+func (s *userAgentServer) UserCopyOut(_ context.Context, req *connect.Request[pb.CopyOutRequest], stream *connect.ServerStream[pb.CopyOutChunk]) error {
+	r := req.Msg
+	info, err := os.Stat(r.Path)
+	if err != nil {
+		return connect.NewError(connect.CodeNotFound, fmt.Errorf("stat: %v", err))
+	}
+
+	f, err := os.Open(r.Path)
+	if err != nil {
+		return connect.NewError(connect.CodeInternal, fmt.Errorf("open: %v", err))
+	}
+	defer f.Close()
+
+	if err := stream.Send(&pb.CopyOutChunk{
+		Content: &pb.CopyOutChunk_Init{
+			Init: &pb.CopyOutInit{
+				TotalSize: uint64(info.Size()),
+				Mode:      uint32(info.Mode()),
+			},
+		},
+	}); err != nil {
+		return err
+	}
+
+	buf := make([]byte, 64*1024)
+	for {
+		n, err := f.Read(buf)
+		if n > 0 {
+			if sendErr := stream.Send(&pb.CopyOutChunk{
+				Content: &pb.CopyOutChunk_Data{Data: append([]byte(nil), buf[:n]...)},
+			}); sendErr != nil {
+				return sendErr
+			}
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return connect.NewError(connect.CodeInternal, fmt.Errorf("read: %v", err))
+		}
+	}
+	return nil
 }

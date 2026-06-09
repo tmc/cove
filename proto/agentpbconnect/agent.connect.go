@@ -76,6 +76,10 @@ const (
 	// UserAgentUserExecStreamProcedure is the fully-qualified name of the UserAgent's UserExecStream
 	// RPC.
 	UserAgentUserExecStreamProcedure = "/vz.agent.v1.UserAgent/UserExecStream"
+	// UserAgentUserCopyInProcedure is the fully-qualified name of the UserAgent's UserCopyIn RPC.
+	UserAgentUserCopyInProcedure = "/vz.agent.v1.UserAgent/UserCopyIn"
+	// UserAgentUserCopyOutProcedure is the fully-qualified name of the UserAgent's UserCopyOut RPC.
+	UserAgentUserCopyOutProcedure = "/vz.agent.v1.UserAgent/UserCopyOut"
 )
 
 // AgentClient is a client for the vz.agent.v1.Agent service.
@@ -626,6 +630,15 @@ type UserAgentClient interface {
 	UserExec(context.Context, *connect.Request[agentpb.ExecRequest]) (*connect.Response[agentpb.ExecResponse], error)
 	// UserExecStream runs a command with streaming output as the logged-in user.
 	UserExecStream(context.Context, *connect.Request[agentpb.ExecRequest]) (*connect.ServerStreamForClient[agentpb.ExecOutput], error)
+	// UserCopyIn transfers a file from the host into the guest as the logged-in
+	// user, so writes to TCC-protected destinations (/Volumes/<tag>, ~/Downloads)
+	// succeed where the root daemon is blocked. It streams like CopyIn, on the
+	// user agent's separate vsock connection (1025) so a large transfer does not
+	// share the daemon channel (1024) with interactive exec.
+	UserCopyIn(context.Context) *connect.ClientStreamForClient[agentpb.CopyInChunk, agentpb.CopyInResponse]
+	// UserCopyOut transfers a file from the guest to the host as the logged-in
+	// user. Same TCC and channel rationale as UserCopyIn.
+	UserCopyOut(context.Context, *connect.Request[agentpb.CopyOutRequest]) (*connect.ServerStreamForClient[agentpb.CopyOutChunk], error)
 }
 
 // NewUserAgentClient constructs a client for the vz.agent.v1.UserAgent service. By default, it uses
@@ -651,6 +664,18 @@ func NewUserAgentClient(httpClient connect.HTTPClient, baseURL string, opts ...c
 			connect.WithSchema(userAgentMethods.ByName("UserExecStream")),
 			connect.WithClientOptions(opts...),
 		),
+		userCopyIn: connect.NewClient[agentpb.CopyInChunk, agentpb.CopyInResponse](
+			httpClient,
+			baseURL+UserAgentUserCopyInProcedure,
+			connect.WithSchema(userAgentMethods.ByName("UserCopyIn")),
+			connect.WithClientOptions(opts...),
+		),
+		userCopyOut: connect.NewClient[agentpb.CopyOutRequest, agentpb.CopyOutChunk](
+			httpClient,
+			baseURL+UserAgentUserCopyOutProcedure,
+			connect.WithSchema(userAgentMethods.ByName("UserCopyOut")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -658,6 +683,8 @@ func NewUserAgentClient(httpClient connect.HTTPClient, baseURL string, opts ...c
 type userAgentClient struct {
 	userExec       *connect.Client[agentpb.ExecRequest, agentpb.ExecResponse]
 	userExecStream *connect.Client[agentpb.ExecRequest, agentpb.ExecOutput]
+	userCopyIn     *connect.Client[agentpb.CopyInChunk, agentpb.CopyInResponse]
+	userCopyOut    *connect.Client[agentpb.CopyOutRequest, agentpb.CopyOutChunk]
 }
 
 // UserExec calls vz.agent.v1.UserAgent.UserExec.
@@ -670,12 +697,31 @@ func (c *userAgentClient) UserExecStream(ctx context.Context, req *connect.Reque
 	return c.userExecStream.CallServerStream(ctx, req)
 }
 
+// UserCopyIn calls vz.agent.v1.UserAgent.UserCopyIn.
+func (c *userAgentClient) UserCopyIn(ctx context.Context) *connect.ClientStreamForClient[agentpb.CopyInChunk, agentpb.CopyInResponse] {
+	return c.userCopyIn.CallClientStream(ctx)
+}
+
+// UserCopyOut calls vz.agent.v1.UserAgent.UserCopyOut.
+func (c *userAgentClient) UserCopyOut(ctx context.Context, req *connect.Request[agentpb.CopyOutRequest]) (*connect.ServerStreamForClient[agentpb.CopyOutChunk], error) {
+	return c.userCopyOut.CallServerStream(ctx, req)
+}
+
 // UserAgentHandler is an implementation of the vz.agent.v1.UserAgent service.
 type UserAgentHandler interface {
 	// UserExec runs a command as the logged-in user, inheriting TCC and FDA.
 	UserExec(context.Context, *connect.Request[agentpb.ExecRequest]) (*connect.Response[agentpb.ExecResponse], error)
 	// UserExecStream runs a command with streaming output as the logged-in user.
 	UserExecStream(context.Context, *connect.Request[agentpb.ExecRequest], *connect.ServerStream[agentpb.ExecOutput]) error
+	// UserCopyIn transfers a file from the host into the guest as the logged-in
+	// user, so writes to TCC-protected destinations (/Volumes/<tag>, ~/Downloads)
+	// succeed where the root daemon is blocked. It streams like CopyIn, on the
+	// user agent's separate vsock connection (1025) so a large transfer does not
+	// share the daemon channel (1024) with interactive exec.
+	UserCopyIn(context.Context, *connect.ClientStream[agentpb.CopyInChunk]) (*connect.Response[agentpb.CopyInResponse], error)
+	// UserCopyOut transfers a file from the guest to the host as the logged-in
+	// user. Same TCC and channel rationale as UserCopyIn.
+	UserCopyOut(context.Context, *connect.Request[agentpb.CopyOutRequest], *connect.ServerStream[agentpb.CopyOutChunk]) error
 }
 
 // NewUserAgentHandler builds an HTTP handler from the service implementation. It returns the path
@@ -697,12 +743,28 @@ func NewUserAgentHandler(svc UserAgentHandler, opts ...connect.HandlerOption) (s
 		connect.WithSchema(userAgentMethods.ByName("UserExecStream")),
 		connect.WithHandlerOptions(opts...),
 	)
+	userAgentUserCopyInHandler := connect.NewClientStreamHandler(
+		UserAgentUserCopyInProcedure,
+		svc.UserCopyIn,
+		connect.WithSchema(userAgentMethods.ByName("UserCopyIn")),
+		connect.WithHandlerOptions(opts...),
+	)
+	userAgentUserCopyOutHandler := connect.NewServerStreamHandler(
+		UserAgentUserCopyOutProcedure,
+		svc.UserCopyOut,
+		connect.WithSchema(userAgentMethods.ByName("UserCopyOut")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/vz.agent.v1.UserAgent/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case UserAgentUserExecProcedure:
 			userAgentUserExecHandler.ServeHTTP(w, r)
 		case UserAgentUserExecStreamProcedure:
 			userAgentUserExecStreamHandler.ServeHTTP(w, r)
+		case UserAgentUserCopyInProcedure:
+			userAgentUserCopyInHandler.ServeHTTP(w, r)
+		case UserAgentUserCopyOutProcedure:
+			userAgentUserCopyOutHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -718,4 +780,12 @@ func (UnimplementedUserAgentHandler) UserExec(context.Context, *connect.Request[
 
 func (UnimplementedUserAgentHandler) UserExecStream(context.Context, *connect.Request[agentpb.ExecRequest], *connect.ServerStream[agentpb.ExecOutput]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("vz.agent.v1.UserAgent.UserExecStream is not implemented"))
+}
+
+func (UnimplementedUserAgentHandler) UserCopyIn(context.Context, *connect.ClientStream[agentpb.CopyInChunk]) (*connect.Response[agentpb.CopyInResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("vz.agent.v1.UserAgent.UserCopyIn is not implemented"))
+}
+
+func (UnimplementedUserAgentHandler) UserCopyOut(context.Context, *connect.Request[agentpb.CopyOutRequest], *connect.ServerStream[agentpb.CopyOutChunk]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("vz.agent.v1.UserAgent.UserCopyOut is not implemented"))
 }

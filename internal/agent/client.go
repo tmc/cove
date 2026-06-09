@@ -362,62 +362,7 @@ func (c *AgentClient) ReadFile(ctx context.Context, path string) ([]byte, error)
 
 // CopyToGuest streams a local file into the guest at guestPath.
 func (c *AgentClient) CopyToGuest(ctx context.Context, localPath, guestPath string, mode os.FileMode) error {
-	f, err := os.Open(localPath)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	fi, err := f.Stat()
-	if err != nil {
-		return err
-	}
-
-	stream := c.client.CopyIn(ctx)
-
-	if err := stream.Send(&pb.CopyInChunk{
-		Content: &pb.CopyInChunk_Init{Init: &pb.CopyInInit{
-			Path:          guestPath,
-			Mode:          uint32(mode),
-			CreateParents: true,
-		}},
-	}); err != nil {
-		return fmt.Errorf("send init: %w", err)
-	}
-
-	var sent int64
-	total := fi.Size()
-	start := time.Now()
-	lastLog := start
-
-	buf := make([]byte, 64*1024)
-	for {
-		n, err := f.Read(buf)
-		if n > 0 {
-			if sendErr := stream.Send(&pb.CopyInChunk{
-				Content: &pb.CopyInChunk_Data{Data: buf[:n]},
-			}); sendErr != nil {
-				return fmt.Errorf("send data: %w", sendErr)
-			}
-			sent += int64(n)
-			if now := time.Now(); now.Sub(lastLog) >= 3*time.Second {
-				logCopyProgress(localPath, sent, total, start)
-				lastLog = now
-			}
-		}
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("read local: %w", err)
-		}
-	}
-
-	if _, err := stream.CloseAndReceive(); err != nil {
-		return fmt.Errorf("close: %w", err)
-	}
-	logCopyDone(localPath, sent, start)
-	return nil
+	return streamFileToGuest(c.client.CopyIn(ctx), localPath, guestPath, mode)
 }
 
 // CopyReaderToGuest streams data from an io.Reader to a guest file path.
@@ -474,42 +419,7 @@ func (c *AgentClient) CopyFromGuest(ctx context.Context, guestPath, localPath st
 	if err != nil {
 		return fmt.Errorf("open stream: %w", err)
 	}
-
-	if !stream.Receive() {
-		if err := stream.Err(); err != nil {
-			return fmt.Errorf("recv init: %w", err)
-		}
-		return fmt.Errorf("expected init message")
-	}
-	first := stream.Msg()
-	init := first.GetInit()
-	if init == nil {
-		return fmt.Errorf("expected init message")
-	}
-
-	mode := os.FileMode(init.Mode)
-	if mode == 0 {
-		mode = 0644
-	}
-
-	f, err := os.OpenFile(localPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	for stream.Receive() {
-		chunk := stream.Msg()
-		if data := chunk.GetData(); len(data) > 0 {
-			if _, err := f.Write(data); err != nil {
-				return fmt.Errorf("write local: %w", err)
-			}
-		}
-	}
-	if err := stream.Err(); err != nil {
-		return fmt.Errorf("recv: %w", err)
-	}
-	return nil
+	return streamFileFromGuest(stream, localPath)
 }
 
 // Shutdown initiates a graceful shutdown.
@@ -618,6 +528,134 @@ func (c *UserAgentClient) UserExecStream(ctx context.Context, args []string, env
 		return nil, err
 	}
 	return &execStreamReceiver{stream: stream}, nil
+}
+
+// copyInStream is the subset of a Connect client-stream the copy-in helper needs.
+// Both Agent.CopyIn and UserAgent.UserCopyIn satisfy it.
+type copyInStream interface {
+	Send(*pb.CopyInChunk) error
+	CloseAndReceive() (*connect.Response[pb.CopyInResponse], error)
+}
+
+// copyOutStream is the subset of a Connect server-stream the copy-out helper
+// needs. Both Agent.CopyOut and UserAgent.UserCopyOut satisfy it.
+type copyOutStream interface {
+	Receive() bool
+	Msg() *pb.CopyOutChunk
+	Err() error
+}
+
+// streamFileToGuest streams localPath into the guest over an already-opened
+// copy-in stream. Shared by the daemon and user-agent copy paths.
+func streamFileToGuest(stream copyInStream, localPath, guestPath string, mode os.FileMode) error {
+	f, err := os.Open(localPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	fi, err := f.Stat()
+	if err != nil {
+		return err
+	}
+
+	if err := stream.Send(&pb.CopyInChunk{
+		Content: &pb.CopyInChunk_Init{Init: &pb.CopyInInit{
+			Path:          guestPath,
+			Mode:          uint32(mode),
+			CreateParents: true,
+		}},
+	}); err != nil {
+		return fmt.Errorf("send init: %w", err)
+	}
+
+	var sent int64
+	total := fi.Size()
+	start := time.Now()
+	lastLog := start
+
+	buf := make([]byte, 64*1024)
+	for {
+		n, err := f.Read(buf)
+		if n > 0 {
+			if sendErr := stream.Send(&pb.CopyInChunk{
+				Content: &pb.CopyInChunk_Data{Data: buf[:n]},
+			}); sendErr != nil {
+				return fmt.Errorf("send data: %w", sendErr)
+			}
+			sent += int64(n)
+			if now := time.Now(); now.Sub(lastLog) >= 3*time.Second {
+				logCopyProgress(localPath, sent, total, start)
+				lastLog = now
+			}
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("read local: %w", err)
+		}
+	}
+
+	if _, err := stream.CloseAndReceive(); err != nil {
+		return fmt.Errorf("close: %w", err)
+	}
+	logCopyDone(localPath, sent, start)
+	return nil
+}
+
+// streamFileFromGuest writes a copy-out stream to localPath. Shared by the
+// daemon and user-agent copy paths.
+func streamFileFromGuest(stream copyOutStream, localPath string) error {
+	if !stream.Receive() {
+		if err := stream.Err(); err != nil {
+			return fmt.Errorf("recv init: %w", err)
+		}
+		return fmt.Errorf("expected init message")
+	}
+	init := stream.Msg().GetInit()
+	if init == nil {
+		return fmt.Errorf("expected init message")
+	}
+
+	mode := os.FileMode(init.Mode)
+	if mode == 0 {
+		mode = 0644
+	}
+
+	f, err := os.OpenFile(localPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	for stream.Receive() {
+		if data := stream.Msg().GetData(); len(data) > 0 {
+			if _, err := f.Write(data); err != nil {
+				return fmt.Errorf("write local: %w", err)
+			}
+		}
+	}
+	if err := stream.Err(); err != nil {
+		return fmt.Errorf("recv: %w", err)
+	}
+	return nil
+}
+
+// UserCopyToGuest streams a local file into the guest as the logged-in user,
+// over the user agent's separate vsock connection (port 1025). Use for TCC-
+// protected destinations and to keep large transfers off the daemon channel.
+func (c *UserAgentClient) UserCopyToGuest(ctx context.Context, localPath, guestPath string, mode os.FileMode) error {
+	return streamFileToGuest(c.client.UserCopyIn(ctx), localPath, guestPath, mode)
+}
+
+// UserCopyFromGuest streams a guest file to a local path as the logged-in user.
+func (c *UserAgentClient) UserCopyFromGuest(ctx context.Context, guestPath, localPath string) error {
+	stream, err := c.client.UserCopyOut(ctx, connect.NewRequest(&pb.CopyOutRequest{Path: guestPath}))
+	if err != nil {
+		return fmt.Errorf("open stream: %w", err)
+	}
+	return streamFileFromGuest(stream, localPath)
 }
 
 func newH2CClientWithDial(dial func(context.Context) (net.Conn, error)) (*http.Client, *http2.Transport) {
