@@ -1,0 +1,15 @@
+commit: 6a74a076bebecb4e5f48b151bcb5b469f1d734c9
+date: 2026-06-26T21:54:42Z
+agent: codex
+model: gpt-5
+tty: not a tty
+pid: 1746
+ITERM_SESSION_ID: w13t3p1:B41EF40B-7D12-4B3B-AD47-3CDF7DC54114
+verification:
+- python3 csv validation: rows=471 unique_ids=471 last=COVE-471 status={Pass:471} result={Passed:471}
+- git diff --check
+- go test ./cmd/cove -run 'TestNewITerm2ProxyCapturesGuestConnector|TestGatewayFallbackPathMkdirError|TestTaggedVolumes|TestLinuxVirtioFSOwnerDefaults|TestLinuxVirtioFSOwnerOverrideUID|TestLinuxVirtioFSOwnerOverrideBoth|TestLinuxVirtioFSOwnerMalformedConfig|TestRuntimeUSBListNoVM|TestErrVZScriptDependencyCycleWraps|TestErrVZScriptDependencyCycleDistinctFromEmptyRecipe|TestImageCreatedAt|TestParseForwardSpec|TestParseForwardUDP|TestRunForwardUsesStarter|TestRunForwardPropagatesStarterError' -count=1
+- go build -o cove ./cmd/cove && codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+- go build ./...
+- go test ./...
+- go vet ./...
