@@ -37,9 +37,13 @@ func runFleetAggregateCommand(ctx context.Context, args []string, path string, r
 		return fmt.Errorf("fleet: unknown %s command %q", kind, sub)
 	}
 	fs := flag.NewFlagSet("fleet "+kind+" ls", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
+	fs.SetOutput(errOut)
+	fs.Usage = func() {
+		fmt.Fprintf(fs.Output(), "Usage: cove fleet %s ls [--json]\n\nList %s across registered fleet remotes.\n\nFlags:\n", kind, kind)
+		fs.PrintDefaults()
+	}
 	jsonOut := fs.Bool("json", false, "emit JSON")
-	if err := fs.Parse(args[2:]); err != nil {
+	if done, err := parseFlagsOrHelpExit(fs, args[2:]); done || err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
@@ -125,6 +129,14 @@ func printFleetAggregate(out io.Writer, rows []fleetAggregateRow) error {
 func runFleetPSCommand(ctx context.Context, args []string, path string, runner fleetRunner, out, errOut io.Writer) error {
 	fs := flag.NewFlagSet("fleet ps", flag.ContinueOnError)
 	fs.SetOutput(errOut)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), `Usage: cove fleet ps [--json] [--watch]
+
+List running VMs across registered fleet remotes.
+
+Flags:`)
+		fs.PrintDefaults()
+	}
 	jsonOut := fs.Bool("json", false, "emit JSON")
 	watch := fs.Bool("watch", false, "refresh until interrupted")
 	if done, err := parseFlagsOrHelpExit(fs, args); done || err != nil {

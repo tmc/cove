@@ -149,6 +149,14 @@ func daemonUICommand(env commandEnv, args []string) error {
 	env = env.WithDefaultIO()
 	fs := flag.NewFlagSet("daemon ui", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), `Usage: cove daemon ui [-addr host:port] [-open command]
+
+Open the daemon web UI.
+
+Flags:`)
+		fs.PrintDefaults()
+	}
 	addr := fs.String("addr", "127.0.0.1:9877", "web UI address")
 	openCmd := fs.String("open", "open", "open command")
 	if done, err := parseFlagsOrHelpExit(fs, args); done || err != nil {
@@ -170,6 +178,14 @@ func daemonMetricsCommand(env commandEnv, args []string) error {
 	env = env.WithDefaultIO()
 	fs := flag.NewFlagSet("daemon metrics", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), `Usage: cove daemon metrics [--json] [-addr host:port]
+
+Print daemon Prometheus metrics.
+
+Flags:`)
+		fs.PrintDefaults()
+	}
 	raw := fs.Bool("json", false, "print raw prometheus exposition")
 	addr := fs.String("addr", "127.0.0.1:9876", "metrics address")
 	if done, err := parseFlagsOrHelpExit(fs, args); done || err != nil {

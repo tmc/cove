@@ -236,11 +236,11 @@ var cliDocSpecs = []cliDocSpec{
 		fs, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ := newInjectFlagSet()
 		return captureWriter(func(w io.Writer) {
 			fs.SetOutput(w)
-			printInjectUsage(w, fs)
+			printInjectUsage(w, fs, "cove provision")
 		})
 	}},
 	{Name: "provision-agent", Summary: "Provision vz-agent into a VM.", Aliases: []string{"inject-agent"}, Usage: func() string {
-		return captureWriter(printProvisionAgentUsage)
+		return captureWriter(func(w io.Writer) { printProvisionAgentUsage(w, "cove provision-agent") })
 	}},
 	{Name: "agent-upgrade", Summary: "Live-upgrade vz-agent inside a running VM.", Aliases: []string{"upgrade-agent"}, Usage: func() string {
 		return captureWriter(printAgentUpgradeUsage)

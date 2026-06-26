@@ -119,6 +119,14 @@ func printPinsUsage(w io.Writer) {
 func runPinsList(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("pins list", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), `Usage: cove pins list [-json]
+
+List pinned objects that storage budget eviction skips.
+
+Flags:`)
+		fs.PrintDefaults()
+	}
 	asJSON := fs.Bool("json", false, "render JSON instead of a fixed-width table")
 	if done, err := parseFlagsOrHelpExit(fs, args); done || err != nil {
 		return err

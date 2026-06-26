@@ -119,12 +119,19 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			printSupportBundleUsage(os.Stderr, "cove support-bundle")
 		case "provision", "inject":
 			fs, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ := newInjectFlagSet()
-			fs.Usage()
+			if subargs[0] == "inject" {
+				printDeprecatedAliasNotice(os.Stderr, "inject", "provision")
+				printInjectUsage(os.Stderr, fs, "cove inject")
+			} else {
+				fs.Usage()
+			}
 		case "provision-agent", "inject-agent":
 			if subargs[0] == "inject-agent" {
 				printDeprecatedAliasNotice(os.Stderr, "inject-agent", "provision-agent")
+				printProvisionAgentUsage(os.Stderr, "cove inject-agent")
+			} else {
+				printProvisionAgentUsage(os.Stderr, "cove provision-agent")
 			}
-			printProvisionAgentUsage(os.Stderr)
 		case "doctor", "verify":
 			if subargs[0] == "verify" {
 				printDeprecatedAliasNotice(os.Stderr, "verify", "doctor")
@@ -232,6 +239,20 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		if len(subargs) > 1 && subargs[0] == "ready" && isHelpArg(subargs[1]) {
 			printReadyUsage(os.Stderr)
 			return true, 0
+		}
+		if len(subargs) > 1 && isHelpArg(subargs[1]) {
+			cmdType := subargs[0]
+			if cmdType == "exec" {
+				cmdType = "agent-exec"
+			}
+			if printCtlSubcommandUsage(os.Stderr, cmdType, subargs[1:]) {
+				return true, 0
+			}
+		}
+		if len(subargs) > 2 && subargs[0] == "disk" && isHelpArg(subargs[2]) {
+			if printCtlSubcommandUsage(os.Stderr, "disk", subargs[1:]) {
+				return true, 0
+			}
 		}
 		if len(subargs) > 1 && isHelpArg(subargs[len(subargs)-1]) {
 			fs, _, _, _, _, _, _ := newCtlFlagSet()
@@ -441,15 +462,22 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 	case "provision", "inject":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
 			fs, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ := newInjectFlagSet()
-			fs.Usage()
+			if cmd == "inject" {
+				printDeprecatedAliasNotice(os.Stderr, "inject", "provision")
+				printInjectUsage(os.Stderr, fs, "cove inject")
+			} else {
+				fs.Usage()
+			}
 			return true, 0
 		}
 	case "provision-agent", "inject-agent":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
 			if cmd == "inject-agent" {
 				printDeprecatedAliasNotice(os.Stderr, "inject-agent", "provision-agent")
+				printProvisionAgentUsage(os.Stderr, "cove inject-agent")
+			} else {
+				printProvisionAgentUsage(os.Stderr, "cove provision-agent")
 			}
-			printProvisionAgentUsage(os.Stderr)
 			return true, 0
 		}
 	case "doctor", "verify":
@@ -591,8 +619,8 @@ func printDeprecatedAliasNotice(w io.Writer, alias, canonical string) {
 	fmt.Fprintf(w, "Note: %q is a deprecated alias for %q.\n\n", alias, canonical)
 }
 
-func printProvisionAgentUsage(w io.Writer) {
-	fmt.Fprintln(w, `Usage: cove provision-agent
+func printProvisionAgentUsage(w io.Writer, command string) {
+	fmt.Fprintf(w, `Usage: %s
 
 Provision the vz-agent daemon into the selected VM. If the VM is running
 and reachable on its control socket, the agent is pushed over vsock and
@@ -602,7 +630,7 @@ is written to /usr/local/bin and /Library/LaunchDaemons.
 Idempotent: if the guest agent version already matches the host, the
 command returns without rebuilding.
 
-Use -vm <name> (before the subcommand) to target a specific VM.`)
+Use -vm <name> (before the subcommand) to target a specific VM.`, command)
 }
 
 func printGCUsage(w io.Writer) {

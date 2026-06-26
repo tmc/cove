@@ -90,7 +90,7 @@ func TestPrintInjectUsage(t *testing.T) {
 	fs := flag.NewFlagSet("provision", flag.ContinueOnError)
 	fs.String("user", "", "username")
 	var buf bytes.Buffer
-	printInjectUsage(&buf, fs)
+	printInjectUsage(&buf, fs, "cove provision")
 	out := buf.String()
 	for _, want := range []string{
 		"Usage: cove provision",

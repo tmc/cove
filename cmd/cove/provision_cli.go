@@ -183,13 +183,13 @@ func newInjectFlagSet() (*flag.FlagSet, *string, *string, *bool, *bool, *bool, *
 	bootstrapRecovery := fs.Bool("bootstrap-recovery", true, "Create a hidden admin first to grant full recovery authorization")
 	noBootstrapRecovery := fs.Bool("no-bootstrap-recovery", false, "Disable the two-user recovery bootstrap")
 	fs.Usage = func() {
-		printInjectUsage(os.Stderr, fs)
+		printInjectUsage(os.Stderr, fs, "cove provision")
 	}
 	return fs, user, password, admin, skipSetup, autoLogin, noAutoLogin, createUserPlist, uid, sshKeyPath, installXcodeCLI, verboseFlag, applyOnly, stageOnly, force, enableAgent, enableGuestTools, enableSSHD, bootstrapRecovery, noBootstrapRecovery
 }
 
-func printInjectUsage(w io.Writer, fs *flag.FlagSet) {
-	fmt.Fprintf(w, `Usage: cove provision [options]
+func printInjectUsage(w io.Writer, fs *flag.FlagSet, command string) {
+	fmt.Fprintf(w, `Usage: %s [options]
 
 Provision a VM with a user account, auto-login, and guest tools.
 
@@ -205,7 +205,7 @@ Provisioning modes:
   2. Plist mode (-plist): create the user plist directly (advanced)
 
 Options:
-`)
+`, command)
 	fs.PrintDefaults()
 	fmt.Fprintf(w, `
 Examples:

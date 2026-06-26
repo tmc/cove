@@ -159,6 +159,7 @@ Options:
 	if fs != nil {
 		fs.PrintDefaults()
 	}
+
 	fmt.Fprintf(w, `
 Examples:
   cove ctl ping
@@ -190,7 +191,55 @@ Examples:
   cove ctl -vm smoke ping
   cove ctl ready --require xcode-cli,go,homebrew
   cove ctl ready --require go --json
-`)
+	`)
+}
+
+func printCtlSubcommandUsage(w io.Writer, cmd string, args []string) bool {
+	switch cmd {
+	case "status":
+		fmt.Fprintln(w, `Usage: cove ctl status
+
+Get VM state and capabilities from the control socket.`)
+	case "screenshot":
+		fmt.Fprintln(w, `Usage: cove ctl screenshot [-o file] [file]
+
+Capture the VM screen. Without -o or a file operand, screenshot data is written to stdout.`)
+	case "key":
+		fmt.Fprintln(w, `Usage: cove ctl key <keycode|name> [down|up]
+
+Send a keyboard event. Named keys include return, tab, space, delete, and escape.`)
+	case "mouse":
+		fmt.Fprintln(w, `Usage: cove ctl mouse <x> <y> <move|down|up|click>
+
+Send a mouse event to the guest.`)
+	case "type", "text":
+		fmt.Fprintln(w, `Usage: cove ctl type <text>
+
+Type text into the guest.`)
+	case "agent-exec", "exec":
+		fmt.Fprintln(w, `Usage: cove ctl agent-exec [--stream] -- <cmd> [args...]
+
+Run a command through the guest agent.`)
+	case "agent-read":
+		fmt.Fprintln(w, `Usage: cove ctl agent-read <guest-path>
+
+Read a file through the guest agent.`)
+	case "agent-write":
+		fmt.Fprintln(w, `Usage: cove ctl agent-write <guest-path> <data>
+
+Write data to a guest file through the guest agent.`)
+	case "disk":
+		if len(args) > 1 && args[0] == "resize" && isHelpArg(args[1]) {
+			fmt.Fprintln(w, `Usage: cove ctl disk resize [--preflight] <index> <size>
+
+Resize a live disk backing. For macOS disk 0, cove also expands the APFS container through the guest agent.`)
+		} else {
+			return false
+		}
+	default:
+		return false
+	}
+	return true
 }
 
 // extractCtlSubcommandFlags pulls the ctl-level flags ("-o <file>", "--daemon")
@@ -320,6 +369,20 @@ func ctlCommand(args []string) error {
 		fs.Usage()
 		return nil
 	}
+	if len(args) > 1 && isHelpArg(args[1]) {
+		cmdType := args[0]
+		if cmdType == "exec" {
+			cmdType = "agent-exec"
+		}
+		if printCtlSubcommandUsage(os.Stdout, cmdType, args[1:]) {
+			return nil
+		}
+	}
+	if len(args) > 2 && args[0] == "disk" && isHelpArg(args[2]) {
+		if printCtlSubcommandUsage(os.Stdout, "disk", args[1:]) {
+			return nil
+		}
+	}
 
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
@@ -366,6 +429,14 @@ func ctlCommand(args []string) error {
 	}
 	if cmdType == "exec" {
 		cmdType = "agent-exec"
+	}
+	if len(subArgs) > 0 && isHelpArg(subArgs[0]) {
+		if printCtlSubcommandUsage(os.Stdout, cmdType, subArgs) {
+			return nil
+		}
+	}
+	if cmdType == "disk" && len(subArgs) > 1 && isHelpArg(subArgs[1]) && printCtlSubcommandUsage(os.Stdout, cmdType, subArgs) {
+		return nil
 	}
 
 	// Subcommands that own their flag parsing (including --daemon, -o, --) get

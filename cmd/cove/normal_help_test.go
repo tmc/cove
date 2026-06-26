@@ -49,7 +49,7 @@ func TestProvisionHelpPasswordPrompt(t *testing.T) {
 
 	var buf bytes.Buffer
 	fs.SetOutput(&buf)
-	printInjectUsage(&buf, fs)
+	printInjectUsage(&buf, fs, "cove provision")
 	out := buf.String()
 	if !strings.Contains(out, "Password for the provisioned user (prompts if empty)") {
 		t.Fatalf("provision help missing password prompt text:\n%s", out)
