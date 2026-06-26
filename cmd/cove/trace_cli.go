@@ -60,25 +60,25 @@ func handleTraceCommand(env commandEnv, args []string) error {
 	switch args[0] {
 	case "enable":
 		if len(args) > 1 && isHelpArg(args[1]) {
-			printTraceUsage(env.Stdout)
+			printTraceEnableUsage(env.Stdout)
 			return nil
 		}
 		return runTraceEnable(env, args[1:])
 	case "start":
 		if len(args) > 1 && isHelpArg(args[1]) {
-			printTraceUsage(env.Stdout)
+			printTraceStartUsage(env.Stdout)
 			return nil
 		}
 		return runTraceStart(env, args[1:])
 	case "stop":
 		if len(args) > 1 && isHelpArg(args[1]) {
-			printTraceUsage(env.Stdout)
+			printTraceStopUsage(env.Stdout)
 			return nil
 		}
 		return runTraceStop(env, args[1:])
 	case "export":
 		if len(args) > 1 && isHelpArg(args[1]) {
-			printTraceUsage(env.Stdout)
+			printTraceExportUsage(env.Stdout)
 			return nil
 		}
 		return runTraceExport(env, args[1:])
@@ -109,6 +109,30 @@ guest-side eslogger capture is not wired in yet, the session is marked
 unsupported instead of hiding the failure.`)
 }
 
+func printTraceEnableUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove trace enable <vm>
+
+Record that eslogger tracing is desired for a macOS VM.`)
+}
+
+func printTraceStartUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove trace start <vm> [--id ID]
+
+Create an eslogger trace session artifact for a macOS VM.`)
+}
+
+func printTraceStopUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove trace stop <vm> [--id ID]
+
+Mark an eslogger trace session stopped.`)
+}
+
+func printTraceExportUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove trace export <vm> [--id ID] --out PATH
+
+Export a trace session artifact as a tar.gz file.`)
+}
+
 func runTraceEnable(env commandEnv, args []string) error {
 	vm, err := oneTraceVMArg("trace enable", args)
 	if err != nil {
@@ -129,9 +153,10 @@ func runTraceEnable(env commandEnv, args []string) error {
 func runTraceStart(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("trace start", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
+	fs.Usage = func() { printTraceStartUsage(fs.Output()) }
 	id := fs.String("id", "", "trace session id")
-	if err := fs.Parse(moveKnownFlagsFirst(args, map[string]bool{"id": true})); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
+	if err := parseFlagsOrHelp(fs, moveKnownFlagsFirst(args, map[string]bool{"id": true})); err != nil {
+		if errors.Is(err, errFlagHelp) {
 			return nil
 		}
 		return err
@@ -171,9 +196,10 @@ func runTraceStart(env commandEnv, args []string) error {
 func runTraceStop(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("trace stop", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
+	fs.Usage = func() { printTraceStopUsage(fs.Output()) }
 	id := fs.String("id", "", "trace session id")
-	if err := fs.Parse(moveKnownFlagsFirst(args, map[string]bool{"id": true})); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
+	if err := parseFlagsOrHelp(fs, moveKnownFlagsFirst(args, map[string]bool{"id": true})); err != nil {
+		if errors.Is(err, errFlagHelp) {
 			return nil
 		}
 		return err
@@ -284,10 +310,11 @@ Show whether this host build can drive guest-side eslogger capture.`)
 func runTraceExport(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("trace export", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
+	fs.Usage = func() { printTraceExportUsage(fs.Output()) }
 	id := fs.String("id", "", "trace session id")
 	out := fs.String("out", "", "output tar.gz path")
-	if err := fs.Parse(moveKnownFlagsFirst(args, map[string]bool{"id": true, "out": true})); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
+	if err := parseFlagsOrHelp(fs, moveKnownFlagsFirst(args, map[string]bool{"id": true, "out": true})); err != nil {
+		if errors.Is(err, errFlagHelp) {
 			return nil
 		}
 		return err

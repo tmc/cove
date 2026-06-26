@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"image/png"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -20,11 +22,18 @@ import (
 // and exit 0 iff median < 50ms (design 041 Q3 threshold).
 func runSCKitSpike(args []string) error {
 	fs := flag.NewFlagSet("doctor sckit-spike", flag.ContinueOnError)
+	fs.Usage = func() {
+		printSCKitSpikeUsage(fs.Output())
+		fs.PrintDefaults()
+	}
 	titlePrefix := fs.String("title-prefix", "macOS VM", "match window title prefix")
 	owner := fs.String("owner", "cove", "match window's owning application name")
 	iterations := fs.Int("n", 20, "capture iterations")
 	threshold := fs.Duration("threshold", 50*time.Millisecond, "median latency budget")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlagsOrHelp(fs, args); err != nil {
+		if errors.Is(err, errFlagHelp) {
+			return nil
+		}
 		return err
 	}
 
@@ -93,4 +102,12 @@ func runSCKitSpike(args []string) error {
 	}
 	fmt.Println("OK: p50 within threshold")
 	return nil
+}
+
+func printSCKitSpikeUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove doctor sckit-spike [-title-prefix prefix] [-owner app] [-n count] [-threshold duration]
+
+Measure ScreenCaptureKit screenshot latency for the cove VM window.
+
+Flags:`)
 }

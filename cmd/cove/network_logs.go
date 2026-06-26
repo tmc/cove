@@ -24,10 +24,18 @@ type networkLogsArgs struct {
 func parseNetworkLogsArgs(args []string) (networkLogsArgs, error) {
 	fs := flag.NewFlagSet("network logs", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), `Usage: cove network logs <vm> [-f]
+
+Print the newest network audit log for a VM.
+
+Flags:`)
+		fs.PrintDefaults()
+	}
 	follow := fs.Bool("f", false, "follow")
 	fs.BoolVar(follow, "follow", false, "follow")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
+	if err := parseFlagsOrHelp(fs, args); err != nil {
+		if errors.Is(err, errFlagHelp) {
 			return networkLogsArgs{}, errFlagHelp
 		}
 		return networkLogsArgs{}, err
