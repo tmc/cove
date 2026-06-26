@@ -1,9 +1,0 @@
-commit=8b85b6e9a1615ef42472b17868c1a0fecdb43c9e
-commit_date=2026-06-26T14:29:02-07:00
-agent=codex
-model=GPT-5 Codex
-tty=not a tty
-pid=68629
-ITERM_SESSION_ID=w13t3p1:B41EF40B-7D12-4B3B-AD47-3CDF7DC54114
-commit_method=manual fallback after git-auto-commit-message failed on anthropic low-credit response
-verification=focused tests: go test ./cmd/cove -run 'TestOCRService|TestDarwinOpenVnodePaths|TestDarwinFileHolders|TestHandleBenchCommand|TestRunBenchCompetitive|TestDockerRegistryKeys|TestCoveSubcommandHelp|TestParseDiskResizeArgs|TestDiskResizeDenied|TestResizeStoppedVMDisk|TestLoadOrCreateMACAddressForVM|TestLookupCommand|TestCommandNames|TestRunRegisteredCommand|TestNamespaceNoArgUsageExitCode|TestCommandError|TestWindowFrame|TestSanitizeAutosaveToken|TestWindowDisplayPlacementPath|TestTranslateWindowFrame|TestReadAtFullOrZero|TestExecutableModTime|TestFork|TestRunWorker|TestFirstJSONObjectBytes|TestLoadInstalledLinuxBootArtifacts|TestCloneOptionalFilesLinux|TestLinuxVirtioFSDeviceConfigs|TestAlpineBuilderScript|TestShellQuote|TestApplyProvisioning|TestRootWheelVerifyTargets|TestValidateUsername|TestLoginConsoleUserFromExec|TestStageFileMkdirError|TestParseDiskBench|TestSanitizeBenchConfigValue|TestDiskBenchName|TestFormatDiskBenchSize|TestCloneMachineIdentifier|TestGenerateMachineID|TestParseNinePAddr|TestBuildNinePVMFS|TestServeNinePStopsWithContext|TestAppSandboxPowerboxPromptSmoke|TestParseDHCPLeaseTimeSecsNoMatch|TestParseSetupScript|TestMoveSoftresetProbeFlagsFirst|TestDefaultAppleLogPredicateShape|TestPrefixLines|TestFleetRemoteByName|TestFileSHA256|TestDataPartitionNotFoundError|TestControlServerWindowTitle|TestWrapBuildErr|TestDoctorE2E' -count=1; gates: go build -o cove ./cmd/cove && codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove; go build ./...; go test ./...; go vet ./...; docs/qa/cove-feature-status.csv 406 rows, 406 Pass, 406 Passed
