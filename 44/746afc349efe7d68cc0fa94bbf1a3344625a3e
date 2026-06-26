@@ -1,0 +1,16 @@
+commit: 44746afc349efe7d68cc0fa94bbf1a3344625a3e
+date: 2026-06-26T23:18:07Z
+agent: codex
+model: GPT-5
+tty: not a tty
+pid: 89451
+ITERM_SESSION_ID: w13t3p1:B41EF40B-7D12-4B3B-AD47-3CDF7DC54114
+verification: go build -o cove ./cmd/cove && codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+verification: top-level help smoke checked 75 commands, failed 0
+verification: go test ./cmd/cove -run 'TestHandleEarlyCLIProductHelpTopics|TestHandleEarlyCLINoArgProductSurfaces|TestCoveSubcommandHelp|TestVNCHelpRequiresPasswordInUsage' -count=1
+verification: go test ./internal/coved -run TestFleetWorkerExecutesClaimedWarmPoolAssignment -count=1
+verification: go build ./...
+verification: go test ./...
+verification: go vet ./...
+tracker: docs/qa/cove-feature-status.csv local-only ignored, 556 rows, 0 nonpassing
+commit-helper: ~/bin/git-auto-commit-message --auto failed: Anthropic credit balance too low, panic index out of range
