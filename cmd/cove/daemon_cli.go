@@ -253,6 +253,14 @@ func daemonStartCommand(env commandEnv, args []string) error {
 	env = env.WithDefaultIO()
 	fs := flag.NewFlagSet("daemon start", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), `Usage: cove daemon start [-coved <path>]
+
+Install and load the cove background coordinator LaunchAgent.
+
+Flags:`)
+		fs.PrintDefaults()
+	}
 	covedPath := fs.String("coved", "", "path to coved binary")
 	if done, err := parseFlagsOrHelpExit(fs, args); done || err != nil {
 		return err

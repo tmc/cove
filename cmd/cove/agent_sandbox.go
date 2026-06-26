@@ -108,9 +108,17 @@ var agentSandboxDoctorDial = func(ctx context.Context, network, address string) 
 func handleAgentSandboxDoctor(args []string) error {
 	fs := flag.NewFlagSet("agent-sandbox doctor", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), `Usage: cove agent-sandbox doctor --provider all|openai|anthropic|gemini|vertex
+
+Check provider credentials, network reachability, and model selection.
+
+Flags:`)
+		fs.PrintDefaults()
+	}
 	provider := fs.String("provider", "", "provider: all, openai, anthropic, gemini, or vertex")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
+	if err := parseFlagsOrHelp(fs, args); err != nil {
+		if errors.Is(err, errFlagHelp) {
 			return nil
 		}
 		return err

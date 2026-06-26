@@ -128,7 +128,9 @@ func TestNestedHelpDoesNotTreatHelpAsOperand(t *testing.T) {
 		args []string
 		want string
 	}{
-		{name: "agent sandbox doctor", args: []string{"agent-sandbox", "doctor", "-h"}, want: "Usage of agent-sandbox doctor"},
+		{name: "agent sandbox doctor", args: []string{"agent-sandbox", "doctor", "-h"}, want: "Usage: cove agent-sandbox doctor"},
+		{name: "bench competitive", args: []string{"bench", "competitive", "-h"}, want: "Usage: cove bench competitive"},
+		{name: "daemon start", args: []string{"daemon", "start", "-h"}, want: "Usage: cove daemon start"},
 		{name: "disk snapshot run", args: []string{"disk-snapshot", "run", "-h"}, want: "Usage: cove disk-snapshot"},
 		{name: "shared folder add", args: []string{"shared-folder", "add", "-h"}, want: "Usage: cove shared-folder"},
 		{name: "storage budget get", args: []string{"storage", "budget", "get", "-h"}, want: "Usage of storage budget get"},

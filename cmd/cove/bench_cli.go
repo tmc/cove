@@ -39,6 +39,14 @@ Safe example:
 func runBenchCompetitive(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("bench competitive", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), `Usage: cove bench competitive [options]
+
+Normalize checked-in competitive benchmark evidence.
+
+Flags:`)
+		fs.PrintDefaults()
+	}
 	out := fs.String("out", "docs/benchmarks/results-2026-05-cove.json", "write normalized JSON report")
 	markdown := fs.String("markdown", "docs/benchmarks/competitive-2026-05.md", "write Markdown summary")
 	jsonOut := fs.Bool("json", false, "also print JSON report to stdout")
