@@ -1,9 +1,0 @@
-commit: 68f118bb95c4a41dfc2aecbee58f88a0d6fb4d05
-date: 2026-06-26T20:45:20Z
-agent: codex-cli
-model: GPT-5
-tty: not a tty
-pid: 87005
-ITERM_SESSION_ID: w13t3p1:B41EF40B-7D12-4B3B-AD47-3CDF7DC54114
-commit_method: manual fallback after git-auto-commit-message failed on Anthropic credits and panicked; commit signing disabled
-verification: go build -o cove ./cmd/cove; codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove; go build ./...; go test ./...; go vet ./...; git diff --check; docs/qa/cove-feature-status.csv 202/202 pass
