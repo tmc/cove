@@ -1,0 +1,9 @@
+commit=0e0048e1013dd850343cfcb4ac5b0622c9c0b00b
+commit_date=2026-06-26T14:24:05-07:00
+agent=codex
+model=GPT-5 Codex
+tty=not a tty
+pid=41892
+ITERM_SESSION_ID=w13t3p1:B41EF40B-7D12-4B3B-AD47-3CDF7DC54114
+commit_method=manual fallback after git-auto-commit-message failed on anthropic low-credit response
+verification=focused tests: go test ./internal/sckit ./internal/metrics ./internal/diskimages2 ./internal/bench ./internal/covecli ./internal/anthropicadapter -count=1; go test ./internal/agent ./internal/controlserver -count=1; go test ./internal/coved -count=1; gates: go build -o cove ./cmd/cove && codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove; go build ./...; go test ./...; go vet ./...; docs/qa/cove-feature-status.csv 386 rows, 386 Pass, 386 Passed
