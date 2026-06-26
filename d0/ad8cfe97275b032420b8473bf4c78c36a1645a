@@ -1,9 +1,0 @@
-commit=d0ad8cfe97275b032420b8473bf4c78c36a1645a
-commit_date=2026-06-26T14:13:07-07:00
-agent=codex
-model=GPT-5 Codex
-tty=not a tty
-pid=10117
-ITERM_SESSION_ID=w13t3p1:B41EF40B-7D12-4B3B-AD47-3CDF7DC54114
-commit_method=manual fallback after git-auto-commit-message failed on anthropic low-credit response
-verification=focused tests: go test ./internal/lifecycle ./internal/fleet ./internal/storagecensus -count=1; go test ./internal/ociimage ./internal/filehandle ./internal/password ./internal/version ./internal/bytefmt -count=1; go test ./cmd/cove -run 'TestStorage|TestHandleStore|TestHandlePins|TestHandleUnpin|TestPinAndUnpin|TestRunPinsList|TestHandleFleetCommand|TestRunFleetCommand|TestPrintFleetAggregate' -count=1; gates: go build -o cove ./cmd/cove && codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove; go build ./...; go test ./...; go vet ./...; docs/qa/cove-feature-status.csv 346 rows, 346 Pass, 346 Passed
