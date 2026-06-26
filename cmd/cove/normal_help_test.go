@@ -146,6 +146,32 @@ func TestSupportBundleAliasHelp(t *testing.T) {
 	}
 }
 
+func TestHelpTopicsForDiscoveryCommands(t *testing.T) {
+	tests := []struct {
+		topic string
+		want  string
+	}{
+		{"9p", "cove 9p serve"},
+		{"exec", "Usage: cove exec"},
+		{"pin", "Usage: cove pin"},
+		{"pins", "Usage: cove pins"},
+		{"unpin", "Usage: cove unpin"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.topic, func(t *testing.T) {
+			stderr, restore := captureStderr(t)
+			handled, code := handleEarlyCLI([]string{"help", tt.topic})
+			restore()
+			if !handled || code != 0 {
+				t.Fatalf("handleEarlyCLI(help %s) = %v, %d", tt.topic, handled, code)
+			}
+			if !strings.Contains(stderr.String(), tt.want) {
+				t.Fatalf("help %s missing %q:\n%s", tt.topic, tt.want, stderr.String())
+			}
+		})
+	}
+}
+
 func TestUnknownCommandGuidance(t *testing.T) {
 	var buf bytes.Buffer
 	writeUnknownCommand(&buf, "xyzzy")

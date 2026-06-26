@@ -40,8 +40,8 @@ func TestCommandsJSONIncludesInventory(t *testing.T) {
 	if !have["commands"].SafeForDiscovery || have["commands"].MutatesState || have["commands"].RequiresRunningVM || have["commands"].MayBootVM {
 		t.Fatalf("commands metadata = %+v, want safe read-only discovery", have["commands"])
 	}
-	if !have["runs"].SafeForDiscovery || have["runs"].MutatesState || have["runs"].RequiresRunningVM || have["runs"].MayBootVM {
-		t.Fatalf("runs metadata = %+v, want safe read-only discovery", have["runs"])
+	if have["runs"].SafeForDiscovery || have["runs"].MutatesState || have["runs"].RequiresRunningVM || have["runs"].MayBootVM {
+		t.Fatalf("runs metadata = %+v, want read-only command that requires a subcommand for discovery", have["runs"])
 	}
 	if have["run"].SafeForDiscovery || !have["run"].MutatesState || !have["run"].MayBootVM {
 		t.Fatalf("run metadata = %+v, want mutating boot command", have["run"])

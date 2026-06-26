@@ -31,8 +31,11 @@ func TestCommandMetadata(t *testing.T) {
 		safeForDiscovery  bool
 	}{
 		{"commands", false, false, false, true},
+		{"diff", false, false, false, false},
 		{"run", true, false, true, false},
+		{"runs", false, false, false, false},
 		{"status", false, true, false, false},
+		{"support", false, false, false, false},
 		{"user", true, true, false, false},
 		{"image", true, false, false, false},
 	}
@@ -49,6 +52,27 @@ func TestCommandMetadata(t *testing.T) {
 			}
 			if got := SafeForDiscovery(tt.name); got != tt.safeForDiscovery {
 				t.Fatalf("SafeForDiscovery(%q) = %v, want %v", tt.name, got, tt.safeForDiscovery)
+			}
+		})
+	}
+}
+
+func TestRequiresArgsForDiscovery(t *testing.T) {
+	tests := []struct {
+		name string
+		want bool
+	}{
+		{"commands", false},
+		{"list", false},
+		{"diff", true},
+		{"exec", true},
+		{"runs", true},
+		{"support", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := RequiresArgsForDiscovery(tt.name); got != tt.want {
+				t.Fatalf("RequiresArgsForDiscovery(%q) = %v, want %v", tt.name, got, tt.want)
 			}
 		})
 	}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"text/tabwriter"
 	"time"
 
@@ -16,7 +17,7 @@ func handlePinCommand(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("pin", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "Usage: cove pin <object>\n  object is one of vm:<name>, image:<ref>, run:<id>, cache:<sha>")
+		printPinUsage(fs.Output())
 	}
 	if err := parseFlagsOrHelp(fs, args); err != nil {
 		if errors.Is(err, errFlagHelp) {
@@ -51,7 +52,7 @@ func handleUnpinCommand(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("unpin", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "Usage: cove unpin <object>\n  object is one of vm:<name>, image:<ref>, run:<id>, cache:<sha>")
+		printUnpinUsage(fs.Output())
 	}
 	if err := parseFlagsOrHelp(fs, args); err != nil {
 		if errors.Is(err, errFlagHelp) {
@@ -94,13 +95,25 @@ func handlePinsCommand(env commandEnv, args []string) error {
 	}
 	switch args[0] {
 	case "-h", "--help", "help":
-		fmt.Fprintln(env.Stdout, "Usage: cove pins <subcommand>\n  list   List pinned objects")
+		printPinsUsage(env.Stdout)
 		return nil
 	case "list":
 		return runPinsList(env, args[1:])
 	default:
 		return fmt.Errorf("pins: unknown subcommand %q", args[0])
 	}
+}
+
+func printPinUsage(w io.Writer) {
+	fmt.Fprintln(w, "Usage: cove pin <object>\n  object is one of vm:<name>, image:<ref>, run:<id>, cache:<sha>")
+}
+
+func printUnpinUsage(w io.Writer) {
+	fmt.Fprintln(w, "Usage: cove unpin <object>\n  object is one of vm:<name>, image:<ref>, run:<id>, cache:<sha>")
+}
+
+func printPinsUsage(w io.Writer) {
+	fmt.Fprintln(w, "Usage: cove pins <subcommand>\n  list   List pinned objects")
 }
 
 func runPinsList(env commandEnv, args []string) error {

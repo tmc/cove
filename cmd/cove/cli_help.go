@@ -85,6 +85,8 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			printDaemonUsage(os.Stderr)
 		case "cp":
 			printCpUsage(os.Stderr)
+		case "exec":
+			printExecUsage(os.Stderr)
 		case "forward":
 			printForwardUsage(os.Stderr)
 		case "quota":
@@ -155,6 +157,14 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			fmt.Println(RosettaHelp())
 		case "helper":
 			_ = helperUsage()
+		case "9p":
+			printNinePUsage(os.Stderr)
+		case "pin":
+			printPinUsage(os.Stderr)
+		case "pins":
+			printPinsUsage(os.Stderr)
+		case "unpin":
+			printUnpinUsage(os.Stderr)
 		case "gui":
 			printGUIUsage(os.Stderr)
 		case "vnc":
@@ -291,6 +301,11 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 	case "cp":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
 			printCpUsage(os.Stderr)
+			return true, usageExitCode(subargs)
+		}
+	case "exec":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printExecUsage(os.Stderr)
 			return true, usageExitCode(subargs)
 		}
 	case "forward":
@@ -479,6 +494,26 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 	case "helper":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
 			_ = helperUsage()
+			return true, usageExitCode(subargs)
+		}
+	case "9p":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printNinePUsage(os.Stderr)
+			return true, usageExitCode(subargs)
+		}
+	case "pin":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printPinUsage(os.Stderr)
+			return true, usageExitCode(subargs)
+		}
+	case "pins":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printPinsUsage(os.Stderr)
+			return true, usageExitCode(subargs)
+		}
+	case "unpin":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printUnpinUsage(os.Stderr)
 			return true, usageExitCode(subargs)
 		}
 	case "gui":

@@ -34,7 +34,16 @@ func DispatchName(dispatch Dispatch) string {
 }
 
 func SafeForDiscovery(name string) bool {
-	return !MutatesState(name) && !RequiresRunningVM(name) && !MayBootVM(name)
+	return !RequiresArgsForDiscovery(name) && !MutatesState(name) && !RequiresRunningVM(name) && !MayBootVM(name)
+}
+
+func RequiresArgsForDiscovery(name string) bool {
+	switch name {
+	case "9p", "diff", "disk", "exec", "gui", "pins", "pull", "recording", "runner", "runs", "security", "support", "vnc":
+		return true
+	default:
+		return false
+	}
 }
 
 func MutatesState(name string) bool {
