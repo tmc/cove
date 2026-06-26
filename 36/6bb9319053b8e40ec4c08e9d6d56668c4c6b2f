@@ -1,0 +1,17 @@
+commit: 366bb9319053b8e40ec4c08e9d6d56668c4c6b2f
+date: 2026-06-26T15:26:52-07:00
+agent: codex-cli
+model: GPT-5
+tty: not a tty
+pid: 81630
+ITERM_SESSION_ID: w13t3p1:B41EF40B-7D12-4B3B-AD47-3CDF7DC54114
+
+Commit helper: ~/bin/git-auto-commit-message --auto failed with Anthropic low-credit panic; used manual Go-style fallback.
+
+Verification:
+- go build -o cove ./cmd/cove && codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+- nested help probe slice for storage, store, image, security, and fleet commands
+- go test ./cmd/cove -run TestNestedHelpDoesNotTreatHelpAsOperand -count=1
+- go build ./...
+- go test ./...
+- go vet ./...
