@@ -1,0 +1,15 @@
+commit: 8f7d06988574e7fa5edff47a6ff1578071c589d8
+date: 2026-06-26T21:57:51Z
+agent: codex
+model: gpt-5
+tty: not a tty
+pid: 3911
+ITERM_SESSION_ID: w13t3p1:B41EF40B-7D12-4B3B-AD47-3CDF7DC54114
+verification:
+- python3 csv validation: rows=480 unique_ids=480 last=COVE-480 status={Pass:480} result={Passed:480}
+- git diff --check
+- go test ./cmd/cove -run 'TestValidateForceDetachRequestRejectsBadInputs|TestValidateForceDetachRequestSurfacesFindError|TestValidateForceDetachRequestRejectsNotAttached|TestWriteOCRTextMissingDirWritesPlaceholder|TestWriteOCRTextReadDirErrorWraps|TestWriteOCRTextDirWithOnlyNonPNGs|TestRequireLinuxUserExists|TestLinuxUserMissingError|TestReclaimMainSignalsRoundTrip|TestReclaimMainSignalsNoOpWithoutSetup|TestRenameVM_NotFound|TestRenameVM_TargetExists|TestExportImportVM_RoundTrip|TestImportVM_RefusesExistingTarget|TestImportVM_ArchiveNotFound|TestEnsurePullTargetInactiveNoSocket|TestEnsurePullTargetInactiveRemovesStaleSocket|TestEnsurePullTargetInactiveActiveSocket|TestEnsurePullTargetInactiveAmbiguousSocket|TestCheckIncompletePullDisk|TestWantsRegularUIMode|TestWantsMacgoRuntime|TestDesiredMacgoUIMode|TestShouldEnableMacgo|TestHandlePITSwapNoVM|TestWriteReplayArtifactsMkdirError|TestWriteReplayArtifactsEmptyAnswerFallback|TestWriteReplayArtifactsCountsControlEvents' -count=1
+- go build -o cove ./cmd/cove && codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+- go build ./...
+- go test ./...
+- go vet ./...
