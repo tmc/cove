@@ -61,8 +61,7 @@ func runNinePCommand(env commandEnv, _ string, args []string) int {
 }
 
 func printNinePUsage(w io.Writer) {
-	fmt.Fprint(w, `usage:
-  cove 9p serve [-addr unix:/tmp/cove.9p]
+	fmt.Fprint(w, `Usage: cove 9p serve [-addr unix:/tmp/cove.9p]
 
 Serve a read-only 9p view of local cove VM metadata.
 

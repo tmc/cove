@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,6 +21,14 @@ func handleSIPCommand(args []string) error {
 
 	rest := args[1:]
 	if len(rest) > 0 && isHelpArg(rest[0]) {
+		switch args[0] {
+		case "enable-auto":
+			printSIPAutoUsage(os.Stdout, "enable")
+			return nil
+		case "disable-auto":
+			printSIPAutoUsage(os.Stdout, "disable")
+			return nil
+		}
 		fmt.Print(sipUsage)
 		return nil
 	}
@@ -124,6 +133,9 @@ func sipDisable() error {
 // sipAuto generates automation files for recovery-mode csrutil changes.
 func sipAuto(mode string, args []string) error {
 	fs := flag.NewFlagSet("sip "+mode+"-auto", flag.ExitOnError)
+	fs.Usage = func() {
+		printSIPAutoUsage(fs.Output(), mode)
+	}
 	user := fs.String("user", "", "admin username for recovery authentication (optional)")
 	pass := fs.String("password", "", "admin password for recovery authentication (optional)")
 	if err := fs.Parse(args); err != nil {
@@ -162,6 +174,19 @@ func sipAuto(mode string, args []string) error {
 	fmt.Println()
 	fmt.Printf("After reboot, verify with:\n  cove -vm %s sip status\n", sipTargetVMName())
 	return nil
+}
+
+func printSIPAutoUsage(w io.Writer, mode string) {
+	fmt.Fprintf(w, `Usage: cove sip %s-auto [-user <user>] [-password <password>]
+
+Generate recovery vzscript automation for SIP %s.
+
+Options:
+  -user string
+        admin username for recovery authentication
+  -password string
+        admin password for recovery authentication
+`, mode, mode)
 }
 
 func sipStatus() error {

@@ -228,6 +228,14 @@ Read a file through the guest agent.`)
 		fmt.Fprintln(w, `Usage: cove ctl agent-write <guest-path> <data>
 
 Write data to a guest file through the guest agent.`)
+	case "ocr":
+		fmt.Fprintln(w, `Usage: cove ctl ocr [-region <spec>]
+
+Run OCR on the current screen. Region can be menu or x1,y1,x2,y2.`)
+	case "iterm2-proxy":
+		fmt.Fprintln(w, `Usage: cove ctl iterm2-proxy [--port N]
+
+Start the WebSocket-to-vsock proxy for guest iTerm2.`)
 	case "disk":
 		if len(args) > 1 && args[0] == "resize" && isHelpArg(args[1]) {
 			fmt.Fprintln(w, `Usage: cove ctl disk resize [--preflight] <index> <size>
