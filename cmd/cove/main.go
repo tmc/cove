@@ -778,7 +778,7 @@ Commands:
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, `cove - Apple Virtualization Framework Example
+	fmt.Fprintf(os.Stderr, `cove - macOS and Linux VMs on Apple Silicon
 
 Usage:
   cove [flags] [command]
@@ -832,7 +832,7 @@ Support:
 }
 
 func usageAdvanced() {
-	fmt.Fprintf(os.Stderr, `cove - Apple Virtualization Framework Example
+	fmt.Fprintf(os.Stderr, `cove - macOS and Linux VMs on Apple Silicon
 
 Usage:
   cove [flags] [command]
