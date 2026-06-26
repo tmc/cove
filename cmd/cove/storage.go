@@ -64,6 +64,14 @@ func runStoragePrune(args []string, out io.Writer) error {
 func runStoragePruneCoordinated(args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("storage prune", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), `Usage: cove storage prune [-apply] [-older-than duration]
+
+Run a budget-aware storage prune. The default is a dry run.
+
+Flags:`)
+		fs.PrintDefaults()
+	}
 	apply := fs.Bool("apply", false, "actually delete; default is dry-run")
 	olderThan := fs.Duration("older-than", 7*24*time.Hour, "build-scratch entries below this age are kept regardless of budget pressure")
 	if done, err := parseFlagsOrHelpExit(fs, args); done || err != nil {
@@ -116,6 +124,14 @@ func runStoragePruneCoordinated(args []string, out io.Writer) error {
 func runStoragePruneBuildScratch(args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("storage prune build-scratch", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), `Usage: cove storage prune build-scratch [-older-than duration] [-apply]
+
+Remove old build-scratch directories. The default is a dry run.
+
+Flags:`)
+		fs.PrintDefaults()
+	}
 	olderThan := fs.Duration("older-than", 7*24*time.Hour, "delete build-scratch dirs older than this duration")
 	apply := fs.Bool("apply", false, "actually delete; default is dry-run")
 	if done, err := parseFlagsOrHelpExit(fs, args); done || err != nil {
@@ -174,6 +190,14 @@ func runStorageBudget(args []string, out io.Writer) error {
 func runStorageBudgetGet(args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("storage budget get", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), `Usage: cove storage budget get [-human]
+
+Show the configured storage budget.
+
+Flags:`)
+		fs.PrintDefaults()
+	}
 	human := fs.Bool("human", false, "render a fixed-width table instead of JSON")
 	if done, err := parseFlagsOrHelpExit(fs, args); done || err != nil {
 		return err
@@ -200,6 +224,14 @@ func runStorageBudgetGet(args []string, out io.Writer) error {
 func runStorageBudgetSet(args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("storage budget set", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), `Usage: cove storage budget set -target size [-warn pct] [-hard pct]
+
+Set the storage budget and warning thresholds.
+
+Flags:`)
+		fs.PrintDefaults()
+	}
 	target := fs.String("target", "", "soft watermark, e.g. 500GB or 2TB or 1234567 (bytes)")
 	warn := fs.Int("warn", 80, "warn tripwire as percent of target (0-100)")
 	hard := fs.Int("hard", 95, "hard tripwire as percent of target (0-100)")
@@ -299,6 +331,14 @@ func formatBytes(n int64) string {
 func runStorageCensus(args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("storage census", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), `Usage: cove storage census [-human] [-top n]
+
+Walk cove storage roots and report per-category disk usage.
+
+Flags:`)
+		fs.PrintDefaults()
+	}
 	human := fs.Bool("human", false, "render a fixed-width table instead of JSON")
 	topN := fs.Int("top", 10, "number of newest items to surface per category (0 = all)")
 	if done, err := parseFlagsOrHelpExit(fs, args); done || err != nil {

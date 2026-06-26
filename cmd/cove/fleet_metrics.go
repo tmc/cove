@@ -15,6 +15,14 @@ import (
 func runFleetMetricsCommand(ctx context.Context, args []string, path string, runner fleetRunner, out, errOut io.Writer) error {
 	fs := flag.NewFlagSet("fleet metrics", flag.ContinueOnError)
 	fs.SetOutput(errOut)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), `Usage: cove fleet metrics [--json]
+
+Collect daemon metrics from registered fleet remotes.
+
+Flags:`)
+		fs.PrintDefaults()
+	}
 	jsonOut := fs.Bool("json", false, "emit JSON")
 	if done, err := parseFlagsOrHelpExit(fs, args); done || err != nil {
 		return err

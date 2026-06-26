@@ -135,6 +135,14 @@ Commands:
 func fleetAdd(args []string, path string, errOut io.Writer) error {
 	fs := flag.NewFlagSet("fleet add", flag.ContinueOnError)
 	fs.SetOutput(errOut)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), `Usage: cove fleet add <name> <user@host> [-vm <default>]
+
+Register a remote cove host.
+
+Flags:`)
+		fs.PrintDefaults()
+	}
 	defaultVM := fs.String("vm", "", "default VM for this remote")
 	if done, err := parseFlagsOrHelpExit(fs, moveFleetAddFlagsFirst(args)); done || err != nil {
 		return err

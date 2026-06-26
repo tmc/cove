@@ -23,19 +23,24 @@ func runFleetImageTransferCommand(ctx context.Context, args []string, path strin
 	if len(args) == 0 {
 		return fmt.Errorf("usage: cove fleet image push <ref> <dst-host> | pull <ref> <src-host> | sync <ref> <src-host> <dst-host>")
 	}
-	cfg, err := fleetpkg.LoadPath(path)
-	if err != nil {
-		return err
-	}
 	switch args[0] {
 	case "push":
 		fs := flag.NewFlagSet("fleet image push", flag.ContinueOnError)
 		fs.SetOutput(errOut)
-		if err := fs.Parse(args[1:]); err != nil {
+		fs.Usage = func() {
+			fmt.Fprintln(fs.Output(), `Usage: cove fleet image push <ref> <dst-host>
+
+Push a local image to a registered fleet remote.`)
+		}
+		if done, err := parseFlagsOrHelpExit(fs, args[1:]); done || err != nil {
 			return err
 		}
 		if fs.NArg() != 2 {
 			return fmt.Errorf("usage: cove fleet image push <ref> <dst-host>")
+		}
+		cfg, err := fleetpkg.LoadPath(path)
+		if err != nil {
+			return err
 		}
 		dst, err := fleetRemoteByName(cfg, fs.Arg(1))
 		if err != nil {
@@ -49,11 +54,20 @@ func runFleetImageTransferCommand(ctx context.Context, args []string, path strin
 	case "pull":
 		fs := flag.NewFlagSet("fleet image pull", flag.ContinueOnError)
 		fs.SetOutput(errOut)
-		if err := fs.Parse(args[1:]); err != nil {
+		fs.Usage = func() {
+			fmt.Fprintln(fs.Output(), `Usage: cove fleet image pull <ref> <src-host>
+
+Pull an image from a registered fleet remote into the local image store.`)
+		}
+		if done, err := parseFlagsOrHelpExit(fs, args[1:]); done || err != nil {
 			return err
 		}
 		if fs.NArg() != 2 {
 			return fmt.Errorf("usage: cove fleet image pull <ref> <src-host>")
+		}
+		cfg, err := fleetpkg.LoadPath(path)
+		if err != nil {
+			return err
 		}
 		src, err := fleetRemoteByName(cfg, fs.Arg(1))
 		if err != nil {
@@ -67,11 +81,20 @@ func runFleetImageTransferCommand(ctx context.Context, args []string, path strin
 	case "sync":
 		fs := flag.NewFlagSet("fleet image sync", flag.ContinueOnError)
 		fs.SetOutput(errOut)
-		if err := fs.Parse(args[1:]); err != nil {
+		fs.Usage = func() {
+			fmt.Fprintln(fs.Output(), `Usage: cove fleet image sync <ref> <src-host> <dst-host>
+
+Transfer an image between two registered fleet remotes.`)
+		}
+		if done, err := parseFlagsOrHelpExit(fs, args[1:]); done || err != nil {
 			return err
 		}
 		if fs.NArg() != 3 {
 			return fmt.Errorf("usage: cove fleet image sync <ref> <src-host> <dst-host>")
+		}
+		cfg, err := fleetpkg.LoadPath(path)
+		if err != nil {
+			return err
 		}
 		src, err := fleetRemoteByName(cfg, fs.Arg(1))
 		if err != nil {

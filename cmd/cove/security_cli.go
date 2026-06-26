@@ -168,7 +168,14 @@ func handleSecurityBookmarkStoreSaveCommand(env commandEnv, args []string) error
 	key := fs.String("key", "", "bookmark key")
 	kind := fs.String("kind", "file", "bookmark kind")
 	path := fs.String("path", "", "file to bookmark")
-	fs.Usage = func() { printSecurityUsage(env.Stderr) }
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), `Usage: cove security bookmark-store save -key key -path file [-store file] [-kind kind] [-json]
+
+Save a security-scoped bookmark in the local bookmark store.
+
+Flags:`)
+		fs.PrintDefaults()
+	}
 	if err := parseFlagsOrHelp(fs, args); err != nil {
 		if err == errFlagHelp {
 			return nil
@@ -195,7 +202,14 @@ func handleSecurityBookmarkStoreResolveCommand(env commandEnv, args []string) er
 	jsonFlag := fs.Bool("json", false, "emit JSON")
 	storeFlag := securityBookmarkStoreFlag(fs)
 	key := fs.String("key", "", "bookmark key")
-	fs.Usage = func() { printSecurityUsage(env.Stderr) }
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), `Usage: cove security bookmark-store resolve -key key [-store file] [-json]
+
+Resolve and verify a saved security-scoped bookmark.
+
+Flags:`)
+		fs.PrintDefaults()
+	}
 	if err := parseFlagsOrHelp(fs, args); err != nil {
 		if err == errFlagHelp {
 			return nil
@@ -246,7 +260,14 @@ func handleSecurityPowerboxPromptCommand(env commandEnv, args []string) error {
 	kind := fs.String("kind", "vm-root", "bookmark kind")
 	title := fs.String("title", "Grant cove access", "Powerbox panel title")
 	message := fs.String("message", "Choose a directory to grant to cove.", "Powerbox panel message")
-	fs.Usage = func() { printSecurityUsage(env.Stderr) }
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), `Usage: cove security powerbox-prompt -key key [-store file] [-kind kind] [-title title] [-message text] [-json]
+
+Prompt for a directory grant and save it as a security-scoped bookmark.
+
+Flags:`)
+		fs.PrintDefaults()
+	}
 	if err := parseFlagsOrHelp(fs, args); err != nil {
 		if err == errFlagHelp {
 			return nil
@@ -276,7 +297,14 @@ func handleSecurityBookmarkProbeCommand(env commandEnv, args []string) error {
 	fs.SetOutput(env.Stderr)
 	jsonFlag := fs.Bool("json", false, "emit JSON")
 	path := fs.String("path", "", "file to bookmark")
-	fs.Usage = func() { printSecurityUsage(env.Stderr) }
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), `Usage: cove security bookmark-probe [-json] [-path file]
+
+Create and resolve a security-scoped bookmark proof.
+
+Flags:`)
+		fs.PrintDefaults()
+	}
 	if err := parseFlagsOrHelp(fs, args); err != nil {
 		if err == errFlagHelp {
 			return nil
@@ -336,7 +364,14 @@ func handleSecuritySandboxProbeCommand(env commandEnv, args []string) error {
 	fs.StringVar(&opts.VZStartInitrd, "vz-start-initrd", "", "Linux initrd for the optional VZ start/stop probe")
 	fs.StringVar(&opts.VZStartCmdline, "vz-start-cmdline", "", "Linux kernel command line for the optional VZ start/stop probe")
 	fs.DurationVar(&opts.VZStartTimeout, "vz-start-timeout", 30*time.Second, "timeout for the optional VZ start/stop probe")
-	fs.Usage = func() { printSecurityUsage(env.Stderr) }
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), `Usage: cove security probe-sandbox [-json] [-vz-start-vm-dir dir -vz-start-disk disk]
+
+Probe host-containment behavior from the current process.
+
+Flags:`)
+		fs.PrintDefaults()
+	}
 	if err := parseFlagsOrHelp(fs, args); err != nil {
 		if err == errFlagHelp {
 			return nil

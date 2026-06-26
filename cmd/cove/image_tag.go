@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -107,6 +108,7 @@ func cloneImageDirectory(src, dst string) error {
 func runImageTag(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("image tag", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
+	fs.Usage = func() { printImageTagUsage(fs.Output()) }
 	if err := parseFlagsOrHelp(fs, args); err != nil {
 		if errors.Is(err, errFlagHelp) {
 			return nil
@@ -129,4 +131,10 @@ func runImageTag(env commandEnv, args []string) error {
 	}
 	fmt.Fprintf(env.Stdout, "Tagged image %s as %s\n", strings.TrimSpace(src.String()), dst)
 	return nil
+}
+
+func printImageTagUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove image tag <src-ref> <dst-ref>
+
+Add a local tag for an existing image without rebuilding it.`)
 }

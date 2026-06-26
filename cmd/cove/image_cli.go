@@ -93,6 +93,14 @@ Examples:
 func runImageBuild(env commandEnv, args []string) (err error) {
 	fs := flag.NewFlagSet("image build", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), `Usage: cove image build -from <vm> -tag <name[:tag]>
+
+Snapshot a stopped VM into the local image store.
+
+Flags:`)
+		fs.PrintDefaults()
+	}
 	from := fs.String("from", "", "source VM name (must be stopped)")
 	tag := fs.String("tag", "", "image ref: name[:tag] (default tag: latest)")
 	if err := parseFlagsOrHelp(fs, args); err != nil {

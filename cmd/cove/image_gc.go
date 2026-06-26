@@ -219,6 +219,14 @@ func cacheImageTTL(ref imagestore.Ref) (time.Duration, bool) {
 func runImageGC(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("image gc", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), `Usage: cove image gc [-dry-run] [-yes] [-older-than duration]
+
+Sweep local images that have no live forks.
+
+Flags:`)
+		fs.PrintDefaults()
+	}
 	dryRun := fs.Bool("dry-run", false, "print images without deleting them")
 	yes := fs.Bool("yes", false, "skip confirmation prompt")
 	olderThan := fs.Duration("older-than", 0, "only delete images older than this duration")
