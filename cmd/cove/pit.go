@@ -619,16 +619,40 @@ func handlePITCommand(args []string) error {
 		printPITUsage()
 		return nil
 	case "save":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			printPITUsage()
+			return nil
+		}
 		return handlePITSaveCommand(args[1:])
 	case "list":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			printPITUsage()
+			return nil
+		}
 		return handlePITListCommand(manager)
 	case "restore":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			printPITUsage()
+			return nil
+		}
 		return handlePITRestoreCommand(manager, args[1:])
 	case "delete":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			printPITUsage()
+			return nil
+		}
 		return handlePITDeleteCommand(manager, args[1:])
 	case "run":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			printPITUsage()
+			return nil
+		}
 		return handlePITRunCommand(manager, args[1:])
 	case "swap":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			printPITUsage()
+			return nil
+		}
 		return handlePITSwapCommand(args[1:])
 	default:
 		printPITUsage()

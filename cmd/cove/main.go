@@ -1620,6 +1620,10 @@ func handleTemplate(args []string) {
 		printTemplateUsage(os.Stderr)
 		return
 	case "save":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			fmt.Fprintln(os.Stdout, "Usage: cove template save <name>")
+			return
+		}
 		if len(subargs) < 1 {
 			fmt.Fprintln(os.Stderr, "Usage: cove template save <name>")
 			os.Exit(1)
@@ -1634,6 +1638,10 @@ func handleTemplate(args []string) {
 		}
 
 	case "save-fast":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			fmt.Fprintln(os.Stdout, "Usage: cove template save-fast <name>")
+			return
+		}
 		if len(subargs) < 1 {
 			fmt.Fprintln(os.Stderr, "Usage: cove template save-fast <name>")
 			os.Exit(1)
@@ -1648,6 +1656,10 @@ func handleTemplate(args []string) {
 		}
 
 	case "list":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			fmt.Fprintln(os.Stdout, "Usage: cove template list")
+			return
+		}
 		templates, err := ListTemplates()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -1673,6 +1685,10 @@ func handleTemplate(args []string) {
 		w.Flush()
 
 	case "create":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			fmt.Fprintln(os.Stdout, "Usage: cove template create <template> <name>")
+			return
+		}
 		if len(subargs) < 2 {
 			fmt.Fprintln(os.Stderr, "Usage: cove template create <template> <name>")
 			os.Exit(1)
@@ -1683,6 +1699,10 @@ func handleTemplate(args []string) {
 		}
 
 	case "delete":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			fmt.Fprintln(os.Stdout, "Usage: cove template delete <name>")
+			return
+		}
 		if len(subargs) < 1 {
 			fmt.Fprintln(os.Stderr, "Usage: cove template delete <name>")
 			os.Exit(1)
@@ -1714,6 +1734,10 @@ func handleVMCommand(args []string) {
 		printVMUsage(os.Stderr)
 		return
 	case "set":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			fmt.Fprintln(os.Stdout, "Usage: cove vm set <name>  (use \"\" or 'cove vm unset' to clear)")
+			return
+		}
 		if len(subargs) < 1 {
 			fmt.Fprintln(os.Stderr, "Usage: cove vm set <name>  (use \"\" or 'cove vm unset' to clear)")
 			os.Exit(1)
@@ -1733,6 +1757,10 @@ func handleVMCommand(args []string) {
 		fmt.Printf("Active VM set to '%s'.\n", subargs[0])
 
 	case "unset":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			fmt.Fprintln(os.Stdout, "Usage: cove vm unset")
+			return
+		}
 		if err := vmconfig.UnsetActive(); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
@@ -1844,6 +1872,10 @@ func handleVMCommand(args []string) {
 		}
 
 	case "rename":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			fmt.Fprintln(os.Stdout, "Usage: cove vm rename <old> <new>")
+			return
+		}
 		if len(subargs) < 2 {
 			fmt.Fprintln(os.Stderr, "Usage: cove vm rename <old> <new>")
 			os.Exit(1)
@@ -1854,6 +1886,10 @@ func handleVMCommand(args []string) {
 		}
 
 	case "export":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			fmt.Fprintln(os.Stdout, "Usage: cove vm export <name> <path>")
+			return
+		}
 		if len(subargs) < 2 {
 			fmt.Fprintln(os.Stderr, "Usage: cove vm export <name> <path>")
 			os.Exit(1)
@@ -1864,6 +1900,10 @@ func handleVMCommand(args []string) {
 		}
 
 	case "import":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			fmt.Fprintln(os.Stdout, "Usage: cove vm import <path> <name>")
+			return
+		}
 		if len(subargs) < 2 {
 			fmt.Fprintln(os.Stderr, "Usage: cove vm import <path> <name>")
 			os.Exit(1)
@@ -1914,6 +1954,10 @@ func handleSnapshotCommand(env commandEnv, args []string) error {
 		printSnapshotUsage(env.Stdout)
 		return nil
 	case "list":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printSnapshotUsage(env.Stdout)
+			return nil
+		}
 		snapshots, err := mgr.List()
 		if err != nil {
 			return err
@@ -1933,6 +1977,10 @@ func handleSnapshotCommand(env commandEnv, args []string) error {
 		return w.Flush()
 
 	case "delete":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printSnapshotUsage(env.Stdout)
+			return nil
+		}
 		if len(subargs) < 1 {
 			return fmt.Errorf("usage: cove snapshot delete <name>")
 		}
@@ -1949,6 +1997,10 @@ func handleSnapshotCommand(env commandEnv, args []string) error {
 		return nil
 
 	case "save", "restore":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printSnapshotUsage(env.Stdout)
+			return nil
+		}
 		if len(subargs) < 1 {
 			return fmt.Errorf("usage: cove snapshot %s <name>", subcmd)
 		}
@@ -1986,6 +2038,9 @@ func handleNetworkCommand(args []string) {
 	case "logs":
 		logArgs, err := parseNetworkLogsArgs(args[1:])
 		if err != nil {
+			if errors.Is(err, errFlagHelp) {
+				return
+			}
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}

@@ -396,14 +396,34 @@ func handleDiskSnapshotCommand(args []string) error {
 
 	switch args[0] {
 	case "save":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			printDiskSnapshotUsage()
+			return nil
+		}
 		return handleDiskSnapshotSave(mgr, args[1:])
 	case "run":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			printDiskSnapshotUsage()
+			return nil
+		}
 		return handleDiskSnapshotRun(args[1:])
 	case "restore":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			printDiskSnapshotUsage()
+			return nil
+		}
 		return handleDiskSnapshotRestore(mgr, args[1:])
 	case "list":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			printDiskSnapshotUsage()
+			return nil
+		}
 		return handleDiskSnapshotList(mgr)
 	case "delete":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			printDiskSnapshotUsage()
+			return nil
+		}
 		return handleDiskSnapshotDelete(mgr, args[1:])
 	case "help", "-h", "--help":
 		printDiskSnapshotUsage()

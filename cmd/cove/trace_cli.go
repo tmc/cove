@@ -59,12 +59,28 @@ func handleTraceCommand(env commandEnv, args []string) error {
 	}
 	switch args[0] {
 	case "enable":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			printTraceUsage(env.Stdout)
+			return nil
+		}
 		return runTraceEnable(env, args[1:])
 	case "start":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			printTraceUsage(env.Stdout)
+			return nil
+		}
 		return runTraceStart(env, args[1:])
 	case "stop":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			printTraceUsage(env.Stdout)
+			return nil
+		}
 		return runTraceStop(env, args[1:])
 	case "export":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			printTraceUsage(env.Stdout)
+			return nil
+		}
 		return runTraceExport(env, args[1:])
 	case "status":
 		return runTraceStatus(env, args[1:])

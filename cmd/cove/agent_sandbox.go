@@ -107,9 +107,12 @@ var agentSandboxDoctorDial = func(ctx context.Context, network, address string) 
 
 func handleAgentSandboxDoctor(args []string) error {
 	fs := flag.NewFlagSet("agent-sandbox doctor", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
+	fs.SetOutput(os.Stderr)
 	provider := fs.String("provider", "", "provider: all, openai, anthropic, gemini, or vertex")
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return err
 	}
 	if fs.NArg() != 0 {
@@ -231,6 +234,10 @@ func providerModel(provider string) string {
 }
 
 func handleAgentSandboxBench(args []string) error {
+	if len(args) > 0 && isHelpArg(args[0]) {
+		printAgentSandboxUsage(os.Stdout)
+		return nil
+	}
 	opts, err := parseAgentSandboxBenchArgs(args)
 	if err != nil {
 		return err
@@ -245,7 +252,7 @@ func parseAgentSandboxBenchArgs(args []string) (agentSandboxBenchOptions, error)
 		runs:     10,
 	}
 	fs := flag.NewFlagSet("agent-sandbox bench", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
+	fs.SetOutput(os.Stderr)
 	fs.StringVar(&opts.provider, "provider", opts.provider, "provider: all, openai, anthropic, gemini, or vertex")
 	fs.StringVar(&opts.image, "image", opts.image, "local image ref to fork")
 	fs.IntVar(&opts.runs, "runs", opts.runs, "runs per provider")
@@ -253,6 +260,9 @@ func parseAgentSandboxBenchArgs(args []string) (agentSandboxBenchOptions, error)
 	fs.BoolVar(&opts.live, "live", false, "call provider APIs; requires credentials")
 	fs.BoolVar(&opts.cold, "cold", false, "measure cold fork to first action")
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return opts, nil
+		}
 		return opts, err
 	}
 	if fs.NArg() != 0 {
@@ -316,6 +326,10 @@ func defaultAgentSandboxBenchOut(cold bool, now time.Time) string {
 }
 
 func handleAgentSandboxRun(args []string) error {
+	if len(args) > 0 && isHelpArg(args[0]) {
+		printAgentSandboxUsage(os.Stdout)
+		return nil
+	}
 	opts, err := parseAgentSandboxRunArgs(args)
 	if err != nil {
 		return err
@@ -327,7 +341,7 @@ func parseAgentSandboxRunArgs(args []string) (agentSandboxRunOptions, error) {
 	var opts agentSandboxRunOptions
 	opts.maxSteps = 25
 	fs := flag.NewFlagSet("agent-sandbox run", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
+	fs.SetOutput(os.Stderr)
 	fs.StringVar(&opts.provider, "provider", "", "provider: openai, anthropic, gemini, or vertex")
 	fs.StringVar(&opts.image, "image", "", "local image ref to fork")
 	fs.StringVar(&opts.task, "task", "", "prompt for the provider agent loop")
@@ -336,6 +350,9 @@ func parseAgentSandboxRunArgs(args []string) (agentSandboxRunOptions, error) {
 	fs.StringVar(&opts.vmName, "vm", "", "ephemeral VM name")
 	fs.BoolVar(&opts.jsonOutput, "json", false, "write machine-readable run result to stdout")
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return opts, nil
+		}
 		return opts, err
 	}
 	if fs.NArg() != 0 {

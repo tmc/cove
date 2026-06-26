@@ -59,9 +59,17 @@ func handleVMSharedFolderCommand(args []string) error {
 
 	switch args[0] {
 	case "list":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			printSharedFolderUsage(os.Stdout)
+			return nil
+		}
 		targetDir := sharedFolderCommandVMDirNoCreate()
 		return listSharedFolders(targetDir)
 	case "status":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			printSharedFolderUsage(os.Stdout)
+			return nil
+		}
 		targetDir := sharedFolderCommandVMDirNoCreate()
 		mountPoint := defaultSharedFoldersMountRoot(targetDir)
 		if len(args) >= 2 {
@@ -69,6 +77,10 @@ func handleVMSharedFolderCommand(args []string) error {
 		}
 		return sharedFolderStatus(targetDir, mountPoint)
 	case "pending":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			printSharedFolderUsage(os.Stdout)
+			return nil
+		}
 		targetDir := sharedFolderCommandVMDirNoCreate()
 		if len(args) > 2 {
 			return fmt.Errorf("usage: cove shared-folder pending [vm]")
@@ -78,12 +90,20 @@ func handleVMSharedFolderCommand(args []string) error {
 		}
 		return pendingSharedFolders(targetDir, defaultSharedFoldersMountRoot(targetDir))
 	case "add":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			printSharedFolderUsage(os.Stdout)
+			return nil
+		}
 		targetDir, err := sharedFolderCommandVMDir()
 		if err != nil {
 			return err
 		}
 		return handleVMSharedFolderAdd(targetDir, args[1:])
 	case "remove":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			printSharedFolderUsage(os.Stdout)
+			return nil
+		}
 		targetDir, err := sharedFolderCommandVMDir()
 		if err != nil {
 			return err
@@ -93,12 +113,20 @@ func handleVMSharedFolderCommand(args []string) error {
 		}
 		return handleVMSharedFolderRemove(targetDir, args[1])
 	case "clear":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			printSharedFolderUsage(os.Stdout)
+			return nil
+		}
 		targetDir, err := sharedFolderCommandVMDir()
 		if err != nil {
 			return err
 		}
 		return handleVMSharedFolderClear(targetDir)
 	case "mount":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			printSharedFolderUsage(os.Stdout)
+			return nil
+		}
 		targetDir := sharedFolderCommandVMDirNoCreate()
 		mountPoint := defaultSharedFoldersMountRoot(targetDir)
 		if len(args) >= 2 {

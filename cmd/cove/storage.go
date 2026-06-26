@@ -118,7 +118,7 @@ func runStoragePruneBuildScratch(args []string, out io.Writer) error {
 	fs.SetOutput(os.Stderr)
 	olderThan := fs.Duration("older-than", 7*24*time.Hour, "delete build-scratch dirs older than this duration")
 	apply := fs.Bool("apply", false, "actually delete; default is dry-run")
-	if err := fs.Parse(args); err != nil {
+	if done, err := parseFlagsOrHelpExit(fs, args); done || err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
@@ -175,7 +175,7 @@ func runStorageBudgetGet(args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("storage budget get", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	human := fs.Bool("human", false, "render a fixed-width table instead of JSON")
-	if err := fs.Parse(args); err != nil {
+	if done, err := parseFlagsOrHelpExit(fs, args); done || err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
@@ -203,7 +203,7 @@ func runStorageBudgetSet(args []string, out io.Writer) error {
 	target := fs.String("target", "", "soft watermark, e.g. 500GB or 2TB or 1234567 (bytes)")
 	warn := fs.Int("warn", 80, "warn tripwire as percent of target (0-100)")
 	hard := fs.Int("hard", 95, "hard tripwire as percent of target (0-100)")
-	if err := fs.Parse(args); err != nil {
+	if done, err := parseFlagsOrHelpExit(fs, args); done || err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
@@ -225,6 +225,10 @@ func runStorageBudgetSet(args []string, out io.Writer) error {
 }
 
 func runStorageBudgetClear(args []string, _ io.Writer) error {
+	if len(args) > 0 && isHelpArg(args[0]) {
+		fmt.Fprintln(os.Stdout, "Usage: cove storage budget clear")
+		return nil
+	}
 	if len(args) != 0 {
 		return fmt.Errorf("usage: cove storage budget clear")
 	}

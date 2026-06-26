@@ -69,6 +69,8 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			printBuildUsage(os.Stderr)
 		case "action":
 			printActionUsage(os.Stderr)
+		case "agent-sandbox":
+			printAgentSandboxUsage(os.Stderr)
 		case "runner":
 			printRunnerUsage(os.Stderr)
 		case "runs":
@@ -187,6 +189,8 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			printDiskDetachUsage(os.Stderr)
 		case "disk-snapshot":
 			printDiskSnapshotUsageHelp(os.Stderr)
+		case "fleet":
+			printFleetUsage(os.Stderr)
 		default:
 			fmt.Fprintf(os.Stderr, "unknown help topic: %s\n\n", subargs[0])
 			usage()
@@ -227,6 +231,11 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		}
 		if len(subargs) > 1 && subargs[0] == "ready" && isHelpArg(subargs[1]) {
 			printReadyUsage(os.Stderr)
+			return true, 0
+		}
+		if len(subargs) > 1 && isHelpArg(subargs[len(subargs)-1]) {
+			fs, _, _, _, _, _, _ := newCtlFlagSet()
+			fs.Usage()
 			return true, 0
 		}
 	case "disk":

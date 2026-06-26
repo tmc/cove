@@ -23,10 +23,13 @@ type networkLogsArgs struct {
 
 func parseNetworkLogsArgs(args []string) (networkLogsArgs, error) {
 	fs := flag.NewFlagSet("network logs", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
+	fs.SetOutput(os.Stderr)
 	follow := fs.Bool("f", false, "follow")
 	fs.BoolVar(follow, "follow", false, "follow")
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return networkLogsArgs{}, errFlagHelp
+		}
 		return networkLogsArgs{}, err
 	}
 	if fs.NArg() != 1 {

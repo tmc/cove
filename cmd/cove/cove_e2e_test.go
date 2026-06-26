@@ -116,6 +116,46 @@ func TestCoveSubcommandsE2E(t *testing.T) {
 	}
 }
 
+func TestNestedHelpDoesNotTreatHelpAsOperand(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("cove is darwin-only")
+	}
+	bin := doctorE2EBinary(t)
+	home := t.TempDir()
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "agent sandbox doctor", args: []string{"agent-sandbox", "doctor", "-h"}, want: "Usage of agent-sandbox doctor"},
+		{name: "disk snapshot run", args: []string{"disk-snapshot", "run", "-h"}, want: "Usage: cove disk-snapshot"},
+		{name: "shared folder add", args: []string{"shared-folder", "add", "-h"}, want: "Usage: cove shared-folder"},
+		{name: "storage budget get", args: []string{"storage", "budget", "get", "-h"}, want: "Usage of storage budget get"},
+		{name: "template save", args: []string{"template", "save", "-h"}, want: "Usage: cove template save"},
+		{name: "pit run", args: []string{"pit", "run", "-h"}, want: "Usage: cove pit"},
+		{name: "snapshot save", args: []string{"snapshot", "save", "-h"}, want: "Usage: cove snapshot"},
+		{name: "policy show", args: []string{"policy", "dummy", "show", "-h"}, want: "Usage: cove policy <vm> show"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := exec.Command(bin, tt.args...)
+			cmd.Env = append(os.Environ(), "HOME="+home)
+			var stdout, stderr strings.Builder
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			err := cmd.Run()
+			if err != nil {
+				t.Fatalf("run %v: %v\nstdout:\n%s\nstderr:\n%s", tt.args, err, stdout.String(), stderr.String())
+			}
+			out := stdout.String() + stderr.String()
+			if !strings.Contains(out, tt.want) {
+				t.Fatalf("output missing %q\nstdout:\n%s\nstderr:\n%s", tt.want, stdout.String(), stderr.String())
+			}
+		})
+	}
+}
+
 // assertNDJSON validates that stdout is a valid NDJSON stream: zero or
 // more JSON values, one per non-blank line. Empty streams are valid.
 func assertNDJSON(t *testing.T, name, stdout string) {

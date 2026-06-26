@@ -27,11 +27,19 @@ func handlePolicyCommand(env commandEnv, args []string) error {
 	}
 	switch args[1] {
 	case "show":
+		if len(args) > 2 && isHelpArg(args[2]) {
+			fmt.Fprintln(env.Stdout, "Usage: cove policy <vm> show")
+			return nil
+		}
 		if len(args) != 2 {
 			return fmt.Errorf("usage: cove policy <vm> show")
 		}
 		return printPolicy(env.Stdout, vmName, vmDir)
 	case "clear":
+		if len(args) > 2 && isHelpArg(args[2]) {
+			fmt.Fprintln(env.Stdout, "Usage: cove policy <vm> clear")
+			return nil
+		}
 		if len(args) != 2 {
 			return fmt.Errorf("usage: cove policy <vm> clear")
 		}
@@ -41,8 +49,16 @@ func handlePolicyCommand(env commandEnv, args []string) error {
 		fmt.Fprintf(env.Stdout, "Cleared policy for %s\n", vmName)
 		return nil
 	case "set":
+		if len(args) > 2 && isHelpArg(args[2]) {
+			fmt.Fprintln(env.Stdout, "Usage: cove policy <vm> set idle=<duration> max-age=<duration> run-budget=<count>")
+			return nil
+		}
 		return setPolicyField(env.Stdout, vmName, vmDir, args[2:])
 	case "idle", "max-age", "run-budget":
+		if len(args) > 2 && isHelpArg(args[2]) {
+			fmt.Fprintf(env.Stdout, "Usage: cove policy <vm> %s <value>\n", args[1])
+			return nil
+		}
 		return setPolicyField(env.Stdout, vmName, vmDir, args[1:])
 	default:
 		printPolicyUsage(env.Stderr)
