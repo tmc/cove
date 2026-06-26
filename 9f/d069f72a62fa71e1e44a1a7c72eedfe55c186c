@@ -1,0 +1,9 @@
+commit: 9fd069f72a62fa71e1e44a1a7c72eedfe55c186c
+date: 2026-06-26T16:51:04-07:00
+agent: codex
+model: GPT-5 Codex
+tty: not a tty
+pid: 48870
+ITERM_SESSION_ID: w13t3p1:B41EF40B-7D12-4B3B-AD47-3CDF7DC54114
+verification: go test ./cmd/cove -run 'TestValidateExistingMacOSIdentityMetadataRejectsMissingWithoutRecovery|TestValidateExistingMacOSIdentityMetadataRecoversBadFiles' -count=1
+verification: go test ./cmd/cove -run 'TestValidateTopLevelProvisionStrategy|TestValidateTopLevelLaunchOrder|TestValidateExistingMacOSIdentityMetadataRejectsMissingWithoutRecovery|TestValidateExistingMacOSIdentityMetadataRecoversBadFiles' -count=1
