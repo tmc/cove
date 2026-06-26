@@ -1,0 +1,9 @@
+commit=f3c4f2061d1d60d6b109c8222775ea40a53ceae4
+commit_date=2026-06-26T14:18:41-07:00
+agent=codex
+model=GPT-5 Codex
+tty=not a tty
+pid=20905
+ITERM_SESSION_ID=w13t3p1:B41EF40B-7D12-4B3B-AD47-3CDF7DC54114
+commit_method=manual fallback after git-auto-commit-message failed on anthropic low-credit response
+verification=focused tests: go test ./internal/vmquota ./internal/pcap ./internal/builddigest ./internal/buildpaths ./internal/buildmeta ./internal/buildscratch ./internal/secrets ./internal/guestplan ./internal/nixos -count=1; go test ./internal/vmidentity ./internal/vmrun ./internal/vmconfig ./internal/vmtree ./internal/vmpolicy ./internal/controlclient ./internal/action ./internal/runs -count=1; go test ./internal/controlserver -run 'TestKeyboard|Test.*Capture|TestInput|TestHTTPListeners|TestNetworkBridge|TestITerm2Proxy|TestAllowLocalhostOrigin|TestRuntimeStatus' -count=1; go test ./cmd/cove focused runtime plumbing regex -count=1; gates: go build -o cove ./cmd/cove && codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove; go build ./...; go test ./...; go vet ./...; docs/qa/cove-feature-status.csv 366 rows, 366 Pass, 366 Passed
