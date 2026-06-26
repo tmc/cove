@@ -484,10 +484,22 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
 			if cmd == "verify" {
 				printDeprecatedAliasNotice(os.Stderr, "verify", "doctor")
+				fmt.Fprintln(os.Stderr, "Usage: cove verify [options]")
+				fmt.Fprintln(os.Stderr)
 			}
 			fs, _, _, _, _ := newVerifyFlagSet()
 			fs.Usage()
 			return true, 0
+		}
+	case "config", "rename", "export", "import":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printVMSubcommandAliasUsage(os.Stderr, cmd)
+			return true, usageExitCode(subargs)
+		}
+	case "rm":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			printVMDeleteAliasUsage(os.Stderr)
+			return true, usageExitCode(subargs)
 		}
 	case "template":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
@@ -714,6 +726,40 @@ Commands:
   shared-folder ...       Manage shared folders (alias: cove shared-folder ...)`)
 }
 
+func printVMSubcommandAliasUsage(w io.Writer, name string) {
+	switch name {
+	case "config":
+		fmt.Fprintln(w, `Usage: cove config <command>
+
+Alias for cove vm config.
+
+Commands:
+  export <path>           Write the current framework config snapshot
+  import <path>           Decode a snapshot, print a summary, and store raw bytes`)
+	case "rename":
+		fmt.Fprintln(w, `Usage: cove rename <old> <new>
+
+Alias for cove vm rename.`)
+	case "export":
+		fmt.Fprintln(w, `Usage: cove export <name> <path>
+
+Alias for cove vm export.`)
+	case "import":
+		fmt.Fprintln(w, `Usage: cove import <path> <name>
+
+Alias for cove vm import.`)
+	default:
+		printVMUsage(w)
+	}
+}
+
+func printVMDeleteAliasUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove rm [--cascade] <name>
+
+Alias for cove vm delete. Deletes a VM directory. With --cascade, recursively
+deletes fork descendants too.`)
+}
+
 func printVMConfigUsage(w io.Writer) {
 	fmt.Fprintln(w, `Usage: cove vm config <command>
 
@@ -802,7 +848,8 @@ Examples:
 }
 
 func printGUIUsage(w io.Writer) {
-	fmt.Fprintln(w, `Usage: cove run -gui [flags]
+	fmt.Fprintln(w, `Usage: cove gui
+       cove run -gui [flags]
        cove ctl -vm <name> gui status|open|close
 
 Show or control the native VM display window.
@@ -814,7 +861,8 @@ Examples:
 }
 
 func printVNCUsage(w io.Writer) {
-	fmt.Fprintln(w, `Usage: cove run -vnc :5901 -vnc-password <password> [flags]
+	fmt.Fprintln(w, `Usage: cove vnc
+       cove run -vnc :5901 -vnc-password <password> [flags]
        cove ctl -vm <name> vnc status
 
 Expose a private VNC server for a running VM.

@@ -385,6 +385,9 @@ func runDiskDetachCommand(env commandEnv, _ string, _ []string) int {
 
 func runUIScriptCommand(env commandEnv, _ string, _ []string) int {
 	fmt.Fprintf(env.Stderr, "warning: the 'uiscript' command has been merged into 'vzscript'.\nUse 'cove vzscript' instead.\n")
+	fmt.Fprintln(env.Stdout, "Usage: cove uiscript")
+	fmt.Fprintln(env.Stdout)
+	fmt.Fprintln(env.Stdout, "Deprecated alias for cove vzscript.")
 	return 0
 }
 
@@ -432,12 +435,20 @@ func runInstallCommand(env commandEnv, _ string, _ []string) int {
 	return 0
 }
 
-func runVMDeleteAliasCommand(_ commandEnv, _ string, args []string) int {
+func runVMDeleteAliasCommand(env commandEnv, _ string, args []string) int {
+	if len(args) == 0 || isHelpArg(args[0]) {
+		printVMDeleteAliasUsage(env.Stdout)
+		return 0
+	}
 	handleVMCommand(append([]string{"delete"}, args...))
 	return 0
 }
 
-func runVMSubcommand(_ commandEnv, name string, args []string) int {
+func runVMSubcommand(env commandEnv, name string, args []string) int {
+	if len(args) == 0 || isHelpArg(args[0]) {
+		printVMSubcommandAliasUsage(env.Stdout, name)
+		return 0
+	}
 	handleVMCommand(append([]string{name}, args...))
 	return 0
 }

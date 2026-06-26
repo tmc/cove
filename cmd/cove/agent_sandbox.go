@@ -912,7 +912,9 @@ func finishAgentSandboxBundle(bundle *RunBundle, runErr error) {
 }
 
 func printAgentSandboxUsage(w io.Writer) {
-	fmt.Fprintf(w, `Usage:
+	fmt.Fprintf(w, `Usage: cove agent-sandbox <command> [options]
+
+Commands:
   cove agent-sandbox run --provider openai|anthropic|gemini|vertex --image <ref> --task <prompt> [options]
   cove agent-sandbox doctor --provider all|openai|anthropic|gemini|vertex
   cove agent-sandbox bench --provider all [--live] [--cold]

@@ -213,7 +213,9 @@ Verify with:
 
 // RosettaHelp returns help text for Rosetta commands
 func RosettaHelp() string {
-	return `Rosetta 2 for Linux VMs
+	return `Usage: cove rosetta <command>
+
+Rosetta 2 for Linux VMs
 =======================
 
 Rosetta allows ARM64 Linux VMs to run x86-64 binaries through
@@ -229,7 +231,7 @@ Commands:
   cove rosetta install  Install Rosetta (if needed)
   cove rosetta setup    Show guest setup instructions
 
-Usage:
+Run usage:
   cove run -linux                 Run Linux VM with Rosetta enabled
   cove run -linux -rosetta=false  Disable Rosetta for this run
 

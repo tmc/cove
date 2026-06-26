@@ -799,7 +799,9 @@ Use 'cove <command> -h' for command-specific help.
 }
 
 func printFirstRunUsage(w io.Writer) {
-	fmt.Fprintln(w, `First run:
+	fmt.Fprintln(w, `Usage: cove first-run
+
+First run:
   cove doctor host
   cove up -user <name>
   cove list

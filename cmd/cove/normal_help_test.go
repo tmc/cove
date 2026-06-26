@@ -83,7 +83,7 @@ func TestVNCHelpRequiresPasswordInUsage(t *testing.T) {
 	var buf bytes.Buffer
 	printVNCUsage(&buf)
 	out := buf.String()
-	if !strings.Contains(out, "Usage: cove run -vnc :5901 -vnc-password <password> [flags]") {
+	if !strings.Contains(out, "cove run -vnc :5901 -vnc-password <password> [flags]") {
 		t.Fatalf("vnc help usage missing password:\n%s", out)
 	}
 	if strings.Contains(out, "Usage: cove run -vnc :5901 [flags]") {

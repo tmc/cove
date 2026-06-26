@@ -23,7 +23,9 @@ func runDiskCommand(env commandEnv, _ string, args []string) int {
 }
 
 func printDiskUsage(w io.Writer) {
-	fmt.Fprintln(w, `Usage:
+	fmt.Fprintln(w, `Usage: cove disk <command>
+
+Commands:
   cove disk resize <vm> <size>
   cove -vm <vm> disk resize <size>
 
