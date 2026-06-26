@@ -195,6 +195,68 @@ func TestNestedHelpDoesNotTreatHelpAsOperand(t *testing.T) {
 	}
 }
 
+func TestExpandedNestedHelpSurfaces(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("cove is darwin-only")
+	}
+	bin := doctorE2EBinary(t)
+	home := t.TempDir()
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "ctl ping", args: []string{"ctl", "ping", "-h"}, want: "Usage: cove ctl ping"},
+		{name: "ctl capabilities", args: []string{"ctl", "capabilities", "-h"}, want: "Usage: cove ctl capabilities"},
+		{name: "ctl server-info", args: []string{"ctl", "server-info", "-h"}, want: "Usage: cove ctl server-info"},
+		{name: "ctl request-stop", args: []string{"ctl", "request-stop", "-h"}, want: "Usage: cove ctl request-stop"},
+		{name: "ctl network-info", args: []string{"ctl", "network-info", "-h"}, want: "Usage: cove ctl network-info"},
+		{name: "ctl agent-ping", args: []string{"ctl", "agent-ping", "-h"}, want: "Usage: cove ctl agent-ping"},
+		{name: "ctl agent-info", args: []string{"ctl", "agent-info", "-h"}, want: "Usage: cove ctl agent-info"},
+		{name: "ctl agent-exec-stream", args: []string{"ctl", "agent-exec-stream", "-h"}, want: "Usage: cove ctl agent-exec-stream"},
+		{name: "ctl agent-cp", args: []string{"ctl", "agent-cp", "-h"}, want: "Usage: cove ctl agent-cp"},
+		{name: "ctl agent-sshd", args: []string{"ctl", "agent-sshd", "-h"}, want: "Usage: cove ctl agent-sshd"},
+		{name: "ctl detect", args: []string{"ctl", "detect", "-h"}, want: "Usage: cove ctl detect"},
+		{name: "ctl click-text", args: []string{"ctl", "click-text", "-h"}, want: "Usage: cove ctl click-text"},
+		{name: "ctl boot-script", args: []string{"ctl", "boot-script", "-h"}, want: "Usage: cove ctl boot-script"},
+		{name: "ctl setup-assist", args: []string{"ctl", "setup-assist", "-h"}, want: "Usage: cove ctl setup-assist"},
+		{name: "ctl iterm2-proxy-stop", args: []string{"ctl", "iterm2-proxy-stop", "-h"}, want: "Usage: cove ctl iterm2-proxy-stop"},
+		{name: "ctl gui", args: []string{"ctl", "gui", "-h"}, want: "Usage: cove ctl gui"},
+		{name: "ctl vnc", args: []string{"ctl", "vnc", "-h"}, want: "Usage: cove ctl vnc"},
+		{name: "ctl disk", args: []string{"ctl", "disk", "-h"}, want: "Usage: cove ctl disk"},
+		{name: "ctl usb", args: []string{"ctl", "usb", "-h"}, want: "Usage: cove ctl usb"},
+		{name: "ctl memory", args: []string{"ctl", "memory", "-h"}, want: "Usage: cove ctl memory"},
+		{name: "ctl power", args: []string{"ctl", "power", "-h"}, want: "Usage: cove ctl power"},
+		{name: "ctl operations", args: []string{"ctl", "operations", "-h"}, want: "Usage: cove ctl operations"},
+		{name: "ctl port-forward", args: []string{"ctl", "port-forward", "-h"}, want: "Usage: cove ctl port-forward"},
+		{name: "ctl reset-password", args: []string{"ctl", "reset-password", "-h"}, want: "Usage: cove ctl reset-password"},
+		{name: "helper daemon", args: []string{"helper", "daemon", "-h"}, want: "Usage: cove helper daemon"},
+		{name: "sip enable", args: []string{"sip", "enable", "-h"}, want: "Usage: cove sip enable"},
+		{name: "sip disable", args: []string{"sip", "disable", "-h"}, want: "Usage: cove sip disable"},
+		{name: "sip create-disk", args: []string{"sip", "create-disk", "-h"}, want: "Usage: cove sip create-disk"},
+		{name: "policy idle", args: []string{"policy", "dummy", "idle", "-h"}, want: "Usage: cove policy <vm> idle"},
+		{name: "policy max-age", args: []string{"policy", "dummy", "max-age", "-h"}, want: "Usage: cove policy <vm> max-age"},
+		{name: "policy run-budget", args: []string{"policy", "dummy", "run-budget", "-h"}, want: "Usage: cove policy <vm> run-budget"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := exec.Command(bin, tt.args...)
+			cmd.Env = append(os.Environ(), "HOME="+home)
+			var stdout, stderr strings.Builder
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			if err := cmd.Run(); err != nil {
+				t.Fatalf("run %v: %v\nstdout:\n%s\nstderr:\n%s", tt.args, err, stdout.String(), stderr.String())
+			}
+			if out := stdout.String() + stderr.String(); !strings.Contains(out, tt.want) {
+				t.Fatalf("output missing %q\nstdout:\n%s\nstderr:\n%s", tt.want, stdout.String(), stderr.String())
+			}
+		})
+	}
+}
+
 // assertNDJSON validates that stdout is a valid NDJSON stream: zero or
 // more JSON values, one per non-blank line. Empty streams are valid.
 func assertNDJSON(t *testing.T, name, stdout string) {

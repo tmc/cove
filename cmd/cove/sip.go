@@ -22,11 +22,20 @@ func handleSIPCommand(args []string) error {
 	rest := args[1:]
 	if len(rest) > 0 && isHelpArg(rest[0]) {
 		switch args[0] {
+		case "enable":
+			printSIPManualUsage(os.Stdout, "enable")
+			return nil
 		case "enable-auto":
 			printSIPAutoUsage(os.Stdout, "enable")
 			return nil
+		case "disable":
+			printSIPManualUsage(os.Stdout, "disable")
+			return nil
 		case "disable-auto":
 			printSIPAutoUsage(os.Stdout, "disable")
+			return nil
+		case "create-disk":
+			printSIPCreateDiskUsage(os.Stdout)
 			return nil
 		}
 		fmt.Print(sipUsage)
@@ -187,6 +196,19 @@ Options:
   -password string
         admin password for recovery authentication
 `, mode, mode)
+}
+
+func printSIPManualUsage(w io.Writer, mode string) {
+	fmt.Fprintf(w, `Usage: cove sip %s
+
+Create the recovery tools disk and print manual Recovery instructions to %s SIP.
+`, mode, mode)
+}
+
+func printSIPCreateDiskUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove sip create-disk
+
+Create or recreate the recovery tools disk used by SIP workflows.`)
 }
 
 func sipStatus() error {

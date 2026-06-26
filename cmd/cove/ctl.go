@@ -196,14 +196,50 @@ Examples:
 
 func printCtlSubcommandUsage(w io.Writer, cmd string, args []string) bool {
 	switch cmd {
+	case "ping":
+		fmt.Fprintln(w, `Usage: cove ctl ping
+
+Test the control socket connection.`)
 	case "status":
 		fmt.Fprintln(w, `Usage: cove ctl status
 
 Get VM state and capabilities from the control socket.`)
+	case "server-info":
+		fmt.Fprintln(w, `Usage: cove ctl server-info
+
+Show the cove process that owns this VM control socket.`)
+	case "capabilities":
+		fmt.Fprintln(w, `Usage: cove ctl capabilities
+
+Print machine-readable control protocol capabilities.`)
 	case "screenshot":
 		fmt.Fprintln(w, `Usage: cove ctl screenshot [-o file] [file]
 
 Capture the VM screen. Without -o or a file operand, screenshot data is written to stdout.`)
+	case "pause":
+		fmt.Fprintln(w, `Usage: cove ctl pause
+
+Pause the running VM.`)
+	case "resume":
+		fmt.Fprintln(w, `Usage: cove ctl resume
+
+Resume a paused VM.`)
+	case "stop":
+		fmt.Fprintln(w, `Usage: cove ctl stop
+
+Force stop the VM.`)
+	case "request-stop":
+		fmt.Fprintln(w, `Usage: cove ctl request-stop [--wait [duration]]
+
+Send an ACPI power-button request and optionally wait for the VM to stop.`)
+	case "reboot-to-recovery", "boot-recovery":
+		fmt.Fprintln(w, `Usage: cove ctl reboot-to-recovery
+
+Stop the VM and start macOS Recovery.`)
+	case "network-info":
+		fmt.Fprintln(w, `Usage: cove ctl network-info
+
+Get VM network information such as MAC address, guest IP, and mode.`)
 	case "key":
 		fmt.Fprintln(w, `Usage: cove ctl key <keycode|name> [down|up]
 
@@ -220,6 +256,22 @@ Type text into the guest.`)
 		fmt.Fprintln(w, `Usage: cove ctl agent-exec [--stream] -- <cmd> [args...]
 
 Run a command through the guest agent.`)
+	case "agent-exec-stream":
+		fmt.Fprintln(w, `Usage: cove ctl agent-exec-stream [--daemon] <cmd> [args...]
+
+Stream command output through the guest agent.`)
+	case "agent-connect":
+		fmt.Fprintln(w, `Usage: cove ctl agent-connect
+
+Connect to the guest agent.`)
+	case "agent-ping":
+		fmt.Fprintln(w, `Usage: cove ctl agent-ping
+
+Ping the guest agent.`)
+	case "agent-info":
+		fmt.Fprintln(w, `Usage: cove ctl agent-info
+
+Get guest system information from the agent.`)
 	case "agent-read":
 		fmt.Fprintln(w, `Usage: cove ctl agent-read <guest-path>
 
@@ -228,22 +280,130 @@ Read a file through the guest agent.`)
 		fmt.Fprintln(w, `Usage: cove ctl agent-write <guest-path> <data>
 
 Write data to a guest file through the guest agent.`)
+	case "agent-shutdown":
+		fmt.Fprintln(w, `Usage: cove ctl agent-shutdown [force] [--wait [duration]]
+
+Request a graceful guest shutdown and optionally wait for VM stop.`)
+	case "agent-reboot":
+		fmt.Fprintln(w, `Usage: cove ctl agent-reboot
+
+Reboot the guest through the guest agent.`)
+	case "agent-sshd":
+		fmt.Fprintln(w, `Usage: cove ctl agent-sshd <on|off|start|stop|enable|status>
+
+Manage SSH remote login in the guest.`)
+	case "agent-cp":
+		fmt.Fprintln(w, `Usage: cove ctl agent-cp [-from-guest] <src> <dst>
+
+Copy files through the guest agent.`)
+	case "agent-mount-volumes":
+		fmt.Fprintln(w, `Usage: cove ctl agent-mount-volumes
+
+Mount tagged VirtioFS volumes in the guest.`)
+	case "agent-status":
+		fmt.Fprintln(w, `Usage: cove ctl agent-status
+
+Show guest-agent health.`)
+	case "detect":
+		fmt.Fprintln(w, `Usage: cove ctl detect
+
+Detect the current guest screen state.`)
 	case "ocr":
 		fmt.Fprintln(w, `Usage: cove ctl ocr [-region <spec>]
 
 Run OCR on the current screen. Region can be menu or x1,y1,x2,y2.`)
+	case "click-text":
+		fmt.Fprintln(w, `Usage: cove ctl click-text [-region <spec>] [-timeout <duration>] <text>
+
+Find text via OCR and click its center.`)
+	case "click-menu":
+		fmt.Fprintln(w, `Usage: cove ctl click-menu [-timeout <duration>] <menu> <item>
+
+Click a menu title, then a menu item.`)
+	case "boot-script":
+		fmt.Fprintln(w, `Usage: cove ctl boot-script <file>
+
+Execute a vzscript automation file.`)
+	case "step":
+		fmt.Fprintln(w, `Usage: cove ctl step
+
+Start interactive step-through mode for Setup Assistant debugging.`)
+	case "setup-assist":
+		fmt.Fprintln(w, `Usage: cove ctl setup-assist <user> <pass>
+
+Run Setup Assistant automation.`)
 	case "iterm2-proxy":
 		fmt.Fprintln(w, `Usage: cove ctl iterm2-proxy [--port N]
 
 Start the WebSocket-to-vsock proxy for guest iTerm2.`)
+	case "iterm2-proxy-stop":
+		fmt.Fprintln(w, `Usage: cove ctl iterm2-proxy-stop
+
+Stop the iTerm2 proxy.`)
+	case "iterm2-proxy-status":
+		fmt.Fprintln(w, `Usage: cove ctl iterm2-proxy-status
+
+Check iTerm2 proxy status.`)
+	case "gui":
+		fmt.Fprintln(w, `Usage: cove ctl gui <status|open|close|backend|capture-backend|input-backend|terminal> [args]
+
+Inspect or control the VM GUI runtime.`)
+	case "vnc":
+		fmt.Fprintln(w, `Usage: cove ctl vnc status
+
+Report VNC server status.`)
+	case "debug-stub":
+		fmt.Fprintln(w, `Usage: cove ctl debug-stub status
+
+Report debug-stub status.`)
 	case "disk":
-		if len(args) > 1 && args[0] == "resize" && isHelpArg(args[1]) {
+		if len(args) == 1 && isHelpArg(args[0]) {
+			fmt.Fprintln(w, `Usage: cove ctl disk <list|swap|resize> [args]
+
+Manage live runtime storage devices.`)
+		} else if len(args) > 1 && args[0] == "resize" && isHelpArg(args[1]) {
 			fmt.Fprintln(w, `Usage: cove ctl disk resize [--preflight] <index> <size>
 
 Resize a live disk backing. For macOS disk 0, cove also expands the APFS container through the guest agent.`)
 		} else {
 			return false
 		}
+	case "usb":
+		fmt.Fprintln(w, `Usage: cove ctl usb <list|attach-storage|attach-host-service|attach-host-location|detach> [args]
+
+Manage live runtime USB controllers and devices.`)
+	case "memory":
+		fmt.Fprintln(w, `Usage: cove ctl memory <info|set> [args]
+
+Show or set the VM memory balloon target.`)
+	case "power":
+		fmt.Fprintln(w, `Usage: cove ctl power <status|keep-awake|allow-sleep> [args]
+
+Inspect or change guest macOS sleep settings.`)
+	case "snapshot":
+		fmt.Fprintln(w, `Usage: cove ctl snapshot <list|save|restore|delete> [args]
+
+Manage VM state snapshots through the control socket.`)
+	case "operations":
+		fmt.Fprintln(w, `Usage: cove ctl operations <list|get|wait> [id]
+
+Inspect or wait for long-running control operations.`)
+	case "port-forward":
+		fmt.Fprintln(w, `Usage: cove ctl port-forward <start hostPort:guestPort|stop hostPort|list>
+
+Manage host TCP forwards to the guest.`)
+	case "shared-folders-apply":
+		fmt.Fprintln(w, `Usage: cove ctl shared-folders-apply
+
+Reload shared_folders.json into a running VM.`)
+	case "shared-folders-runtime-status":
+		fmt.Fprintln(w, `Usage: cove ctl shared-folders-runtime-status
+
+Report runtime shared-folder support.`)
+	case "reset-password":
+		fmt.Fprintln(w, `Usage: cove ctl reset-password <user> <pass>
+
+Reset a guest user password.`)
 	default:
 		return false
 	}

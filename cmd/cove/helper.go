@@ -278,12 +278,27 @@ func runHelperCmd(args []string) error {
 	case "status":
 		return helperStatus()
 	case "daemon":
+		if len(args) > 1 {
+			if len(args) == 2 && isHelpArg(args[1]) {
+				return helperDaemonUsage()
+			}
+			helperDaemonUsage()
+			return fmt.Errorf("usage: cove helper daemon")
+		}
 		return helperDaemon()
 	case "help", "-h", "--help":
 		return helperUsage()
 	default:
 		return fmt.Errorf("unknown helper subcommand: %s", args[0])
 	}
+}
+
+func helperDaemonUsage() error {
+	fmt.Println(`Usage: cove helper daemon
+
+Run the privileged helper daemon. This subcommand is launched by launchd as
+root; users normally manage it with cove helper install, uninstall, and status.`)
+	return nil
 }
 
 func helperUsage() error {
