@@ -1,0 +1,15 @@
+commit: 6c7fd2a73912b14d29dcd475fe856a94de7bb817
+date: 2026-06-26T21:39:54Z
+agent: codex
+model: gpt-5
+tty: not a tty
+pid: 84530
+ITERM_SESSION_ID: w13t3p1:B41EF40B-7D12-4B3B-AD47-3CDF7DC54114
+verification:
+- python3 csv validation: rows=446 unique_ids=446 last=COVE-446 status={Pass:446} result={Passed:446}
+- git diff --check
+- go test ./cmd/cove -run 'TestErrBootTimeoutWraps|TestMarkInjectSucceededForVM|TestRenameVM|TestWithBuildRuntimeGlobals|TestStartBuildGuest|TestWaitBuildAgent|TestShutdownBuildGuest|TestCompactBuildScratch|TestTargetedBuildCompactScript|TestDetachDiskForPath|TestCoveVM|TestInstallCoveVM|TestWantsMacgoRuntimeForCoveVMBundle|TestWriteBuildSecretInvalidName|TestGatewayHandleFSEvent|TestLiveAPI_|TestErrIPSWTooSmallWraps|TestIPSWMinSizeIs1GB|TestWriteInspect|TestWriteImageSearch|TestRunImageInspectMissing|TestRuntimeSurfaceMacOSDiskStateParsing|TestIntegrationArtifactName|TestCheckPullTarget|TestHandleSIPCommand|TestStoreAndApplyDiskDelta|TestApplyStoredDiskDelta|TestParseDHCPLeaseTimeSecs|TestWarnIfDHCPLeaseTimeLong|TestIsLocalServeListenAddr|TestCloneValue|TestCloneMapEmpty|TestRunDumpDocsCommand|TestLinuxShellWrapperIntegration|TestParsePortForwardSpec|TestPortForwardManagerConcurrentAccessor|TestClearPortForwardManager|TestSupportsClonefile|TestCloneFile|TestCloneVM|TestRunCloneWithAgent|TestCloneVMSentinelErrors' -count=1
+- go build -o cove ./cmd/cove && codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+- go build ./...
+- go test ./...
+- go vet ./...
