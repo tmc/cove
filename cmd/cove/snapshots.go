@@ -397,7 +397,7 @@ func handleDiskSnapshotCommand(args []string) error {
 	switch args[0] {
 	case "save":
 		if len(args) > 1 && isHelpArg(args[1]) {
-			printDiskSnapshotUsage()
+			printDiskSnapshotSaveUsage()
 			return nil
 		}
 		return handleDiskSnapshotSave(mgr, args[1:])
@@ -409,19 +409,19 @@ func handleDiskSnapshotCommand(args []string) error {
 		return handleDiskSnapshotRun(args[1:])
 	case "restore":
 		if len(args) > 1 && isHelpArg(args[1]) {
-			printDiskSnapshotUsage()
+			printDiskSnapshotRestoreUsage()
 			return nil
 		}
 		return handleDiskSnapshotRestore(mgr, args[1:])
 	case "list":
 		if len(args) > 1 && isHelpArg(args[1]) {
-			printDiskSnapshotUsage()
+			printDiskSnapshotListUsage()
 			return nil
 		}
 		return handleDiskSnapshotList(mgr)
 	case "delete":
 		if len(args) > 1 && isHelpArg(args[1]) {
-			printDiskSnapshotUsage()
+			printDiskSnapshotDeleteUsage()
 			return nil
 		}
 		return handleDiskSnapshotDelete(mgr, args[1:])
@@ -470,6 +470,30 @@ Examples:
   cove disk-snapshot list
 
 Note: VM should be stopped for consistent disk snapshots.`)
+}
+
+func printDiskSnapshotSaveUsage() {
+	fmt.Println(`Usage: cove disk-snapshot save <name> [-system] [-desc "..."]
+
+Save an APFS copy-on-write disk snapshot for the selected VM.`)
+}
+
+func printDiskSnapshotRestoreUsage() {
+	fmt.Println(`Usage: cove disk-snapshot restore <name> [-system]
+
+Restore the live disk from a disk snapshot while preserving the snapshot.`)
+}
+
+func printDiskSnapshotListUsage() {
+	fmt.Println(`Usage: cove disk-snapshot list
+
+List disk snapshots for the selected VM.`)
+}
+
+func printDiskSnapshotDeleteUsage() {
+	fmt.Println(`Usage: cove disk-snapshot delete <name>
+
+Delete a disk snapshot for the selected VM.`)
 }
 
 func handleDiskSnapshotSave(mgr *DiskSnapshotManager, args []string) error {

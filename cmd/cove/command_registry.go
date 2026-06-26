@@ -265,7 +265,7 @@ func runSupportCommandSpec(env commandEnv, _ string, args []string) int {
 }
 func runSupportBundleAliasCommand(env commandEnv, _ string, args []string) int {
 	fmt.Fprintln(env.Stderr, "note: support-bundle is an alias for 'cove support bundle'")
-	return commandError(env, runSupportBundle(env, args))
+	return commandError(env, runSupportBundleWithUsage(env, args, "cove support-bundle"))
 }
 func runUpCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleUp(env, args))

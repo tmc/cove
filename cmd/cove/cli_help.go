@@ -116,7 +116,7 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		case "support":
 			printSupportUsage(os.Stderr)
 		case "support-bundle":
-			printSupportBundleUsage(os.Stderr)
+			printSupportBundleUsage(os.Stderr, "cove support-bundle")
 		case "provision", "inject":
 			fs, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ := newInjectFlagSet()
 			fs.Usage()
@@ -271,12 +271,12 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			return true, usageExitCode(subargs)
 		}
 		if len(subargs) > 1 && subargs[0] == "bundle" && isHelpArg(subargs[1]) {
-			printSupportBundleUsage(os.Stderr)
+			printSupportBundleUsage(os.Stderr, "cove support bundle")
 			return true, 0
 		}
 	case "support-bundle":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			printSupportBundleUsage(os.Stderr)
+			printSupportBundleUsage(os.Stderr, "cove support-bundle")
 			return true, 0
 		}
 	case "commands":

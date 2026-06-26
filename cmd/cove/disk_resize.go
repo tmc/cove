@@ -36,6 +36,10 @@ primary disks, the live ctl path also expands the guest APFS container.`)
 func handleDiskCommand(env commandEnv, args []string) error {
 	switch args[0] {
 	case "resize":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			printDiskResizeUsage(env.Stdout)
+			return nil
+		}
 		if err := denyAppleAppSandboxHostAccess("disk resize"); err != nil {
 			return err
 		}
@@ -47,6 +51,13 @@ func handleDiskCommand(env commandEnv, args []string) error {
 	default:
 		return fmt.Errorf("unknown disk command: %s", args[0])
 	}
+}
+
+func printDiskResizeUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove disk resize <vm> <size>
+
+Resize a stopped VM disk image. Use cove ctl -vm <vm> disk resize 0 <size>
+for running VMs.`)
 }
 
 func parseDiskResizeArgs(args []string) (string, string, error) {

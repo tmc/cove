@@ -126,6 +126,14 @@ func imageHistoryLayers(ref imagestore.Ref) ([]ImageHistoryLayer, error) {
 func runImageHistory(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("image history", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), `Usage: cove image history <ref> [-json]
+
+Show layer and provenance lineage for a local image.
+
+Flags:`)
+		fs.PrintDefaults()
+	}
 	asJSON := fs.Bool("json", false, "emit machine-readable JSON")
 	if err := parseFlagsOrHelp(fs, args); err != nil {
 		if errors.Is(err, errFlagHelp) {

@@ -1838,9 +1838,17 @@ func handleVMCommand(args []string) {
 	case "delete":
 		delFS := flag.NewFlagSet("vm delete", flag.ContinueOnError)
 		delFS.SetOutput(os.Stderr)
+		delFS.Usage = func() {
+			fmt.Fprintln(delFS.Output(), `Usage: cove vm delete [--cascade] <name>
+
+Delete a VM directory. With --cascade, recursively delete fork descendants too.
+
+Flags:`)
+			delFS.PrintDefaults()
+		}
 		delCascade := delFS.Bool("cascade", false, "recursively delete fork descendants too")
-		if err := delFS.Parse(subargs); err != nil {
-			if errors.Is(err, flag.ErrHelp) {
+		if err := parseFlagsOrHelp(delFS, subargs); err != nil {
+			if errors.Is(err, errFlagHelp) {
 				return
 			}
 			os.Exit(2)
@@ -1955,7 +1963,7 @@ func handleSnapshotCommand(env commandEnv, args []string) error {
 		return nil
 	case "list":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			printSnapshotUsage(env.Stdout)
+			printSnapshotListUsage(env.Stdout)
 			return nil
 		}
 		snapshots, err := mgr.List()
@@ -1978,7 +1986,7 @@ func handleSnapshotCommand(env commandEnv, args []string) error {
 
 	case "delete":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			printSnapshotUsage(env.Stdout)
+			printSnapshotDeleteUsage(env.Stdout)
 			return nil
 		}
 		if len(subargs) < 1 {
@@ -1998,7 +2006,7 @@ func handleSnapshotCommand(env commandEnv, args []string) error {
 
 	case "save", "restore":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			printSnapshotUsage(env.Stdout)
+			printSnapshotSaveRestoreUsage(env.Stdout, subcmd)
 			return nil
 		}
 		if len(subargs) < 1 {
@@ -2012,6 +2020,27 @@ func handleSnapshotCommand(env commandEnv, args []string) error {
 	default:
 		return fmt.Errorf("unknown snapshot command: %s\nRun 'cove -help' for usage", subcmd)
 	}
+}
+
+func printSnapshotSaveRestoreUsage(w io.Writer, subcmd string) {
+	fmt.Fprintf(w, "Usage: cove snapshot %s <name>\n\n", subcmd)
+	if subcmd == "save" {
+		fmt.Fprintln(w, "Save current VM state. The selected VM must be running.")
+		return
+	}
+	fmt.Fprintln(w, "Restore a snapshot into the running VM.")
+}
+
+func printSnapshotListUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove snapshot list
+
+List VM state snapshots for the selected VM.`)
+}
+
+func printSnapshotDeleteUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove snapshot delete <name>
+
+Delete a VM state snapshot.`)
 }
 
 // handleNetworkCommand handles the network subcommand

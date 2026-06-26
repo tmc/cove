@@ -25,6 +25,14 @@ var stdinIsTerminal = term.IsTerminal
 func runImagePush(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("image push", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), `Usage: cove image push <ref> <file|registry/ref:tag|-> [-gzip]
+
+Export a local image to a tarball, stdout, or an OCI registry.
+
+Flags:`)
+		fs.PrintDefaults()
+	}
 	gz := fs.Bool("gzip", false, "gzip-compress the tarball")
 	if err := parseFlagsOrHelp(fs, args); err != nil {
 		if errors.Is(err, errFlagHelp) {
@@ -73,6 +81,14 @@ func runImagePush(env commandEnv, args []string) error {
 func runImageLoad(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("image load", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), `Usage: cove image load <file|-> [-tag <name[:tag]>] [-force]
+
+Load a cove image tarball into the local image store.
+
+Flags:`)
+		fs.PrintDefaults()
+	}
 	tag := fs.String("tag", "", "override image ref on load (name[:tag])")
 	force := fs.Bool("force", false, "overwrite if image already exists")
 	if err := parseFlagsOrHelp(fs, args); err != nil {
@@ -111,6 +127,14 @@ func runImageLoad(env commandEnv, args []string) error {
 func runImagePull(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("image pull", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), `Usage: cove image pull <registry/ref:tag> [-tag <name[:tag]>] [-force]
+
+Pull a cove image from an OCI registry into the local image store.
+
+Flags:`)
+		fs.PrintDefaults()
+	}
 	tag := fs.String("tag", "", "override image ref on pull (name[:tag])")
 	force := fs.Bool("force", false, "overwrite if image already exists")
 	if err := parseFlagsOrHelp(fs, args); err != nil {

@@ -90,9 +90,13 @@ Commands:
 }
 
 func runSupportBundle(env commandEnv, args []string) error {
+	return runSupportBundleWithUsage(env, args, "cove support bundle")
+}
+
+func runSupportBundleWithUsage(env commandEnv, args []string, usageCommand string) error {
 	fs := flag.NewFlagSet("support bundle", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
-	fs.Usage = func() { printSupportBundleUsage(fs.Output()) }
+	fs.Usage = func() { printSupportBundleUsage(fs.Output(), usageCommand) }
 	vm := fs.String("vm", "", "VM name to include VM-specific diagnostics")
 	out := fs.String("out", "", "output .tar.gz path")
 	if err := parseFlagsOrHelp(fs, args); err != nil {
@@ -114,8 +118,8 @@ func runSupportBundle(env commandEnv, args []string) error {
 	return nil
 }
 
-func printSupportBundleUsage(w io.Writer) {
-	fmt.Fprintln(w, `Usage: cove support bundle [-vm NAME] [-out PATH]
+func printSupportBundleUsage(w io.Writer, command string) {
+	fmt.Fprintf(w, `Usage: %s [-vm NAME] [-out PATH]
 
 Create a redacted diagnostics archive for support.
 
@@ -125,7 +129,8 @@ VM-specific doctor/control diagnostics when -vm is set.
 
 Flags:
   -vm NAME    include diagnostics for a VM
-  -out PATH   output .tar.gz path`)
+  -out PATH   output .tar.gz path
+`, command)
 }
 
 func createSupportBundle(opts supportBundleOptions) (string, error) {

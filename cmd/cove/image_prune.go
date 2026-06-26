@@ -97,6 +97,14 @@ func imagePruneMatches(entry imagestore.Entry, opts ImagePruneOptions, now time.
 func runImagePrune(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("image prune", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), `Usage: cove image prune [-older-than duration] [-filter glob] [-force] [-dry-run]
+
+Remove local images by age or tag glob when they have no live forks.
+
+Flags:`)
+		fs.PrintDefaults()
+	}
 	olderThanText := fs.String("older-than", "7d", "delete images older than this duration")
 	filter := fs.String("filter", "", "delete images with tags matching this glob")
 	force := fs.Bool("force", false, "skip confirmation prompt")

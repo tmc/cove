@@ -139,7 +139,7 @@ func TestSupportBundleAliasHelp(t *testing.T) {
 	if !handled || code != 0 {
 		t.Fatalf("handleEarlyCLI(support-bundle -h) = %v, %d", handled, code)
 	}
-	for _, want := range []string{"Usage: cove support bundle", "-vm NAME", "-out PATH"} {
+	for _, want := range []string{"Usage: cove support-bundle", "-vm NAME", "-out PATH"} {
 		if !strings.Contains(stderr.String(), want) {
 			t.Fatalf("support-bundle help missing %q:\n%s", want, stderr.String())
 		}
