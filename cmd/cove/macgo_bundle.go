@@ -15,7 +15,6 @@ import (
 	"strings"
 
 	"github.com/tmc/cove/internal/assets"
-	"github.com/tmc/cove/internal/autosign"
 	"github.com/tmc/cove/internal/imagestore"
 	"github.com/tmc/cove/internal/vmconfig"
 	"github.com/tmc/macgo"
@@ -32,7 +31,7 @@ const (
 func initMacgo() {
 	inAppBundle := runningInAppBundle()
 	if !inAppBundle {
-		if err := autosign.EnsureEntitlements(); err != nil {
+		if err := ensureEntitlements(); err != nil {
 			fmt.Fprintf(os.Stderr, "autosign: %v\n", err)
 		}
 	}
