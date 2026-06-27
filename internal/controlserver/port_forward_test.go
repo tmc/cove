@@ -8,6 +8,7 @@ import (
 	"net"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Tests for readUDPFrame / writeUDPFrame error semantics. The key
@@ -217,14 +218,36 @@ func (errConnector) ConnectToGuestPort(uint32) (net.Conn, error) {
 }
 
 func TestPortForwardTotalAcceptedAccumulates(t *testing.T) {
-	pf := &PortForward{HostPort: 1234, GuestPort: 5678, connector: errConnector{}}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pf := &PortForward{HostPort: 1234, GuestPort: 5678, connector: errConnector{}, listener: ln}
 	if got := pf.TotalAccepted(); got != 0 {
 		t.Fatalf("initial TotalAccepted = %d, want 0", got)
 	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go pf.serve(ctx)
+
+	// Each accepted connection must be counted even though the connector always
+	// fails to reach the guest.
 	for i := 0; i < 3; i++ {
-		host, peer := net.Pipe()
-		_ = peer.Close()
-		pf.handleConn(context.Background(), host)
+		c, err := net.Dial("tcp", ln.Addr().String())
+		if err != nil {
+			t.Fatalf("dial %d: %v", i, err)
+		}
+		// The relay closes the host conn when the dial fails; wait for that so
+		// the accept is fully accounted before the next iteration.
+		c.SetReadDeadline(time.Now().Add(2 * time.Second))
+		c.Read(make([]byte, 1))
+		c.Close()
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for pf.TotalAccepted() < 3 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
 	}
 	if got := pf.TotalAccepted(); got != 3 {
 		t.Fatalf("TotalAccepted = %d, want 3", got)

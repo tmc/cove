@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/tmc/apple/x/guest/portfwd"
 )
 
 // HostVsockListener binds a host-side vsock listener on port.
@@ -303,19 +305,28 @@ func (m *PortForwardManager) StopAll() {
 }
 
 func (pf *PortForward) serve(ctx context.Context) {
-	for {
-		conn, err := pf.listener.Accept()
-		if err != nil {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				fmt.Printf("[port-forward] accept localhost:%d: %v\n", pf.HostPort, err)
-				return
+	portfwd.RelayTCP(ctx, portfwd.RelayConfig{
+		Listener: pf.listener,
+		Dial: func(ctx context.Context) (net.Conn, error) {
+			conn, err := pf.connector.ConnectToGuestPort(pf.GuestPort)
+			if err != nil {
+				fmt.Printf("[port-forward] vsock connect %d: %v\n", pf.GuestPort, err)
+				return nil, err
 			}
-		}
-		go pf.handleConn(ctx, conn)
-	}
+			if Verbose {
+				fmt.Printf("[port-forward] new conn -> vsock:%d\n", pf.GuestPort)
+			}
+			return conn, nil
+		},
+		OnConns: func(delta int) {
+			pf.mu.Lock()
+			pf.conns += delta
+			if delta > 0 {
+				pf.total++
+			}
+			pf.mu.Unlock()
+		},
+	})
 }
 
 type UDPForward struct {
@@ -496,46 +507,6 @@ func (rf *ReversePortForward) handleConn(ctx context.Context, guestConn net.Conn
 	io.Copy(guestConn, hostConn)
 	if d, ok := guestConn.(interface{ SetWriteDeadline(time.Time) error }); ok {
 		d.SetWriteDeadline(time.Now())
-	}
-	<-done
-}
-
-func (pf *PortForward) handleConn(ctx context.Context, hostConn net.Conn) {
-	defer hostConn.Close()
-
-	pf.mu.Lock()
-	pf.conns++
-	pf.total++
-	pf.mu.Unlock()
-	defer func() {
-		pf.mu.Lock()
-		pf.conns--
-		pf.mu.Unlock()
-	}()
-
-	vsockConn, err := pf.connector.ConnectToGuestPort(pf.GuestPort)
-	if err != nil {
-		fmt.Printf("[port-forward] vsock connect %d: %v\n", pf.GuestPort, err)
-		return
-	}
-	defer vsockConn.Close()
-
-	if Verbose {
-		fmt.Printf("[port-forward] new conn: %s -> vsock:%d\n", hostConn.RemoteAddr(), pf.GuestPort)
-	}
-
-	// Bidirectional relay with idle timeout.
-	done := make(chan struct{})
-	go func() {
-		io.Copy(vsockConn, hostConn)
-		if d, ok := vsockConn.(interface{ SetWriteDeadline(time.Time) error }); ok {
-			d.SetWriteDeadline(time.Now())
-		}
-		close(done)
-	}()
-	io.Copy(hostConn, vsockConn)
-	if tc, ok := hostConn.(*net.TCPConn); ok {
-		tc.CloseWrite()
 	}
 	<-done
 }
