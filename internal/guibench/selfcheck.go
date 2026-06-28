@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // SelfCheck verifies that a task's verifier recognizes its own gold solution
@@ -202,6 +203,78 @@ func SelfCheckCorpus(env SelfCheckEnv, tasks []*Task, seed uint64) ([]SelfCheckR
 		return results, fmt.Errorf("%d of %d task(s) failed the verifier self-check", failures, len(tasks))
 	}
 	return results, nil
+}
+
+// CalibrationSummary is the corpus-level verifier-calibration rollup published
+// in the citable report, the AndroidWorld "is the validator correct" discipline
+// applied corpus-wide: how many of the scored tasks have a verifier that scores
+// its own gold solution 1 and a no-op 0 (design 047 §9 slice 4). A task whose
+// verifier cannot tell a solved guest from an untouched one is miscalibrated and
+// its agent scores are meaningless; the summary makes that count visible next to
+// the rigor headline rather than leaving a reader to assume it. It is derived
+// purely from the per-task [SelfCheckResult]s, mirroring [RigorSummary].
+type CalibrationSummary struct {
+	// Tasks is the number of distinct tasks the summary covers.
+	Tasks int `json:"tasks"`
+	// Verified is how many tasks passed the self-check (gold solution scored 1,
+	// no-op scored 0). Failed is how many ran but were miscalibrated; Errored is
+	// how many could not complete the self-check (e.g. a fork or setup failure).
+	// They sum to Tasks.
+	Verified int `json:"verified"`
+	Failed   int `json:"failed"`
+	Errored  int `json:"errored"`
+	// Seed is the parameter seed the self-check ran under, recorded so the claim
+	// is reproducible.
+	Seed uint64 `json:"seed"`
+}
+
+// SummarizeCalibration rolls a set of per-task [SelfCheckResult]s into a
+// corpus-level [CalibrationSummary]. Duplicate task ids are counted once (the
+// last result for an id wins), so passing repeated results is safe. The seed is
+// taken from the results; mixed seeds keep the largest, which the caller should
+// avoid by self-checking the whole corpus under one seed.
+func SummarizeCalibration(results []SelfCheckResult) CalibrationSummary {
+	byTask := make(map[string]SelfCheckResult, len(results))
+	for _, r := range results {
+		byTask[r.TaskID] = r
+	}
+	var s CalibrationSummary
+	for _, r := range byTask {
+		s.Tasks++
+		if r.Seed > s.Seed {
+			s.Seed = r.Seed
+		}
+		switch {
+		case r.Err != nil:
+			s.Errored++
+		case r.OK:
+			s.Verified++
+		default:
+			s.Failed++
+		}
+	}
+	return s
+}
+
+// Headline renders the calibration summary as a one-line citable claim:
+// "N tasks verifier-calibrated" when all pass, otherwise the verified/failed/
+// errored breakdown so a reader sees exactly how trustworthy the corpus is.
+func (s CalibrationSummary) Headline() string {
+	if s.Tasks == 0 {
+		return "no tasks self-checked"
+	}
+	if s.Verified == s.Tasks {
+		return pluralTasks(s.Tasks, "tasks") +
+			": all verifier-calibrated (gold solution scores 1, no-op scores 0)"
+	}
+	parts := []string{fmt.Sprintf("%d/%d verifier-calibrated", s.Verified, s.Tasks)}
+	if s.Failed > 0 {
+		parts = append(parts, fmt.Sprintf("%d miscalibrated", s.Failed))
+	}
+	if s.Errored > 0 {
+		parts = append(parts, fmt.Sprintf("%d errored", s.Errored))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // errNoSolution reports a task that has no gold solution yet cannot succeed

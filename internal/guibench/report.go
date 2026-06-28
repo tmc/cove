@@ -16,6 +16,7 @@ func RenderMarkdown(w io.Writer, r *ScoreReport) error {
 	bw.printf("# macOS GUI-agent benchmark results\n\n")
 	renderProvenance(bw, r)
 	renderRigor(bw, r)
+	renderCalibration(bw, r)
 	renderOverall(bw, r)
 	renderDomains(bw, r)
 	renderTasks(bw, r)
@@ -47,6 +48,28 @@ func renderRigor(w *errWriter, r *ScoreReport) {
 	}
 	w.printf("| Flush cfprefsd before read | %s |\n", allOrSome(s.FlushesAllTasks, s.Tasks))
 	w.printf("| Checkpoint SQLite WAL before read | %d / %d |\n\n", s.WALCheckpointTasks, s.Tasks)
+}
+
+// renderCalibration writes the corpus-level verifier-calibration rollup (design
+// 047 §9 slice 4): the "is the validator correct" claim that underwrites every
+// agent number above it. A report aggregated without a self-check pass carries
+// no calibration and prints nothing.
+func renderCalibration(w *errWriter, r *ScoreReport) {
+	if r.Calibration == nil {
+		return
+	}
+	s := r.Calibration
+	w.printf("## Verifier calibration\n\n")
+	w.printf("%s.\n\n", s.Headline())
+	w.printf("| Property | Value |\n|---|---|\n")
+	w.printf("| Verifier-calibrated | %d / %d |\n", s.Verified, s.Tasks)
+	if s.Failed > 0 {
+		w.printf("| Miscalibrated | %d / %d |\n", s.Failed, s.Tasks)
+	}
+	if s.Errored > 0 {
+		w.printf("| Self-check errored | %d / %d |\n", s.Errored, s.Tasks)
+	}
+	w.printf("| Self-check seed | %d |\n\n", s.Seed)
 }
 
 // renderRigorColumns writes the per-task rigor matrix: one row per task carrying

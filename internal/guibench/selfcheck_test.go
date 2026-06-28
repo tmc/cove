@@ -178,3 +178,46 @@ func TestSelfCheckCorpus(t *testing.T) {
 		t.Fatalf("SelfCheckCorpus accepted a corpus with a broken verifier")
 	}
 }
+
+func TestSummarizeCalibration(t *testing.T) {
+	results := []SelfCheckResult{
+		{TaskID: "a", Seed: 7, Good: 1, NoOp: 0, OK: true},
+		{TaskID: "b", Seed: 7, Good: 1, NoOp: 1, OK: false}, // miscalibrated: no-op also scores 1
+		{TaskID: "c", Seed: 7, Err: errNoSolution},          // could not self-check
+		{TaskID: "a", Seed: 7, Good: 1, NoOp: 0, OK: true},  // duplicate id counted once
+	}
+	s := SummarizeCalibration(results)
+	if s.Tasks != 3 {
+		t.Errorf("Tasks = %d, want 3 (duplicate id collapsed)", s.Tasks)
+	}
+	if s.Verified != 1 || s.Failed != 1 || s.Errored != 1 {
+		t.Errorf("Verified/Failed/Errored = %d/%d/%d, want 1/1/1", s.Verified, s.Failed, s.Errored)
+	}
+	if s.Verified+s.Failed+s.Errored != s.Tasks {
+		t.Errorf("buckets %d+%d+%d do not sum to Tasks %d", s.Verified, s.Failed, s.Errored, s.Tasks)
+	}
+	if s.Seed != 7 {
+		t.Errorf("Seed = %d, want 7", s.Seed)
+	}
+	if got := s.Headline(); !strings.Contains(got, "1/3 verifier-calibrated") ||
+		!strings.Contains(got, "1 miscalibrated") || !strings.Contains(got, "1 errored") {
+		t.Errorf("Headline = %q, want the verified/miscalibrated/errored breakdown", got)
+	}
+}
+
+func TestCalibrationHeadlineAllVerified(t *testing.T) {
+	s := SummarizeCalibration([]SelfCheckResult{
+		{TaskID: "a", Seed: 3, OK: true},
+		{TaskID: "b", Seed: 3, OK: true},
+	})
+	got := s.Headline()
+	if !strings.Contains(got, "2 tasks: all verifier-calibrated") {
+		t.Errorf("all-verified Headline = %q, want clean N-tasks claim", got)
+	}
+	if strings.Contains(got, "miscalibrated") || strings.Contains(got, "errored") {
+		t.Errorf("all-verified Headline leaked a failure clause: %q", got)
+	}
+	if SummarizeCalibration(nil).Headline() != "no tasks self-checked" {
+		t.Errorf("empty Headline = %q", SummarizeCalibration(nil).Headline())
+	}
+}

@@ -36,6 +36,7 @@ func runBenchGUIRun(env commandEnv, args []string) error {
 	seed := fs.Uint64("seed", 1, "deterministic parameter-materialization seed")
 	host := fs.String("host", "", "host hardware description for provenance (default: auto-detected)")
 	checkpointDir := fs.String("checkpoint-dir", "", "persist per-task results here so a re-run resumes and skips completed tasks")
+	selfCheck := fs.Bool("self-check", false, "self-check every task's verifier (gold solution scores 1, no-op scores 0) and publish the calibration rollup in the report")
 	var taskIDs stringList
 	fs.Var(&taskIDs, "task-id", "restrict to this task id (repeatable); overrides -subset selection")
 	if err := parseFlagsOrHelp(fs, args); err != nil {
@@ -135,6 +136,27 @@ func runBenchGUIRun(env commandEnv, args []string) error {
 	if err != nil {
 		return fmt.Errorf("bench gui run: aggregate: %w", err)
 	}
+
+	// Self-check the verifiers under the same seed the scored run used and
+	// publish the calibration rollup, so the report carries the "is the validator
+	// correct" claim that underwrites every agent number above it (design 047 §9
+	// slice 4). A miscalibrated verifier fails the run: scores against a verifier
+	// that cannot tell a solved guest from an untouched one are meaningless.
+	if *selfCheck {
+		scBackend, err := liveBackend("none", imageTier, env.Stderr)
+		if err != nil {
+			return fmt.Errorf("bench gui run: self-check: %w", err)
+		}
+		fmt.Fprintf(env.Stdout, "self-checking %d verifier(s) at seed %d\n", len(tasks), *seed)
+		results, scErr := guibench.SelfCheckCorpus(guibench.BackendEnv(ctx, scBackend), tasks, *seed)
+		cal := guibench.SummarizeCalibration(results)
+		rep.Calibration = &cal
+		fmt.Fprintf(env.Stdout, "verifier calibration: %s\n", cal.Headline())
+		if scErr != nil {
+			return fmt.Errorf("bench gui run: self-check: %w", scErr)
+		}
+	}
+
 	return writeScoreReport(env, rep, *report)
 }
 

@@ -107,6 +107,12 @@ type ScoreReport struct {
 	// getters flush before read" claim, derived from the per-task rigor carried
 	// on the cells. Nil when no cell carried rigor.
 	Rigor *RigorSummary `json:"rigor,omitempty"`
+	// Calibration is the corpus-level verifier-calibration rollup (design 047 §9
+	// slice 4): how many scored tasks have a verifier that scores its own gold
+	// solution 1 and a no-op 0. It is the "is the validator correct" claim that
+	// underwrites every agent score in this report. Nil when the report was not
+	// accompanied by a self-check pass (e.g. scores aggregated without one).
+	Calibration *CalibrationSummary `json:"calibration,omitempty"`
 }
 
 // HumanBaseline is the human success-rate column reported alongside the agents
