@@ -192,6 +192,109 @@ func TestAccessibilityMatchRegistered(t *testing.T) {
 	}
 }
 
+// axStateFixture carries the design-048 ElementNode state flags and description:
+// a disabled, non-settable Save button and an enabled, settable text field.
+const axStateFixture = `<ax app="Editor">` +
+	`<node role="AXWindow" title="Editor" identifier="" value="" description="" enabled="true" settable="false">` +
+	`<node role="AXTextField" title="Name" identifier="" value="draft" description="document name" enabled="true" settable="true" />` +
+	`<node role="AXButton" title="Save" identifier="" value="" description="save the document" enabled="false" settable="false" />` +
+	`</node>` +
+	`</ax>`
+
+// TestAccessibilityMatchStateSelectors exercises the design-048 metric-side
+// selectors: enabled, settable, and description, plus the tri-state "flag
+// absent never matches" rule.
+func TestAccessibilityMatchStateSelectors(t *testing.T) {
+	tests := []struct {
+		name    string
+		result  string
+		options map[string]any
+		want    float64
+	}{
+		{
+			name:    "settable field exists",
+			result:  axStateFixture,
+			options: map[string]any{"role": "AXTextField", "settable": true},
+			want:    1,
+		},
+		{
+			name:    "disabled save button exists",
+			result:  axStateFixture,
+			options: map[string]any{"role": "AXButton", "enabled": false},
+			want:    1,
+		},
+		{
+			name:    "save button is not enabled (no match)",
+			result:  axStateFixture,
+			options: map[string]any{"role": "AXButton", "enabled": true},
+			want:    0,
+		},
+		{
+			name:    "non-settable button by settable=false",
+			result:  axStateFixture,
+			options: map[string]any{"title": "Save", "settable": false},
+			want:    1,
+		},
+		{
+			name:    "description selects the field, value matches",
+			result:  axStateFixture,
+			options: map[string]any{"description": "document name", "value": "draft"},
+			want:    1,
+		},
+		{
+			name:    "enabled+settable field, value check",
+			result:  axStateFixture,
+			options: map[string]any{"enabled": true, "settable": true, "value": "draft"},
+			want:    1,
+		},
+		{
+			name:    "flag absent never matches a non-nil constraint",
+			result:  axTreeFixture, // this fixture omits enabled/settable
+			options: map[string]any{"role": "AXButton", "enabled": true},
+			want:    0,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := metricAccessibilityMatch(tt.result, "", tt.options)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if math.Abs(got-tt.want) > 1e-9 {
+				t.Fatalf("score = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestAccessibilityMatchBadBoolOption rejects a non-bool enabled/settable.
+func TestAccessibilityMatchBadBoolOption(t *testing.T) {
+	if _, err := metricAccessibilityMatch(axStateFixture, "", map[string]any{"enabled": "yes"}); err == nil {
+		t.Fatal("want error for non-bool enabled option")
+	}
+}
+
+// TestParseAXTreeStateFields confirms the parser reads the design-048 superset
+// fields (description, enabled, settable) off the dump.
+func TestParseAXTreeStateFields(t *testing.T) {
+	nodes, err := parseAXTree(axStateFixture)
+	if err != nil {
+		t.Fatalf("parseAXTree: %v", err)
+	}
+	var field *axNode
+	for i := range nodes {
+		if nodes[i].Role == "AXTextField" {
+			field = &nodes[i]
+		}
+	}
+	if field == nil {
+		t.Fatal("AXTextField not parsed")
+	}
+	if field.Description != "document name" || field.Enabled != "true" || field.Settable != "true" {
+		t.Errorf("field state = desc=%q enabled=%q settable=%q", field.Description, field.Enabled, field.Settable)
+	}
+}
+
 func TestParseAXTree(t *testing.T) {
 	nodes, err := parseAXTree(axTreeFixture)
 	if err != nil {

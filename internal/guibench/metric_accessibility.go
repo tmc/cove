@@ -28,10 +28,19 @@ import (
 //	role        select nodes whose AX role equals this (e.g. "AXTextArea")
 //	title       select nodes whose AX title equals this
 //	identifier  select nodes whose AX subrole/identifier equals this
+//	description select nodes whose AX description equals this
+//	enabled     bool: select only nodes the dump reports as AXEnabled == this
+//	settable    bool: select only nodes the dump reports as AXSettable == this
 //	value, text the expected AXValue of a selected node (text is an alias)
 //	exact       bool: value/text must match exactly (default true); when false,
 //	            a normalized (case/whitespace) compare is used
 //	contains    bool: value/text match is substring containment (overrides exact)
+//
+// The enabled/settable selectors are the design-048 ElementNode state flags
+// surfaced metric-side (the in-guest snapshot RPC is a later slice): they let a
+// task assert logical state — that a control became enabled, or a field is
+// editable — without depending on screen geometry. A node whose dump omitted the
+// flag never matches a non-nil enabled/settable constraint.
 //
 // The score is in [0,1]; an error reports a malformed call (bad option type, or
 // a node selector against unparseable XML), never a low score (mirrors the
@@ -68,6 +77,18 @@ func metricAccessibilityMatch(result, expected string, options map[string]any) (
 	if err != nil {
 		return 0, fmt.Errorf("accessibility_match: %w", err)
 	}
+	description, err := stringOption(options, "description")
+	if err != nil {
+		return 0, fmt.Errorf("accessibility_match: %w", err)
+	}
+	enabled, err := optionalBoolOption(options, "enabled")
+	if err != nil {
+		return 0, fmt.Errorf("accessibility_match: %w", err)
+	}
+	settable, err := optionalBoolOption(options, "settable")
+	if err != nil {
+		return 0, fmt.Errorf("accessibility_match: %w", err)
+	}
 	want, err := stringOption(options, "value")
 	if err != nil {
 		return 0, fmt.Errorf("accessibility_match: %w", err)
@@ -93,8 +114,15 @@ func metricAccessibilityMatch(result, expected string, options map[string]any) (
 		return 0, fmt.Errorf("accessibility_match: %w", err)
 	}
 
-	hasSelector := role != "" || title != "" || identifier != ""
-	if !hasSelector {
+	sel := axSelector{
+		role:        role,
+		title:       title,
+		identifier:  identifier,
+		description: description,
+		enabled:     enabled,
+		settable:    settable,
+	}
+	if !sel.active() {
 		// Scalar mode: no node selector, so result is the attribute value itself.
 		return score(valueMatches(result, want, exact, contains)), nil
 	}
@@ -105,7 +133,7 @@ func metricAccessibilityMatch(result, expected string, options map[string]any) (
 	if err != nil {
 		return 0, fmt.Errorf("accessibility_match: %w", err)
 	}
-	matched := selectAXNodes(nodes, role, title, identifier)
+	matched := selectAXNodes(nodes, sel)
 	if len(matched) == 0 {
 		return 0, nil
 	}
@@ -135,13 +163,34 @@ func valueMatches(got, want string, exact, contains bool) bool {
 }
 
 // axNode is one UI element of the dumped AX tree (see axDumpScript). Children
-// are nested by containment; the metric flattens the tree before selecting.
+// are nested by containment; the metric flattens the tree before selecting. The
+// shape tracks the design-048 ElementNode superset: role/title/identifier/value
+// plus description and the enabled/settable state flags, which the selectors
+// query, and the geometry/index fields, which are parsed but reserved for the
+// in-guest AX snapshot (design 048) — the verifier asserts logical state, not
+// screen geometry, so no geometry selector exists yet.
 type axNode struct {
-	Role       string   `xml:"role,attr"`
-	Title      string   `xml:"title,attr"`
-	Identifier string   `xml:"identifier,attr"`
-	Value      string   `xml:"value,attr"`
-	Children   []axNode `xml:"node"`
+	Role        string `xml:"role,attr"`
+	Title       string `xml:"title,attr"`
+	Identifier  string `xml:"identifier,attr"`
+	Value       string `xml:"value,attr"`
+	Description string `xml:"description,attr"`
+	// Enabled and Settable are tri-state: "" (the dumper did not report the flag),
+	// "true", or "false". A selector on them matches only when the flag is present
+	// and equal, so a dump that omits the attribute never spuriously matches.
+	Enabled  string `xml:"enabled,attr"`
+	Settable string `xml:"settable,attr"`
+	// Geometry and index are parsed for the design-048 ElementNode shape but not
+	// exposed to the selector API: screen geometry is an action-space primitive
+	// (where to click), too fragile for outcome assertions, and index/parent are
+	// for the stateful get_app_state→index→act loop the in-guest snapshot enables.
+	X           int      `xml:"x,attr"`
+	Y           int      `xml:"y,attr"`
+	Width       int      `xml:"w,attr"`
+	Height      int      `xml:"h,attr"`
+	Index       int      `xml:"index,attr"`
+	ParentIndex int      `xml:"parent,attr"`
+	Children    []axNode `xml:"node"`
 }
 
 // axTree is the document root the getter emits (<ax app="…">…</ax>).
@@ -177,21 +226,66 @@ func parseAXTree(result string) ([]axNode, error) {
 // selectAXNodes returns the nodes matching every non-empty selector field. An
 // empty selector field matches any value, so passing only role selects on role
 // alone (OSWorld's selectors compose by AND; this composes the present keys).
-func selectAXNodes(nodes []axNode, role, title, identifier string) []axNode {
+// axSelector is the set of node-attribute constraints a selection ANDs together.
+// An empty string field (or nil bool) is "don't constrain on this attribute".
+type axSelector struct {
+	role        string
+	title       string
+	identifier  string
+	description string
+	// enabled and settable, when non-nil, require the node to report that flag
+	// present and equal. A node whose dump omitted the flag never matches a
+	// non-nil constraint, so a missing flag is treated as "unknown", not a match.
+	enabled  *bool
+	settable *bool
+}
+
+// active reports whether the selector constrains anything; a no-op selector
+// means scalar mode (no node selection).
+func (s axSelector) active() bool {
+	return s.role != "" || s.title != "" || s.identifier != "" ||
+		s.description != "" || s.enabled != nil || s.settable != nil
+}
+
+// selectAXNodes returns the flattened nodes matching every constraint in sel.
+func selectAXNodes(nodes []axNode, sel axSelector) []axNode {
 	var out []axNode
 	for _, n := range nodes {
-		if role != "" && n.Role != role {
+		if sel.role != "" && n.Role != sel.role {
 			continue
 		}
-		if title != "" && n.Title != title {
+		if sel.title != "" && n.Title != sel.title {
 			continue
 		}
-		if identifier != "" && n.Identifier != identifier {
+		if sel.identifier != "" && n.Identifier != sel.identifier {
+			continue
+		}
+		if sel.description != "" && n.Description != sel.description {
+			continue
+		}
+		if sel.enabled != nil && !flagEquals(n.Enabled, *sel.enabled) {
+			continue
+		}
+		if sel.settable != nil && !flagEquals(n.Settable, *sel.settable) {
 			continue
 		}
 		out = append(out, n)
 	}
 	return out
+}
+
+// flagEquals reports whether a tri-state AX flag ("", "true", "false") is present
+// and equals want. An absent flag ("") never matches, so a dump that did not
+// report the attribute does not spuriously satisfy an enabled/settable selector.
+func flagEquals(flag string, want bool) bool {
+	switch strings.ToLower(strings.TrimSpace(flag)) {
+	case "true", "1", "yes":
+		return want
+	case "false", "0", "no":
+		return !want
+	default:
+		return false
+	}
 }
 
 // stringOption reads a string option, returning "" when absent. A non-string

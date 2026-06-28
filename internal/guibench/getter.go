@@ -333,29 +333,37 @@ func axScript(app, element, attr string) string {
 
 // axDumpScript builds the JXA (JavaScript for Automation) program that walks
 // the front window's UI-element subtree of the named process via System Events
-// and prints it as the XML document the accessibility_match metric selects
-// over: a <node> per UI element carrying role, title, identifier (subrole), and
-// value attributes, nested by containment. Depth is capped so a deep view
-// hierarchy cannot run unbounded. The app name is JSON-quoted so it cannot
-// break out of the string literal.
+// and prints it as the XML document the accessibility_match metric selects over:
+// a <node> per UI element carrying role, title, identifier (subrole), value,
+// description, and the enabled/settable state flags, nested by containment. The
+// shape tracks the design-048 ElementNode superset; the flags let the metric
+// assert logical state ("the Save button is enabled", "the field is editable")
+// without screen geometry. Depth is capped so a deep view hierarchy cannot run
+// unbounded. The app name is JSON-quoted so it cannot break out of the literal.
 //
 // The emitted shape (one line per run, reformatted here) is:
 //
 //	<ax app="Notes">
-//	  <node role="AXWindow" title="Notes" identifier="" value="">
-//	    <node role="AXTextArea" title="" identifier="" value="Buy milk"/>
+//	  <node role="AXWindow" title="Notes" identifier="" value="" description="" enabled="true" settable="false">
+//	    <node role="AXTextArea" title="" identifier="" value="Buy milk" description="note body" enabled="true" settable="true"/>
 //	  </node>
 //	</ax>
+//
+// enabled/settable are emitted only when AXEnabled / AXSettable are readable; an
+// element that does not expose the attribute emits an empty string, which the
+// metric treats as "unknown" (never a spurious match) rather than false.
 func axDumpScript(app string) string {
 	// xmlEsc and a recursive walk live inside the JXA program so the whole dump
 	// is one osascript invocation (the §13 one-shot path, no guest-agent RPC).
 	return fmt.Sprintf(`
 function xmlEsc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
 function attr(e,name){try{return e[name]();}catch(x){return "";}}
+function flag(e,name){try{var v=e[name]();return v===true?"true":(v===false?"false":"");}catch(x){return "";}}
 function walk(e,depth){
   if(depth>20){return "";}
   var role=attr(e,"role"), title=attr(e,"title"), ident=attr(e,"subrole"), value=attr(e,"value");
-  var open='<node role="'+xmlEsc(role)+'" title="'+xmlEsc(title)+'" identifier="'+xmlEsc(ident)+'" value="'+xmlEsc(value)+'">';
+  var desc=attr(e,"description"), enabled=flag(e,"enabled"), settable=flag(e,"settable");
+  var open='<node role="'+xmlEsc(role)+'" title="'+xmlEsc(title)+'" identifier="'+xmlEsc(ident)+'" value="'+xmlEsc(value)+'" description="'+xmlEsc(desc)+'" enabled="'+xmlEsc(enabled)+'" settable="'+xmlEsc(settable)+'">';
   var kids="";
   var children;
   try{children=e.uiElements();}catch(x){children=[];}

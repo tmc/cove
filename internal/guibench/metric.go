@@ -167,3 +167,18 @@ func boolOption(options map[string]any, key string, def bool) (bool, error) {
 	}
 	return b, nil
 }
+
+// optionalBoolOption reads a bool option as a tri-state, returning nil when the
+// key is absent so a caller can tell "unset" from "false". A non-bool value is a
+// malformed call.
+func optionalBoolOption(options map[string]any, key string) (*bool, error) {
+	v, ok := options[key]
+	if !ok {
+		return nil, nil
+	}
+	b, ok := v.(bool)
+	if !ok {
+		return nil, fmt.Errorf("option %q: want bool, got %T", key, v)
+	}
+	return &b, nil
+}
