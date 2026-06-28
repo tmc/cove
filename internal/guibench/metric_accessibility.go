@@ -36,6 +36,25 @@ import (
 // The score is in [0,1]; an error reports a malformed call (bad option type, or
 // a node selector against unparseable XML), never a low score (mirrors the
 // Metric contract).
+//
+// Limitations (deliberate; prefer a disk-state getter when a task admits one):
+//
+//   - Flat selector, not a path language. role/title/identifier are matched by
+//     equality against any node in the flattened tree; there is no XPath/CSS
+//     path, no ancestor/descendant or sibling constraint, and no negation. A
+//     task that needs "the text field inside the Save sheet" cannot be expressed
+//     beyond what those three attributes happen to disambiguate.
+//   - OR over matches, so it cannot assert cardinality. When several nodes match
+//     the selector the value test passes if ANY of them matches (existence is
+//     "at least one"); the metric cannot assert "exactly one such node" or count.
+//   - The target is the live AX subtree of the front window only (see
+//     [axDumpScript]), so off-window or background state is invisible, and the
+//     tree's shape, attribute spelling, and localization can shift across macOS
+//     releases — a more brittle signal than a plist/SQLite read of the same fact.
+//   - It needs the Tier-C Accessibility grant (independent of Apple Events and
+//     Full Disk Access). A denial surfaces in the getter as a hard error, never
+//     as a low score, so a miswired grant fails the task rather than silently
+//     scoring 0 (design 047 §5).
 func metricAccessibilityMatch(result, expected string, options map[string]any) (float64, error) {
 	role, err := stringOption(options, "role")
 	if err != nil {
