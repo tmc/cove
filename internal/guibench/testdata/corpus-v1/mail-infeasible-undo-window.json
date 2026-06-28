@@ -1,0 +1,16 @@
+{
+  "id": "mail-infeasible-undo-window",
+  "image": "macos-base:v1",
+  "domain": "Mail",
+  "instruction": "In Mail, extend the Undo Send window to {SECS} seconds.",
+  "source": "cove-original (design 047 §7 infeasible); Mail's Undo Send delay caps at 30s with fixed options, so an arbitrary larger value is unsupported and the agent must answer FAIL.",
+  "complexity": 1,
+  "infeasible": true,
+  "schema": [
+    {"name": "SECS", "pool": ["60", "120", "300"]}
+  ],
+  "evaluator": {
+    "func": "infeasible",
+    "result": {"kind": "exec", "args": ["true"]}
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "id": "finder-move-to-subfolder",
+  "image": "macos-base:v1",
+  "domain": "Finder",
+  "instruction": "In Finder, move ~/inbox/{FILE} into ~/inbox/{DEST}/.",
+  "source": "cove-original (design 047 §5 Tier-A). Reads the moved file's new location via exec; no-op leaves it in place so the check scores 0.",
+  "complexity": 2,
+  "subset": ["held_out"],
+  "schema": [{"name": "FILE", "pool": ["a.txt", "b.txt", "c.txt"]}, {"name": "DEST", "pool": ["archive", "done", "keep"]}],
+  "config": [{"args": ["sh", "-c", "rm -rf \"$HOME/inbox\"; mkdir -p \"$HOME/inbox/{DEST}\"; : > \"$HOME/inbox/{FILE}\""]}],
+  "solution": [{"args": ["sh", "-c", "mv \"$HOME/inbox/{FILE}\" \"$HOME/inbox/{DEST}/{FILE}\""]}],
+  "evaluator": {"func": "exact_match", "result": {"kind": "exec", "args": ["sh", "-c", "test -f \"$HOME/inbox/{DEST}/{FILE}\" && echo yes || echo no"]}, "options": {"expected": "yes"}}
+}

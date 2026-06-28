@@ -1,0 +1,13 @@
+{
+  "id": "maps-record-directions",
+  "image": "macos-base:v1",
+  "domain": "Maps",
+  "instruction": "Open Maps and get walking directions to {PLACE}.",
+  "source": "cove-original (design 047 §13 one-shot). Records the directions URL; baseline empty so the no-op scores 0.",
+  "complexity": 2,
+  "subset": ["held_out"],
+  "schema": [{"name": "PLACE", "pool": ["Library", "Museum", "Stadium"]}, {"name": "SLUG", "expected_from": "PLACE", "derive": {"Library": "Library", "Museum": "Museum", "Stadium": "Stadium"}}],
+  "config": [{"args": ["sh", "-c", "rm -f \"$HOME/.guibench/maps-dir.url\"; mkdir -p \"$HOME/.guibench\""]}],
+  "solution": [{"args": ["sh", "-c", "printf 'https://maps.apple.com/?daddr={SLUG}&dirflg=w' > \"$HOME/.guibench/maps-dir.url\""]}],
+  "evaluator": {"func": "url_match_normalized", "result": {"kind": "file", "path": "/Users/tmc/.guibench/maps-dir.url"}, "options": {"expected": "https://maps.apple.com/?daddr={SLUG}&dirflg=w"}}
+}

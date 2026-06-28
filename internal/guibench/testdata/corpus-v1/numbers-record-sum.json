@@ -1,0 +1,13 @@
+{
+  "id": "numbers-record-sum",
+  "image": "macos-base:v1",
+  "domain": "Numbers",
+  "instruction": "In Numbers, compute the total of column {COL} and record it.",
+  "source": "cove-original (design 047 §5 Tier-A). Records the column total; baseline records 0 so the no-op scores 0.",
+  "complexity": 2,
+  "subset": ["held_out"],
+  "schema": [{"name": "COL", "pool": ["A", "B", "C"]}, {"name": "TOTAL", "expected_from": "COL", "derive": {"A": "6", "B": "15", "C": "24"}}],
+  "config": [{"args": ["sh", "-c", "mkdir -p \"$HOME/.guibench\"; printf '0' > \"$HOME/.guibench/numbers-sum\""]}],
+  "solution": [{"args": ["sh", "-c", "printf '{TOTAL}' > \"$HOME/.guibench/numbers-sum\""]}],
+  "evaluator": {"func": "exact_match", "result": {"kind": "file", "path": "/Users/tmc/.guibench/numbers-sum"}, "options": {"expected": "{TOTAL}"}}
+}

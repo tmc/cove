@@ -1,0 +1,13 @@
+{
+  "id": "settings-defaults-screenshot-format",
+  "image": "macos-base:v1",
+  "domain": "Settings",
+  "instruction": "Set the default screenshot image format to {FMT}.",
+  "source": "cove-original (design 047 §7 Tier-A defaults string com.apple.screencapture type).",
+  "complexity": 2,
+  "subset": ["held_out"],
+  "schema": [{"name": "FMT", "pool": ["png", "jpg", "pdf"]}, {"name": "BASELINE", "expected_from": "FMT", "derive": {"png": "tiff", "jpg": "tiff", "pdf": "tiff"}}],
+  "config": [{"args": ["sh", "-c", "defaults write com.apple.screencapture type -string {BASELINE}; killall cfprefsd 2>/dev/null || true"]}],
+  "solution": [{"args": ["sh", "-c", "defaults write com.apple.screencapture type -string {FMT}; killall cfprefsd 2>/dev/null || true"]}],
+  "evaluator": {"func": "plist_equals", "result": {"kind": "defaults", "domain": "com.apple.screencapture", "key": "type"}, "options": {"expected": "{FMT}"}}
+}

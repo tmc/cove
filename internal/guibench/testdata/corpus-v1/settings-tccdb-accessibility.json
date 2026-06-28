@@ -1,0 +1,30 @@
+{
+  "id": "settings-tccdb-accessibility",
+  "image": "macos-base:v1",
+  "domain": "Settings",
+  "instruction": "In System Settings under Privacy & Security > Accessibility, {STATE} the Accessibility permission for the app bundle {BUNDLE}.",
+  "source": "cove-original (design 047 §5 Tier-B TCC; §7 WAL checkpoint). Reads the canonical grant store TCC.db, the signature Tier-B getter; the getter checkpoints the WAL so a just-toggled grant is not read stale. Self-check baseline grants the opposite auth_value, so a no-op scores 0.",
+  "complexity": 3,
+  "subset": ["held_out"],
+  "schema": [
+    {"name": "BUNDLE", "pool": ["com.example.helper", "com.example.clicker", "com.example.macro"]},
+    {"name": "STATE", "pool": ["allow", "deny"]},
+    {"name": "WANT", "expected_from": "STATE", "derive": {"allow": "2", "deny": "0"}},
+    {"name": "BASELINE", "expected_from": "STATE", "derive": {"allow": "0", "deny": "2"}}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "DB=\"$HOME/Library/Application Support/com.apple.TCC/TCC.db\"; mkdir -p \"$(dirname \"$DB\")\"; sqlite3 \"$DB\" 'CREATE TABLE IF NOT EXISTS access(service TEXT, client TEXT, auth_value INTEGER, PRIMARY KEY(service,client));'; sqlite3 \"$DB\" \"INSERT OR REPLACE INTO access(service,client,auth_value) VALUES('kTCCServiceAccessibility','{BUNDLE}',{BASELINE});\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "DB=\"$HOME/Library/Application Support/com.apple.TCC/TCC.db\"; sqlite3 \"$DB\" \"UPDATE access SET auth_value={WANT} WHERE service='kTCCServiceAccessibility' AND client='{BUNDLE}';\""]}
+  ],
+  "evaluator": {
+    "func": "exact_match",
+    "result": {
+      "kind": "tccdb",
+      "path": "/Users/tmc/Library/Application Support/com.apple.TCC/TCC.db",
+      "query": "SELECT auth_value FROM access WHERE service='kTCCServiceAccessibility' AND client='{BUNDLE}';"
+    },
+    "options": {"expected": "{WANT}"}
+  }
+}

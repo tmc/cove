@@ -1,0 +1,18 @@
+{
+  "id": "preview-export-format-a",
+  "image": "macos-base:v1",
+  "domain": "Preview",
+  "instruction": "Using Preview, export ~/img/{SRC} to the {FMT} format as ~/img/out.{FMT}.",
+  "source": "cove-original (design 047 §5 Tier-A). Reads output file existence via exec; baseline removes any prior output so the no-op scores 0.",
+  "complexity": 2,
+  "schema": [
+    {"name": "SRC", "pool": ["a.png", "b.png"]},
+    {"name": "FMT", "pool": ["jpg", "tiff"]}
+  ],
+  "config": [{"args": ["sh", "-c", "rm -rf \"$HOME/img\"; mkdir -p \"$HOME/img\"; printf 'PNG' > \"$HOME/img/{SRC}\"; rm -f \"$HOME/img/out.{FMT}\""]}],
+  "solution": [{"args": ["sh", "-c", "cp \"$HOME/img/{SRC}\" \"$HOME/img/out.{FMT}\""]}],
+  "evaluator": {
+    "func": "file_exists",
+    "result": {"kind": "exec", "args": ["sh", "-c", "test -f \"$HOME/img/out.{FMT}\" && echo yes || echo no"]}
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "id": "maps-applescript-search",
+  "image": "macos-base:v1",
+  "domain": "Maps",
+  "instruction": "Open Maps and search for {PLACE}.",
+  "source": "cove-original (design 047 §13 one-shot AppleScript). Records the searched place by capturing the Maps URL scheme the search opens; the no-op records nothing so the URL check scores 0.",
+  "complexity": 2,
+  "schema": [
+    {"name": "PLACE", "pool": ["Golden Gate Bridge", "Central Park", "Space Needle", "Willis Tower"]},
+    {"name": "SLUG", "expected_from": "PLACE", "derive": {"Golden Gate Bridge": "Golden%20Gate%20Bridge", "Central Park": "Central%20Park", "Space Needle": "Space%20Needle", "Willis Tower": "Willis%20Tower"}}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "rm -f \"$HOME/.guibench/maps-search.url\"; mkdir -p \"$HOME/.guibench\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "mkdir -p \"$HOME/.guibench\"; printf 'https://maps.apple.com/?q={SLUG}' > \"$HOME/.guibench/maps-search.url\""]}
+  ],
+  "evaluator": {
+    "func": "url_match_normalized",
+    "result": {
+      "kind": "file",
+      "path": "/Users/tmc/.guibench/maps-search.url"
+    },
+    "options": {"expected": "https://maps.apple.com/?q={SLUG}"}
+  }
+}

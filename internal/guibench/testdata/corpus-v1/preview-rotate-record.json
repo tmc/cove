@@ -1,0 +1,13 @@
+{
+  "id": "preview-rotate-record",
+  "image": "macos-base:v1",
+  "domain": "Preview",
+  "instruction": "Using Preview, rotate ~/img/{SRC} by {DEG} degrees and save.",
+  "source": "cove-original (design 047 §5 Tier-A). Records the applied rotation; baseline records 0 so the no-op scores 0.",
+  "complexity": 2,
+  "subset": ["held_out"],
+  "schema": [{"name": "SRC", "pool": ["p.png", "q.png"]}, {"name": "DEG", "pool": ["90", "180", "270"]}],
+  "config": [{"args": ["sh", "-c", "mkdir -p \"$HOME/.guibench\"; printf '0' > \"$HOME/.guibench/preview-rot\""]}],
+  "solution": [{"args": ["sh", "-c", "printf '{DEG}' > \"$HOME/.guibench/preview-rot\""]}],
+  "evaluator": {"func": "exact_match", "result": {"kind": "file", "path": "/Users/tmc/.guibench/preview-rot"}, "options": {"expected": "{DEG}"}}
+}

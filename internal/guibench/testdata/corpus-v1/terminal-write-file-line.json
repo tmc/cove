@@ -1,0 +1,20 @@
+{
+  "id": "terminal-write-file-line",
+  "image": "macos-base:v1",
+  "domain": "Terminal",
+  "instruction": "Using Terminal, write the line {LINE} into ~/notes/{FILE}.",
+  "source": "cove-original (design 047 §5 Tier-A). Reads the file's content via exec cat; baseline writes a different line so the no-op scores 0.",
+  "complexity": 1,
+  "schema": [
+    {"name": "FILE", "pool": ["a.txt", "b.txt", "c.txt"]},
+    {"name": "LINE", "pool": ["hello world", "done today", "ship it"]},
+    {"name": "BASELINE", "expected_from": "LINE", "derive": {"hello world": "placeholder", "done today": "placeholder", "ship it": "placeholder"}}
+  ],
+  "config": [{"args": ["sh", "-c", "mkdir -p \"$HOME/notes\"; printf '{BASELINE}\\n' > \"$HOME/notes/{FILE}\""]}],
+  "solution": [{"args": ["sh", "-c", "printf '{LINE}\\n' > \"$HOME/notes/{FILE}\""]}],
+  "evaluator": {
+    "func": "exact_match",
+    "result": {"kind": "exec", "args": ["sh", "-c", "head -1 \"$HOME/notes/{FILE}\""]},
+    "options": {"expected": "{LINE}"}
+  }
+}

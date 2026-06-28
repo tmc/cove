@@ -1,0 +1,20 @@
+{
+  "id": "terminal-count-matching-files",
+  "image": "macos-base:v1",
+  "domain": "Terminal",
+  "instruction": "Using Terminal, count how many files with extension .{EXT} are in ~/scan and write the count to ~/scan/count.txt.",
+  "source": "cove-original (design 047 §5 Tier-A). Multi-step shell task; baseline seeds a known number of files so the answer is deterministic and the no-op (empty count) scores 0.",
+  "complexity": 3,
+  "subset": ["held_out"],
+  "schema": [
+    {"name": "EXT", "pool": ["log", "tmp", "csv"]},
+    {"name": "COUNT", "expected_from": "EXT", "derive": {"log": "3", "tmp": "3", "csv": "3"}}
+  ],
+  "config": [{"args": ["sh", "-c", "rm -rf \"$HOME/scan\"; mkdir -p \"$HOME/scan\"; for i in 1 2 3; do : > \"$HOME/scan/f$i.{EXT}\"; done; : > \"$HOME/scan/other.dat\""]}],
+  "solution": [{"args": ["sh", "-c", "ls \"$HOME/scan\"/*.{EXT} 2>/dev/null | wc -l | tr -d ' ' > \"$HOME/scan/count.txt\""]}],
+  "evaluator": {
+    "func": "exact_match",
+    "result": {"kind": "exec", "args": ["sh", "-c", "cat \"$HOME/scan/count.txt\" 2>/dev/null | tr -d ' \\n'"]},
+    "options": {"expected": "{COUNT}"}
+  }
+}

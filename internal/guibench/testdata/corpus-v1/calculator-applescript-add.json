@@ -1,0 +1,24 @@
+{
+  "id": "calculator-applescript-add",
+  "image": "macos-base:v1",
+  "domain": "Calculator",
+  "instruction": "Open Calculator and compute {A} + {B}.",
+  "source": "cove-original (design 047 §5 Tier-C AX). Records the computed result; baseline records a wrong value so the no-op scores 0.",
+  "complexity": 2,
+  "schema": [
+    {"name": "A", "pool": ["12", "40", "7"]},
+    {"name": "B", "pool": ["30", "2", "8"]},
+    {"name": "SUM", "expected_from": "A", "derive": {"12": "42", "40": "42", "7": "15"}}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "mkdir -p \"$HOME/.guibench\"; printf '0' > \"$HOME/.guibench/calc-result\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "printf '{SUM}' > \"$HOME/.guibench/calc-result\""]}
+  ],
+  "evaluator": {
+    "func": "exact_match",
+    "result": {"kind": "file", "path": "/Users/tmc/.guibench/calc-result"},
+    "options": {"expected": "{SUM}"}
+  }
+}

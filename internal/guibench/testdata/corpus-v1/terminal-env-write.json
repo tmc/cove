@@ -1,0 +1,13 @@
+{
+  "id": "terminal-env-write",
+  "image": "macos-base:v1",
+  "domain": "Terminal",
+  "instruction": "Using Terminal, append the line export {VAR}={VAL} to ~/.guibench/profile.",
+  "source": "cove-original (design 047 §5 Tier-A). Reads the profile content via exec grep; baseline omits the line so the no-op scores 0.",
+  "complexity": 2,
+  "subset": ["held_out"],
+  "schema": [{"name": "VAR", "pool": ["EDITOR", "PAGER", "BROWSER"]}, {"name": "VAL", "pool": ["vim", "less", "safari"]}],
+  "config": [{"args": ["sh", "-c", "mkdir -p \"$HOME/.guibench\"; printf '# profile\\n' > \"$HOME/.guibench/profile\""]}],
+  "solution": [{"args": ["sh", "-c", "printf 'export {VAR}={VAL}\\n' >> \"$HOME/.guibench/profile\""]}],
+  "evaluator": {"func": "must_include", "result": {"kind": "exec", "args": ["sh", "-c", "cat \"$HOME/.guibench/profile\""]}, "options": {"expected": "export {VAR}={VAL}"}}
+}

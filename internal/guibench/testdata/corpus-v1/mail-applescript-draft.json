@@ -1,0 +1,12 @@
+{
+  "id": "mail-applescript-draft",
+  "image": "macos-base:v1",
+  "domain": "Mail",
+  "instruction": "Open Mail and create a draft message with the subject {SUBJECT}.",
+  "source": "cove-original (design 047 §5 Tier-C Apple Events). Reads draft subjects via AppleScript; no-op creates nothing so the check scores 0.",
+  "complexity": 3,
+  "schema": [{"name": "SUBJECT", "pool": ["Q3 report", "Welcome aboard", "Status update", "Follow up"]}],
+  "config": [{"args": ["sh", "-c", "osascript -e 'tell application \"Mail\" to activate' 2>/dev/null || true"]}],
+  "solution": [{"args": ["sh", "-c", "osascript -e 'tell application \"Mail\" to make new outgoing message with properties {subject:\"{SUBJECT}\", visible:true}' 2>/dev/null || true"]}],
+  "evaluator": {"func": "must_include", "result": {"kind": "applescript", "script": "tell application \"Mail\" to get subject of every outgoing message as string"}, "options": {"expected": "{SUBJECT}"}}
+}

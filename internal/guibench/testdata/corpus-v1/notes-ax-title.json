@@ -1,0 +1,22 @@
+{
+  "id": "notes-ax-title",
+  "image": "macos-base:v1",
+  "domain": "Notes",
+  "instruction": "Open Notes and create a note whose first line is {TITLE}.",
+  "source": "cove-original (design 047 §5 Tier-C Apple Events). Reads the note body via AppleScript; the no-op leaves no such note so the substring check scores 0.",
+  "complexity": 2,
+  "schema": [
+    {"name": "TITLE", "pool": ["Shopping", "Ideas", "Todo", "Journal"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Notes\" to activate' 2>/dev/null || true"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Notes\" to make new note with properties {body:\"{TITLE}\"}' 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "must_include",
+    "result": {"kind": "applescript", "script": "tell application \"Notes\" to get body of notes as string"},
+    "options": {"expected": "{TITLE}"}
+  }
+}

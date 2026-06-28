@@ -1,0 +1,21 @@
+{
+  "id": "contacts-sqlite-remove-integrity",
+  "image": "macos-base:v1",
+  "domain": "Contacts",
+  "instruction": "Delete the contact named {TARGET} from the address store, leaving every other contact untouched.",
+  "source": "cove-original (design 047 §5 before/after integrity, §7 WAL checkpoint). Tier-B sqlite read; runner checkpoints the WAL. AndroidWorld validate_rows_removal_integrity.",
+  "complexity": 4,
+  "subset": ["held_out"],
+  "schema": [
+    {"name": "STORE", "pool": ["ab.db", "people.db"]},
+    {"name": "TARGET", "pool": ["Bob Jones", "Carol Lee", "Dan Park", "Eve Stone"]}
+  ],
+  "config": [{"args": ["sh", "-c", "rm -rf \"$HOME/.guibench/contactsdb\"; mkdir -p \"$HOME/.guibench/contactsdb\" \"$HOME/.guibench\"; DB=\"$HOME/.guibench/contactsdb/{STORE}\"; sqlite3 \"$DB\" 'CREATE TABLE people(id INTEGER PRIMARY KEY, name TEXT);'; sqlite3 \"$DB\" \"INSERT INTO people(id,name) VALUES(1,'Anna Kim'),(2,'{TARGET}'),(3,'Zoe Ray');\"; sqlite3 \"$DB\" \"SELECT id||'|'||name FROM people ORDER BY id\" > \"$HOME/.guibench/{STORE}.before\""]}],
+  "solution": [{"args": ["sh", "-c", "sqlite3 \"$HOME/.guibench/contactsdb/{STORE}\" \"DELETE FROM people WHERE name='{TARGET}';\""]}],
+  "evaluator": {
+    "func": "rows_removed_integrity",
+    "result": {"kind": "sqlite", "path": "/Users/tmc/.guibench/contactsdb/{STORE}", "query": "SELECT id||'|'||name FROM people ORDER BY id;"},
+    "expected": {"kind": "file", "path": "/Users/tmc/.guibench/{STORE}.before"},
+    "options": {"target": "2|{TARGET}"}
+  }
+}

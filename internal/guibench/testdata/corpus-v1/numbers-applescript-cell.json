@@ -1,0 +1,28 @@
+{
+  "id": "numbers-applescript-cell",
+  "image": "macos-base:v1",
+  "domain": "Numbers",
+  "instruction": "In Numbers, set cell {CELL} of the active sheet's first table to the value {VALUE}.",
+  "source": "cove-original (design 047 §5 Tier-C Apple Events). Reads the cell value back via AppleScript; the baseline writes a different value so the no-op scores 0.",
+  "complexity": 3,
+  "subset": ["held_out"],
+  "schema": [
+    {"name": "CELL", "pool": ["A1", "B2", "C3"]},
+    {"name": "VALUE", "pool": ["42", "100", "7"]},
+    {"name": "BASELINE", "expected_from": "VALUE", "derive": {"42": "0", "100": "0", "7": "0"}}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Numbers\" to activate' -e 'tell application \"Numbers\" to if (count of documents) = 0 then make new document' -e 'tell application \"Numbers\" to tell front document to tell active sheet to tell table 1 to set value of cell \"{CELL}\" to {BASELINE}' 2>/dev/null || true"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Numbers\" to tell front document to tell active sheet to tell table 1 to set value of cell \"{CELL}\" to {VALUE}' 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "exact_match",
+    "result": {
+      "kind": "applescript",
+      "script": "tell application \"Numbers\" to tell front document to tell active sheet to tell table 1 to get value of cell \"{CELL}\" as string"
+    },
+    "options": {"expected": "{VALUE}"}
+  }
+}

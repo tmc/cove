@@ -1,0 +1,16 @@
+{
+  "id": "preview-infeasible-vector-trace",
+  "image": "macos-base:v1",
+  "domain": "Preview",
+  "instruction": "Using Preview, convert the raster image ~/img/{SRC} into an editable SVG vector by auto-tracing.",
+  "source": "cove-original (design 047 §7 infeasible); Preview has no raster-to-vector tracing feature, so the agent must answer FAIL.",
+  "complexity": 3,
+  "infeasible": true,
+  "schema": [
+    {"name": "SRC", "pool": ["photo.png", "scan.jpg", "logo.png"]}
+  ],
+  "evaluator": {
+    "func": "infeasible",
+    "result": {"kind": "exec", "args": ["true"]}
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "id": "contacts-applescript-add",
+  "image": "macos-base:v1",
+  "domain": "Contacts",
+  "instruction": "Open Contacts and add a new contact named {NAME}.",
+  "source": "cove-original (design 047 §5 Tier-C Apple Events). Reads contact names via AppleScript; the no-op adds no contact so the substring check scores 0.",
+  "complexity": 2,
+  "subset": ["held_out"],
+  "schema": [
+    {"name": "NAME", "pool": ["Ada Lovelace", "Alan Turing", "Grace Hopper", "Katherine Johnson"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Contacts\" to activate' 2>/dev/null || true"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Contacts\"' -e 'make new person with properties {first name:\"{NAME}\"}' -e 'save' -e 'end tell' 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "must_include",
+    "result": {"kind": "applescript", "script": "tell application \"Contacts\" to get name of every person as string"},
+    "options": {"expected": "{NAME}"}
+  }
+}

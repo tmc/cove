@@ -1,0 +1,13 @@
+{
+  "id": "reminders-record-due",
+  "image": "macos-base:v1",
+  "domain": "Reminders",
+  "instruction": "Open Reminders and add a reminder titled {ITEM}.",
+  "source": "cove-original (design 047 §5 Tier-C Apple Events). Reads reminder names via AppleScript; no-op adds nothing so the check scores 0.",
+  "complexity": 2,
+  "subset": ["held_out"],
+  "schema": [{"name": "ITEM", "pool": ["Water plants", "Feed cat", "Take meds", "Stretch"]}],
+  "config": [{"args": ["sh", "-c", "osascript -e 'tell application \"Reminders\" to activate' 2>/dev/null || true"]}],
+  "solution": [{"args": ["sh", "-c", "osascript -e 'tell application \"Reminders\" to tell list \"Reminders\" to make new reminder with properties {name:\"{ITEM}\"}' 2>/dev/null || true"]}],
+  "evaluator": {"func": "must_include", "result": {"kind": "applescript", "script": "tell application \"Reminders\" to get name of every reminder of list \"Reminders\" as string"}, "options": {"expected": "{ITEM}"}}
+}

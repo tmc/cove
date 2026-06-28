@@ -1,0 +1,22 @@
+{
+  "id": "calendar-applescript-event",
+  "image": "macos-base:v1",
+  "domain": "Calendar",
+  "instruction": "Open Calendar and create an event titled {TITLE} on today's date.",
+  "source": "cove-original (design 047 §5 Tier-C Apple Events). Reads event titles via AppleScript; the no-op creates no event so the substring check scores 0.",
+  "complexity": 3,
+  "schema": [
+    {"name": "TITLE", "pool": ["Standup", "1:1", "Lunch", "Review"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Calendar\" to activate' 2>/dev/null || true"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"Calendar\" to tell calendar 1 to make new event with properties {summary:\"{TITLE}\", start date:(current date), end date:(current date)}' 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "must_include",
+    "result": {"kind": "applescript", "script": "tell application \"Calendar\" to get summary of events of calendar 1 as string"},
+    "options": {"expected": "{TITLE}"}
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "id": "settings-defaults-finder-extensions",
+  "image": "macos-base:v1",
+  "domain": "Settings",
+  "instruction": "Set Finder to show all filename extensions {STATE}.",
+  "source": "cove-original (design 047 §7 Tier-A defaults boolean NSGlobalDomain AppleShowAllExtensions).",
+  "complexity": 1,
+  "subset": ["held_out"],
+  "schema": [{"name": "STATE", "pool": ["on", "off"]}, {"name": "EXPECTED", "expected_from": "STATE", "derive": {"on": "1", "off": "0"}}, {"name": "BASELINE", "expected_from": "STATE", "derive": {"on": "false", "off": "true"}}],
+  "config": [{"args": ["sh", "-c", "defaults write -g AppleShowAllExtensions -bool {BASELINE}; killall cfprefsd 2>/dev/null || true"]}],
+  "solution": [{"args": ["sh", "-c", "if [ {STATE} = on ]; then defaults write -g AppleShowAllExtensions -bool true; else defaults write -g AppleShowAllExtensions -bool false; fi; killall cfprefsd 2>/dev/null || true"]}],
+  "evaluator": {"func": "plist_equals", "result": {"kind": "defaults", "domain": "-g", "key": "AppleShowAllExtensions"}, "options": {"expected": "{EXPECTED}"}}
+}

@@ -1,0 +1,31 @@
+{
+  "id": "mail-sqlite-remove-integrity",
+  "image": "macos-base:v1",
+  "domain": "Mail",
+  "instruction": "Delete the message titled {TARGET} from your mailbox index, leaving every other message untouched.",
+  "source": "cove-original (design 047 §5 before/after integrity, §7 WAL checkpoint). Tier-B sqlite read of a mail-index store; the runner checkpoints the WAL before reading. AndroidWorld validate_rows_removal_integrity — deleting the target AND a collateral row scores 0.",
+  "complexity": 4,
+  "schema": [
+    {"name": "STORE", "pool": ["envelope.db", "index.db"]},
+    {"name": "TARGET", "pool": ["Receipt", "Newsletter", "Reminder", "Invitation"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "rm -rf \"$HOME/.guibench/maildb\"; mkdir -p \"$HOME/.guibench/maildb\" \"$HOME/.guibench\"; DB=\"$HOME/.guibench/maildb/{STORE}\"; sqlite3 \"$DB\" 'CREATE TABLE messages(id INTEGER PRIMARY KEY, subject TEXT);'; sqlite3 \"$DB\" \"INSERT INTO messages(id,subject) VALUES(1,'Welcome'),(2,'{TARGET}'),(3,'Standup');\"; sqlite3 \"$DB\" \"SELECT id||'|'||subject FROM messages ORDER BY id\" > \"$HOME/.guibench/{STORE}.before\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "sqlite3 \"$HOME/.guibench/maildb/{STORE}\" \"DELETE FROM messages WHERE subject='{TARGET}';\""]}
+  ],
+  "evaluator": {
+    "func": "rows_removed_integrity",
+    "result": {
+      "kind": "sqlite",
+      "path": "/Users/tmc/.guibench/maildb/{STORE}",
+      "query": "SELECT id||'|'||subject FROM messages ORDER BY id;"
+    },
+    "expected": {
+      "kind": "file",
+      "path": "/Users/tmc/.guibench/{STORE}.before"
+    },
+    "options": {"target": "2|{TARGET}"}
+  }
+}

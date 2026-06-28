@@ -30,14 +30,14 @@ func loadMergedCorpus(t *testing.T) []*Task {
 	return all
 }
 
-// TestCorpusDistribution gates the merged corpus shape. It always logs the full
-// distribution and the violations against [DefaultDistributionPolicy] — the M3
-// growth worklist (which domain/complexity/tier/split still needs tasks). It
-// fails only on REGRESSION below the current achievable floor, so the gate
-// protects the corpus's balance as it grows without blocking on the not-yet-met
-// >=116 headline target. Tighten currentFloor toward DefaultDistributionPolicy
-// as M3 lands tasks; flip the headline check from t.Log to a hard assert once
-// the corpus reaches it.
+// TestCorpusDistribution gates the merged corpus shape against the headline
+// [DefaultDistributionPolicy]: every domain >=2, the complexity spread, the
+// per-tier floors, >=10 infeasible, and a >=20% held-out split. The corpus
+// reached the >=116-task target that satisfies this policy, so the gate is a
+// hard assert — any change that unbalances the corpus (a domain regressing to a
+// singleton, the held-out share dropping below 20%, a tier falling under its
+// floor) fails CI with the precise shortfall. It always logs the full
+// distribution so a reader sees the corpus shape at a glance.
 func TestCorpusDistribution(t *testing.T) {
 	d := Analyze(loadMergedCorpus(t))
 	t.Logf("corpus: %d tasks, %d infeasible, %d held-out", d.Total, d.Infeasible, d.HeldOut)
@@ -45,25 +45,7 @@ func TestCorpusDistribution(t *testing.T) {
 	t.Logf("by complexity: %v", d.ByComplexity)
 	t.Logf("by domain:     %v", d.ByDomain)
 
-	// The headline target is not yet met; surface its remaining worklist without
-	// failing, so M3 has a precise to-do list every CI run.
-	if headline := d.CheckDistribution(DefaultDistributionPolicy()); len(headline) > 0 {
-		t.Logf("M3 growth worklist vs DefaultDistributionPolicy (%d items):\n  %s",
-			len(headline), strings.Join(headline, "\n  "))
-	} else {
-		t.Log("corpus meets DefaultDistributionPolicy; consider flipping the headline check to a hard assert")
-	}
-
-	// Regression guard: the corpus must not drop below the balance it already
-	// has. These floors are <= the current real distribution; raising them as M3
-	// adds tasks is how the gate ratchets toward the headline policy.
-	currentFloor := DistributionPolicy{
-		MinPerDomain:     1, // every domain present keeps at least one task
-		MinPerComplexity: map[int]int{1: 6, 2: 27, 3: 25, 4: 7},
-		MinPerTier:       map[string]int{"A": 38, "B": 3, "C": 24},
-		MinInfeasible:    4,
-	}
-	if v := d.CheckDistribution(currentFloor); len(v) > 0 {
-		t.Errorf("corpus regressed below its current distribution floor:\n  %s", strings.Join(v, "\n  "))
+	if v := d.CheckDistribution(DefaultDistributionPolicy()); len(v) > 0 {
+		t.Errorf("corpus does not meet DefaultDistributionPolicy:\n  %s", strings.Join(v, "\n  "))
 	}
 }

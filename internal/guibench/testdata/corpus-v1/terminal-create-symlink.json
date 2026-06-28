@@ -1,0 +1,20 @@
+{
+  "id": "terminal-create-symlink",
+  "image": "macos-base:v1",
+  "domain": "Terminal",
+  "instruction": "Using Terminal, create a symbolic link ~/links/{LINK} pointing at ~/links/{TARGET}.",
+  "source": "cove-original (design 047 §5 Tier-A). Reads the symlink's resolved target via readlink; baseline has no link so the no-op scores 0.",
+  "complexity": 2,
+  "subset": ["held_out"],
+  "schema": [
+    {"name": "TARGET", "pool": ["real.txt", "data.bin", "src.go"]},
+    {"name": "LINK", "pool": ["latest", "current", "head"]}
+  ],
+  "config": [{"args": ["sh", "-c", "rm -rf \"$HOME/links\"; mkdir -p \"$HOME/links\"; : > \"$HOME/links/{TARGET}\""]}],
+  "solution": [{"args": ["sh", "-c", "ln -s \"{TARGET}\" \"$HOME/links/{LINK}\""]}],
+  "evaluator": {
+    "func": "exact_match",
+    "result": {"kind": "exec", "args": ["sh", "-c", "readlink \"$HOME/links/{LINK}\" 2>/dev/null"]},
+    "options": {"expected": "{TARGET}"}
+  }
+}

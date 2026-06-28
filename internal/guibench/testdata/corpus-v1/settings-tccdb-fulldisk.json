@@ -1,0 +1,29 @@
+{
+  "id": "settings-tccdb-fulldisk",
+  "image": "macos-base:v1",
+  "domain": "Settings",
+  "instruction": "In System Settings under Privacy & Security > Full Disk Access, turn the Full Disk Access permission for {BUNDLE} {STATE}.",
+  "source": "cove-original (design 047 §5 Tier-B TCC). Verifies a Full Disk Access grant in TCC.db; the getter checkpoints the WAL so the just-written grant is settled. Baseline grants the opposite value so the no-op run scores 0.",
+  "complexity": 3,
+  "schema": [
+    {"name": "BUNDLE", "pool": ["com.example.backup", "com.example.indexer", "com.example.sync"]},
+    {"name": "STATE", "pool": ["on", "off"]},
+    {"name": "WANT", "expected_from": "STATE", "derive": {"on": "2", "off": "0"}},
+    {"name": "BASELINE", "expected_from": "STATE", "derive": {"on": "0", "off": "2"}}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "DB=\"$HOME/Library/Application Support/com.apple.TCC/TCC.db\"; mkdir -p \"$(dirname \"$DB\")\"; sqlite3 \"$DB\" 'CREATE TABLE IF NOT EXISTS access(service TEXT, client TEXT, auth_value INTEGER, PRIMARY KEY(service,client));'; sqlite3 \"$DB\" \"INSERT OR REPLACE INTO access(service,client,auth_value) VALUES('kTCCServiceSystemPolicyAllFiles','{BUNDLE}',{BASELINE});\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "DB=\"$HOME/Library/Application Support/com.apple.TCC/TCC.db\"; sqlite3 \"$DB\" \"UPDATE access SET auth_value={WANT} WHERE service='kTCCServiceSystemPolicyAllFiles' AND client='{BUNDLE}';\""]}
+  ],
+  "evaluator": {
+    "func": "exact_match",
+    "result": {
+      "kind": "tccdb",
+      "path": "/Users/tmc/Library/Application Support/com.apple.TCC/TCC.db",
+      "query": "SELECT auth_value FROM access WHERE service='kTCCServiceSystemPolicyAllFiles' AND client='{BUNDLE}';"
+    },
+    "options": {"expected": "{WANT}"}
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "id": "finder-create-tagged-file",
+  "image": "macos-base:v1",
+  "domain": "Finder",
+  "instruction": "In Finder, create the file ~/work/{NAME} containing the text {CONTENT}.",
+  "source": "cove-original (design 047 §5 Tier-A). Reads file content via exec; baseline absent so the no-op scores 0.",
+  "complexity": 1,
+  "subset": ["held_out"],
+  "schema": [{"name": "NAME", "pool": ["a.md", "b.md", "c.md"]}, {"name": "CONTENT", "pool": ["draft one", "draft two", "draft three"]}],
+  "config": [{"args": ["sh", "-c", "rm -rf \"$HOME/work\"; mkdir -p \"$HOME/work\""]}],
+  "solution": [{"args": ["sh", "-c", "printf '{CONTENT}' > \"$HOME/work/{NAME}\""]}],
+  "evaluator": {"func": "must_include", "result": {"kind": "exec", "args": ["sh", "-c", "cat \"$HOME/work/{NAME}\" 2>/dev/null"]}, "options": {"expected": "{CONTENT}"}}
+}

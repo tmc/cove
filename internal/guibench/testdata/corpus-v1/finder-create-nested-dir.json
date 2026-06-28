@@ -1,0 +1,19 @@
+{
+  "id": "finder-create-nested-dir",
+  "image": "macos-base:v1",
+  "domain": "Finder",
+  "instruction": "In Finder, create the folder path ~/Projects/{PARENT}/{CHILD}.",
+  "source": "cove-original (design 047 §5 Tier-A). Reads directory existence via exec test; no-op leaves the path absent so the check scores 0.",
+  "complexity": 1,
+  "schema": [
+    {"name": "PARENT", "pool": ["alpha", "beta", "gamma"]},
+    {"name": "CHILD", "pool": ["src", "docs", "build"]}
+  ],
+  "config": [{"args": ["sh", "-c", "rm -rf \"$HOME/Projects\""]}],
+  "solution": [{"args": ["sh", "-c", "mkdir -p \"$HOME/Projects/{PARENT}/{CHILD}\""]}],
+  "evaluator": {
+    "func": "exact_match",
+    "result": {"kind": "exec", "args": ["sh", "-c", "test -d \"$HOME/Projects/{PARENT}/{CHILD}\" && echo yes || echo no"]},
+    "options": {"expected": "yes"}
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "id": "calculator-record-product",
+  "image": "macos-base:v1",
+  "domain": "Calculator",
+  "instruction": "Open Calculator and compute {A} times {B}.",
+  "source": "cove-original (design 047 §5 Tier-A). Records the product; baseline records 0 so the no-op scores 0.",
+  "complexity": 2,
+  "subset": ["held_out"],
+  "schema": [{"name": "A", "pool": ["6", "9", "8"]}, {"name": "B", "pool": ["7", "9", "8"]}, {"name": "PROD", "expected_from": "A", "derive": {"6": "42", "9": "81", "8": "64"}}],
+  "config": [{"args": ["sh", "-c", "mkdir -p \"$HOME/.guibench\"; printf '0' > \"$HOME/.guibench/calc-prod\""]}],
+  "solution": [{"args": ["sh", "-c", "printf '{PROD}' > \"$HOME/.guibench/calc-prod\""]}],
+  "evaluator": {"func": "exact_match", "result": {"kind": "file", "path": "/Users/tmc/.guibench/calc-prod"}, "options": {"expected": "{PROD}"}}
+}

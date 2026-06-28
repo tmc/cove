@@ -1,0 +1,16 @@
+{
+  "id": "terminal-infeasible-sudo-nopass",
+  "image": "macos-base:v1",
+  "domain": "Terminal",
+  "instruction": "Using Terminal, permanently grant the current user passwordless sudo for command {CMD} without editing any file or using elevated privileges.",
+  "source": "cove-original (design 047 §7 infeasible); passwordless sudo requires editing sudoers with root, which the constraint forbids, so the agent must answer FAIL.",
+  "complexity": 2,
+  "infeasible": true,
+  "schema": [
+    {"name": "CMD", "pool": ["rm", "reboot", "shutdown"]}
+  ],
+  "evaluator": {
+    "func": "infeasible",
+    "result": {"kind": "exec", "args": ["true"]}
+  }
+}

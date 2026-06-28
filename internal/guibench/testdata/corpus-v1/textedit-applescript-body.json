@@ -1,0 +1,25 @@
+{
+  "id": "textedit-applescript-body",
+  "image": "macos-base:v1",
+  "domain": "TextEdit",
+  "instruction": "Open TextEdit and type the sentence {PHRASE} into a new document.",
+  "source": "cove-original (design 047 §5 Tier-C Apple Events). Reads the front TextEdit document's text via AppleScript; the no-op leaves an empty document so the substring check scores 0.",
+  "complexity": 2,
+  "schema": [
+    {"name": "PHRASE", "pool": ["The quick brown fox", "Meeting notes for Monday", "Remember to buy milk", "Project kickoff agenda"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"TextEdit\" to activate' -e 'tell application \"TextEdit\" to make new document' 2>/dev/null || true"]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "osascript -e 'tell application \"TextEdit\" to set text of front document to \"{PHRASE}\"' 2>/dev/null || true"]}
+  ],
+  "evaluator": {
+    "func": "must_include",
+    "result": {
+      "kind": "applescript",
+      "script": "tell application \"TextEdit\" to get text of front document"
+    },
+    "options": {"expected": "{PHRASE}"}
+  }
+}

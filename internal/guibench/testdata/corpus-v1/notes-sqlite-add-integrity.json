@@ -1,0 +1,32 @@
+{
+  "id": "notes-sqlite-add-integrity",
+  "image": "macos-base:v1",
+  "domain": "Notes",
+  "instruction": "Add a note titled {TARGET} to your notes store, without altering any existing note.",
+  "source": "cove-original (design 047 §5 before/after integrity, §7 WAL checkpoint). Tier-B sqlite read of a notes-style store; the runner checkpoints the WAL before reading. AndroidWorld validate_rows_addition_integrity ported to Notes — clearing the store and adding only the target scores 0.",
+  "complexity": 4,
+  "subset": ["held_out"],
+  "schema": [
+    {"name": "STORE", "pool": ["notes.db", "memos.db"]},
+    {"name": "TARGET", "pool": ["Grocery list", "Meeting agenda", "Trip ideas", "Reading list"]}
+  ],
+  "config": [
+    {"args": ["sh", "-c", "rm -rf \"$HOME/.guibench/notesdb\"; mkdir -p \"$HOME/.guibench/notesdb\" \"$HOME/.guibench\"; DB=\"$HOME/.guibench/notesdb/{STORE}\"; sqlite3 \"$DB\" 'CREATE TABLE notes(id INTEGER PRIMARY KEY, title TEXT);'; sqlite3 \"$DB\" \"INSERT INTO notes(id,title) VALUES(1,'Welcome'),(2,'Scratch');\"; sqlite3 \"$DB\" \"SELECT id||'|'||title FROM notes ORDER BY id\" > \"$HOME/.guibench/{STORE}.before\""]}
+  ],
+  "solution": [
+    {"args": ["sh", "-c", "sqlite3 \"$HOME/.guibench/notesdb/{STORE}\" \"INSERT INTO notes(id,title) VALUES(3,'{TARGET}');\""]}
+  ],
+  "evaluator": {
+    "func": "rows_added_integrity",
+    "result": {
+      "kind": "sqlite",
+      "path": "/Users/tmc/.guibench/notesdb/{STORE}",
+      "query": "SELECT id||'|'||title FROM notes ORDER BY id;"
+    },
+    "expected": {
+      "kind": "file",
+      "path": "/Users/tmc/.guibench/{STORE}.before"
+    },
+    "options": {"target": "3|{TARGET}"}
+  }
+}

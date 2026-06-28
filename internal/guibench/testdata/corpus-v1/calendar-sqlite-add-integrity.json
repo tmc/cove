@@ -1,0 +1,21 @@
+{
+  "id": "calendar-sqlite-add-integrity",
+  "image": "macos-base:v1",
+  "domain": "Calendar",
+  "instruction": "Add an event titled {TARGET} to the calendar store without changing any existing event.",
+  "source": "cove-original (design 047 §5 before/after integrity, §7 WAL checkpoint). Tier-B sqlite read; runner checkpoints the WAL. AndroidWorld validate_rows_addition_integrity.",
+  "complexity": 4,
+  "subset": ["held_out"],
+  "schema": [
+    {"name": "STORE", "pool": ["cal.db", "events.db"]},
+    {"name": "TARGET", "pool": ["Team sync", "Demo day", "Retro", "Planning"]}
+  ],
+  "config": [{"args": ["sh", "-c", "rm -rf \"$HOME/.guibench/caldb\"; mkdir -p \"$HOME/.guibench/caldb\" \"$HOME/.guibench\"; DB=\"$HOME/.guibench/caldb/{STORE}\"; sqlite3 \"$DB\" 'CREATE TABLE events(id INTEGER PRIMARY KEY, title TEXT);'; sqlite3 \"$DB\" \"INSERT INTO events(id,title) VALUES(1,'Holiday'),(2,'Payday');\"; sqlite3 \"$DB\" \"SELECT id||'|'||title FROM events ORDER BY id\" > \"$HOME/.guibench/{STORE}.before\""]}],
+  "solution": [{"args": ["sh", "-c", "sqlite3 \"$HOME/.guibench/caldb/{STORE}\" \"INSERT INTO events(id,title) VALUES(3,'{TARGET}');\""]}],
+  "evaluator": {
+    "func": "rows_added_integrity",
+    "result": {"kind": "sqlite", "path": "/Users/tmc/.guibench/caldb/{STORE}", "query": "SELECT id||'|'||title FROM events ORDER BY id;"},
+    "expected": {"kind": "file", "path": "/Users/tmc/.guibench/{STORE}.before"},
+    "options": {"target": "3|{TARGET}"}
+  }
+}

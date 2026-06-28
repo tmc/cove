@@ -1,0 +1,13 @@
+{
+  "id": "textedit-applescript-third",
+  "image": "macos-base:v1",
+  "domain": "TextEdit",
+  "instruction": "In TextEdit, set the front document body to {PHRASE}.",
+  "source": "cove-original (design 047 §5 Tier-C Apple Events). Reads document text; baseline placeholder so the no-op scores 0.",
+  "complexity": 2,
+  "subset": ["held_out"],
+  "schema": [{"name": "PHRASE", "pool": ["chapter one", "chapter two", "epilogue"]}, {"name": "BASELINE", "expected_from": "PHRASE", "derive": {"chapter one": "x", "chapter two": "x", "epilogue": "x"}}],
+  "config": [{"args": ["sh", "-c", "osascript -e 'tell application \"TextEdit\" to activate' -e 'tell application \"TextEdit\" to if (count of documents) = 0 then make new document' -e 'tell application \"TextEdit\" to set text of front document to \"{BASELINE}\"' 2>/dev/null || true"]}],
+  "solution": [{"args": ["sh", "-c", "osascript -e 'tell application \"TextEdit\" to set text of front document to \"{PHRASE}\"' 2>/dev/null || true"]}],
+  "evaluator": {"func": "exact_match", "result": {"kind": "applescript", "script": "tell application \"TextEdit\" to get text of front document"}, "options": {"expected": "{PHRASE}"}}
+}

@@ -1,0 +1,13 @@
+{
+  "id": "notes-applescript-second",
+  "image": "macos-base:v1",
+  "domain": "Notes",
+  "instruction": "Open Notes and create a note containing the text {BODY}.",
+  "source": "cove-original (design 047 §5 Tier-C Apple Events). Reads note bodies via AppleScript; no-op creates nothing so the substring check scores 0.",
+  "complexity": 3,
+  "subset": ["held_out"],
+  "schema": [{"name": "BODY", "pool": ["Buy milk and eggs", "Draft the proposal", "Plan the offsite", "Review the budget"]}],
+  "config": [{"args": ["sh", "-c", "osascript -e 'tell application \"Notes\" to activate' 2>/dev/null || true"]}],
+  "solution": [{"args": ["sh", "-c", "osascript -e 'tell application \"Notes\" to make new note with properties {body:\"{BODY}\"}' 2>/dev/null || true"]}],
+  "evaluator": {"func": "must_include", "result": {"kind": "applescript", "script": "tell application \"Notes\" to get body of notes as string"}, "options": {"expected": "{BODY}"}}
+}

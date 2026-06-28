@@ -1,0 +1,16 @@
+{
+  "id": "finder-infeasible-tag-color",
+  "image": "macos-base:v1",
+  "domain": "Finder",
+  "instruction": "In Finder, assign the custom tag color {COLOR} (a shade not in the macOS tag palette) to the Desktop folder.",
+  "source": "cove-original (design 047 §7 infeasible); macOS Finder tags use a fixed seven-color palette, so an arbitrary custom shade cannot be assigned and the agent must answer FAIL.",
+  "complexity": 2,
+  "infeasible": true,
+  "schema": [
+    {"name": "COLOR", "pool": ["chartreuse", "magenta", "turquoise"]}
+  ],
+  "evaluator": {
+    "func": "infeasible",
+    "result": {"kind": "exec", "args": ["true"]}
+  }
+}
