@@ -14,7 +14,7 @@ func TestTierBCGetters(t *testing.T) {
 	const (
 		mailDB    = "/Users/tmc/Library/Mail/V10/MailData/Envelope Index"
 		sqliteKey = "sqlite3 " + mailDB + " PRAGMA wal_checkpoint(FULL);\nSELECT subject FROM messages LIMIT 1;"
-		tccKey    = "sqlite3 /Library/Application Support/com.apple.TCC/TCC.db SELECT auth_value FROM access WHERE service='kTCCServiceAccessibility';"
+		tccKey    = "sqlite3 /Library/Application Support/com.apple.TCC/TCC.db PRAGMA wal_checkpoint(FULL);\nSELECT auth_value FROM access WHERE service='kTCCServiceAccessibility';"
 		asKey     = "osascript -e tell application \"Safari\" to return URL of current tab of front window"
 		jxaKey    = "osascript -l JavaScript -e Application('Safari').windows[0].currentTab.url()"
 		axKey     = "osascript -e tell application \"System Events\" to tell process \"Safari\" to get value of UI element \"Address\" of front window"
@@ -26,7 +26,7 @@ func TestTierBCGetters(t *testing.T) {
 			"cat /Users/tmc/Library/Preferences/com.apple.dock.plist": {ExitCode: 0, Stdout: "binary-ish\n"},
 			"cat /Users/tmc/Library/Denied":                           {ExitCode: 1, Stderr: "cat: Operation not permitted"},
 			sqliteKey:                                                 {ExitCode: 0, Stdout: "0|3|3\nHello Alice\n"},
-			tccKey:                                                    {ExitCode: 0, Stdout: "2\n"},
+			tccKey:                                                    {ExitCode: 0, Stdout: "0|1|1\n2\n"},
 			asKey:                                                     {ExitCode: 0, Stdout: "https://example.com/\n"},
 			jxaKey:                                                    {ExitCode: 0, Stdout: "https://example.com/\n"},
 			axKey:                                                     {ExitCode: 0, Stdout: "example.com\n"},
@@ -114,6 +114,33 @@ func TestSQLiteCheckpointFirst(t *testing.T) {
 	}
 	checkpoint := strings.Index(gotSQL, "wal_checkpoint")
 	query := strings.Index(gotSQL, "SELECT 1;")
+	if checkpoint < 0 || query < 0 {
+		t.Fatalf("SQL missing checkpoint or query: %q", gotSQL)
+	}
+	if checkpoint > query {
+		t.Fatalf("checkpoint must precede query, got SQL %q", gotSQL)
+	}
+}
+
+// TestTCCDBCheckpointFirst asserts the tccdb getter checkpoints the WAL before
+// the query, like the sqlite getter (design 047 §7). tccd holds TCC.db in WAL
+// mode, so a just-granted permission lives in -wal until a checkpoint; without
+// it a Tier-B grant read is a flush-staleness false negative.
+func TestTCCDBCheckpointFirst(t *testing.T) {
+	var gotSQL string
+	probe := execSpyProbe(func(args []string) (int, string, string, error) {
+		if len(args) == 3 && args[0] == "sqlite3" {
+			gotSQL = args[2]
+			return 0, "0|1|1\n2\n", "", nil
+		}
+		return 0, "", "", nil
+	})
+	spec := GetterSpec{Kind: "tccdb", Query: "SELECT auth_value FROM access;"}
+	if _, err := spec.Get(probe, nil); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	checkpoint := strings.Index(gotSQL, "wal_checkpoint")
+	query := strings.Index(gotSQL, "SELECT auth_value FROM access;")
 	if checkpoint < 0 || query < 0 {
 		t.Fatalf("SQL missing checkpoint or query: %q", gotSQL)
 	}

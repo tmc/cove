@@ -242,20 +242,26 @@ func getSQLite(p Probe, g GetterSpec, params map[string]string) (string, error) 
 
 // getTCCDB reads the system or user TCC database, the canonical store of grant
 // state (design 047 §5, Tier B). When Path is empty it defaults to the system
-// TCC db. The read itself needs Full Disk Access.
+// TCC db. The read itself needs Full Disk Access. Like getSQLite it checkpoints
+// the WAL before the query so the grant state reflects settled writes: tccd
+// keeps TCC.db in WAL mode, so a just-granted permission lives in -wal until a
+// checkpoint and would otherwise read stale (design 047 §7).
 func getTCCDB(p Probe, g GetterSpec, params map[string]string) (string, error) {
 	path := Materialize(g.Path, params)
 	if path == "" {
 		path = "/Library/Application Support/com.apple.TCC/TCC.db"
 	}
-	exit, stdout, stderr, err := p.Exec([]string{"sqlite3", path, Materialize(g.Query, params)}, nil, "")
+	// One sqlite3 invocation: checkpoint the WAL, then run the query, so the
+	// result reflects settled grant state.
+	sql := "PRAGMA wal_checkpoint(FULL);\n" + Materialize(g.Query, params)
+	exit, stdout, stderr, err := p.Exec([]string{"sqlite3", path, sql}, nil, "")
 	if err != nil {
 		return "", fmt.Errorf("tccdb getter: %w", err)
 	}
 	if exit != 0 {
 		return "", fmt.Errorf("tccdb getter: query %s exited %d (check FDA grant): %s", path, exit, strings.TrimSpace(stderr))
 	}
-	return strings.TrimRight(stdout, "\n"), nil
+	return dropCheckpointLine(strings.TrimRight(stdout, "\n")), nil
 }
 
 // getAppleScript runs a one-shot AppleScript (or JXA, when JXA is set) through
