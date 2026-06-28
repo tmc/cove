@@ -3,6 +3,8 @@ package password
 import (
 	"bytes"
 	"encoding/hex"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -301,5 +303,31 @@ func TestCreateLoginWindowPlist(t *testing.T) {
 	// Binary plist should start with "bplist"
 	if len(data) < 6 || string(data[:6]) != "bplist" {
 		t.Errorf("EncodeLoginWindowPlist did not produce binary plist")
+	}
+}
+
+func TestCreateHomeDirectoryStructure(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "testuser")
+	if err := os.MkdirAll(home, 0755); err != nil {
+		t.Fatalf("MkdirAll(home) error = %v", err)
+	}
+	if err := CreateHomeDirectoryStructure(home, os.Getuid(), os.Getgid()); err != nil {
+		t.Fatalf("CreateHomeDirectoryStructure() error = %v", err)
+	}
+	for _, name := range HomeDirectories {
+		info, err := os.Stat(filepath.Join(home, name))
+		if err != nil {
+			t.Fatalf("Stat(%s) error = %v", name, err)
+		}
+		if !info.IsDir() {
+			t.Fatalf("%s is not a directory", name)
+		}
+	}
+	got, err := os.ReadFile(filepath.Join(home, ".CFUserTextEncoding"))
+	if err != nil {
+		t.Fatalf("ReadFile(.CFUserTextEncoding) error = %v", err)
+	}
+	if string(got) != "0x0:0x0" {
+		t.Fatalf(".CFUserTextEncoding = %q, want 0x0:0x0", got)
 	}
 }
