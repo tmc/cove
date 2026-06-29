@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -54,6 +55,10 @@ func runWindowsQEMUDisplayWindow(ctx context.Context, vmDir, name string, refres
 		return err
 	}
 	defer os.Remove(windowsQEMUViewerPIDPath(vmDir))
+	if err := writeWindowsQEMUViewerInputMode(vmDir, qemuDisplayInputMode()); err != nil {
+		return err
+	}
+	defer os.Remove(windowsQEMUViewerInputModePath(vmDir))
 	status := readWindowsQEMUCTLStatus(vmDir)
 	if status.VNCEndpoint == "" {
 		return fmt.Errorf("qemu vnc is not enabled; restart with -vnc :5901")
@@ -127,7 +132,9 @@ func runWindowsQEMUDisplayWindow(ctx context.Context, vmDir, name string, refres
 		menuTarget = newQEMUDisplayMenuTarget(vmDir, &closed, &window)
 		setupQEMUDisplayMainMenu(menuTarget)
 		toolbarDelegate = setupQEMUDisplayToolbar(window, menuTarget)
-		eventMonitors = installQEMUDisplayGlobalMonitors(window, view.NSView, input)
+		if qemuDisplayLegacyMonitors() {
+			eventMonitors = installQEMUDisplayGlobalMonitors(window, view.NSView, input)
+		}
 		window.MakeKeyAndOrderFront(nil)
 		window.OrderFrontRegardless()
 		window.MakeKeyWindow()
@@ -214,6 +221,32 @@ func refreshQEMUDisplay(ctx context.Context, input *qemuDisplayInput, refresh ti
 
 func qemuDisplayDebug() bool {
 	return os.Getenv("COVE_QEMU_DISPLAY_DEBUG") != ""
+}
+
+// qemuDisplayLegacyMonitors reports whether the viewer should install global
+// NSEvent monitors for input instead of relying on ordinary AppKit first
+// responder delivery. The default viewer routes keyboard and pointer events
+// through the view's responder methods, which only fire while the Cove window
+// is key and the image view is first responder — native focus semantics. The
+// legacy global-monitor path predates the in-view tracking area, requires
+// Accessibility permission, and forwards events even when the window is not
+// focused; it remains available as an opt-in recovery path.
+func qemuDisplayLegacyMonitors() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("COVE_QEMU_LEGACY_MONITORS"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+// qemuDisplayInputMode names the input-delivery path the viewer uses, for
+// status reporting and support bundles.
+func qemuDisplayInputMode() string {
+	if qemuDisplayLegacyMonitors() {
+		return "global-monitor"
+	}
+	return "responder"
 }
 
 func imageContentRect(img image.Image) corefoundation.CGRect {
@@ -314,6 +347,29 @@ func newQEMUDisplayImageView(frame corefoundation.CGRect, client *rfb.Client, si
 				input.sendKey(appkit.NSEventFromID(event))
 			},
 		},
+		{
+			// updateTrackingAreas keeps a full-bounds tracking area so the
+			// view receives mouseMoved: through the ordinary responder chain
+			// while it is in the key window. Without it AppKit never delivers
+			// mouseMoved:, which is why earlier builds fell back to a global
+			// event monitor.
+			Cmd: objc.RegisterName("updateTrackingAreas"),
+			Fn: func(self objc.ID, _cmd objc.SEL) {
+				view := appkit.NSViewFromID(self)
+				for _, area := range view.TrackingAreas() {
+					view.RemoveTrackingArea(area)
+				}
+				area := appkit.NewTrackingAreaWithRectOptionsOwnerUserInfo(
+					view.Bounds(),
+					appkit.NSTrackingMouseMoved|
+						appkit.NSTrackingActiveInKeyWindow|
+						appkit.NSTrackingInVisibleRect,
+					objectivec.ObjectFromID(self),
+					nil,
+				)
+				view.AddTrackingArea(area)
+			},
+		},
 	}
 	cls, err := objc.RegisterClass(className, objc.GetClass("NSImageView"), nil, nil, methods)
 	if err != nil {
@@ -322,7 +378,9 @@ func newQEMUDisplayImageView(frame corefoundation.CGRect, client *rfb.Client, si
 	}
 	alloc := objc.Send[objc.ID](objc.ID(cls), objc.Sel("alloc"))
 	viewID := objc.Send[objc.ID](alloc, objc.Sel("initWithFrame:"), frame)
-	return appkit.NSImageViewFromID(viewID), input
+	view := appkit.NSImageViewFromID(viewID)
+	view.NSView.UpdateTrackingAreas()
+	return view, input
 }
 
 func (i *qemuDisplayInput) sendMouse(self objc.ID, event appkit.NSEvent, button uint8, down bool) {

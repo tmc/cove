@@ -234,6 +234,88 @@ func TestQEMUGUIDisplayModeReportsCoveViewer(t *testing.T) {
 	}
 }
 
+func TestQEMUDisplayInputMode(t *testing.T) {
+	t.Run("default is responder", func(t *testing.T) {
+		t.Setenv("COVE_QEMU_LEGACY_MONITORS", "")
+		if got := qemuDisplayInputMode(); got != "responder" {
+			t.Fatalf("qemuDisplayInputMode() = %q, want responder", got)
+		}
+	})
+	t.Run("legacy env selects global monitor", func(t *testing.T) {
+		t.Setenv("COVE_QEMU_LEGACY_MONITORS", "1")
+		if got := qemuDisplayInputMode(); got != "global-monitor" {
+			t.Fatalf("qemuDisplayInputMode() = %q, want global-monitor", got)
+		}
+	})
+}
+
+func TestWindowsQEMUViewerInputModeRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	if got := windowsQEMUViewerInputMode(dir); got != "responder" {
+		t.Fatalf("default input mode = %q, want responder", got)
+	}
+	if err := writeWindowsQEMUViewerInputMode(dir, "global-monitor"); err != nil {
+		t.Fatal(err)
+	}
+	if got := windowsQEMUViewerInputMode(dir); got != "global-monitor" {
+		t.Fatalf("input mode after write = %q, want global-monitor", got)
+	}
+}
+
+func TestReadWindowsQEMUCTLStatusReportsViewerInputMode(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "qemu"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "qemu", "metadata.json"), []byte(`{"vncURL":"vnc://127.0.0.1:5907","vncEndpoint":"127.0.0.1:5907"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeWindowsQEMUViewerPID(dir, os.Getpid()); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeWindowsQEMUViewerInputMode(dir, "responder"); err != nil {
+		t.Fatal(err)
+	}
+	status := readWindowsQEMUCTLStatus(dir)
+	if status.GUI != "qemu-vnc-cove" {
+		t.Fatalf("status.GUI = %q, want qemu-vnc-cove", status.GUI)
+	}
+	if status.DisplayInputMode != "responder" {
+		t.Fatalf("status.DisplayInputMode = %q, want responder", status.DisplayInputMode)
+	}
+}
+
+func TestWindowsQEMUViewerSettled(t *testing.T) {
+	t.Run("live process settles", func(t *testing.T) {
+		if !windowsQEMUViewerSettled(os.Getpid(), 100*time.Millisecond) {
+			t.Fatal("live process reported as not settled")
+		}
+	})
+	t.Run("dead process does not settle", func(t *testing.T) {
+		// A PID that is almost certainly not a live process.
+		if windowsQEMUViewerSettled(1<<30, 100*time.Millisecond) {
+			t.Fatal("dead process reported as settled")
+		}
+	})
+}
+
+func TestWindowsQEMUViewerLogTail(t *testing.T) {
+	dir := t.TempDir()
+	if got := windowsQEMUViewerLogTail(dir); got != "" {
+		t.Fatalf("log tail with no log = %q, want empty", got)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "qemu"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	log := "qemu-display: starting\nqemu-display: connect qemu display rfb: dial tcp: refused\n"
+	if err := os.WriteFile(filepath.Join(dir, "qemu", "viewer.log"), []byte(log), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if got := windowsQEMUViewerLogTail(dir); got != "qemu-display: connect qemu display rfb: dial tcp: refused" {
+		t.Fatalf("log tail = %q", got)
+	}
+}
+
 func TestQEMUGUIOpenMode(t *testing.T) {
 	t.Run("default uses Cove viewer with VNC endpoint", func(t *testing.T) {
 		t.Setenv("COVE_QEMU_GUI_VIEWER", "")

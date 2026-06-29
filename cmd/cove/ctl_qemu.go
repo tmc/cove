@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/jpeg"
@@ -31,6 +32,7 @@ type windowsQEMUCTLStatus struct {
 	VMDir             string     `json:"vmDir"`
 	MonitorSockPath   string     `json:"monitorSockPath"`
 	GUI               string     `json:"gui,omitempty"`
+	DisplayInputMode  string     `json:"displayInputMode,omitempty"`
 	ScreenshotBackend string     `json:"screenshotBackend,omitempty"`
 	TextBackend       string     `json:"textBackend,omitempty"`
 	VNCEndpoint       string     `json:"vncEndpoint,omitempty"`
@@ -585,6 +587,9 @@ func readWindowsQEMUCTLStatus(vmDir string) windowsQEMUCTLStatus {
 	status.AgentHealth = qemuAgentHealth(status.AgentEndpoint)
 	status.UserAgentHealth = qemuUserAgentHealth(status.UserAgentEndpoint)
 	status.GUI = qemuGUIDisplayMode(status)
+	if status.GUI == "qemu-vnc-cove" {
+		status.DisplayInputMode = windowsQEMUViewerInputMode(vmDir)
+	}
 	status.ScreenshotBackend = qemuResolvedBackend("COVE_QEMU_SCREENSHOT_BACKEND", status, "screendump")
 	status.TextBackend = qemuResolvedBackend("COVE_QEMU_TEXT_BACKEND", status, "sendkey")
 	status.VNCAuth = qemuVNCAuth(status)
@@ -600,6 +605,17 @@ func qemuGUIDisplayMode(status windowsQEMUCTLStatus) string {
 		return "qemu-vnc-external"
 	}
 	return "qemu-cocoa-or-headless"
+}
+
+func qemuDisplayInputModeDescription(mode string) string {
+	switch mode {
+	case "responder":
+		return "responder (native focus; input only while the Cove window is focused)"
+	case "global-monitor":
+		return "global-monitor (legacy; needs Accessibility permission, forwards while unfocused)"
+	default:
+		return mode
+	}
 }
 
 func qemuVNCAuth(status windowsQEMUCTLStatus) string {
@@ -729,6 +745,9 @@ func printWindowsQEMUGUIStatus(status windowsQEMUCTLStatus, raw bool) error {
 	fmt.Printf("state:   %s\n", status.State)
 	if status.VNCURL != "" {
 		fmt.Printf("gui:     %s\n", status.GUI)
+		if status.DisplayInputMode != "" {
+			fmt.Printf("input:   %s\n", qemuDisplayInputModeDescription(status.DisplayInputMode))
+		}
 		fmt.Printf("vncURL:  %s\n", status.VNCURL)
 		fmt.Printf("vncAuth: %s; Windows credentials below are for the guest login\n", status.VNCAuth)
 	} else {
@@ -853,18 +872,100 @@ func ctlWindowsQEMUOpenCoveViewer(vmDir string, status windowsQEMUCTLStatus) err
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start cove qemu display viewer: %w", err)
 	}
-	if err := writeWindowsQEMUViewerPID(vmDir, cmd.Process.Pid); err != nil {
+	pid := cmd.Process.Pid
+	if err := writeWindowsQEMUViewerPID(vmDir, pid); err != nil {
 		return err
 	}
 	if err := cmd.Process.Release(); err != nil {
 		return fmt.Errorf("release cove qemu display viewer: %w", err)
 	}
+	// The viewer connects RFB and opens its window after launch. Give it a
+	// brief grace period; if it exits early (for example the RFB client could
+	// not connect) point the user at the external VNC fallback rather than
+	// silently reporting success.
+	if !windowsQEMUViewerSettled(pid, qemuViewerStartGrace) {
+		_ = os.Remove(windowsQEMUViewerPIDPath(vmDir))
+		detail := windowsQEMUViewerLogTail(vmDir)
+		msg := fmt.Sprintf("cove qemu display viewer exited during startup; open the VNC fallback at %s instead", status.VNCURL)
+		if detail != "" {
+			msg += "\nviewer log: " + detail
+		}
+		return errors.New(msg)
+	}
 	fmt.Printf("opened Cove QEMU display viewer for %s\n", name)
 	return nil
 }
 
+// qemuViewerStartGrace is how long ctl waits for the Cove-owned viewer to
+// settle (connect RFB and open its window) before deciding it failed.
+const qemuViewerStartGrace = 750 * time.Millisecond
+
+// windowsQEMUViewerSettled reports whether the viewer process is still alive
+// after a short grace period. It polls so a fast-failing viewer is detected
+// promptly while a healthy one returns as soon as the period elapses.
+func windowsQEMUViewerSettled(pid int, grace time.Duration) bool {
+	deadline := time.Now().Add(grace)
+	for {
+		if syscall.Kill(pid, 0) != nil {
+			return false
+		}
+		if time.Now().After(deadline) {
+			return true
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// windowsQEMUViewerLogTail returns the last line of the viewer log, which is
+// where the detached viewer writes its startup error.
+func windowsQEMUViewerLogTail(vmDir string) string {
+	data, err := os.ReadFile(filepath.Join(vmDir, "qemu", "viewer.log"))
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if line := strings.TrimSpace(lines[i]); line != "" {
+			return line
+		}
+	}
+	return ""
+}
+
 func windowsQEMUViewerPIDPath(vmDir string) string {
 	return filepath.Join(vmDir, "qemu", "viewer.pid")
+}
+
+func windowsQEMUViewerInputModePath(vmDir string) string {
+	return filepath.Join(vmDir, "qemu", "viewer.input")
+}
+
+// writeWindowsQEMUViewerInputMode records how the running Cove-owned viewer
+// delivers input so status and support bundles can report it. It is written by
+// the viewer process when the window opens and removed when it closes.
+func writeWindowsQEMUViewerInputMode(vmDir, mode string) error {
+	if err := os.MkdirAll(filepath.Join(vmDir, "qemu"), 0755); err != nil {
+		return fmt.Errorf("create qemu metadata directory: %w", err)
+	}
+	path := windowsQEMUViewerInputModePath(vmDir)
+	if err := os.WriteFile(path, []byte(strings.TrimSpace(mode)+"\n"), 0644); err != nil {
+		return fmt.Errorf("write qemu display viewer input mode: %w", err)
+	}
+	return nil
+}
+
+// windowsQEMUViewerInputMode reads the running viewer's input-delivery mode.
+// It returns "responder" when no mode file exists, matching the default path.
+func windowsQEMUViewerInputMode(vmDir string) string {
+	data, err := os.ReadFile(windowsQEMUViewerInputModePath(vmDir))
+	if err != nil {
+		return "responder"
+	}
+	mode := strings.TrimSpace(string(data))
+	if mode == "" {
+		return "responder"
+	}
+	return mode
 }
 
 func writeWindowsQEMUViewerPID(vmDir string, pid int) error {
