@@ -7,6 +7,22 @@ running Windows QEMU guest with a display. It cannot run in headless CI (no
 AppKit window; focus-gated input needs an interactive session). This runbook is
 the exact command sequence; record PASS/FAIL per item.
 
+**Status (2026-07-02):** run live against `windows-qemu`; 8/11 pass, checks #3,
+#4, #7, #8, #9, #10 plus #1/#2 confirmed. Check #3 (repeated `open` focuses
+instead of duplicating) was fixed in commit `d649f398`. Checks #5 (frame
+persistence round-trip) and #6 (focus-gated input into the guest) still need
+interactive confirmation. See the results table in
+`docs/designs/044-qemu-display-window.md`.
+
+**Launching the viewer from a headless/SSH context:** the AppKit viewer must
+bind to the logged-in WindowServer session or its RFB connection EOFs before the
+window renders. From a normal GUI terminal `cove gui open` already inherits that
+session; from SSH/tooling, launch it into the console session:
+
+```sh
+launchctl asuser "$(stat -f '%u' /dev/console)" cove qemu-display -vm "$VM"
+```
+
 ## Prerequisites
 
 - A built, signed `cove` on `PATH` (see the build recipe below).

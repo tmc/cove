@@ -1,6 +1,7 @@
 # Design 044: QEMU Display Window
 
-Status: Implemented; live verification pending (see Verification Status).
+Status: Implemented; live-verified (8/11 checks) against a running Windows
+guest; 2 checks need interactive confirmation. See Verification Status.
 Date: 2026-05-21
 Updated: 2026-07-02
 
@@ -201,26 +202,34 @@ commit `c4a54078` moved to `cmd/cove/vz.entitlements`; and the `support-bundle`
 alias help printed `Usage: cove support-bundle` while the branch's test expected
 the canonical `Usage: cove support bundle`. Both are fixed.
 
-The Verification checklist above is a *live* check against a running Windows
-guest with a display. It has not yet been run end to end; it is the remaining
-gate and is the user's to execute (headless CI cannot open the AppKit window or
-confirm focus-gated input without an interactive session). A ready-to-run
-command-by-command runbook is at
-`docs/research/qemu-windows-044-verification-runbook.md`. Each item maps to a
-concrete command:
+The Verification checklist was run live on 2026-07-02 against the `windows-qemu`
+guest (Windows 11, booted to desktop under QEMU/HVF with `-vnc :5907`). The
+Cove-owned viewer was launched into the console Aqua session with
+`launchctl asuser <uid> cove qemu-display -vm windows-qemu`. Results:
 
-- window opens / focuses / closes-without-stopping-QEMU:
-  `cove gui -vm <name> open|status|close`;
-- `gui status` reports `gui: qemu-vnc-cove` and `input: responder`;
-- frame persistence: reposition, `close`, `open`, then `cove stop`/`up` and
-  reopen;
-- focus-gated keyboard/pointer land in the guest with **no** Accessibility grant
-  for `cove` (verify in System Settings → Privacy & Security → Accessibility);
-- `cove ctl -vm <name> screenshot` matches the visible desktop;
-- `cove support-bundle -vm <name>` omits screenshots yet records `gui` +
-  `displayInputMode` in `vm/qemu-status.json`;
-- `cove support-bundle -vm <name> -include-screenshot` marks pixels unredacted;
-- RFB-fail path: stop QEMU's VNC and confirm `gui open` names the fallback URL.
+| # | Check | Result |
+|---|-------|--------|
+| 1 | Cove-owned window opens | ✅ `gui open` starts the viewer; `viewer.pid` written, process alive |
+| 2 | `gui status` = `qemu-vnc-cove` + `input: responder` | ✅ both reported verbatim |
+| 3 | repeated `open` focuses, no duplicate | ✅ **after fix** — was spawning a 2nd viewer; now sends SIGUSR1, same pid / 1 process |
+| 4 | `close` closes viewer, QEMU keeps running | ✅ viewer gone, QEMU pid unchanged, agent still answers |
+| 5 | frame persists across close/open + restart | ◻︎ autosave artifact present (`window-display-…json`); interactive reposition round-trip is user-side |
+| 6 | focus-gated keyboard/pointer, no Accessibility grant | ◻︎ interactive — needs a human to confirm keystrokes land in Notepad |
+| 7 | `ctl screenshot` matches the visible desktop | ✅ captured the live Windows 11 desktop (800×600 PNG) |
+| 8 | support bundle omits screenshots, records gui + displayInputMode | ✅ `vm/qemu-status.json` has `gui` + `displayInputMode: responder` (viewer up); screenshots omitted by default |
+| 9 | `-include-screenshot` marks pixels unredacted | ✅ `vm/qemu-screenshot.png`, valid PNG, "explicitly requested" note |
+| 10 | RFB-fail path names the VNC fallback | ✅ when the viewer could not attach, `gui open` printed the fallback VNC URL |
+
+8/11 pass; #5 and #6 need interactive confirmation (window dragging / watching
+guest keystrokes) that a headless session cannot provide. Check #3 failed on
+first run and is now fixed. A ready-to-run command-by-command runbook is at
+`docs/research/qemu-windows-044-verification-runbook.md`.
+
+Note on launching the viewer: from a non-Aqua context (SSH/headless tooling) the
+AppKit viewer cannot bind to WindowServer and its RFB connection EOFs before the
+window renders; launch it through the logged-in session (`launchctl asuser`) so
+`NSApplication` attaches. `cove gui open` run from a normal GUI terminal already
+inherits that session.
 
 ## Display Modes (user-facing)
 
