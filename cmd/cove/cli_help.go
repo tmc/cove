@@ -297,7 +297,9 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		}
 	case "support-bundle":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			printSupportBundleUsage(os.Stderr, "cove support-bundle")
+			// support-bundle is an alias for `cove support bundle`; point users
+			// at the canonical command in its usage header.
+			printSupportBundleUsage(os.Stderr, "cove support bundle")
 			return true, 0
 		}
 	case "commands":
