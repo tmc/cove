@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"image"
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/tmc/apple/appkit"
@@ -143,6 +145,9 @@ func runWindowsQEMUDisplayWindow(ctx context.Context, vmDir, name string, refres
 		app.Unhide(nil)
 		activateQEMUDisplayApp(app)
 		objc.Send[objc.ID](window.ID, objc.Sel("retain"))
+		// Focus this window when a later `gui open` signals SIGUSR1 instead of
+		// spawning a duplicate viewer.
+		installQEMUDisplayFocusHandler(app, &window)
 		if qemuDisplayDebug() {
 			visible := objc.Send[bool](window.ID, objc.Sel("isVisible"))
 			fmt.Fprintf(os.Stderr, "qemu-display: window id=%#x visible=%v windows=%d ordered=%d frame=%dx%d\n",
@@ -195,6 +200,27 @@ func activateQEMUDisplayApp(app appkit.NSApplication) {
 	app.Activate()
 	running := appkit.NewRunningApplicationWithProcessIdentifier(int32(os.Getpid()))
 	running.ActivateWithOptions(appkit.NSApplicationActivateIgnoringOtherApps)
+}
+
+// installQEMUDisplayFocusHandler raises and focuses the viewer window whenever
+// the process receives SIGUSR1. `cove gui open` sends that signal to an
+// already-running viewer so a repeated open focuses the existing window rather
+// than launching a duplicate.
+func installQEMUDisplayFocusHandler(app appkit.NSApplication, window *appkit.NSWindow) {
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, syscall.SIGUSR1)
+	go func() {
+		for range ch {
+			runOnUIThreadSync(func() {
+				if window == nil || window.ID == 0 {
+					return
+				}
+				window.MakeKeyAndOrderFront(nil)
+				window.OrderFrontRegardless()
+				activateQEMUDisplayApp(app)
+			})
+		}
+	}()
 }
 
 func refreshQEMUDisplay(ctx context.Context, input *qemuDisplayInput, refresh time.Duration, update func(image.Image), errCh chan<- error) {

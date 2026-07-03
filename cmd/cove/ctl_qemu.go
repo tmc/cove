@@ -852,13 +852,22 @@ func ctlWindowsQEMUOpenCoveViewer(vmDir string, status windowsQEMUCTLStatus) err
 	if status.VNCEndpoint == "" {
 		return fmt.Errorf("qemu vnc is not enabled; restart with -vnc :5901")
 	}
-	exe, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("find cove executable: %w", err)
-	}
 	name := vmconfig.NameForPath(vmDir)
 	if name == "" {
 		return fmt.Errorf("qemu display viewer requires a VM name")
+	}
+	// If a Cove-owned viewer is already running, focus it instead of spawning a
+	// duplicate window (design 044: repeated `gui open` focuses the open window).
+	if pid, ok := windowsQEMUViewerPID(vmDir); ok && syscall.Kill(pid, 0) == nil {
+		if err := syscall.Kill(pid, syscall.SIGUSR1); err != nil {
+			return fmt.Errorf("focus cove qemu display viewer (pid %d): %w", pid, err)
+		}
+		fmt.Printf("focused Cove QEMU display viewer for %s\n", name)
+		return nil
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("find cove executable: %w", err)
 	}
 	cmd := exec.Command(exe, "qemu-display", "-vm", name)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
