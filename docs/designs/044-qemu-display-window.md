@@ -1,7 +1,8 @@
 # Design 044: QEMU Display Window
 
-Status: Draft.
+Status: Implemented; live verification pending (see Verification Status).
 Date: 2026-05-21
+Updated: 2026-07-02
 
 ## Problem
 
@@ -168,6 +169,76 @@ The feature is not complete until these pass:
 - `cove support-bundle -vm <name> -include-screenshot` includes a valid screen
   image and marks it unredacted;
 - if the RFB client cannot connect, `gui open` explains the fallback VNC URL.
+
+## Verification Status
+
+All slices are implemented and land in `cmd/cove` (`qemu_display.go`,
+`ctl_qemu.go`, `windows_qemu.go`) with the `internal/rfb` transport. The final
+input slice shipped in commit `10bc176a` (native focus via in-view
+`NSTrackingArea`; global `NSEvent` monitors demoted to the opt-in
+`COVE_QEMU_LEGACY_MONITORS` escape hatch; VNC fallback on viewer startup
+failure; `displayInputMode` recorded in status and support bundles).
+
+Build and automated gates pass via the local apple overlay (a `go.work`
+overlaying `github.com/tmc/apple` at `x-shared-extraction`, which carries the
+yet-unreleased `x/codesign` + `x/guest/portfwd`; no released apple tag through
+v0.6.14 has them, and `go.mod`/`go.sum` are not edited to work around it):
+
+- `go build ./cmd/cove/` — pass
+- `go vet ./cmd/cove/` — pass
+- `go test ./internal/rfb/ -count=1` — pass
+- `go test ./cmd/cove/ -count=1` — pass, except
+  `TestGoListModuleDirRejectsNonModuleDir`, which fails *only* because the
+  overlay `go.work` puts the cove module in scope so `go list -m` no longer
+  errors on an unrelated temp dir. Proven a recipe artifact (with `GOWORK=off`
+  the same `go list -m` exits 1 as the test expects); it passes in normal CI and
+  once a released apple version removes the overlay.
+
+Fixing the gate along the way surfaced two real, pre-existing breakages on the
+Windows branch (not from the input slice): the E2E/integration signing helpers
+and doc/error strings still pointed at `internal/autosign/vz.entitlements`, which
+commit `c4a54078` moved to `cmd/cove/vz.entitlements`; and the `support-bundle`
+alias help printed `Usage: cove support-bundle` while the branch's test expected
+the canonical `Usage: cove support bundle`. Both are fixed.
+
+The Verification checklist above is a *live* check against a running Windows
+guest with a display. It has not yet been run end to end; it is the remaining
+gate and is the user's to execute (headless CI cannot open the AppKit window or
+confirm focus-gated input without an interactive session). A ready-to-run
+command-by-command runbook is at
+`docs/research/qemu-windows-044-verification-runbook.md`. Each item maps to a
+concrete command:
+
+- window opens / focuses / closes-without-stopping-QEMU:
+  `cove gui -vm <name> open|status|close`;
+- `gui status` reports `gui: qemu-vnc-cove` and `input: responder`;
+- frame persistence: reposition, `close`, `open`, then `cove stop`/`up` and
+  reopen;
+- focus-gated keyboard/pointer land in the guest with **no** Accessibility grant
+  for `cove` (verify in System Settings → Privacy & Security → Accessibility);
+- `cove ctl -vm <name> screenshot` matches the visible desktop;
+- `cove support-bundle -vm <name>` omits screenshots yet records `gui` +
+  `displayInputMode` in `vm/qemu-status.json`;
+- `cove support-bundle -vm <name> -include-screenshot` marks pixels unredacted;
+- RFB-fail path: stop QEMU's VNC and confirm `gui open` names the fallback URL.
+
+## Display Modes (user-facing)
+
+Cove reports one of three display modes for a VM, visible in
+`cove gui -vm <name> status`:
+
+- **native VZ window** — Virtualization.framework VMs. Cove owns the window
+  fully.
+- **`qemu-vnc-cove`** — QEMU Windows with a Cove-owned AppKit window over the
+  guest's localhost VNC. Input uses native focus (`input: responder`): keyboard
+  and pointer reach the guest only while the Cove window is focused, and no
+  Accessibility permission is needed. `gui open`/`close`/`status` manage this
+  window; `close` leaves QEMU running. Set `COVE_QEMU_LEGACY_MONITORS=1` to fall
+  back to the legacy global-event-monitor input path (needs Accessibility,
+  forwards events while unfocused) only if native focus delivery misbehaves.
+- **`qemu-vnc-external`** / QEMU Cocoa — diagnostic fallback when the Cove-owned
+  viewer is unavailable or has exited. Cove opens the external VNC URL and
+  cannot close that window for you.
 
 ## Stop Condition
 

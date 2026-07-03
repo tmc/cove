@@ -94,24 +94,31 @@ Repository gates passed after the latest slices:
 
 ## Remaining Gap
 
-QEMU Windows has a default Cove-owned AppKit display window with live keyboard
-and pointer input, but it is not native-VZ-equivalent yet. The remaining gap is:
+Closed in code (2026-06-28, commit `10bc176a`). The Cove-owned AppKit viewer now
+delivers input through native AppKit focus:
 
-- native focus semantics without the global event-monitor fallback.
+- The dynamic NSImageView subclass installs a full-bounds `NSTrackingArea`
+  (`NSTrackingMouseMoved|NSTrackingActiveInKeyWindow|NSTrackingInVisibleRect`)
+  in `updateTrackingAreas`, so `mouseMoved:` reaches the view through the
+  ordinary responder chain. Keyboard and pointer events land in the guest only
+  while the Cove window is key — no Accessibility permission required.
+- The global `NSEvent` monitor path is now opt-in behind
+  `COVE_QEMU_LEGACY_MONITORS` (`1`/`true`/`yes`/`on`); it predates the tracking
+  area, needs Accessibility, and forwards events while unfocused. It remains as
+  a documented recovery escape hatch only.
+- `gui open` waits a startup grace and, if the detached viewer exits early,
+  points at the VNC fallback URL plus the last `viewer.log` line.
+- The active input path (`responder` or `global-monitor`) is written to
+  `qemu/viewer.input` and surfaced as `displayInputMode` in `gui status` and in
+  support-bundle `vm/qemu-status.json`.
 
-## Next Implementation Slice
-
-Continue the Cove-owned AppKit viewer:
-
-1. Replace the global event-monitor fallback with ordinary AppKit focus
-   delivery, or make the fallback an explicit documented behavior.
-2. Keep external VNC as fallback when the AppKit viewer fails.
-3. Extend support bundles to record whether the Cove-owned QEMU window was
-   active.
+The only thing standing between "improved" and "native-VZ-quality per design
+044" is the live Verification checklist (design 044 §Verification) run against a
+running Windows guest — see Stop Condition.
 
 ## Stop Condition
 
 The QEMU backend should not be called native-VZ-quality until a live Windows VM
 shows the Cove-owned QEMU window, `gui close` closes that window without
 stopping QEMU, and screenshot/OCR/input still pass against the same visible
-desktop.
+desktop. That live check is tracked as the design 044 Verification checklist.
