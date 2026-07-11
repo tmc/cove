@@ -58,8 +58,7 @@ func signDoctorE2EBinary(path string) error {
 	if !ok {
 		return errors.New("resolve test source path")
 	}
-	root := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
-	entitlements := filepath.Join(root, "internal", "autosign", "vz.entitlements")
+	entitlements := filepath.Join(filepath.Dir(file), "vz.entitlements")
 	cmd := exec.Command("codesign", "-s", "-", "-f", "--entitlements", entitlements, path)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return wrapBuildErr(err, out)
