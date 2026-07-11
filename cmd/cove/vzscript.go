@@ -1315,11 +1315,18 @@ func vzClickMenuItemCmd(cfg vzscriptConfig) script.Cmd {
 			}
 			client := NewControlClient(cfg.socketPath)
 			client.SetTimeout(timeout)
+			// Restore whatever backends the server had, not "auto":
+			// clobbering the previous mode leaves the VM stuck in the
+			// focus-stealing window backend for all later automation.
+			prevCapture, prevInput, err := client.GUIBackends()
+			if err != nil {
+				prevCapture, prevInput = "auto", "auto"
+			}
 			_ = client.SetGUICaptureBackend("window")
 			_ = client.SetGUIInputBackend("window")
 			defer func() {
-				_ = client.SetGUICaptureBackend("auto")
-				_ = client.SetGUIInputBackend("auto")
+				_ = client.SetGUICaptureBackend(prevCapture)
+				_ = client.SetGUIInputBackend(prevInput)
 			}()
 			ocr := ocrx.NewService(cfg.verbose)
 			return nil, clickMenuItemViaClient(client, ocr, menu, item, timeout)

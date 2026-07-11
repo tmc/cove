@@ -37,6 +37,42 @@ func TestNeedsWindowCapturePointMappingDisabledWhenCaptureZero(t *testing.T) {
 	}
 }
 
+// TestKeyInjectorOrderBackgroundSafe asserts the invariant-3 boundary:
+// the cgevent injector (which activates the VM window and posts through
+// the host HID event tap) is reachable only from the explicit window
+// input backend or a UseCgEvent request. Auto and framebuffer backends
+// must stay background-safe so control-socket automation never steals
+// host focus.
+func TestKeyInjectorOrderBackgroundSafe(t *testing.T) {
+	tests := []struct {
+		name       string
+		backend    BackendMode
+		useCgEvent bool
+		allowHID   bool
+		want       []string
+	}{
+		{"auto", BackendAuto, false, false, []string{"nsevent"}},
+		{"auto with hid", BackendAuto, false, true, []string{"nsevent", "private"}},
+		{"framebuffer", BackendFramebuffer, false, true, []string{"nsevent", "private"}},
+		{"window backend", BackendWindow, false, false, []string{"nsevent", "cgevent"}},
+		{"explicit cgevent", BackendAuto, true, false, []string{"cgevent", "nsevent"}},
+		{"explicit cgevent with hid", BackendAuto, true, true, []string{"private", "cgevent", "nsevent"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := keyInjectorOrder(tt.backend, tt.useCgEvent, tt.allowHID)
+			if len(got) != len(tt.want) {
+				t.Fatalf("keyInjectorOrder = %v, want %v", got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Fatalf("keyInjectorOrder = %v, want %v", got, tt.want)
+				}
+			}
+		})
+	}
+}
+
 // TestInputBridgeZeroValueHasNilHost documents that a zero-value
 // InputBridge has no host wired. ControlServer constructors that
 // build &ControlServer{} rely on this.

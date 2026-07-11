@@ -114,6 +114,12 @@ func isZeroCFTypeRef(ref corefoundation.CFTypeRef) bool {
 //     VZVirtualMachineView. purego's objc.Send on ARM64 corrupts
 //     uint16 parameters past argument position 8 (NSEvent
 //     keyEventWithType:...keyCode: places keyCode at position 10).
+//
+//  3. Background safety: input delivery must never activate the app,
+//     reorder host windows, or otherwise move host focus unless the
+//     caller explicitly opted into window-server input (the window
+//     input backend or a UseCgEvent request). Control-socket
+//     automation runs while the user works in other apps.
 type InputBridge struct {
 	host InputHost
 }
@@ -513,27 +519,44 @@ func (b *InputBridge) sendKeyChord(cmd *controlpb.KeyCommand) *controlpb.Control
 	return &controlpb.ControlResponse{Error: "keyboard chord up failed: " + strings.Join(errs, "; ")}
 }
 
+// keyInjectorOrder returns the ordered key-injection path names for the
+// given input backend and request flags. The "cgevent" path posts through
+// the host window server (HID event tap) after activating the VM window,
+// so it is offered only when the caller explicitly opted into
+// window-server input: the window input backend or a UseCgEvent request
+// (invariant 3).
+func keyInjectorOrder(backend BackendMode, useCgEvent, allowHID bool) []string {
+	if useCgEvent {
+		// For shortcut-style input, prefer lower-level injectors first.
+		paths := []string{"cgevent", "nsevent"}
+		if allowHID {
+			paths = append([]string{"private"}, paths...)
+		}
+		return paths
+	}
+	paths := []string{"nsevent"}
+	if backend == BackendWindow {
+		paths = append(paths, "cgevent")
+	}
+	if allowHID {
+		paths = append(paths, "private")
+	}
+	return paths
+}
+
 func (b *InputBridge) sendKeyMultiPath(cmd *controlpb.KeyCommand, fanout bool) *controlpb.ControlResponse {
 	type keyInjector struct {
 		name string
 		fn   func(*controlpb.KeyCommand) *controlpb.ControlResponse
 	}
-	paths := []keyInjector{
-		{name: "nsevent", fn: b.SendKeyNSEvent},
-		{name: "cgevent", fn: b.SendKeyCGEvent},
+	injectors := map[string]func(*controlpb.KeyCommand) *controlpb.ControlResponse{
+		"nsevent": b.SendKeyNSEvent,
+		"cgevent": b.SendKeyCGEvent,
+		"private": b.SendKeyPrivate,
 	}
-	if allowHIDKeyboardFn() {
-		paths = append(paths, keyInjector{name: "private", fn: b.SendKeyPrivate})
-	}
-	if cmd.UseCgEvent {
-		// For shortcut-style input, prefer lower-level injectors first.
-		paths = []keyInjector{
-			{name: "cgevent", fn: b.SendKeyCGEvent},
-			{name: "nsevent", fn: b.SendKeyNSEvent},
-		}
-		if allowHIDKeyboardFn() {
-			paths = append([]keyInjector{{name: "private", fn: b.SendKeyPrivate}}, paths...)
-		}
+	var paths []keyInjector
+	for _, name := range keyInjectorOrder(b.host.InputBackend(), cmd.UseCgEvent, allowHIDKeyboardFn()) {
+		paths = append(paths, keyInjector{name: name, fn: injectors[name]})
 	}
 
 	var errs []string
@@ -661,10 +684,13 @@ func (b *InputBridge) SendKeyNSEvent(cmd *controlpb.KeyCommand) *controlpb.Contr
 	// Convert CGEvent to NSEvent and deliver to VZVirtualMachineView on the main thread.
 	var resp *controlpb.ControlResponse
 	runOnUIThreadSyncFn(func() {
-		// Make sure the VM view is first responder.
+		// Make the VM view first responder within its window, but never
+		// order the window front or make it key: keyDown:/keyUp: are
+		// delivered directly to the view, and raising the window would
+		// steal focus from whatever host app the user is working in
+		// (invariant 3).
 		w := h.Window()
 		vmView := h.VMView()
-		w.MakeKeyAndOrderFront(nil)
 		w.MakeFirstResponder(VMViewAsNSView(vmView).NSResponder)
 
 		actualKeyCode := event.KeyCode()

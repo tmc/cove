@@ -77,6 +77,37 @@ func (c *Client) SetGUICaptureBackend(mode string) error {
 	return nil
 }
 
+// GUIBackends returns the runtime capture and input backend modes
+// reported by gui-status, in the spellings SetGUICaptureBackend and
+// SetGUIInputBackend accept. Callers that switch backends temporarily
+// should restore these values rather than assuming "auto".
+func (c *Client) GUIBackends() (capture, input string, err error) {
+	resp, err := c.sendRequest(&controlpb.ControlRequest{Type: "gui-status"})
+	if err != nil {
+		return "", "", err
+	}
+	if !resp.Success {
+		return "", "", fmt.Errorf("%s", resp.Error)
+	}
+	return ParseGUIBackends(resp.Data)
+}
+
+// ParseGUIBackends extracts the capture and input backend modes from a
+// gui-status JSON payload.
+func ParseGUIBackends(data string) (capture, input string, err error) {
+	var status struct {
+		CaptureBackend string `json:"capture_backend"`
+		InputBackend   string `json:"input_backend"`
+	}
+	if err := json.Unmarshal([]byte(data), &status); err != nil {
+		return "", "", fmt.Errorf("parse gui-status: %w", err)
+	}
+	if status.CaptureBackend == "" || status.InputBackend == "" {
+		return "", "", fmt.Errorf("gui-status missing backend fields")
+	}
+	return status.CaptureBackend, status.InputBackend, nil
+}
+
 // SetAuthToken overrides the token used for control socket requests.
 func (c *Client) SetAuthToken(token string) {
 	c.authToken = strings.TrimSpace(token)

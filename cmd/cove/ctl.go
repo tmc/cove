@@ -1983,17 +1983,21 @@ func ctlBootScript(socketPath, scriptPath string) error {
 }
 
 func activateStartupOptionsViaClient(client *ControlClient, ocr *ocrx.Service, timeout time.Duration) error {
+	prevCapture, prevInput, err := client.GUIBackends()
+	if err != nil {
+		prevCapture, prevInput = "auto", "auto"
+	}
 	if err := client.SetGUIInputBackend("direct"); err != nil {
 		return fmt.Errorf("set input backend direct: %w", err)
 	}
 	defer func() {
-		_ = client.SetGUIInputBackend("auto")
+		_ = client.SetGUIInputBackend(prevInput)
 	}()
 	if err := client.SetGUICaptureBackend("window"); err != nil {
 		return fmt.Errorf("set capture backend window: %w", err)
 	}
 	defer func() {
-		_ = client.SetGUICaptureBackend("auto")
+		_ = client.SetGUICaptureBackend(prevCapture)
 	}()
 
 	deadline := time.Now().Add(timeout)
