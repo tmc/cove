@@ -477,6 +477,12 @@ func applyStagedFiles(target vmSelection, stagingDir, mountPoint, dataPart strin
 		VerifyChownTargets: verifyTargets,
 		SuccessMarker:      successMarker,
 	}
+	if manifestIncludesAgent(manifest) {
+		// The staged files supersede any agent installed under an earlier
+		// launchd label; remove the obsolete plists in the same pass so two
+		// KeepAlive'd agents never fight over the vsock ports.
+		em.RemoveFiles = agentLegacyRemovals(mountPoint)
+	}
 	for _, f := range manifest.Files {
 		src := filepath.Join(stagingDir, f.Path)
 		dst := filepath.Join(mountPoint, f.Path)

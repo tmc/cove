@@ -343,6 +343,8 @@ func injectAgentOnlyForVM(target vmSelection) error {
 	daemonPlistPath := filepath.Join(daemonDir, agentLaunchDaemonLabel+".plist")
 	agentPlistPath := filepath.Join(agentDir, agentLaunchAgentLabel+".plist")
 
+	legacyPresent := agentLegacyRemovalsPresent(mountPoint)
+
 	if os.Getuid() != 0 {
 		fmt.Println()
 		fmt.Println("Administrator privileges required to inject the guest agent.")
@@ -351,18 +353,13 @@ func injectAgentOnlyForVM(target vmSelection) error {
 		fmt.Printf("    - Copy vz-agent binary to %s (owner: root:wheel)\n", binPath)
 		fmt.Printf("    - Write LaunchDaemon plist to %s (owner: root:wheel)\n", daemonPlistPath)
 		fmt.Printf("    - Write user agent plist to %s\n", agentPlistPath)
+		for _, p := range legacyPresent {
+			fmt.Printf("    - Remove obsolete agent plist %s\n", p)
+		}
 		fmt.Println()
 	}
 
-	em := &elevatedManifest{
-		RemountOwners: []string{dataPart},
-		MkdirAll:      []string{binDir, daemonDir, agentDir},
-		CopyFiles: []elevatedCopy{
-			{Src: tmpBinary, Dst: binPath, Mode: "0755", Owner: "root:wheel"},
-			{Src: tmpDaemonPlist, Dst: daemonPlistPath, Mode: "0644", Owner: "root:wheel"},
-			{Src: tmpAgentPlist, Dst: agentPlistPath, Mode: "0644", Owner: "root:wheel"},
-		},
-	}
+	em := agentInjectManifest(mountPoint, dataPart, tmpBinary, tmpDaemonPlist, tmpAgentPlist)
 	if err := runElevated(em, elevationPrompt(
 		fmt.Sprintf("Install guest agent into VM %q.", target.elevationLabel()),
 	)); err != nil {
@@ -376,6 +373,9 @@ func injectAgentOnlyForVM(target vmSelection) error {
 	fmt.Printf("Written: %s (%s, %d bytes)\n", binPath, runtime.GOARCH, info.Size())
 	fmt.Printf("Written: %s\n", daemonPlistPath)
 	fmt.Printf("Written: %s\n", agentPlistPath)
+	for _, p := range legacyPresent {
+		fmt.Printf("Removed legacy: %s\n", p)
+	}
 
 	fmt.Println()
 	fmt.Println("=== Agent Provisioning Complete ===")
@@ -386,6 +386,27 @@ func injectAgentOnlyForVM(target vmSelection) error {
 		fmt.Printf("warning: save guest agent config: %v\n", err)
 	}
 	return nil
+}
+
+// agentInjectManifest builds the privileged operation for offline agent
+// injection: install the current binary and plists, then remove every known
+// obsolete agent plist from earlier label generations. The removals ride in
+// the same manifest as the copies, so legacy artifacts are only dropped when
+// the current install supersedes them — if a copy fails, nothing is removed.
+func agentInjectManifest(mountPoint, dataPart, tmpBinary, tmpDaemonPlist, tmpAgentPlist string) *elevatedManifest {
+	binDir := filepath.Join(mountPoint, "usr", "local", "bin")
+	daemonDir := filepath.Join(mountPoint, "Library", "LaunchDaemons")
+	agentDir := filepath.Join(mountPoint, "Library", "LaunchAgents")
+	return &elevatedManifest{
+		RemountOwners: []string{dataPart},
+		MkdirAll:      []string{binDir, daemonDir, agentDir},
+		CopyFiles: []elevatedCopy{
+			{Src: tmpBinary, Dst: filepath.Join(binDir, agentBinaryName), Mode: "0755", Owner: "root:wheel"},
+			{Src: tmpDaemonPlist, Dst: filepath.Join(daemonDir, agentLaunchDaemonLabel+".plist"), Mode: "0644", Owner: "root:wheel"},
+			{Src: tmpAgentPlist, Dst: filepath.Join(agentDir, agentLaunchAgentLabel+".plist"), Mode: "0644", Owner: "root:wheel"},
+		},
+		RemoveFiles: agentLegacyRemovals(mountPoint),
+	}
 }
 
 // injectAgentOnlyRestricted handles agent injection when cove is running in
@@ -556,6 +577,7 @@ chmod 644 "$AGENT_DIR/%s"
 chown root:wheel "$AGENT_DIR/%s"
 echo "    wrote $AGENT_DIR/%s"
 
+%s
 echo
 echo "=== Agent injection complete ==="
 echo "Boot the VM with: cove%s run"
@@ -570,6 +592,7 @@ echo "Boot the VM with: cove%s run"
 		agentLaunchAgentLabel+".plist", agentLaunchAgentLabel+".plist",
 		agentLaunchAgentLabel+".plist", agentLaunchAgentLabel+".plist",
 		agentLaunchAgentLabel+".plist",
+		agentLegacyRemoveScript(),
 		target.hintFlag(),
 	)
 	if err := os.WriteFile(scriptPath, []byte(script), 0755); err != nil {

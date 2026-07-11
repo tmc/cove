@@ -554,6 +554,7 @@ func verifyStoppedForVM(target vmSelection, verbose, fix bool) error {
 						{Src: tmpBinary, Dst: binPath, Mode: "0755", Owner: "root:wheel"},
 						{Src: tmpPlist, Dst: plistPath, Mode: "0644", Owner: "root:wheel"},
 					},
+					RemoveFiles: agentLegacyRemovals(mountPoint),
 				}
 				if err := runElevated(em, elevationPrompt(
 					fmt.Sprintf("Re-provision VM %q: fix file ownership.", target.elevationLabel()),

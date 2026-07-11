@@ -166,10 +166,8 @@ func runElevatedManifest(m *elevatedManifest) error {
 		}
 	}
 
-	for _, p := range m.RemoveFiles {
-		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("remove %s: %w", p, err)
-		}
+	if err := removeFilesIgnoreMissing(m.RemoveFiles); err != nil {
+		return err
 	}
 
 	for _, label := range m.LaunchctlBootout {
@@ -200,6 +198,17 @@ func runElevatedManifest(m *elevatedManifest) error {
 			return fmt.Errorf("success marker: %w", err)
 		}
 		f.Close()
+	}
+	return nil
+}
+
+// removeFilesIgnoreMissing deletes each path. Missing files are not errors,
+// which keeps superseding installs idempotent across re-runs.
+func removeFilesIgnoreMissing(paths []string) error {
+	for _, p := range paths {
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove %s: %w", p, err)
+		}
 	}
 	return nil
 }
