@@ -1,0 +1,2 @@
+commit 403e814e2ff6901eb7be5d3b7b1efa4c508a507e on 2026-07-12 by claude-code (model claude-opus-4-8[1m], tty not a tty
+none, pid 25919, ITERM_SESSION_ID=w0t13p9:FCD562E0-C76A-48C0-8B10-332740AB8443); amended from b822c8b3 to drop unverified HID top-left flip after live proof; retains scale-aware Retina capture mapping
