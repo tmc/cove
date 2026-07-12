@@ -559,7 +559,11 @@ func ctlCommand(args []string) error {
 		return err
 	}
 
-	// If a VM was selected and -socket was not, resolve the socket from the VM dir.
+	// If a VM was selected and -socket was not, resolve the socket from the VM
+	// dir. ctl skips the startup vmDir resolution (see cli_skip_vmdir.go), so
+	// the resolved directory is also tracked here for subcommands that touch
+	// VM files directly (reset-password offline injection).
+	ctlTarget := currentVMSelection()
 	if *socketPath == "" {
 		switch {
 		case ctlVMFlag != nil && *ctlVMFlag != "":
@@ -568,12 +572,14 @@ func ctlCommand(args []string) error {
 				return err
 			}
 			*socketPath = GetControlSocketPathForVM(dir)
+			ctlTarget = vmSelection{Directory: dir, Name: *ctlVMFlag}
 		case strings.TrimSpace(vmName) != "":
 			dir, err := requireExistingVMForControl(vmName)
 			if err != nil {
 				return err
 			}
 			*socketPath = GetControlSocketPathForVM(dir)
+			ctlTarget = vmSelection{Directory: dir, Name: vmName}
 		}
 	}
 
@@ -1109,7 +1115,7 @@ func ctlCommand(args []string) error {
 		if len(subArgs) < 2 {
 			return fmt.Errorf("usage: ctl reset-password <username> <new-password>")
 		}
-		return ctlResetPassword(sock, *timeout, subArgs[0], subArgs[1])
+		return ctlResetPasswordForVM(ctlTarget, sock, *timeout, subArgs[0], subArgs[1])
 
 	default:
 		return fmt.Errorf("unknown command: %s\nRun 'cove ctl help' for usage.", cmdType)
@@ -2258,9 +2264,6 @@ func ctlDetectScreen(socketPath string) error {
 	return nil
 }
 
-// ctlResetPassword resets a user's password. If the VM is running and the
-// guest agent is reachable, it uses dscl inside the guest. Otherwise it
-// re-injects kcpassword via disk mount for auto-login with the new password.
 func requireAgentExecSuccess(action string, resp *controlpb.ControlResponse) error {
 	if resp == nil {
 		return fmt.Errorf("%s: empty response", action)
@@ -2284,10 +2287,10 @@ func requireAgentExecSuccess(action string, resp *controlpb.ControlResponse) err
 	return fmt.Errorf("%s: %s", action, result.Detail)
 }
 
-func ctlResetPassword(sock string, timeout time.Duration, username, password string) error {
-	return ctlResetPasswordForVM(currentVMSelection(), sock, timeout, username, password)
-}
-
+// ctlResetPasswordForVM resets a user's password. If the VM is running and
+// the guest agent is reachable, it uses dscl inside the guest. Otherwise it
+// mounts the disk and stages kcpassword, loginwindow.plist, and a one-shot
+// pwreset LaunchDaemon in a single elevated pass.
 func ctlResetPasswordForVM(target vmSelection, sock string, timeout time.Duration, username, password string) error {
 	if ctlGuestIsLinux(sock) {
 		return ctlResetLinuxPassword(sock, timeout, username, password)
@@ -2339,45 +2342,54 @@ func ctlResetPasswordForVM(target vmSelection, sock string, timeout time.Duratio
 
 	// Agent not available — try offline disk injection.
 	fmt.Println("Guest agent not reachable, attempting offline password reset...")
+	if target.Directory == "" {
+		return fmt.Errorf("cannot resolve VM directory for offline password reset; pass -vm <name>")
+	}
 	diskPath := target.diskPath()
 	if _, statErr := os.Stat(diskPath); os.IsNotExist(statErr) {
 		return fmt.Errorf("vm disk not found: %s", diskPath)
 	}
 
-	mountPoint, device, _, mountErr := attachAndMountDataVolume(diskPath)
-	if mountErr != nil {
-		return fmt.Errorf("mount data volume: %w", mountErr)
+	// Stage all files to a temp dir first; the copies to the mounted volume
+	// run in one elevated pass so they land root-owned even though the
+	// unprivileged process cannot write system directories on the disk image.
+	staging, err := os.MkdirTemp("", "cove-pwreset-")
+	if err != nil {
+		return fmt.Errorf("create staging dir: %w", err)
 	}
-	defer detachDiskForPath(device, diskPath)
+	defer os.RemoveAll(staging)
 
-	// Update kcpassword.
-	kcData := pw.EncodeKC(password)
-	kcPath := filepath.Join(mountPoint, "private", "etc", "kcpassword")
-	if writeErr := os.WriteFile(kcPath, kcData, 0600); writeErr != nil {
-		return fmt.Errorf("write kcpassword: %w", writeErr)
+	stage := func(name string, data []byte) (string, error) {
+		p := filepath.Join(staging, name)
+		if err := os.WriteFile(p, data, 0600); err != nil {
+			return "", fmt.Errorf("stage %s: %w", name, err)
+		}
+		return p, nil
 	}
-	fmt.Printf("Updated kcpassword for auto-login at: %s\n", kcPath)
 
-	// Update loginwindow.plist autoLoginUser.
-	lwPath := filepath.Join(mountPoint, "Library", "Preferences", "com.apple.loginwindow.plist")
+	tmpKC, err := stage("kcpassword", pw.EncodeKC(password))
+	if err != nil {
+		return err
+	}
 	lwData, err := pw.EncodeLoginWindowPlist(pw.CreateLoginWindowPlist(username))
 	if err != nil {
 		return fmt.Errorf("encode loginwindow plist: %w", err)
 	}
-	if writeErr := os.WriteFile(lwPath, lwData, 0644); writeErr != nil {
-		return fmt.Errorf("write loginwindow.plist: %w", writeErr)
+	tmpLW, err := stage("com.apple.loginwindow.plist", lwData)
+	if err != nil {
+		return err
 	}
 
-	// Write a LaunchDaemon that resets the password on next boot via dscl.
+	// A LaunchDaemon that resets the password on next boot via dscl.
 	escapedUserPath := shellEscape("/Users/" + username)
 	escapedPassword := shellEscape(password)
 	script := fmt.Sprintf(`#!/bin/bash
 dscl . -passwd %s %s
 rm -f /Library/LaunchDaemons/com.tmc.cove.pwreset.plist /var/db/vz-pwreset.sh
 `, escapedUserPath, escapedPassword)
-	scriptPath := filepath.Join(mountPoint, "private", "var", "db", "vz-pwreset.sh")
-	if writeErr := os.WriteFile(scriptPath, []byte(script), 0755); writeErr != nil {
-		return fmt.Errorf("write reset script: %w", writeErr)
+	tmpScript, err := stage("vz-pwreset.sh", []byte(script))
+	if err != nil {
+		return err
 	}
 
 	plist := `<?xml version="1.0" encoding="UTF-8"?>
@@ -2395,37 +2407,40 @@ rm -f /Library/LaunchDaemons/com.tmc.cove.pwreset.plist /var/db/vz-pwreset.sh
 	<true/>
 </dict>
 </plist>`
-	plistPath := filepath.Join(mountPoint, "Library", "LaunchDaemons", "com.tmc.cove.pwreset.plist")
-	if writeErr := os.WriteFile(plistPath, []byte(plist), 0644); writeErr != nil {
-		return fmt.Errorf("write plist: %w", writeErr)
+	tmpPlist, err := stage("com.tmc.cove.pwreset.plist", []byte(plist))
+	if err != nil {
+		return err
 	}
 
-	// Fix ownership if running as root.
-	if os.Getuid() == 0 {
-		os.Chown(scriptPath, 0, 0)
-		os.Chown(plistPath, 0, 0)
-		os.Chown(kcPath, 0, 0)
-		os.Chown(lwPath, 0, 0)
-	} else {
-		// Set root:wheel ownership on the password reset files so launchd loads them.
-		fmt.Println()
-		fmt.Println("Administrator privileges required to set root:wheel ownership")
-		fmt.Printf("on password reset files so launchd will load them on next boot.\n")
-		fmt.Println()
-		em := &elevatedManifest{
-			ChownFiles: []elevatedChown{
-				{Path: scriptPath, Owner: "root:wheel"},
-				{Path: plistPath, Owner: "root:wheel"},
-				{Path: kcPath, Owner: "root:wheel"},
-				{Path: lwPath, Owner: "root:wheel"},
-			},
-		}
-		if err := runElevated(em, elevationPrompt(
-			fmt.Sprintf("Reset password on VM %q.", target.elevationLabel()),
-		)); err != nil {
-			fmt.Fprintf(os.Stderr, "ownership fix failed: %v\n", err)
-		}
+	mountPoint, device, dataPart, mountErr := attachAndMountDataVolume(diskPath)
+	if mountErr != nil {
+		return fmt.Errorf("mount data volume: %w", mountErr)
 	}
+	defer detachDiskForPath(device, diskPath)
+
+	kcPath := filepath.Join(mountPoint, "private", "etc", "kcpassword")
+	lwPath := filepath.Join(mountPoint, "Library", "Preferences", "com.apple.loginwindow.plist")
+	scriptPath := filepath.Join(mountPoint, "private", "var", "db", "vz-pwreset.sh")
+	plistPath := filepath.Join(mountPoint, "Library", "LaunchDaemons", "com.tmc.cove.pwreset.plist")
+
+	em := &elevatedManifest{
+		RemountOwners: []string{dataPart},
+		CopyFiles: []elevatedCopy{
+			{Src: tmpKC, Dst: kcPath, Mode: "0600", Owner: "root:wheel"},
+			{Src: tmpLW, Dst: lwPath, Mode: "0644", Owner: "root:wheel"},
+			{Src: tmpScript, Dst: scriptPath, Mode: "0755", Owner: "root:wheel"},
+			{Src: tmpPlist, Dst: plistPath, Mode: "0644", Owner: "root:wheel"},
+		},
+		// launchd silently ignores the pwreset daemon unless it is root:wheel.
+		VerifyChownTargets: []string{plistPath, scriptPath},
+	}
+	if err := runElevated(em, elevationPrompt(
+		fmt.Sprintf("Reset password on VM %q.", target.elevationLabel()),
+	)); err != nil {
+		return fmt.Errorf("write password reset files: %w", err)
+	}
+	fmt.Printf("Updated kcpassword for auto-login at: %s\n", kcPath)
+	fmt.Printf("Staged password reset LaunchDaemon at: %s\n", plistPath)
 
 	if err := writeLoginScreenCredentialsCache(target.Directory, loginScreenCredentials{
 		Username: username,
