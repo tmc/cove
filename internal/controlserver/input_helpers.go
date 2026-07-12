@@ -100,20 +100,46 @@ var CharToKeyCode = map[rune]CharKeyCodeInfo{
 }
 
 // MapWindowCapturePointToViewPoint maps an absolute window-capture
-// pixel point to a view-local point in NSView (bottom-left origin)
-// coordinates.
+// pixel point to a view-local point in NSView (bottom-left, top-origin
+// input) coordinates.
+//
+// The capture image (captureW×captureH) is in device pixels: it is the
+// whole host window — title bar plus VM content — rendered at the host
+// backing scale. The VM view Bounds (boundsW×contentH) are in logical
+// points and cover only the content area (the VM view is the window's
+// content view, so its width equals the window's logical width).
+//
+// The two coordinate systems therefore differ by the backing scale S
+// AND by the title-bar band that exists in the capture but not in the
+// view. Recovering S from the width ratio (both axes describe the same
+// window width) lets us convert the capture point into logical points,
+// strip the title-bar inset, and flip Y into the view's bottom-left
+// origin. Doing the inset subtraction in device pixels against a
+// point-valued content height (the historical bug) conflated the two
+// units and clamped nearly every click to the top of the view — a
+// bottom-of-content target such as a consent-dialog button landed on
+// the menu bar.
 func MapWindowCapturePointToViewPoint(x, y float64, captureW, captureH int, boundsW, contentH float64) (viewX, viewY float64) {
 	if captureW <= 0 || captureH <= 0 || boundsW <= 0 || contentH <= 0 {
 		return x, contentH - y
 	}
 
-	viewX = x * (boundsW / float64(captureW))
+	// Backing scale: device pixels per logical point. Width is a pure
+	// content dimension in both systems, so their ratio is the scale.
+	scale := float64(captureW) / boundsW
 
-	topInset := float64(captureH) - contentH
-	if topInset < 0 {
-		topInset = 0
+	viewX = x / scale
+
+	// Convert the capture Y (device px, measured from the window top)
+	// into logical points from the window top, then drop the title-bar
+	// band so 0 == top of VM content.
+	yTopPt := y / scale
+	windowHpt := float64(captureH) / scale
+	titleBarPt := windowHpt - contentH
+	if titleBarPt < 0 {
+		titleBarPt = 0
 	}
-	contentY := y - topInset
+	contentY := yTopPt - titleBarPt
 	if contentY < 0 {
 		contentY = 0
 	}

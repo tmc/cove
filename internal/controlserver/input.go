@@ -233,12 +233,21 @@ func (b *InputBridge) sendMouseVMDirect(cmd *controlpb.MouseCommand) *controlpb.
 			}
 		}
 
+		// viewY is a bottom-left, content-relative point (0 == bottom of the
+		// VM content, contentH == top). Both delivery paths consume this same
+		// point: the private screen-coordinate pointing device
+		// (sendPointerNSEvent:pointingDeviceIndex:) and the AppKit
+		// mouseDown:/mouseMoved: fallback on VZVirtualMachineView both apply
+		// the standard bottom-left NSEvent locationInWindow convention. Once
+		// the capture->view mapping accounts for the host backing scale and
+		// title-bar band, this single point routes clicks correctly; the
+		// earlier misroutes (a consent button landing on the menu bar) were
+		// entirely the Retina unit conflation in that mapping, not an
+		// orientation mismatch on this path.
 		if h.Verbose() {
 			fmt.Printf("[mouse-direct] bounds=%.0fx%.0f contentH=%.0f input=(%.3f,%.3f) view=(%.1f,%.1f) action=%s\n",
 				bounds.Size.Width, bounds.Size.Height, contentH, cmd.X, cmd.Y, viewX, viewY, cmd.Action)
 		}
-
-		location := corefoundation.CGPoint{X: viewX, Y: viewY}
 
 		var eventType appkit.NSEventType
 		switch cmd.Action {
@@ -261,9 +270,12 @@ func (b *InputBridge) sendMouseVMDirect(cmd *controlpb.MouseCommand) *controlpb.
 			return
 		}
 
+		location := corefoundation.CGPoint{X: viewX, Y: viewY}
+
 		windowNumber := h.Window().WindowNumber()
 
-		// Create NSEvent for mouse
+		// Create the NSEvent for the mouse action. Both the HID pointer path
+		// and the AppKit fallback deliver this same event.
 		iEvent := appkit.GetNSEventClass().MouseEventWithTypeLocationModifierFlagsTimestampWindowNumberContextEventNumberClickCountPressure(
 			eventType,
 			location,

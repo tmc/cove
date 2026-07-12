@@ -28,6 +28,74 @@ func TestMouseYMappingUsesContentHeight(t *testing.T) {
 	}
 }
 
+// TestMapNormalizedRetinaTitleBarHitsContent is the regression for the
+// NetworkExtension consent misroute: on a Retina host the window-capture
+// image is in device pixels (e.g. 1634x938) while the VM view Bounds are
+// logical points (817x441) and cover only the content area below a 28pt
+// title bar. The old mapping subtracted a device-pixel captureH from a
+// point-valued contentH, clamping every click to the top of the view so
+// a bottom-of-content Allow button landed on the guest menu bar.
+//
+// This asserts the corrected mapping: normalized inputs across the
+// content flip into view points with the correct backing scale, a
+// bottom-of-content target lands in the lower content band (small viewY),
+// and a top-of-content target lands in the upper band (large viewY) —
+// never the reverse.
+func TestMapNormalizedRetinaTitleBarHitsContent(t *testing.T) {
+	const (
+		captureW = 1634 // device px (2x of 817pt window width)
+		captureH = 938  // device px (2x of 469pt window height)
+		boundsW  = 817.0
+		contentH = 441.0 // 469pt window - 28pt title bar
+	)
+
+	tests := []struct {
+		name       string
+		normX      float64
+		normY      float64
+		wantX      float64
+		wantY      float64
+		wantBandLo float64 // inclusive viewY lower bound
+		wantBandHi float64 // inclusive viewY upper bound
+	}{
+		{
+			name: "allow button bottom-center", normX: 0.5, normY: 0.95,
+			wantX: 408.5, wantY: 23.45, wantBandLo: 0, wantBandHi: 0.15 * contentH,
+		},
+		{
+			name: "top sidebar rules", normX: 0.141, normY: 0.223,
+			wantX: 115.197, wantY: 364.413,
+			wantBandLo: 0.7 * contentH, wantBandHi: contentH,
+		},
+		{
+			name: "dead center", normX: 0.5, normY: 0.5,
+			wantX: 408.5, wantY: 234.5,
+			wantBandLo: 0.4 * contentH, wantBandHi: 0.6 * contentH,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			viewX, viewY := MapNormalizedWindowCapturePointToViewPoint(
+				tt.normX, tt.normY, captureW, captureH, boundsW, contentH)
+			if !floatNear(viewX, tt.wantX) || !floatNear(viewY, tt.wantY) {
+				t.Fatalf("view = (%v,%v), want (%v,%v)", viewX, viewY, tt.wantX, tt.wantY)
+			}
+			// The load-bearing anti-menu-bar assertion: the Y must land
+			// in the expected content band. A bottom-of-content click
+			// (small viewY) must never bubble up to the top (large viewY).
+			if viewY < tt.wantBandLo || viewY > tt.wantBandHi {
+				t.Fatalf("viewY = %v out of expected band [%v,%v] — coordinate misroute",
+					viewY, tt.wantBandLo, tt.wantBandHi)
+			}
+			// viewY must stay inside the content area, never above the
+			// title bar (which would be viewY > contentH).
+			if viewY < 0 || viewY > contentH {
+				t.Fatalf("viewY = %v escaped content area [0,%v]", viewY, contentH)
+			}
+		})
+	}
+}
+
 // TestNeedsWindowCapturePointMappingDisabledWhenCaptureZero ensures
 // the mapping is skipped when capture dimensions are unknown,
 // preserving the legacy (pre-window-mapping) coordinate path.

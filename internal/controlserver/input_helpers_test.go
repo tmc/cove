@@ -109,18 +109,53 @@ func TestMapWindowCapturePointToViewPoint(t *testing.T) {
 		boundsW, contentH  float64
 		wantX, wantY       float64
 	}{
+		// Degenerate inputs fall back to a plain top-origin flip.
 		{"invalid capture", 10, 20, 0, 100, 200, 80, 10, 60},
 		{"invalid view", 10, 20, 100, 100, 0, 80, 10, 60},
-		{"center no inset", 50, 25, 100, 100, 200, 100, 100, 75},
-		{"clamps top inset", 50, 10, 100, 120, 200, 100, 100, 100},
-		{"clamps bottom", 50, 130, 100, 120, 200, 100, 100, 0},
+
+		// 1x capture, no title bar: capture and view coincide, so the
+		// point is only Y-flipped.
+		{"1x no title bar center", 50, 30, 100, 100, 100, 100, 50, 70},
+		{"1x no title bar top", 50, 0, 100, 100, 100, 100, 50, 100},
+		{"1x no title bar bottom", 50, 100, 100, 100, 100, 100, 50, 0},
+
+		// 1x capture with a 20pt title bar band (captureH 120 = 20
+		// title + 100 content). A capture-top click strips into the
+		// title band and clamps to the content top.
+		{"1x title bar strips band", 50, 20, 100, 120, 100, 100, 50, 100},
+		{"1x title bar mid content", 50, 70, 100, 120, 100, 100, 50, 50},
+		{"1x title bar clamps top", 50, 10, 100, 120, 100, 100, 50, 100},
+		{"1x title bar clamps bottom", 50, 130, 100, 120, 100, 100, 50, 0},
+
+		// 2x Retina host, no title bar: width ratio recovers the scale
+		// and the point converts into logical points.
+		{"2x no title bar center", 100, 100, 200, 200, 100, 100, 50, 50},
+		{"2x no title bar bottom", 100, 200, 200, 200, 100, 100, 50, 0},
+
+		// 2x Retina host with a 28pt title bar — the live cove-test
+		// geometry (capture 1634x938 device px, view 817x441 points).
+		// A bottom-of-content consent button must land near viewY 0,
+		// NOT get clamped to the menu bar at viewY contentH.
+		{"live retina allow button", 0.5 * 1634, 0.95 * 938, 1634, 938, 817, 441, 408.5, 23.45},
+		{"live retina top sidebar", 0.141 * 1634, 0.223 * 938, 1634, 938, 817, 441, 115.197, 364.413},
+		{"live retina center", 0.5 * 1634, 0.5 * 938, 1634, 938, 817, 441, 408.5, 234.5},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gotX, gotY := MapWindowCapturePointToViewPoint(tt.x, tt.y, tt.captureW, tt.captureH, tt.boundsW, tt.contentH)
-			if gotX != tt.wantX || gotY != tt.wantY {
+			if !floatNear(gotX, tt.wantX) || !floatNear(gotY, tt.wantY) {
 				t.Fatalf("point = (%v,%v), want (%v,%v)", gotX, gotY, tt.wantX, tt.wantY)
 			}
 		})
 	}
+}
+
+func floatNear(a, b float64) bool {
+	d := a - b
+	if d < 0 {
+		d = -d
+	}
+	// These are pixel/point coordinates; sub-milli-pixel precision is
+	// meaningless and float round-trips vary in the last ulps.
+	return d < 1e-3
 }
