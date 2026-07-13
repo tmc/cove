@@ -300,14 +300,28 @@ func (b *InputBridge) sendMouseVMDirect(cmd *controlpb.MouseCommand) *controlpb.
 		vmHandle := h.VM()
 		if path == "hid" && vmHandle.ID != 0 &&
 			objc.Send[bool](vmHandle.ID, objc.Sel("respondsToSelector:"), objc.Sel("sendPointerNSEvent:pointingDeviceIndex:")) {
-			// Explicit diagnostic override only. The private screen-
-			// coordinate pointing device swallows events on current
-			// hardware, so this path never runs unless
-			// COVE_POINTER_DELIVERY=hid is set.
+			// Explicit diagnostic override (COVE_POINTER_DELIVERY=hid).
+			//
+			// Route through vminput.Sender rather than a raw
+			// objc.Send(vm, "sendPointerNSEvent:...") — that is why the
+			// old hid path silently swallowed events. The sender gates
+			// every send on _shouldSendHIDReports (the guest must have
+			// attached and enabled its USB pointing device) and
+			// dispatches on the VM's serial queue, exactly like the
+			// working private keyboard path (SendKeyPrivate). Posting
+			// sendPointerNSEvent: off that queue, or before the guest is
+			// accepting HID reports, makes the framework drop the report
+			// without error. Index 0 is the VZUSBScreenCoordinatePointing
+			// device (absolute), the correct target for a screen-space
+			// NSEvent.
 			if h.Verbose() {
 				fmt.Printf("[mouse-hid] action=%s point=(%.1f,%.1f)\n", cmd.Action, viewX, viewY)
 			}
-			objc.Send[struct{}](vmHandle.ID, objc.Sel("sendPointerNSEvent:pointingDeviceIndex:"), event.ID, uint32(0))
+			sender := vminput.NewSender(vm.WrapQueue(h.VMQueue()), vmHandle)
+			if err := sender.SendPointerNSEvent(event, 0); err != nil {
+				resp = &controlpb.ControlResponse{Error: fmt.Sprintf("hid pointer inject: %v", err)}
+				return
+			}
 			resp = &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_Empty{Empty: &controlpb.EmptyResponse{}}}
 			return
 		}
@@ -553,13 +567,17 @@ func (b *InputBridge) sendKeyChord(cmd *controlpb.KeyCommand) *controlpb.Control
 // host window server (invariant 3): the private screen-coordinate pointing
 // device (VZVirtualMachine sendPointerNSEvent:pointingDeviceIndex:, "hid")
 // and the AppKit fallback (VZVirtualMachineView mouseMoved:/mouseDown:/
-// mouseUp:, "view"). The private HID selector is undocumented and was found
-// to silently swallow events on current hardware — a click's NSEvent
-// reached it but no click landed in the guest, regardless of Y orientation
-// — so "view" is the default for every non-explicit request. "hid" is
-// reachable only as an explicit diagnostic override
-// (COVE_POINTER_DELIVERY=hid), never automatically, so the broken path
-// never runs in normal operation.
+// mouseUp:, "view").
+//
+// The private HID selector previously appeared to silently swallow events;
+// the real cause was that sendMouseVMDirect called it raw, off the VM's
+// serial queue and without the _shouldSendHIDReports readiness gate, so the
+// framework dropped the report. sendMouseVMDirect now routes "hid" through
+// vminput.Sender (VM queue + readiness gate), the same discipline the
+// working private keyboard path uses. "view" remains the default for every
+// non-explicit request because it is background-safe and does not depend on
+// the guest having enabled HID reports. "hid" is reachable only as an
+// explicit diagnostic override (COVE_POINTER_DELIVERY=hid).
 //
 // The choice is a pure function of the backend and the override, so every
 // event in a click's move+down+up sequence selects the same path.

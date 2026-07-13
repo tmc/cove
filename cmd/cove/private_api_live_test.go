@@ -13,12 +13,16 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/tmc/apple/appkit"
+	"github.com/tmc/apple/corefoundation"
 	"github.com/tmc/apple/dispatch"
 	"github.com/tmc/apple/foundation"
 	"github.com/tmc/apple/objc"
 	"github.com/tmc/apple/objectivec"
 	privvz "github.com/tmc/apple/private/virtualization"
 	vz "github.com/tmc/apple/virtualization"
+	"github.com/tmc/apple/x/vzkit/vm"
+	"github.com/tmc/apple/x/vzkit/vminput"
 )
 
 var (
@@ -204,6 +208,19 @@ func startLiveVM(vmName string) (vz.VZVirtualMachine, privvz.VZVirtualMachine, d
 		objc.Send[objc.ID](objc.ID(objc.GetClass("VZMacKeyboardConfiguration")), objc.Sel("alloc")),
 		objc.Sel("init"),
 	)
+	// Pointing devices MUST mirror the real runtime (installer.go): index 0
+	// is the VZUSBScreenCoordinatePointingDevice (absolute screen coords),
+	// index 1 is the trackpad (relative). The private
+	// sendPointerNSEvent:pointingDeviceIndex: path takes a screen-space
+	// NSEvent and targets index 0 — so it only works against the absolute
+	// device. If this harness configured a trackpad as the *sole* pointing
+	// device, index 0 would be the wrong (relative) device and a live
+	// sendPointerNSEvent probe would silently do nothing, wrongly implicating
+	// the delivery code instead of the config. Keep the ordering in sync.
+	usbPointerConfig := objc.Send[objc.ID](
+		objc.Send[objc.ID](objc.ID(objc.GetClass("VZUSBScreenCoordinatePointingDeviceConfiguration")), objc.Sel("alloc")),
+		objc.Sel("init"),
+	)
 	trackpadConfig := objc.Send[objc.ID](
 		objc.Send[objc.ID](objc.ID(objc.GetClass("VZMacTrackpadConfiguration")), objc.Sel("alloc")),
 		objc.Sel("init"),
@@ -228,7 +245,16 @@ func startLiveVM(vmName string) (vz.VZVirtualMachine, privvz.VZVirtualMachine, d
 	setArray("setGraphicsDevices:", graphicsConfig)
 	setArray("setNetworkDevices:", networkConfig)
 	setArray("setKeyboards:", kbConfig)
-	setArray("setPointingDevices:", trackpadConfig)
+
+	// index 0 = USB screen-coordinate (absolute), index 1 = trackpad.
+	pointingDevices := [2]objc.ID{usbPointerConfig, trackpadConfig}
+	pointingArray := objc.Send[objc.ID](
+		objc.ID(objc.GetClass("NSArray")),
+		objc.Sel("arrayWithObjects:count:"),
+		unsafe.Pointer(&pointingDevices),
+		uint(2),
+	)
+	objc.Send[objc.ID](config, objc.Sel("setPointingDevices:"), pointingArray)
 
 	// Validate
 	var validateErrPtr objc.ID
@@ -454,6 +480,79 @@ func TestLiveAPI_SendPointerNSEvent(t *testing.T) {
 			}
 		}
 	})
+}
+
+// D2. Gated pointer delivery through vminput.Sender.
+//
+// This is the regression for the COVE_POINTER_DELIVERY=hid silent-swallow
+// bug. The old control-server path called sendPointerNSEvent: raw (off the
+// VM queue, with no readiness gate), so the framework dropped the report.
+// vminput.Sender routes the same NSEvent through the _shouldSendHIDReports
+// gate and the VM's serial queue — the same discipline the working private
+// keyboard path uses.
+//
+// The test proves the gate exists and passes on a live VM, then sends a
+// full move -> down -> up sequence at a benign top-left point (near 0,0,
+// the desktop) and asserts every send returns without error. It targets the
+// DESKTOP, not any protected UI, so it only exercises delivery mechanics.
+func TestLiveAPI_GatedPointerDelivery(t *testing.T) {
+	pubVM, privVM, queue := requireLiveVM(t)
+
+	// Confirm the harness matches the real runtime: index 0 must be the
+	// absolute USB screen-coordinate device that sendPointerNSEvent targets.
+	queue.Sync(func() {
+		if !objc.RespondsToSelector(privVM.ID, objc.Sel("_pointingDevices")) {
+			t.Skip("_pointingDevices unavailable")
+		}
+		devices := objc.Send[objc.ID](privVM.ID, objc.Sel("_pointingDevices"))
+		if devices == 0 {
+			t.Skip("_pointingDevices nil")
+		}
+		count := objc.Send[int64](devices, objc.Sel("count"))
+		if count == 0 {
+			t.Fatal("no pointing devices configured")
+		}
+		elem := objc.Send[objc.ID](devices, objc.Sel("objectAtIndex:"), uint(0))
+		className := foundation.NSStringFromID(objc.Send[objc.ID](elem, objc.Sel("className"))).String()
+		t.Logf("pointing device[0]: %s", className)
+	})
+
+	sender := vminput.NewSender(vm.WrapQueue(queue), pubVM)
+
+	// The readiness gate the raw path skipped. If this never turns true the
+	// guest has not attached its USB pointer; the send would be swallowed and
+	// the sender correctly refuses it.
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := sender.WaitReady(ctx); err != nil {
+		t.Fatalf("sender never became ready (_shouldSendHIDReports gate): %v", err)
+	}
+	t.Log("sender.Ready() = true (_shouldSendHIDReports gate passed)")
+
+	// Send a benign move -> down -> up at a desktop point. Bottom-left
+	// NSEvent convention; a small y is near the bottom of the framebuffer.
+	pt := corefoundation.CGPoint{X: 40, Y: 40}
+	steps := []struct {
+		name      string
+		eventType appkit.NSEventType
+	}{
+		{"move", appkit.NSEventTypeMouseMoved},
+		{"down", appkit.NSEventTypeLeftMouseDown},
+		{"up", appkit.NSEventTypeLeftMouseUp},
+	}
+	for _, step := range steps {
+		iEvent := appkit.GetNSEventClass().MouseEventWithTypeLocationModifierFlagsTimestampWindowNumberContextEventNumberClickCountPressure(
+			step.eventType, pt, 0, 0, 0, nil, 0, 1, float32(1.0),
+		)
+		event := appkit.NSEventFromID(iEvent.GetID())
+		if event.ID == 0 {
+			t.Fatalf("%s: failed to build NSEvent", step.name)
+		}
+		if err := sender.SendPointerNSEvent(event, 0); err != nil {
+			t.Fatalf("%s: SendPointerNSEvent: %v", step.name, err)
+		}
+		t.Logf("%s: delivered through gated sender", step.name)
+	}
 }
 
 // E. _keyboards discovery
