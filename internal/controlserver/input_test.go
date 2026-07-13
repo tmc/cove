@@ -141,6 +141,38 @@ func TestKeyInjectorOrderBackgroundSafe(t *testing.T) {
 	}
 }
 
+// TestPointerDeliveryPathDefaultsToView locks the delivery-path choice:
+// the direct-backend default (and every backend with no explicit
+// override) must select the AppKit "view" path, never the private "hid"
+// selector. The HID path silently swallows events on current hardware and
+// is reachable only as an explicit COVE_POINTER_DELIVERY=hid diagnostic.
+// The AppKit path stays background-safe (no CGEvent, no window
+// activation), preserving invariant 3.
+func TestPointerDeliveryPathDefaultsToView(t *testing.T) {
+	tests := []struct {
+		name     string
+		backend  BackendMode
+		override string
+		want     string
+	}{
+		{"framebuffer default", BackendFramebuffer, "", "view"},
+		{"auto default", BackendAuto, "", "view"},
+		{"window default", BackendWindow, "", "view"},
+		{"framebuffer explicit hid", BackendFramebuffer, "hid", "hid"},
+		{"auto explicit hid", BackendAuto, "hid", "hid"},
+		{"framebuffer explicit view", BackendFramebuffer, "view", "view"},
+		{"unrecognized override falls back to view", BackendAuto, "garbage", "view"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := pointerDeliveryPath(tt.backend, tt.override); got != tt.want {
+				t.Fatalf("pointerDeliveryPath(%v, %q) = %q, want %q",
+					tt.backend, tt.override, got, tt.want)
+			}
+		})
+	}
+}
+
 // TestInputBridgeZeroValueHasNilHost documents that a zero-value
 // InputBridge has no host wired. ControlServer constructors that
 // build &ControlServer{} rely on this.

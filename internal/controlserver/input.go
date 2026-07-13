@@ -11,6 +11,7 @@ package controlserver
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -234,16 +235,13 @@ func (b *InputBridge) sendMouseVMDirect(cmd *controlpb.MouseCommand) *controlpb.
 		}
 
 		// viewY is a bottom-left, content-relative point (0 == bottom of the
-		// VM content, contentH == top). Both delivery paths consume this same
-		// point: the private screen-coordinate pointing device
-		// (sendPointerNSEvent:pointingDeviceIndex:) and the AppKit
-		// mouseDown:/mouseMoved: fallback on VZVirtualMachineView both apply
-		// the standard bottom-left NSEvent locationInWindow convention. Once
-		// the capture->view mapping accounts for the host backing scale and
-		// title-bar band, this single point routes clicks correctly; the
-		// earlier misroutes (a consent button landing on the menu bar) were
-		// entirely the Retina unit conflation in that mapping, not an
-		// orientation mismatch on this path.
+		// VM content, contentH == top), the standard NSEvent
+		// locationInWindow convention. The AppKit view path
+		// (mouseDown:/mouseUp:/mouseMoved:) consumes this point directly.
+		// The capture->view mapping must account for the host backing scale
+		// and title-bar band; before that fix a consent button landed on the
+		// menu bar (a pure Retina unit conflation, not an orientation
+		// mismatch). The diagnostic-only HID path consumes the same point.
 		if h.Verbose() {
 			fmt.Printf("[mouse-direct] bounds=%.0fx%.0f contentH=%.0f input=(%.3f,%.3f) view=(%.1f,%.1f) action=%s\n",
 				bounds.Size.Width, bounds.Size.Height, contentH, cmd.X, cmd.Y, viewX, viewY, cmd.Action)
@@ -293,8 +291,19 @@ func (b *InputBridge) sendMouseVMDirect(cmd *controlpb.MouseCommand) *controlpb.
 			return
 		}
 
+		// Select the delivery path once. Every event in a click's
+		// move+down+up sequence resolves to the same path because the
+		// choice depends only on the (stable) backend and process-wide
+		// override, never on per-call state.
+		path := pointerDeliveryPath(h.InputBackend(), pointerDeliveryOverride)
+
 		vmHandle := h.VM()
-		if vmHandle.ID != 0 && objc.Send[bool](vmHandle.ID, objc.Sel("respondsToSelector:"), objc.Sel("sendPointerNSEvent:pointingDeviceIndex:")) {
+		if path == "hid" && vmHandle.ID != 0 &&
+			objc.Send[bool](vmHandle.ID, objc.Sel("respondsToSelector:"), objc.Sel("sendPointerNSEvent:pointingDeviceIndex:")) {
+			// Explicit diagnostic override only. The private screen-
+			// coordinate pointing device swallows events on current
+			// hardware, so this path never runs unless
+			// COVE_POINTER_DELIVERY=hid is set.
 			if h.Verbose() {
 				fmt.Printf("[mouse-hid] action=%s point=(%.1f,%.1f)\n", cmd.Action, viewX, viewY)
 			}
@@ -303,7 +312,14 @@ func (b *InputBridge) sendMouseVMDirect(cmd *controlpb.MouseCommand) *controlpb.
 			return
 		}
 
-		// Fall back to routing through VZVirtualMachineView's own event methods.
+		// Default: route through VZVirtualMachineView's own event methods.
+		// mouseDown:/mouseUp:/mouseMoved: are dispatched straight to the VM
+		// view object (which is the window's content view), so the guest
+		// receives the click without activating the app or moving host
+		// focus (invariant 3).
+		if h.Verbose() {
+			fmt.Printf("[mouse-view] action=%s point=(%.1f,%.1f)\n", cmd.Action, viewX, viewY)
+		}
 		vmViewHandle := h.VMView()
 		switch cmd.Action {
 		case "down":
@@ -530,6 +546,47 @@ func (b *InputBridge) sendKeyChord(cmd *controlpb.KeyCommand) *controlpb.Control
 	}
 	return &controlpb.ControlResponse{Error: "keyboard chord up failed: " + strings.Join(errs, "; ")}
 }
+
+// pointerDeliveryPath selects the direct-backend pointer delivery path.
+//
+// Two paths can deliver a mouse NSEvent to the guest without touching the
+// host window server (invariant 3): the private screen-coordinate pointing
+// device (VZVirtualMachine sendPointerNSEvent:pointingDeviceIndex:, "hid")
+// and the AppKit fallback (VZVirtualMachineView mouseMoved:/mouseDown:/
+// mouseUp:, "view"). The private HID selector is undocumented and was found
+// to silently swallow events on current hardware — a click's NSEvent
+// reached it but no click landed in the guest, regardless of Y orientation
+// — so "view" is the default for every non-explicit request. "hid" is
+// reachable only as an explicit diagnostic override
+// (COVE_POINTER_DELIVERY=hid), never automatically, so the broken path
+// never runs in normal operation.
+//
+// The choice is a pure function of the backend and the override, so every
+// event in a click's move+down+up sequence selects the same path.
+func pointerDeliveryPath(backend BackendMode, override string) string {
+	switch override {
+	case "hid":
+		return "hid"
+	case "view":
+		return "view"
+	}
+	// No explicit override: always use the AppKit view path. It works on
+	// all backends and stays background-safe.
+	return "view"
+}
+
+// pointerDeliveryOverride reads the COVE_POINTER_DELIVERY diagnostic
+// override once at process start. Recognized values are "hid" and "view";
+// anything else (including empty) leaves the default in force.
+var pointerDeliveryOverride = func() string {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv("COVE_POINTER_DELIVERY")))
+	switch v {
+	case "hid", "view":
+		return v
+	default:
+		return ""
+	}
+}()
 
 // keyInjectorOrder returns the ordered key-injection path names for the
 // given input backend and request flags. The "cgevent" path posts through
