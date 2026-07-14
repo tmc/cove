@@ -1,0 +1,2 @@
+committed 2026-07-14 by claude-code (Opus 4.8 1M) tty=not a tty pid=76526 ITERM_SESSION_ID=w0t14p8:FCD562E0-C76A-48C0-8B10-332740AB8443
+Finding 4 from 18F33C36's VM-lifecycle report (/Users/tmc/tmp/cove-vm-lifecycle-report-2026-07-14.md): provision-agent silently dropped a post-subcommand -vm and provisioned the default VM (misleading 'disk.img not found'). Fixed via local flagset mirroring agent-upgrade; both orderings work, stray args rejected. Regression rows added. Branch fix/provision-agent-vm-flag off main, local/unpushed.
