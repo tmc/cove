@@ -31,6 +31,17 @@ func (s *ControlServer) OCRClickTextWithOptions(ocr *ocrx.Service, text string, 
 			if verbose {
 				fmt.Printf("[ocr-click] found %q at (%.3f, %.3f)\n", text, normX, normY)
 			}
+			// Honest-failure gate: if this is an approval control on a macOS
+			// protected consent sheet (NetworkExtension/TCC), no synthetic
+			// click can activate it. Refuse before dispatching, so callers get
+			// an explicit error instead of a silent no-op. Ordinary clicks and
+			// decline clicks are unaffected (consentGateBlocksClick is narrow).
+			if label, blocked := consentGateBlocksClick(ocr.AllText(img), text); blocked {
+				if verbose {
+					fmt.Printf("[ocr-click] refusing synthetic click on protected consent sheet (%q)\n", label)
+				}
+				return wrapConsentErr(text, label)
+			}
 			resp := s.sendMouseEvent(&controlpb.MouseCommand{
 				X:      normX,
 				Y:      normY,
