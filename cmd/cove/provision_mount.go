@@ -75,10 +75,29 @@ func attachAndMountDataVolume(diskPath string) (mountPoint, device, dataPartitio
 		return "", "", "", fmt.Errorf("could not attach disk image: empty device")
 	}
 
-	provisionLog("Attached disk image to %s", device)
+	// Reconcile the attach-returned device against the authoritative,
+	// image-path-keyed view from `hdiutil info -plist`. Under concurrent disk
+	// images the attach path could report a stale/wrong /dev/diskN; the
+	// image-path lookup returns the device that actually backs THIS image, so
+	// downstream discovery and detach can never target an unrelated disk.
+	if resolved, found, findErr := disk.FindAttachedDisk(diskPath); findErr == nil && found && resolved != "" {
+		base := baseDiskDevice(resolved)
+		if base != "" && base != device {
+			provisionLog("reconciled attach device %s -> %s for image %s", device, base, diskPath)
+			device = base
+		}
+	} else if findErr != nil {
+		provisionLog("warning: could not confirm attached device for %s: %v", diskPath, findErr)
+	}
 
-	// Step 2: Find the Data volume using diskutil list (without specifying device)
-	// This shows ALL volumes including those in synthesized APFS containers
+	provisionLog("Attached disk image %s to %s", diskPath, device)
+
+	// Step 2: Find our image's APFS Data volume. We anchor strictly on the
+	// physical-store back-reference (the synthesized container whose Physical
+	// Store points at OUR device) and deliberately do NOT fall back to picking
+	// an arbitrary "recently attached" container — that generic fallback is
+	// what let a concurrent image's disk be selected and detached (see the
+	// VM-lifecycle report, finding 3).
 	cmd = exec.Command("diskutil", "list")
 	output, err = cmd.Output()
 	if err != nil {
@@ -87,115 +106,47 @@ func attachAndMountDataVolume(diskPath string) (mountPoint, device, dataPartitio
 	}
 	diskutilListOutput := string(output)
 
-	// Look for APFS Volume named "Data" that belongs to our disk
-	// We need to find volumes in containers that reference our physical disk
-	// Format: 4:                APFS Volume Data                  320.9 MB   disk22s5
-	allOutput := string(output)
-
-	// First, find which APFS container is using our disk
-	// Look for "Physical Store diskXsY" where X matches our device number
-	deviceNum := strings.TrimPrefix(device, "/dev/disk")
-	physStoreRe := regexp.MustCompile(`Physical Store disk` + regexp.QuoteMeta(deviceNum) + `s\d+`)
-
-	// Find the container that uses our disk
-	var containerDisk string
-	containerRe := regexp.MustCompile(`/dev/(disk\d+) \(synthesized\)`)
-	sections := strings.Split(allOutput, "/dev/disk")
-	for i, section := range sections {
-		if i == 0 {
-			continue
-		}
-		section = "/dev/disk" + section
-		if physStoreRe.MatchString(section) {
-			// This section references our physical disk
-			if matches := containerRe.FindStringSubmatch(section); matches != nil {
-				containerDisk = matches[1]
-				provisionLog("Found APFS container: /dev/%s", containerDisk)
-				break
-			}
-		}
+	// Find which APFS container's Physical Store is one of our device's
+	// partitions. Pure parse, so it is unit-tested directly.
+	containerDisk := findAPFSContainerForDevice(diskutilListOutput, device)
+	if containerDisk != "" {
+		provisionLog("Found APFS container /dev/%s (Physical Store on %s)", containerDisk, device)
 	}
 
-	if containerDisk == "" {
-		// Fallback: look for any "Data" volume in a recently attached container
-		// The hdiutil output includes synthesized containers
-		for _, line := range lines {
-			fields := strings.Fields(line)
-			if len(fields) > 0 && strings.HasPrefix(fields[0], "/dev/disk") && !strings.Contains(fields[0], "s") {
-				// This is a container disk
-				if fields[0] != device {
-					containerDisk = strings.TrimPrefix(fields[0], "/dev/")
-					break
-				}
-			}
-		}
-	}
-
-	// Now find the Data volume in the container
+	// Now find the Data volume in the container. Only accept a partition that
+	// belongs to the confirmed container (containerDisk + "s"), so a same-named
+	// "Data" volume in an unrelated container can never be selected.
 	if containerDisk != "" {
 		cmd = exec.Command("diskutil", "list", "/dev/"+containerDisk)
 		output, err = cmd.Output()
 		if err == nil {
-			for _, line := range strings.Split(string(output), "\n") {
-				lineLower := strings.ToLower(line)
-				// Look for "APFS Volume Data" or similar
-				if strings.Contains(lineLower, "apfs volume") && strings.Contains(lineLower, "data") && !strings.Contains(lineLower, "vm data") {
-					fields := strings.Fields(line)
-					for _, f := range fields {
-						if strings.HasPrefix(f, containerDisk+"s") || strings.HasPrefix(f, "disk") && strings.Contains(f, "s") {
-							dataPartition = "/dev/" + f
-							break
-						}
-					}
-					if dataPartition != "" {
-						break
-					}
-				}
-			}
-		}
-	}
-
-	// Fallback: scan all synthesized containers from hdiutil output
-	if dataPartition == "" {
-		for _, line := range lines {
-			fields := strings.Fields(line)
-			if len(fields) >= 2 && strings.HasPrefix(fields[0], "/dev/disk") && strings.Contains(fields[0], "s") {
-				// Check if this partition's container has a Data volume
-				containerBase := strings.Split(strings.TrimPrefix(fields[0], "/dev/"), "s")[0]
-				if containerBase != deviceNum { // Skip physical disk partitions
-					cmd = exec.Command("diskutil", "list", "/dev/"+containerBase)
-					checkOutput, err := cmd.Output()
-					if err == nil {
-						for _, checkLine := range strings.Split(string(checkOutput), "\n") {
-							checkLower := strings.ToLower(checkLine)
-							if strings.Contains(checkLower, "apfs volume") && strings.Contains(checkLower, "data") && !strings.Contains(checkLower, "vm data") {
-								checkFields := strings.Fields(checkLine)
-								for _, f := range checkFields {
-									if strings.HasPrefix(f, "disk") && strings.Contains(f, "s") {
-										dataPartition = "/dev/" + f
-										break
-									}
-								}
-								if dataPartition != "" {
-									break
-								}
-							}
-						}
-					}
-					if dataPartition != "" {
-						break
-					}
-				}
-			}
+			dataPartition = findDataVolumeInContainer(string(output), containerDisk)
 		}
 	}
 
 	if dataPartition == "" {
+		// No safe fallback: if we could not anchor the Data volume to our own
+		// device's container, detach only our image and fail. Guessing a
+		// container/volume here is exactly the wrong-disk hazard we are fixing.
 		detachDisk(device)
+		if containerDisk == "" {
+			return "", "", "", fmt.Errorf("%w: no APFS container found whose Physical Store is on %s\n\ndiskutil list output:\n%s",
+				ErrDataPartitionNotFound, device, diskutilListOutput)
+		}
 		return "", "", "", dataPartitionNotFoundError(device, diskutilListOutput)
 	}
 
-	provisionLog("Found Data partition: %s", dataPartition)
+	// Safety check: the selected Data partition must belong to the confirmed
+	// container. This is redundant with the search above but guards against a
+	// future refactor reintroducing a cross-container selection.
+	if containerDisk != "" && !strings.HasPrefix(dataPartition, "/dev/"+containerDisk+"s") {
+		detachDisk(device)
+		return "", "", "", fmt.Errorf("selected Data volume %s is not in our container /dev/%s (device %s)",
+			dataPartition, containerDisk, device)
+	}
+
+	provisionLog("Selected Data volume %s in container /dev/%s (image %s, device %s)",
+		dataPartition, containerDisk, diskPath, device)
 
 	// Step 3: Mount the Data partition
 	cmd = exec.Command("diskutil", "mount", dataPartition)
@@ -291,6 +242,70 @@ func attachDiskImageNoMountDI2(diskPath string) (string, error) {
 	}
 	return "/dev/" + bsd, nil
 }
+
+// findAPFSContainerForDevice returns the synthesized APFS container disk (e.g.
+// "disk30") whose Physical Store is a partition of the given base device (e.g.
+// "/dev/disk27"), by parsing `diskutil list` output. It returns "" if no
+// container in the output references this exact device — it never guesses a
+// container from an unrelated section, which is the wrong-disk hazard from the
+// VM-lifecycle report (finding 3).
+func findAPFSContainerForDevice(diskutilListOutput, device string) string {
+	deviceNum := strings.TrimPrefix(device, "/dev/disk")
+	if deviceNum == "" {
+		return ""
+	}
+	// "Physical Store diskNsM" where diskN is exactly our base device (the
+	// trailing sM and a word boundary prevent disk2 from matching disk27).
+	physStoreRe := regexp.MustCompile(`Physical Store disk` + regexp.QuoteMeta(deviceNum) + `s\d+\b`)
+	containerRe := regexp.MustCompile(`/dev/(disk\d+) \(synthesized\)`)
+
+	sections := strings.Split(diskutilListOutput, "/dev/disk")
+	for i, section := range sections {
+		if i == 0 {
+			continue
+		}
+		section = "/dev/disk" + section
+		if physStoreRe.MatchString(section) {
+			if matches := containerRe.FindStringSubmatch(section); matches != nil {
+				return matches[1]
+			}
+		}
+	}
+	return ""
+}
+
+// findDataVolumeInContainer returns the /dev path of the APFS Data volume that
+// belongs to containerDisk (e.g. "disk30"), by parsing the container's
+// `diskutil list` output. Only a partition of THIS container (containerDisk +
+// "s") is accepted, so a same-named "Data" volume in another container can
+// never be selected. Returns "" if none is found.
+func findDataVolumeInContainer(containerListOutput, containerDisk string) string {
+	for _, line := range strings.Split(containerListOutput, "\n") {
+		lineLower := strings.ToLower(line)
+		if !strings.Contains(lineLower, "apfs volume") || !strings.Contains(lineLower, "data") || strings.Contains(lineLower, "vm data") {
+			continue
+		}
+		for _, f := range strings.Fields(line) {
+			if strings.HasPrefix(f, containerDisk+"s") {
+				return "/dev/" + f
+			}
+		}
+	}
+	return ""
+}
+
+// baseDiskDevice returns the base /dev/diskN device for a device path that may
+// be a partition (e.g. /dev/disk27s2 -> /dev/disk27). Paths that are already a
+// base device, or that don't match the expected shape, are returned unchanged.
+func baseDiskDevice(device string) string {
+	m := baseDiskRe.FindStringSubmatch(device)
+	if m == nil {
+		return device
+	}
+	return m[1]
+}
+
+var baseDiskRe = regexp.MustCompile(`^(/dev/disk\d+)(?:s\d+)?$`)
 
 // detachDisk safely detaches a disk device and verifies it is no longer
 // attached. Falls back to escalating detach strategies if needed.
