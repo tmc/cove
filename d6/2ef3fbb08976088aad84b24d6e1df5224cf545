@@ -1,0 +1,2 @@
+committed 2026-07-13 by claude-code (Opus 4.8 1M) tty=not a tty pid=41643 ITERM_SESSION_ID=w0t14p8:FCD562E0-C76A-48C0-8B10-332740AB8443
+honest-consent gate: OCR click-text on protected NetworkExtension/TCC consent sheets returns ErrRequiresHumanClick before dispatching a synthetic click; no approval bypass. Requested by collab 18F33C36. Local, unpushed.
