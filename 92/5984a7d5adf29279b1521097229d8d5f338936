@@ -1,0 +1,2 @@
+committed 2026-07-14 by claude-code (Opus 4.8 1M) tty=not a tty pid=33213 ITERM_SESSION_ID=w0t14p8:FCD562E0-C76A-48C0-8B10-332740AB8443
+cove ax: ported axmcp ax CLI (apps/tree/find/click/type/attr/menu/focus) onto apple/x/axuiautomation; host-side AX (drives host apps incl. VM window, not guest). Plain flag dispatch, no cobra, no axmcp import (version skew: axmcp go1.26/apple v0.5.3 vs cove go1.25.5/apple v0.6.11). Live-verified against Finder. Branch feature/embed-axmcp-cli, local/unpushed.
