@@ -1,0 +1,2 @@
+committed 2026-07-14 by claude-code (Opus 4.8 1M) tty=not a tty pid=85150 ITERM_SESSION_ID=w0t14p8:FCD562E0-C76A-48C0-8B10-332740AB8443
+Finding 3 privileged integration test per 18F33C36 directive: capability-gated (COVE_PRIVILEGED_DISK_TESTS=1 + hdiutil/diskutil + not -short), two real APFS images attached concurrently, asserts no cross-container selection, cleanup detaches both on all paths. LIVE-VERIFIED locally (disk23->disk24s1, disk25->disk26s1, no leak). Unprivileged unit coverage intact. Branch fix/offline-provision-wrong-disk, local/unpushed.
