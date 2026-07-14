@@ -1,0 +1,2 @@
+committed 2026-07-14 by claude-code (Opus 4.8 1M) tty=not a tty pid=65876 ITERM_SESSION_ID=w0t14p8:FCD562E0-C76A-48C0-8B10-332740AB8443
+apple v0.6.11->v0.6.15 to align with axmcp (coordinated w/ Codex session 25FE6073, target = latest released tag). Prereq for future import of extracted axmcp ax pkg. go get bump (go.sum not hand-written). Verified overlay + overlay-off vs released tag. Branch feature/embed-axmcp-cli, local/unpushed.
