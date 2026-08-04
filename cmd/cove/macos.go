@@ -256,7 +256,14 @@ func balloonDeviceFingerprintCount(hc vmrun.HostConfig) int {
 func saveSuspendConfigForRun(rc vmrun.RunConfig, hc vmrun.HostConfig) {
 	fp := currentConfigFingerprintForRun(rc, hc)
 	data, _ := json.MarshalIndent(fp, "", "  ")
-	if err := os.WriteFile(suspendConfigPathForVM(hc.VMDir), append(data, '\n'), 0644); err != nil {
+	path := suspendConfigPathForVM(hc.VMDir)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, append(data, '\n'), 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: save suspend config: %v\n", err)
+		return
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
 		fmt.Fprintf(os.Stderr, "warning: save suspend config: %v\n", err)
 	}
 }

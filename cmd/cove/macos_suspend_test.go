@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -106,6 +107,32 @@ func TestCurrentConfigFingerprintIncludesVirtioRuntimeSurface(t *testing.T) {
 	}
 	if got.BootMode != "recovery" {
 		t.Fatalf("currentConfigFingerprint().BootMode = %q, want recovery", got.BootMode)
+	}
+}
+
+func TestSaveSuspendConfigForRun(t *testing.T) {
+	rc := vmrun.RunConfig{CPUCount: 2, MemoryGB: 4, NetworkMode: "nat"}
+	hc := vmrun.HostConfig{VMDir: t.TempDir(), RuntimeProfile: "full"}
+	path := suspendConfigPathForVM(hc.VMDir)
+	if err := os.WriteFile(path, []byte("old"), 0644); err != nil {
+		t.Fatalf("write old suspend config: %v", err)
+	}
+
+	saveSuspendConfigForRun(rc, hc)
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read suspend config: %v", err)
+	}
+	var got suspendConfigFingerprint
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("parse suspend config: %v", err)
+	}
+	if want := currentConfigFingerprintForRun(rc, hc); got != want {
+		t.Fatalf("saved fingerprint = %+v, want %+v", got, want)
+	}
+	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
+		t.Fatalf("temporary suspend config remains: %v", err)
 	}
 }
 
