@@ -351,12 +351,12 @@ func createSerialPortAttachment() (vz.VZFileHandleSerialPortAttachment, bool) {
 		return vz.VZFileHandleSerialPortAttachment{}, false
 	}
 
-	var readFd, writeFd int
+	var readFd, writeFd int32
 
-	readFd = int(os.Stdin.Fd())
+	readFd = int32(os.Stdin.Fd())
 
 	if serialOutput == "stdout" {
-		writeFd = int(os.Stdout.Fd())
+		writeFd = int32(os.Stdout.Fd())
 	} else {
 		var err error
 		serialOutputFile, err = os.OpenFile(serialOutput, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
@@ -364,7 +364,7 @@ func createSerialPortAttachment() (vz.VZFileHandleSerialPortAttachment, bool) {
 			fmt.Printf("  warning: could not open serial output file %s: %v\n", serialOutput, err)
 			return vz.VZFileHandleSerialPortAttachment{}, false
 		}
-		writeFd = int(serialOutputFile.Fd())
+		writeFd = int32(serialOutputFile.Fd())
 		fmt.Printf("  Serial output will be written to: %s\n", serialOutput)
 	}
 
