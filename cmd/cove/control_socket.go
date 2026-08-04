@@ -559,6 +559,13 @@ func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.
 		}
 		return s.handleOperationsCommand(cmd)
 	}
+	if req.Type == "text" {
+		cmd := req.GetText()
+		if cmd == nil {
+			return &controlpb.ControlResponse{Error: "missing text command payload"}
+		}
+		return s.typeText(cmd)
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -576,17 +583,6 @@ func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.
 			return &controlpb.ControlResponse{Error: "missing mouse command payload"}
 		}
 		return s.sendMouseEvent(cmd)
-	case "text":
-		cmd := req.GetText()
-		if cmd == nil {
-			return &controlpb.ControlResponse{Error: "missing text command payload"}
-		}
-		// typeText acquires s.mu per key event to match ctl-key cadence;
-		// the outer lock is released for the duration of the call.
-		s.mu.Unlock()
-		resp := s.typeText(cmd)
-		s.mu.Lock()
-		return resp
 	case "pause":
 		return s.pauseVM()
 	case "resume":

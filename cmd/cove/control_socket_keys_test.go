@@ -105,6 +105,22 @@ func TestTypeTextRequiresGUIMode(t *testing.T) {
 	}
 }
 
+func TestHandleRequestTextRequiresGUIMode(t *testing.T) {
+	cs := &ControlServer{}
+	resp := cs.handleRequest(&controlpb.ControlRequest{
+		Type: "text",
+		Command: &controlpb.ControlRequest_Text{
+			Text: &controlpb.TextCommand{Text: "hi"},
+		},
+	})
+	if resp == nil || resp.Success {
+		t.Fatalf("handleRequest(text) = %+v, want GUI-mode error", resp)
+	}
+	if !strings.Contains(resp.Error, "requires GUI mode") {
+		t.Fatalf("error = %q, want GUI-mode guard", resp.Error)
+	}
+}
+
 func TestSendKeyEventPrimitiveFramebufferDefaultNoHostFallback(t *testing.T) {
 	t.Setenv("VZ_MACOS_EXPERIMENTAL_HID_KEYBOARD", "")
 	t.Setenv("VZ_MACOS_DISABLE_HID_KEYBOARD", "")
