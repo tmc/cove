@@ -32,3 +32,6 @@ nohup.out
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Design records: kept on disk as local engineering records, not tracked.
+docs/designs/
