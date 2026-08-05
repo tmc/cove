@@ -20,6 +20,10 @@ cove up -user myuser
 account password when you omit `-password`, which keeps secrets out of shell
 history.
 
+Want to learn cove rather than just start it? The
+[tutorial](docs/getting-started/first-vm.md) builds a VM, runs a command inside
+it, snapshots it, and deletes it in about 15 minutes.
+
 ## Install
 
 Install from source for now:

@@ -138,3 +138,11 @@ cove support bundle -vm default
 Attach the support bundle when filing an issue. It is redacted and includes
 host readiness, version/signing details, helper and daemon status, and optional
 VM diagnostics.
+
+## Next steps
+
+- [Tutorial: provision and snapshot your first VM](first-vm.md) -- the same
+  ground at a slower pace, plus guest commands, snapshots, and cleanup.
+- [Provision a guest](../guides/provisioning.md) -- automate what `-user` does
+  by hand.
+- [Troubleshooting](../guides/troubleshooting.md) -- when a VM will not start.

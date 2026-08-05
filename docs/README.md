@@ -20,10 +20,27 @@ That downloads the latest macOS IPSW, installs, provisions a user named `me`, an
 
 Need Linux? `cove up -linux -user me`. Want to pull from a registry instead of installing from scratch? See [Push & Pull](getting-started/push-pull.md).
 
-## Quick Links
+## I want to...
 
-- [Installation](getting-started/install.md) -- source build and first-run requirements
-- [Quick Start](getting-started/quickstart.md) -- three paths to a running VM
+| I want to... | Start here |
+|---|---|
+| Install cove | [Install cove](getting-started/install.md) |
+| Get one VM running, fast | [Quick start](getting-started/quickstart.md) |
+| Learn cove properly, start to finish | [Tutorial: provision and snapshot your first VM](getting-started/first-vm.md) |
+| Fix a VM that will not start | [Troubleshooting](guides/troubleshooting.md) |
+| Understand what cove does underneath | [How cove works](architecture/overview.md) |
+| Run macOS CI jobs | [macOS CI runner](examples/ci-runner.md) |
+| Give an AI agent a sandbox | [Agent sandbox quickstart](agent-sandbox/quickstart.md) |
+| Move off Cirrus CI | [Migrating from Cirrus](migrations/from-cirrus.md) |
+| Look up a command or flag | [CLI reference](reference/cli.md) |
+| Drive a VM from my own code | [Control socket API](reference/control-api.md) |
+
+New to cove? Do the [tutorial](getting-started/first-vm.md) — it builds a VM,
+runs a command inside it, snapshots it, and deletes it, which is the shape of
+every other workflow here.
+
+## More reference
+
 - [CLI Reference](reference/cli.md) -- every command and flag
 - [Cove after Cirrus CI](landing/cove-vs-cirrus.md) -- private landing-page draft for the June 2026 Cirrus shutdown window
 - [Quickstart from Cirrus](quickstart-from-cirrus.md) -- five-step private-repo migration path
