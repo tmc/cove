@@ -73,6 +73,13 @@ func subcommandSkipsVMDir(args []string) bool {
 	if len(args) == 0 {
 		return false
 	}
+	// Help never depends on VM state. Without this, a command outside the
+	// allowlist cannot print its usage while the active VM is unusable —
+	// `cove build -h` failed with "create VM dir: ... file exists" because
+	// the active VM's compatibility alias dangled.
+	if argsRequestHelp(args) {
+		return true
+	}
 	if _, ok := lookupCommand(args[0]); !ok && args[0] != "help" {
 		return true
 	}
@@ -129,6 +136,26 @@ func requireExistingVMDir(command, name string) (string, error) {
 		return "", fmt.Errorf("%s: VM %q is invalid under %s", command, name, vmconfig.BaseDir())
 	}
 	return dir, nil
+}
+
+// argsRequestHelp reports whether args ask for usage rather than for work:
+// the "help" command itself, or a -h/--help flag before any "--" terminator.
+func argsRequestHelp(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	if args[0] == "help" {
+		return true
+	}
+	for _, arg := range args[1:] {
+		switch arg {
+		case "--":
+			return false
+		case "-h", "--help", "-help":
+			return true
+		}
+	}
+	return false
 }
 
 func argsContainFlag(args []string, name string) bool {

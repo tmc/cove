@@ -21,6 +21,12 @@ func TestSubcommandSkipsVMDir(t *testing.T) {
 		want bool
 	}{
 		{"empty", nil, false},
+		{"build -h needs no VM dir", []string{"build", "-h"}, true},
+		{"build --help needs no VM dir", []string{"build", "--help"}, true},
+		{"help command needs no VM dir", []string{"help"}, true},
+		{"help flag after args", []string{"snapshot", "save", "--help"}, true},
+		{"help flag after -- is an argument", []string{"exec", "--", "prog", "-h"}, false},
+		{"build without help still needs VM dir", []string{"build", "img"}, false},
 		{"helper bare", []string{"helper"}, true},
 		{"helper daemon", []string{"helper", "daemon"}, true},
 		{"helper status", []string{"helper", "status"}, true},
