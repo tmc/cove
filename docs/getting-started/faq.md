@@ -53,11 +53,7 @@ No. Docker Desktop on macOS uses its own Linux VM (via Virtualization.framework 
 
 ## Can I run x86 guests?
 
-No. Apple's Virtualization.framework only supports ARM64 guests. If you need x86 guests on Apple Silicon, use [UTM](https://mac.getutm.app) which provides x86 emulation via QEMU.
-
-## How does cove compare to Lume, Tart, and UTM?
-
-See the [comparison page](comparison.md) for a detailed feature matrix. In short: cove focuses on scriptable macOS VMs with suspend/resume, snapshots, and VZScript automation. Lume targets AI agent orchestration via REST API. Tart targets CI/CD with OCI images. UTM supports x86 emulation.
+No. Apple's Virtualization.framework only supports ARM64 guests. Running x86 guests on Apple Silicon requires an emulator, which cove does not bundle.
 
 ## How do I share files between host and guest?
 

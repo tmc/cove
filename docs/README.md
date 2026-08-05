@@ -31,7 +31,6 @@ Need Linux? `cove up -linux -user me`. Want to pull from a registry instead of i
 | Understand what cove does underneath | [How cove works](architecture/overview.md) |
 | Run macOS CI jobs | [macOS CI runner](examples/ci-runner.md) |
 | Give an AI agent a sandbox | [Agent sandbox quickstart](agent-sandbox/quickstart.md) |
-| Move off Cirrus CI | [Migrating from Cirrus](migrations/from-cirrus.md) |
 | Look up a command or flag | [CLI reference](reference/cli.md) |
 | Drive a VM from my own code | [Control socket API](reference/control-api.md) |
 
@@ -42,14 +41,11 @@ every other workflow here.
 ## More reference
 
 - [CLI Reference](reference/cli.md) -- every command and flag
-- [Cove after Cirrus CI](landing/cove-vs-cirrus.md) -- private landing-page draft for the June 2026 Cirrus shutdown window
-- [Quickstart from Cirrus](quickstart-from-cirrus.md) -- five-step private-repo migration path
-- [Cirrus Migration](migrations/from-cirrus.md) -- translate `.cirrus.yml` jobs to cove-backed GitHub Actions
 - [VZScript Commands](reference/vzscript-commands.md) -- guest agent and OCR automation
 - [Shared Folders Reference](reference/shared-folders.md) -- persist-vs-live VirtioFS behavior
 - [Control Socket API](reference/control-api.md) -- programmatic VM control
 - [Fleet Control Plane](reference/fleet-control-plane.md) -- private controller and worker protocol
-- [License and Virtualization Limits](reference/license-comparison.md) -- Apple SLA and project-license comparison
+- `License and Virtualization Limits` -- Apple SLA and project-license comparison
 - [Release Checklist](reference/release-checklist.md) -- pre-tag and publish gates
 
 ## Feature Highlights

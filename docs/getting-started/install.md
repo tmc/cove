@@ -90,9 +90,7 @@ as separately permitted by Apple, it also excludes service bureau, time-sharing,
 terminal sharing, relay service, and similar services.
 
 cove does not work around that limit. Read the applicable SLA for the macOS
-version you run: <https://www.apple.com/legal/sla/>. See
-[License and Virtualization Limits](../reference/license-comparison.md) for the
-cove, Lume, Tart, Orchard, and tart-guest-agent comparison. This section is a
+version you run: <https://www.apple.com/legal/sla/>. This section is a
 product disclosure, not legal advice.
 
 ## macOS Restore Image Cache

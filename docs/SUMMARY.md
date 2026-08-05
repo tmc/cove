@@ -10,10 +10,7 @@
 ## Understand how cove works
 * [How cove works](architecture/overview.md)
 * [How the purego bindings work](architecture/purego.md)
-* [Compare cove with other tools](getting-started/comparison.md)
-* [Compare on-disk storage](on-disk-comparison.md)
 * [Frequently asked questions](getting-started/faq.md)
-* [Understand licensing and virtualization limits](reference/license-comparison.md)
 
 ## Run and manage VMs
 * [Suspend and resume a VM](features/suspend-resume.md)
@@ -63,11 +60,6 @@
 * [Run a fleet](quickstart/fleet.md)
 
 ## Migrate from another tool
-* [Migrate from Cirrus](migrations/from-cirrus.md)
-* [Work through the Cirrus preflight checklist](migrations/from-cirrus-checklist.md)
-* [Start from Cirrus in one page](quickstart-from-cirrus.md)
-* [Map Cirrus concepts to cove](migration/cirrus-to-cove.md)
-* [Migrate from Cirrus (overview)](migrate-from-cirrus.md)
 * [Start an agent sandbox from scratch](quickstart-agent-sandbox.md)
 
 ## Operate and release cove
@@ -114,14 +106,8 @@ cove behaves today, use the groups above.
 * [Tag cut runbook](release/tag-cut-runbook.md)
 
 ### Benchmarks
-* [Competitive benchmark results, May 2026](benchmarks/competitive-2026-05.md)
-* [Competitive Benchmark Methodology](benchmarks/competitive-methodology.md)
 * [cove shell roundtrip latency](benchmarks/cove-shell-latency.md)
 * [Disk I/O Benchmark](benchmarks/disk-io.md)
 * [R53 perf snapshot](benchmarks/r53-perf-snapshot.md)
 
 ### Strategy and positioning
-* [Cove for Cirrus CI migration](landing/cirrus-displacement.md)
-* [Cove after Cirrus CI](landing/cove-vs-cirrus.md)
-* [Cirrus to cove migration walkthrough](landing/migration-walkthrough.md)
-* [v0.4 Cirrus migration](blog/v0.4-cirrus-migration.md)

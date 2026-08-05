@@ -84,9 +84,7 @@ macOS guests are governed by Apple's macOS Software License Agreement, not just 
 
 cove does not work around that limit. A single Mac host means at most two additional macOS guest instances under the standard SLA language; a fleet scales by adding Apple hardware. Read the applicable SLA for the macOS version you run: <https://www.apple.com/legal/sla/>.
 
-This section is a product disclosure, not legal advice. See
-`docs/reference/license-comparison.md` for the cove, Lume, Tart, Orchard, and
-tart-guest-agent license comparison.
+This section is a product disclosure, not legal advice.
 
 ## Helper Daemon
 

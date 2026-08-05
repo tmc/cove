@@ -18,7 +18,6 @@ Use after `v0.2.1` or `v0.3.0` is actually tagged and artifacts have been built.
 - Run `dist/smoke-test.sh` against a fresh VM before calling the release done.
 - Keep the Homebrew tap update parked while cove is private.
 - Notify the mlx-go QA thread when `v0.2.1` lands.
-- Post the Cirrus migration link only after the release artifact is available.
 - Record any skipped live-smoke gate in the GitHub release body.
 
 ## Privacy gate

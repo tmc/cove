@@ -78,7 +78,7 @@ Use `cove help advanced` for the full command list.
 
 cove is MIT-licensed. macOS guests still run under Apple's macOS Software License Agreement: the current [macOS Tahoe 26 SLA](https://www.apple.com/legal/sla/docs/macOSTahoe.pdf) section 2B(iii) permits up to two additional virtualized macOS instances on each Apple-branded computer you own or control, for the listed development, testing, macOS Server, or personal non-commercial purposes. Cove does not bypass or expand that Apple limit; fleet capacity is hardware capacity.
 
-This is a product note, not legal advice. Read the applicable Apple SLA for the macOS version you run: <https://www.apple.com/legal/sla/>. See [License and Virtualization Limits](docs/reference/license-comparison.md) for the cove, Lume, Tart, Orchard, and tart-guest-agent comparison.
+This is a product note, not legal advice. Read the applicable Apple SLA for the macOS version you run: <https://www.apple.com/legal/sla/>.
 
 ## Features
 
@@ -202,22 +202,6 @@ cove vzscript run gitlab-runner
 Runner registration tokens are secrets. Avoid pasting real values into shell
 history; use a prompt, keychain lookup, or CI secret variable instead.
 
-### Cirrus Task Migration
-
-This is an advanced workflow. Get a local VM working first with `cove first-run`.
-
-From the cove checkout:
-
-```bash
-cove action doctor
-cove image verify --strict --newer-than 168h macos-runner:latest
-cove action prepare-image macos-runner:latest --ttl 24h
-go run ./cmd/cove-action -image macos-runner:latest -command './ci/test.sh'
-```
-
-Use [Quickstart from Cirrus](docs/quickstart-from-cirrus.md) for the five-step
-path and [Migrating from Cirrus CI to cove](docs/migrations/from-cirrus.md) for
-container, macOS, persistent-worker, and matrix examples.
 
 ### Tailscale Mesh Access
 

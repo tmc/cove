@@ -5,7 +5,7 @@ icon: lightbulb
 ---
 # Hosted Runner Examples
 
-`cove` is the local VM runner engine. A Cirrus-style hosted runner product
+`cove` is the local VM runner engine. A hosted runner product
 should live outside this repository and call into `cove` for image validation,
 ephemeral VM forks, logs, artifacts, and cleanup.
 

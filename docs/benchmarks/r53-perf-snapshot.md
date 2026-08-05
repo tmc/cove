@@ -125,7 +125,7 @@ worth investigating.
    re-run, drop the median into `bench/fork-time/` (or equivalent) so future
    audits have a comparison point.
 3. **Hold v0.5 perf claims to evidence on file**, not this snapshot. The R50
-   readiness audit (`docs/release/r50-readiness.md`) does not cite perf, so
+   readiness audit for that release does not cite perf, so
    this snapshot does not block any tag decision.
 
 ## Constraints honored
