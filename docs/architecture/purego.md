@@ -172,3 +172,7 @@ for y := 0; y < height; y++ {
     }
 }
 ```
+
+## Next steps
+
+- [How cove works](overview.md) -- where the bindings sit in the whole system.

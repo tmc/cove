@@ -144,3 +144,10 @@ sequenceDiagram
 - Control socket runs on its own goroutine, dispatching to the VM queue as needed
 - `CGWindowListCreateImage` is thread-safe (no main queue required)
 - `CGEventCreateKeyboardEvent` is used instead of `NSEvent` for keyboard input (avoids ARM64 purego parameter corruption beyond argument position 8)
+
+## Next steps
+
+- [How the purego bindings work](purego.md) -- the cgo-free binding layer.
+- [Control socket API](../reference/control-api.md) -- drive a VM from your own
+  code.
+- [Tutorial: provision and snapshot your first VM](../getting-started/first-vm.md)

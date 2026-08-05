@@ -205,3 +205,9 @@ cat /Volumes/Data/private/var/db/vz-provision.sh
 diskutil unmount /dev/disk22s5
 hdiutil detach /dev/disk22
 ```
+
+## Next steps
+
+- [Write and run vzscripts](../features/vzscript.md) -- automate guest setup.
+- [Talk to the guest agent](../features/guest-agent.md)
+- [Troubleshooting](troubleshooting.md)

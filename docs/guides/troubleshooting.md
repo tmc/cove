@@ -291,3 +291,9 @@ cove ctl -vm default capabilities
 The raw Unix-socket protocol is documented in
 [`docs/reference/control-api.md`](../reference/control-api.md) for integration
 debugging.
+
+## Next steps
+
+- [Tutorial: provision and snapshot your first VM](../getting-started/first-vm.md)
+  -- a known-good path to compare against.
+- [How cove works](../architecture/overview.md) -- what the moving parts are.

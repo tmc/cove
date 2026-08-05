@@ -119,3 +119,8 @@ This avoids hardcoding prompt order while keeping the syntax shell-like.
 | "User interaction required" | Account state problem | Verify provisioning completed in guest |
 | Terminal doesn't open | Recovery menu not ready | Re-run the automation with `-gui` and keep the window focused |
 | Agent unavailable | Expected in Recovery | Agent doesn't run in Recovery mode |
+
+## Next steps
+
+- [Manage SIP](../features/sip.md)
+- [Troubleshooting](troubleshooting.md)

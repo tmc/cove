@@ -263,3 +263,8 @@ This keeps local snapshots using APFS `clonefile` (0-byte, 0-ms restore) but let
 
 - [HTTP API](../reference/http-api.md) -- pull and push over the HTTP control plane (v0.2).
 - [Snapshots](../features/snapshots.md) -- local snapshot model and `cove snapshot push`.
+
+## Next steps
+
+- [Track image provenance and freshness](../features/image-provenance.md)
+- [Run a macOS CI runner](../examples/ci-runner.md)

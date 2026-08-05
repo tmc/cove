@@ -167,3 +167,11 @@ sudo tar -C /usr/local -xzf go1.24.3.linux-arm64.tar.gz
 export PATH=/usr/local/go/bin:$PATH
 go version
 ```
+
+## Next steps
+
+- [Quick start](quickstart.md) -- get a VM running now.
+- [Tutorial: provision and snapshot your first VM](first-vm.md) -- learn the
+  four moves every other workflow is built from.
+- [Troubleshooting](../guides/troubleshooting.md) -- if the host check reports
+  a problem.

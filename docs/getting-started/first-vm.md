@@ -61,6 +61,14 @@ cove up -vm docs-tutorial -user tutorial
 Omitting `-password` makes cove prompt for the guest password instead of
 leaving it in your shell history.
 
+The output below is from this run, which reused an already-downloaded restore
+image and ran without a window:
+
+```sh
+cove up -vm docs-tutorial -user tutorial \
+  -ipsw ~/.vz/cache/RestoreImage.ipsw -headless -no-shutdown
+```
+
 ```text
 === Step 1/3: Installing macOS ===
 === macOS Installation ===
@@ -89,12 +97,9 @@ Control socket: /Users/tmc/.vz/vms/docs-tutorial.covevm/control.sock
 The installer step is the slow one. The device node in `Detaching /dev/disk27`
 varies per run.
 
-If you have already downloaded a restore image, point at it and skip the
-download:
-
-```sh
-cove up -vm docs-tutorial -user tutorial -ipsw ~/.vz/cache/RestoreImage.ipsw
-```
+Without `-ipsw`, cove downloads the latest macOS restore image first, which
+is the slowest part of a first run. `-no-shutdown` leaves the VM running so
+the next steps have something to talk to.
 
 Defaults worth knowing: 2 CPUs, 4 GB memory, 64 GB disk, GUI window on. Add
 `-headless` for no window.
