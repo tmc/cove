@@ -1,3 +1,8 @@
+---
+title: Headless Dock Icon
+description: Fixed in a68f44d and covered by f1380b0.
+icon: bug
+---
 # Headless Dock Icon
 
 Fixed in `a68f44d` and covered by `f1380b0`.

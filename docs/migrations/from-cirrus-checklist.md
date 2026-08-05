@@ -1,3 +1,8 @@
+---
+title: Cirrus migration preflight checklist
+description: Use this checklist before changing a .cirrus.yml task.
+icon: right-left
+---
 # Cirrus migration preflight checklist
 
 Use this checklist before changing a `.cirrus.yml` task. The goal is to

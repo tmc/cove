@@ -1,3 +1,8 @@
+---
+title: cove codebase refactor plan
+description: Break the codebase into a small set of internal packages with explicit ownership so the compiler enforces boundaries that are currently only implied by...
+icon: compass-drafting
+---
 # cove codebase refactor plan
 
 **Status**: draft v0

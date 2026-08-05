@@ -2,8 +2,9 @@
 title: cove non-goals
 status: Draft
 date: 2026-05-05
+description: This page records deliberate omissions so roadmap discussions do not drift back to old ideas that were reviewed and rejected.
+icon: chess-knight
 ---
-
 # cove non-goals
 
 This page records deliberate omissions so roadmap discussions do not drift back

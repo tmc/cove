@@ -1,5 +1,7 @@
 ---
 title: Security Research Sandbox
+description: Use cove to run untrusted code in isolated, disposable macOS VMs.
+icon: lightbulb
 ---
 # Security Research Sandbox
 

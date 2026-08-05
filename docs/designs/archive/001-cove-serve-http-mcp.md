@@ -1,3 +1,8 @@
+---
+title: "cove serve — HTTP & MCP design"
+description: Close the 'AI-agent-ready' gap with trycua/lume by exposing cove's existing per-VM control socket over HTTP and MCP, without adding a daemon, a new binary, or...
+icon: compass-drafting
+---
 # cove serve — HTTP & MCP design
 
 **Status**: draft v2 (post-round-2 Council + second-opinion review)

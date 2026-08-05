@@ -1,3 +1,8 @@
+---
+title: "Review: 007-vzscript-host-files.md"
+description: The cleanup work (one canonical name for 'copy a host file', killing the manual two-step) is unambiguously good.
+icon: compass-drafting
+---
 # Review: 007-vzscript-host-files.md
 
 **Reviewer**: independent (cold-read)

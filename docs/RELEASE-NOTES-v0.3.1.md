@@ -1,8 +1,10 @@
 ---
+title: cove v0.3.1 release notes
 status: Draft
 date: 2026-05-05
+description: v0.3.1 is the operator-release after the build/cache GA.
+icon: file-lines
 ---
-
 # cove v0.3.1 release notes
 
 v0.3.1 is the operator-release after the build/cache GA. The focus moved from

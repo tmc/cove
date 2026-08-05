@@ -1,3 +1,8 @@
+---
+title: Fresh VM Login Misclassification
+description: "Date: 2026-05-05"
+icon: bug
+---
 # Fresh VM Login Misclassification
 
 Date: 2026-05-05

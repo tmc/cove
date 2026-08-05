@@ -1,3 +1,8 @@
+---
+title: Manual APFS Snapshotting
+description: "cove already has two adjacent mechanisms:"
+icon: compass-drafting
+---
 # Manual APFS Snapshotting
 
 **Status**: draft

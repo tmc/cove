@@ -1,5 +1,7 @@
 ---
 title: Vertex AI Computer Use
+description: Drive a local cove macOS VM from Google Vertex AI's computer-use preview for one-shot agent runs, billing against a Google Cloud project.
+icon: lightbulb
 ---
 # Vertex AI Computer Use
 

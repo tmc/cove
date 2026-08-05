@@ -1,3 +1,8 @@
+---
+title: "Design 043: Vzkit Migration Boundary"
+description: "Status: Draft."
+icon: compass-drafting
+---
 # Design 043: Vzkit Migration Boundary
 
 Status: Draft.

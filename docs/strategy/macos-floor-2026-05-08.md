@@ -1,3 +1,8 @@
+---
+title: macOS host floor audit (2026-05-08)
+description: "Slice 4 of design 041 chose Option A: the v0.6+ binary always uses SCKit, no runtime version check."
+icon: chess-knight
+---
 # macOS host floor audit (2026-05-08)
 
 Slice 4 of design 041 chose Option A: the v0.6+ binary always uses

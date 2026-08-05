@@ -1,3 +1,8 @@
+---
+title: v0.3 cache-miss execution
+description: Slice 3 was the point where cove build stopped being a planner only.
+icon: compass-drafting
+---
 # v0.3 cache-miss execution
 
 **Status**: implemented (Slice 3 shipped on `origin/main` 8559c9a).

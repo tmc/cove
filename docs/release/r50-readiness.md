@@ -2,8 +2,9 @@
 title: cove R50 release-readiness audit (v0.2.1 / v0.3 / v0.4 / v0.5)
 status: Audit
 date: 2026-05-07
+description: This audit consolidates the tag-cut state for v0.2.1, v0.3, v0.4, and the v0.5 milestone.
+icon: tag
 ---
-
 # R50 release-readiness audit
 
 This audit consolidates the tag-cut state for v0.2.1, v0.3, v0.4, and the v0.5

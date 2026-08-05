@@ -2,8 +2,9 @@
 title: cove integration matrix
 status: Draft
 date: 2026-05-05
+description: This page lists the operator-facing integrations that ship with cove v0.4 and the main file or command surface for each one.
+icon: plug
 ---
-
 # cove integration matrix
 
 This page lists the operator-facing integrations that ship with cove v0.4 and

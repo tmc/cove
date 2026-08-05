@@ -1,3 +1,8 @@
+---
+title: "Design 038: Agent Sandbox v2"
+description: Full live provider-matrix evidence still depends on local provider credentials.
+icon: compass-drafting
+---
 # Design 038: Agent Sandbox v2
 
 **Status:** shipped as provider abstraction, docs, doctor, examples, and benchmark harness.

@@ -2,8 +2,9 @@
 title: R53 perf snapshot — cove run startup, fork-time, ctl roundtrip
 status: Snapshot, host-load uncalibrated
 date: 2026-05-07
+description: "Tracker: R53-PERF-AUDIT (E91C8CCE)."
+icon: gauge-high
 ---
-
 # R53 perf snapshot
 
 Tracker: R53-PERF-AUDIT (`E91C8CCE`).

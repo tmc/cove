@@ -1,5 +1,7 @@
 ---
 title: GitHub Actions Executor
+description: The GitHub Actions executor is an internal, private action wrapper for running one GitHub Actions job inside a fresh cove fork.
+icon: puzzle-piece
 ---
 # GitHub Actions Executor
 

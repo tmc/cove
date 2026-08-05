@@ -2,8 +2,9 @@
 title: Migrate from Cirrus to cove
 status: Draft
 date: 2026-05-05
+description: Cirrus hosted CI shuts down on 2026-06-01.
+icon: file-lines
 ---
-
 # Migrate from Cirrus to cove
 
 Cirrus hosted CI shuts down on **2026-06-01**. This guide is the short path for a team moving a typical `.cirrus.yml` to cove while keeping VM-backed isolation and local control.

@@ -1,3 +1,8 @@
+---
+title: Agent Sandbox Provider Matrix
+description: cove agent-sandbox run uses a fresh fork from a local image, waits for the guest agent, runs a provider computer-use loop, records a replay bundle, and stops...
+icon: robot
+---
 # Agent Sandbox Provider Matrix
 
 `cove agent-sandbox run` uses a fresh fork from a local image, waits for the

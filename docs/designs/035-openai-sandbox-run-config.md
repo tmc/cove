@@ -1,3 +1,8 @@
+---
+title: "Design 035: OpenAI SandboxRunConfig backend for cove"
+description: integration docs landed at 36552c2, 4d61edd, and 27f9e24.
+icon: compass-drafting
+---
 # Design 035: OpenAI SandboxRunConfig backend for cove
 
 **Status:** Shipped on 2026-05-05; helper, backend, tests, example, and

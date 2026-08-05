@@ -1,5 +1,7 @@
 ---
 title: Gemini Computer Use
+description: Drive a local cove macOS VM from Google Gemini's computer-use tool for one-shot agent runs.
+icon: lightbulb
 ---
 # Gemini Computer Use
 

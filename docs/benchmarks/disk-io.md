@@ -1,3 +1,8 @@
+---
+title: Disk I/O Benchmark
+description: Design 027 changes disk image attachments from the Virtualization.framework defaults to explicit cache and synchronization policies.
+icon: gauge-high
+---
 # Disk I/O Benchmark
 
 Design 027 changes disk image attachments from the Virtualization.framework

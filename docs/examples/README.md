@@ -1,5 +1,7 @@
 ---
 title: Examples
+description: Scenario-based tutorials showing how to use cove for real-world workflows.
+icon: lightbulb
 ---
 # Examples
 

@@ -1,3 +1,8 @@
+---
+title: v0.3 execution roadmap
+description: source ec2f0144-789a-446a-bb58-f0ce75492796 (cove-current-roadmap-v03-planning).
+icon: compass-drafting
+---
 # v0.3 execution roadmap
 
 **Status**: accepted planning input.

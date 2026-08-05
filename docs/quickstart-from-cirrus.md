@@ -1,3 +1,8 @@
+---
+title: Quickstart from Cirrus
+description: "Status: private migration quickstart."
+icon: file-lines
+---
 # Quickstart from Cirrus
 
 Status: private migration quickstart. Keep public install instructions gated

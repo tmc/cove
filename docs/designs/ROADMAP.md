@@ -1,3 +1,8 @@
+---
+title: cove ROADMAP
+description: This document is the single source of truth for cove's planned work.
+icon: compass-drafting
+---
 # cove ROADMAP
 
 **Status**: living document. Updated as items ship or scope changes.

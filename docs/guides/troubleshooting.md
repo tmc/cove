@@ -1,5 +1,7 @@
 ---
 title: Troubleshooting
+description: "Domain: com.apple.MobileDevice.MobileRestore Code: 4014 or 3004 Description: Unexpected device state 'DFU' expected 'RestoreOS'"
+icon: compass
 ---
 # Troubleshooting
 

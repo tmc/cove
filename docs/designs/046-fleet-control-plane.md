@@ -1,3 +1,8 @@
+---
+title: "Design 046: Fleet Control Plane (open-core, north-star + slices)"
+description: "Status: Roadmap input, 2026-05-29."
+icon: compass-drafting
+---
 # Design 046: Fleet Control Plane (open-core, north-star + slices)
 
 Status: Roadmap input, 2026-05-29. NotebookLM-backed design (notebook

@@ -1,3 +1,8 @@
+---
+title: "Design 042: Capture Latency Observability"
+description: "Status: production capture sample wiring landed."
+icon: compass-drafting
+---
 # Design 042: Capture Latency Observability
 
 Status: production capture sample wiring landed.

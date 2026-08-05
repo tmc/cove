@@ -1,3 +1,8 @@
+---
+title: Apple App Sandbox proof lane
+description: "Status: v0.7 proof lane."
+icon: compass-drafting
+---
 # Apple App Sandbox proof lane
 
 Status: v0.7 proof lane. The entitlement fixture, opt-in smoke harness,

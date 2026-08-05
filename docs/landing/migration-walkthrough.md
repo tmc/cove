@@ -1,3 +1,8 @@
+---
+title: Cirrus to cove migration walkthrough
+description: This walkthrough converts a common Cirrus macOS task into a GitHub Actions job that runs on a local Apple Silicon host with cove.
+icon: signs-post
+---
 # Cirrus to cove migration walkthrough
 
 This walkthrough converts a common Cirrus macOS task into a GitHub Actions job

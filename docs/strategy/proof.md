@@ -1,3 +1,8 @@
+---
+title: Competitive proof
+description: "Status: initial reproducible benchmark suite, 2026-05-06."
+icon: chess-knight
+---
 # Competitive proof
 
 Status: initial reproducible benchmark suite, 2026-05-06.

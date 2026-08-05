@@ -1,3 +1,8 @@
+---
+title: "cove runner images: publish & fork-from"
+description: cf6a506, 0349570, 2026-05-04).
+icon: compass-drafting
+---
 # cove runner images: publish & fork-from
 
 **Status**: Slices 1-2 shipped (`8a106dc`, 2026-05-02; `02acc3d`,

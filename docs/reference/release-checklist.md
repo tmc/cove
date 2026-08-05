@@ -1,5 +1,7 @@
 ---
 title: Release Checklist
+description: Use this checklist for production tags.
+icon: book
 ---
 # Release Checklist
 

@@ -1,3 +1,8 @@
+---
+title: Custom ephemeral self-hosted runners
+description: existing long-lived vzscripts/github-runner.vzscript (registration-mode runner inside a permanent VM) and the v0.4 cove-gha-runner GHA wrapper from design 021.
+icon: compass-drafting
+---
 # Custom ephemeral self-hosted runners
 
 **Status**: planning input, v2.5 (2026-05-03 round-2-folded). Owns the bridge between the

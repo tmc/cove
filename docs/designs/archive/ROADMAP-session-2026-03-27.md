@@ -1,3 +1,8 @@
+---
+title: cove Roadmap
+description: "Last updated: 2026-03-27"
+icon: compass-drafting
+---
 **Status: archived 2026-04-28 — superseded by [docs/designs/ROADMAP.md](../ROADMAP.md). This was a session-scope bug tracker dated 2026-03-27 (different scope from the multi-version roadmap). Most items here are now shipped or obsolete. Preserved for forensic value.**
 
 ---

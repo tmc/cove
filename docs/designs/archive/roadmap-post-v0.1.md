@@ -1,3 +1,8 @@
+---
+title: cove post-v0.1 roadmap
+description: Navigation aid for everything deferred from v0.1.0.
+icon: compass-drafting
+---
 # cove post-v0.1 roadmap
 
 Navigation aid for everything deferred from v0.1.0. Not a design doc.

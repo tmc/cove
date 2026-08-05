@@ -2,8 +2,9 @@
 title: Tag cut runbook
 status: Draft
 date: 2026-05-05
+description: This runbook leaves the release one command away from shipped.
+icon: tag
 ---
-
 # Tag cut runbook
 
 This runbook leaves the release one command away from shipped. Do not run these

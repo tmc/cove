@@ -1,3 +1,8 @@
+---
+title: Soft Reset Probes
+description: cove softreset probe runs the destructive soft-reset residue probe matrix against a disposable VM label and prints a pass/fail/limit summary.
+icon: puzzle-piece
+---
 # Soft Reset Probes
 
 `cove softreset probe` runs the destructive soft-reset residue probe matrix

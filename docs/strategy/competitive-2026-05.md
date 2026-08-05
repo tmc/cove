@@ -1,3 +1,8 @@
+---
+title: "T68 competitive matrix v2: cove vs Lume/Cua vs Cirrus/Tart"
+description: "Date: 2026-05-05 Original scope: design/research only."
+icon: chess-knight
+---
 > Source: T68 round of conductor 0AA1EC69, captured 2026-05-05 around the Cirrus shutdown announcement. Durable summary: memory/project_cirrus_shutdown_2026_06_01.md.
 
 # T68 competitive matrix v2: cove vs Lume/Cua vs Cirrus/Tart

@@ -1,3 +1,8 @@
+---
+title: cove v0.4 secrets — architecture options brief (Council consultation)
+description: interactive secret-store auth hangs in headless CI.
+icon: compass-drafting
+---
 # cove v0.4 secrets — architecture options brief (Council consultation)
 
 **Status**: Option A shipped in v0.4. Option B (age sidecar) deferred. Option C (Go plugin API) rejected.

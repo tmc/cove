@@ -1,5 +1,7 @@
 ---
 title: CLI Reference
+description: "These flags apply to most commands:"
+icon: book
 ---
 # CLI Reference
 

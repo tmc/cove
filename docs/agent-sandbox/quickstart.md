@@ -1,3 +1,8 @@
+---
+title: Agent Sandbox Quickstart
+description: "From zero to a fork-isolated provider loop:"
+icon: robot
+---
 # Agent Sandbox Quickstart
 
 From zero to a fork-isolated provider loop:

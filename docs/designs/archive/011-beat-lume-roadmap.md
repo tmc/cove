@@ -1,3 +1,8 @@
+---
+title: cove roadmap - beat lume, do not mimic it
+description: "The existing design set already defines the major feature tracks:"
+icon: compass-drafting
+---
 # cove roadmap - beat lume, do not mimic it
 
 **Status**: draft v0

@@ -1,5 +1,7 @@
 ---
 title: Agent Sandbox CLI
+description: cove agent-sandbox run starts a fresh fork from a local image, runs one computer-use provider loop, writes a self-describing replay bundle, and stops the fork.
+icon: puzzle-piece
 ---
 # Agent Sandbox CLI
 

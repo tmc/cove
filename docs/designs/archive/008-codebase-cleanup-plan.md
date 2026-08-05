@@ -1,3 +1,8 @@
+---
+title: cove codebase cleanup plan
+description: This plan responds to the design review in /tmp/vz-macos-design-review.md and the current repository shape.
+icon: compass-drafting
+---
 # cove codebase cleanup plan
 
 **Status**: draft; status verified 2026-04-29

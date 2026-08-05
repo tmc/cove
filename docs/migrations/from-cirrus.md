@@ -1,3 +1,8 @@
+---
+title: Migrating from Cirrus CI to cove
+description: Cirrus CI shuts down on Monday, June 1, 2026.
+icon: right-left
+---
 # Migrating from Cirrus CI to cove
 
 Cirrus CI shuts down on Monday, June 1, 2026. Use this guide to translate

@@ -1,5 +1,7 @@
 ---
 title: Guest Agent
+description: A vsock gRPC agent injected into the guest at install time.
+icon: puzzle-piece
 ---
 # Guest Agent
 

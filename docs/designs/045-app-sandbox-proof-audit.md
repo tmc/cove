@@ -1,3 +1,8 @@
+---
+title: Cove App Sandbox Proof Audit
+description: "Date: 2026-05-28"
+icon: compass-drafting
+---
 # Cove App Sandbox Proof Audit
 
 Date: 2026-05-28

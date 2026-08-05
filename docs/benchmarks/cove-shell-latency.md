@@ -1,3 +1,8 @@
+---
+title: cove shell roundtrip latency
+description: "BenchmarkCoveShellRoundtrip in coveshellbenchtest.go measures the host-side cost of one cove shell vm -- cmd invocation against an in-process fake control..."
+icon: gauge-high
+---
 # `cove shell` roundtrip latency
 
 `BenchmarkCoveShellRoundtrip` in `cove_shell_bench_test.go` measures the

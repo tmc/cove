@@ -1,3 +1,8 @@
+---
+title: cove ↔ tart OCI compatibility
+description: Make cove pull accept cirruslabs/tart images directly, and make cove push --format tart produce images that tart pull can consume.
+icon: flask
+---
 # cove ↔ tart OCI compatibility
 
 ## Goal

@@ -1,3 +1,8 @@
+---
+title: Auto-login watchdog verification
+description: "Status: pass Date: 2026-05-05"
+icon: bug
+---
 # Auto-login watchdog verification
 
 Status: pass

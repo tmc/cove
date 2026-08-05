@@ -1,3 +1,8 @@
+---
+title: "On-disk storage comparison: cove vs tart vs lume vs orchard"
+description: "Scope: how each macOS-VM tool lays out, clones, sizes, distributes, and resets VMs on disk."
+icon: file-lines
+---
 # On-disk storage comparison: cove vs tart vs lume vs orchard
 
 Scope: how each macOS-VM tool lays out, clones, sizes, distributes, and resets

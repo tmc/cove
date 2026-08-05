@@ -1,5 +1,7 @@
 ---
 title: Linux VMs
+description: Turnkey ARM64 Linux VMs with unattended installers for Ubuntu, Debian, Fedora, and Alpine.
+icon: puzzle-piece
 ---
 # Linux VMs
 

@@ -2,8 +2,9 @@
 title: Release post-tag checklist
 status: Draft
 date: 2026-05-05
+description: Use after v0.2.1 or v0.3.0 is actually tagged and artifacts have been built.
+icon: tag
 ---
-
 # Release post-tag checklist
 
 Use after `v0.2.1` or `v0.3.0` is actually tagged and artifacts have been built.

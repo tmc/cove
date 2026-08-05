@@ -1,3 +1,8 @@
+---
+title: Design 041 Slice 4 Preflight
+description: "No-ship: this host cannot produce the Slice 2 p50/p95 evidence yet."
+icon: compass-drafting
+---
 # Design 041 Slice 4 Preflight
 
 ## 2026-05-11 R107 host check

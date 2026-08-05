@@ -1,3 +1,8 @@
+---
+title: "Design 028: Block Device Passthrough"
+description: "Status: Implemented (2026-05-04)."
+icon: compass-drafting
+---
 # Design 028: Block Device Passthrough
 
 Status: Implemented (2026-05-04). Verified 2026-05-10 (R360):

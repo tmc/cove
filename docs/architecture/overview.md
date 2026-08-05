@@ -1,5 +1,7 @@
 ---
 title: Architecture Overview
+description: "graph TD subgraph Host['Host (macOS)'] CLI['cove CLIbr/main.go'] VF['Virtualization.frameworkbr/(via purego)'] CS['Control Socket..."
+icon: sitemap
 ---
 # Architecture Overview
 

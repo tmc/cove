@@ -1,5 +1,7 @@
 ---
 title: cove documentation
+description: macOS VMs that suspend, snapshot, and script.
+icon: file-lines
 ---
 # cove Documentation
 

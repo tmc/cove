@@ -1,3 +1,8 @@
+---
+title: cove 12-month product roadmap — 2026 → 2027
+description: adversarial review, source review of cirruslabs/tart+orchard+tart-guest-agent, and an honesty pass — see 'Honesty notes' near end and /tmp/cirruslabs-review.md...
+icon: compass-drafting
+---
 # cove 12-month product roadmap — 2026 → 2027
 
 **Status**: draft v1 (strategy / not yet Council-reviewed; v1 incorporates

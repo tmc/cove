@@ -1,3 +1,8 @@
+---
+title: "Design 033: Cove Daemon Mode"
+description: Cove is currently command-driven.
+icon: compass-drafting
+---
 # Design 033: Cove Daemon Mode
 
 **Status:** Slices 1, 2, 2b, and 3 shipped; design 040 storage poll wired into `coved`  

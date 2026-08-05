@@ -1,3 +1,8 @@
+---
+title: cove Linux support — making it fantastic
+description: ".PHONY: proto proto: # only for contributors editing proto/.proto — commits Go stubs go run github.com/bufbuild/buf/cmd/buf@latest generate \ --template..."
+icon: compass-drafting
+---
 # cove Linux support — making it fantastic
 
 **Status**: canonical v5 (Council round-2 signoff 2026-04-17)

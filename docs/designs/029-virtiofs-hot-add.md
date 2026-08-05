@@ -1,3 +1,8 @@
+---
+title: "Design 029: VirtioFS Hot-Add for Shared Folders"
+description: "Status: Shipped."
+icon: compass-drafting
+---
 # Design 029: VirtioFS Hot-Add for Shared Folders
 
 Status: Shipped. Live-apply through the pre-existing shared-folders

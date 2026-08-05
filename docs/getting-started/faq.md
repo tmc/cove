@@ -1,5 +1,7 @@
 ---
 title: FAQ
+description: cove requires Apple Silicon (M1 or later).
+icon: rocket
 ---
 # FAQ
 

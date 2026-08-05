@@ -2,8 +2,9 @@
 title: Packer shim evaluation
 status: Draft
 date: 2026-05-05
+description: Should cove ship a Packer plugin shim, or should the idea be formally sunset?
+icon: flask
 ---
-
 # Packer shim evaluation
 
 ## Question

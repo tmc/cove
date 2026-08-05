@@ -1,3 +1,8 @@
+---
+title: Deferred blocker audit
+description: Two items were deferred from the cove 0.1 ship gate on 2026-04-24 because empirical smoke testing turned up reproducible bugs.
+icon: file-lines
+---
 # Deferred blocker audit
 
 Two items were deferred from the cove 0.1 ship gate on 2026-04-24 because

@@ -1,5 +1,7 @@
 ---
 title: Installation
+description: "Install from source for now:"
+icon: rocket
 ---
 # Installation
 

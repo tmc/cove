@@ -1,3 +1,8 @@
+---
+title: cove build — churn benchmark harness
+description: Pick the default compactmode for cove build v0.3 using measured data instead of intuition.
+icon: compass-drafting
+---
 # cove build — churn benchmark harness
 
 **Status**: superseded — `cove build` v0.3 shipped with `compact_mode` default `targeted` (per H1); the standalone benchmark harness was not built as a separate binary, the choice was made from spot-measured runs and locked into `build_cache.go:158`.

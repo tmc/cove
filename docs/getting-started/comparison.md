@@ -1,5 +1,7 @@
 ---
 title: Comparison
+description: Best for developers who want scriptable macOS VMs with fast iteration.
+icon: rocket
 ---
 # Comparison with Other Tools
 

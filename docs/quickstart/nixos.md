@@ -1,3 +1,8 @@
+---
+title: NixOS Quickstart
+description: "Install a NixOS guest:"
+icon: bolt
+---
 # NixOS Quickstart
 
 Install a NixOS guest:

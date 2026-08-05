@@ -1,3 +1,8 @@
+---
+title: Helper routing audit
+description: "Date: 2026-05-05"
+icon: bug
+---
 # Helper routing audit
 
 Date: 2026-05-05

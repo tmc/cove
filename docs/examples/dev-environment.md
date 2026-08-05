@@ -1,5 +1,7 @@
 ---
 title: Reproducible Dev Environment
+description: Define a complete macOS development environment as code using vzscripts and shared folders.
+icon: lightbulb
 ---
 # Reproducible Dev Environment
 

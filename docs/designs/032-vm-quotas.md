@@ -1,3 +1,8 @@
+---
+title: "Design 032: Per-VM Resource Quotas"
+description: "Status: Shipped on 2026-05-05."
+icon: compass-drafting
+---
 # Design 032: Per-VM Resource Quotas
 
 Status: Shipped on 2026-05-05. SHA chain:

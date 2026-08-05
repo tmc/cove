@@ -1,8 +1,10 @@
 ---
+title: "Shared Folders: macOS VirtioFS Source Read Corruption"
 status: Open
 date: 2026-05-05
+description: QA reported a macOS guest read-integrity failure on mlxgo-fresh-headed2-20260505 after mounting the host checkout /Users/tmc/ml-explore as ml-explore.
+icon: bug
 ---
-
 # Shared Folders: macOS VirtioFS Source Read Corruption
 
 QA reported a macOS guest read-integrity failure on

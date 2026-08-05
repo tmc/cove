@@ -1,3 +1,8 @@
+---
+title: mlxgo fresh VM provisioning failure
+description: "Date: 2026-05-05"
+icon: bug
+---
 # mlxgo fresh VM provisioning failure
 
 Date: 2026-05-05

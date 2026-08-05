@@ -1,3 +1,8 @@
+---
+title: Elevation from the UI thread
+description: "Date: 2026-05-05"
+icon: bug
+---
 # Elevation from the UI thread
 
 Date: 2026-05-05

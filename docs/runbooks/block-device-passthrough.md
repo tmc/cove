@@ -1,3 +1,8 @@
+---
+title: Block Device Passthrough
+description: This runbook is for the real-device smoke test for design 028.
+icon: clipboard-list
+---
 # Block Device Passthrough
 
 This runbook is for the real-device smoke test for design 028. It requires a

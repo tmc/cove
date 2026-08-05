@@ -1,3 +1,8 @@
+---
+title: Auto-login watchdog misses split provision/run
+description: "Status: fixed by follow-up implementation Date: 2026-05-05"
+icon: bug
+---
 # Auto-login watchdog misses split provision/run
 
 Status: fixed by follow-up implementation

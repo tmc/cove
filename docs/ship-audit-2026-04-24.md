@@ -1,3 +1,8 @@
+---
+title: cove 0.1 Ship-Gate Audit — 2026-04-24
+description: "Auditor: Claude (Opus 4.7, 1M-ctx)."
+icon: file-lines
+---
 # cove 0.1 Ship-Gate Audit — 2026-04-24
 
 Auditor: Claude (Opus 4.7, 1M-ctx). Source of truth:

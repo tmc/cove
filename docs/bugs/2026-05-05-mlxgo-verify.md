@@ -1,3 +1,8 @@
+---
+title: mlxgo fresh VM verification
+description: "Date: 2026-05-05"
+icon: bug
+---
 # mlxgo fresh VM verification
 
 Date: 2026-05-05

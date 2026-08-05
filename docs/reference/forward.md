@@ -1,3 +1,8 @@
+---
+title: cove forward
+description: "cove forward vm hostport:vmport listens on localhost:hostport and forwards each TCP connection to 127.0.0.1:vmport inside the running guest."
+icon: book
+---
 # cove forward
 
 `cove forward <vm> <hostport>:<vmport>` listens on `localhost:<hostport>` and

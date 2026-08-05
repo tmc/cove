@@ -1,3 +1,8 @@
+---
+title: Soft-reset empirical result
+description: Do not position per-eval user-account soft reset as an isolation primitive.
+icon: compass-drafting
+---
 # Soft-reset empirical result
 
 **Status**: shipped (Phase D orchestrator; empirical Phase C closed in `5fda53e`)

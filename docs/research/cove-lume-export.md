@@ -1,3 +1,8 @@
+---
+title: cove → lume export
+description: "Status: live publish implemented."
+icon: flask
+---
 # cove → lume export
 
 Status: live publish implemented. `cove push --format lume` uploads the

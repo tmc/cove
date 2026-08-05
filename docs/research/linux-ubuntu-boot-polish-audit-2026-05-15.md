@@ -2,8 +2,9 @@
 title: Linux and Ubuntu Boot Polish Audit
 status: Draft
 date: 2026-05-15
+description: This audit compares the Linux/Ubuntu boot and provisioning path with the more polished macOS provisioning path.
+icon: flask
 ---
-
 # Linux and Ubuntu Boot Polish Audit
 
 This audit compares the Linux/Ubuntu boot and provisioning path with the more

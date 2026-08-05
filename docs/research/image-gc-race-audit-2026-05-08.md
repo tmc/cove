@@ -1,3 +1,8 @@
+---
+title: cove image gc race audit (2026-05-08)
+description: "Scope: concurrency between cove image gc (CLI, imagegc.go) and the coved scheduler (internal/coved/imagegc.go) versus image build, run -fork-from image, and..."
+icon: flask
+---
 # `cove image gc` race audit (2026-05-08)
 
 Scope: concurrency between `cove image gc` (CLI, `image_gc.go`) and the

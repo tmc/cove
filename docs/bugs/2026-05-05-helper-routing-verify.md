@@ -1,3 +1,8 @@
+---
+title: Helper detach routing verification
+description: "Date: 2026-05-05"
+icon: bug
+---
 # Helper detach routing verification
 
 Date: 2026-05-05

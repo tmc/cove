@@ -1,3 +1,8 @@
+---
+title: Agent Sandbox Cookbook
+description: "These examples assume a local image named agentkit/macos-base:latest."
+icon: robot
+---
 # Agent Sandbox Cookbook
 
 These examples assume a local image named `agentkit/macos-base:latest`. It is a

@@ -1,3 +1,8 @@
+---
+title: Elevation without sudo verification
+description: "Date: 2026-05-05"
+icon: bug
+---
 # Elevation without sudo verification
 
 Date: 2026-05-05

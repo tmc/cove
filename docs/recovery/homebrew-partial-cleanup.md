@@ -1,3 +1,8 @@
+---
+title: Recover From A Partial Homebrew Install
+description: "If the Homebrew installer was interrupted before /opt/homebrew/bin/brew was created, remove the partial tree before retrying:"
+icon: life-ring
+---
 # Recover From A Partial Homebrew Install
 
 If the Homebrew installer was interrupted before `/opt/homebrew/bin/brew` was

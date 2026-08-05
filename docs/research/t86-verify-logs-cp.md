@@ -1,3 +1,8 @@
+---
+title: "T86 live verification: cove logs and cove cp"
+description: "Date: 2026-05-05 Branch: conductor/t86-verify-logs-cp Base: e96ec12 VM: ubuntu-gh-runner-headed"
+icon: flask
+---
 # T86 live verification: cove logs and cove cp
 
 Date: 2026-05-05

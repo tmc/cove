@@ -1,3 +1,8 @@
+---
+title: Runs schema
+description: cove runs list/show/export reads metrics.jsonl files written by VM runs.
+icon: chart-line
+---
 # Runs schema
 
 `cove runs list/show/export` reads `metrics.jsonl` files written by VM runs.

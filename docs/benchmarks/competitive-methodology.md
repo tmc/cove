@@ -1,3 +1,8 @@
+---
+title: Competitive Benchmark Methodology
+description: This page defines the Phase 2 method for reproducible competitive benchmarks.
+icon: gauge-high
+---
 # Competitive Benchmark Methodology
 
 This page defines the Phase 2 method for reproducible competitive benchmarks.

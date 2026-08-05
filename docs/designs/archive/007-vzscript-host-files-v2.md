@@ -1,3 +1,8 @@
+---
+title: vzscript host-file copying — v2 design
+description: "v1 proposed a declarative # host-cp: directive parsed by the Go harness and executed before the script body."
+icon: compass-drafting
+---
 # vzscript host-file copying — v2 design
 
 **Status**: draft v2

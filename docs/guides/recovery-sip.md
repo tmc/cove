@@ -1,5 +1,7 @@
 ---
 title: Recovery & SIP
+description: How to boot into recovery mode and manage System Integrity Protection.
+icon: compass
 ---
 # Recovery & SIP
 

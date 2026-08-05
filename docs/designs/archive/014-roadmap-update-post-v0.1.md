@@ -1,3 +1,8 @@
+---
+title: Roadmap update — post-v0.1.0 ship
+description: 012-product-roadmap-2026.md is the strategic engineer-maintainer roadmap.
+icon: compass-drafting
+---
 # Roadmap update — post-v0.1.0 ship
 
 **Status**: draft v0

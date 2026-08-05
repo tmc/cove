@@ -1,5 +1,7 @@
 ---
 title: Snapshots
+description: "Two kinds of snapshots: VM state snapshots and APFS disk snapshots."
+icon: puzzle-piece
 ---
 # Snapshots
 

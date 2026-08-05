@@ -1,3 +1,8 @@
+---
+title: 007 Vzscript Host Files Nlm Review
+description: "Verdict: The design is fundamentally broken because its pre-script execution model attempts to write files before guest provisioning is actually complete, and..."
+icon: compass-drafting
+---
 Verdict: The design is fundamentally broken because its pre-script execution model attempts to write files before guest provisioning is actually complete, and the root-chown model introduces TCC bypass failures that writing via the user-session agent would natively avoid.
 
 ### 1. The User Creation Race Condition (S1 - Missed by 007-REVIEW)

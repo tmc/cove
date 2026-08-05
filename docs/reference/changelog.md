@@ -1,5 +1,7 @@
 ---
 title: Changelog
+description: All notable changes to cove are documented here.
+icon: book
 ---
 # Changelog
 

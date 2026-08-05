@@ -1,3 +1,8 @@
+---
+title: "Design 034: Fleet"
+description: "Status: Implemented (2026-05-05; Slices 1-3)."
+icon: compass-drafting
+---
 # Design 034: Fleet
 
 Status: Implemented (2026-05-05; Slices 1-3). Slice 1 shipped at `622b571`,

@@ -1,3 +1,8 @@
+---
+title: "Design 031: VM Lifecycle Policy"
+description: "Acceptance items shipped: policy.json persistence, sparse three-field model, cove policy show|clear|idle|max-age|run-budget, runtime ticker enforcement with..."
+icon: compass-drafting
+---
 # Design 031: VM Lifecycle Policy
 
 **Status:** Shipped. SHA chain:

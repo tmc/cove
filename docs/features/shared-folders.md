@@ -1,5 +1,7 @@
 ---
 title: Shared Folders
+description: Mount host directories in the guest via VirtioFS.
+icon: puzzle-piece
 ---
 # Shared Folders
 

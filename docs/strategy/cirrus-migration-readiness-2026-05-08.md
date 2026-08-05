@@ -4,8 +4,9 @@ date: 2026-05-08
 audience: operators planning to leave Cirrus before 2026-06-01
 companion: docs/migrations/from-cirrus.md
 walkthrough: docs/migration/cirrus-to-cove.md
+description: Cirrus CI shuts down 2026-06-01 — 24 days from today.
+icon: chess-knight
 ---
-
 # Cirrus migration readiness audit (2026-05-08)
 
 Cirrus CI shuts down **2026-06-01** — 24 days from today. This doc audits

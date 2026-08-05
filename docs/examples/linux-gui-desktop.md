@@ -1,3 +1,8 @@
+---
+title: Linux GUI Desktop
+description: This example installs Ubuntu Desktop with the Desktop ISO/OEM path, boots the installed VM, and opens the GUI.
+icon: lightbulb
+---
 # Linux GUI Desktop
 
 This example installs Ubuntu Desktop with the Desktop ISO/OEM path, boots the

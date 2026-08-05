@@ -1,5 +1,7 @@
 ---
 title: Provisioning
+description: Provisioning creates a user account, configures auto-login, and injects the guest agent into the VM disk before first boot.
+icon: compass
 ---
 # Provisioning
 

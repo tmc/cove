@@ -1,5 +1,7 @@
 ---
 title: purego Bindings
+description: cove uses purego for cgo-free Objective-C interop with Apple's Virtualization.framework.
+icon: sitemap
 ---
 # purego Bindings
 

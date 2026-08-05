@@ -1,3 +1,8 @@
+---
+title: "Design 027: Disk I/O Performance Tuning"
+description: "Status: Implemented (2026-05-04; Slices 1-4 shipped)."
+icon: compass-drafting
+---
 # Design 027: Disk I/O Performance Tuning
 
 Status: Implemented (2026-05-04; Slices 1-4 shipped). Last verified 2026-05-10 (R96).

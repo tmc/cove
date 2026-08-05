@@ -1,5 +1,7 @@
 ---
 title: Fleet Control Plane
+description: cove-fleetd is the first stateful fleet-control-plane boundary.
+icon: book
 ---
 # Fleet Control Plane
 

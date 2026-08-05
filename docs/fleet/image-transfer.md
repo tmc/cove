@@ -1,3 +1,8 @@
+---
+title: Fleet Image Transfer
+description: Fleet image transfer copies local cove image tar streams over SSH between registered hosts.
+icon: server
+---
 # Fleet Image Transfer
 
 Fleet image transfer copies local cove image tar streams over SSH between

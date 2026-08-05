@@ -1,3 +1,8 @@
+---
+title: TCC Apple Events Prompt From Guest Terminal Mode
+description: "Fresh macOS guests can show a TCC prompt like:"
+icon: bug
+---
 # TCC Apple Events Prompt From Guest Terminal Mode
 
 Fresh macOS guests can show a TCC prompt like:

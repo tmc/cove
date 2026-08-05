@@ -1,3 +1,8 @@
+---
+title: "Design 044: Integration Harness Goal"
+description: "Status: Goal prompt."
+icon: compass-drafting
+---
 # Design 044: Integration Harness Goal
 
 Status: Goal prompt.

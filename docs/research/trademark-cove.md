@@ -1,3 +1,8 @@
+---
+title: "USPTO Trademark Search: COVE"
+description: "Date: 2026-04-29"
+icon: flask
+---
 # USPTO Trademark Search: COVE
 
 Date: 2026-04-29

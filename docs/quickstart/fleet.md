@@ -1,3 +1,8 @@
+---
+title: Fleet Quickstart
+description: Fleet lets one cove CLI register another Mac host, run selected remote commands over SSH, aggregate state across hosts, and copy images directly between hosts.
+icon: bolt
+---
 # Fleet Quickstart
 
 Fleet lets one cove CLI register another Mac host, run selected remote commands

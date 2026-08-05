@@ -1,5 +1,7 @@
 ---
 title: GUI & Display
+description: Native macOS window with toolbar, menu bar, frame persistence, and multi-display support.
+icon: puzzle-piece
 ---
 # GUI & Display
 

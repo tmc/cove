@@ -1,3 +1,8 @@
+---
+title: R107 deferred validation smoke
+description: "Date: 2026-05-10"
+icon: people-arrows
+---
 # R107 deferred validation smoke
 
 Date: 2026-05-10

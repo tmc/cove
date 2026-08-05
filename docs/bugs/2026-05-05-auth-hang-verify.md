@@ -1,3 +1,8 @@
+---
+title: Authorization hang verification
+description: "Date: 2026-05-05"
+icon: bug
+---
 # Authorization hang verification
 
 Date: 2026-05-05

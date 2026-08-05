@@ -1,5 +1,7 @@
 ---
 title: Tailscale Mesh VM
+description: Use cove to bring a fresh macOS VM onto your Tailscale tailnet at first boot.
+icon: lightbulb
 ---
 # Tailscale Mesh VM
 

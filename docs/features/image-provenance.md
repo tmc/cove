@@ -1,3 +1,8 @@
+---
+title: Image provenance and freshness
+description: "cove image build records provenance in manifest.json for each local image:"
+icon: puzzle-piece
+---
 # Image provenance and freshness
 
 `cove image build` records provenance in `manifest.json` for each local image:

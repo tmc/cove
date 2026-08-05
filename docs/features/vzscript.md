@@ -1,5 +1,7 @@
 ---
 title: VZScript Engine
+description: Declarative recipes for guest VM configuration.
+icon: puzzle-piece
 ---
 # VZScript Engine
 

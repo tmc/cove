@@ -1,5 +1,7 @@
 ---
 title: Control Socket API
+description: Running VMs expose a Unix domain socket for control and monitoring.
+icon: book
 ---
 # Control Socket API
 

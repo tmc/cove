@@ -1,3 +1,8 @@
+---
+title: OpenAI Agents SDK Integration
+description: cove-sandbox is the local OpenAI Agents SDK adapter for cove VMs.
+icon: plug
+---
 # OpenAI Agents SDK Integration
 
 **Status:** Phase 2 shipped

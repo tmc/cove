@@ -1,7 +1,8 @@
 ---
 title: Release pipeline
+description: Releases are cut from a maintainer workstation.
+icon: file-lines
 ---
-
 # Release pipeline
 
 Releases are cut from a maintainer workstation. CI only runs tests on tag

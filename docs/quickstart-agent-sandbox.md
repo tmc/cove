@@ -1,5 +1,7 @@
 ---
 title: Agent Sandbox Quickstart
+description: cove can run a real macOS desktop as a local computer-use sandbox.
+icon: file-lines
 ---
 # Agent Sandbox Quickstart
 

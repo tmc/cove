@@ -1,5 +1,7 @@
 ---
 title: VZScript Commands
+description: Complete reference for all commands and conditions available in vzscript recipes.
+icon: book
 ---
 # VZScript Commands
 

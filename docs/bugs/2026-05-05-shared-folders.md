@@ -1,8 +1,10 @@
 ---
+title: "Shared Folders: Hot-Mount EPERM and Guest Path UX"
 status: Draft
 date: 2026-05-05
+description: "QA saw mountvirtiofs: failed to mount /Volumes/My Shared Files: Operation not permitted on mlxgo-fresh-headed2-20260505, followed by root-agent reads of..."
+icon: bug
 ---
-
 # Shared Folders: Hot-Mount EPERM and Guest Path UX
 
 QA saw `mount_virtiofs: failed to mount /Volumes/My Shared Files: Operation not permitted`

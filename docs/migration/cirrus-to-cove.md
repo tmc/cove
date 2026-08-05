@@ -1,3 +1,8 @@
+---
+title: Cirrus to cove
+description: Cirrus CI shuts down 2026-06-01.
+icon: right-left
+---
 # Cirrus to cove
 
 Cirrus CI shuts down 2026-06-01. This walkthrough maps a `.cirrus.yml`

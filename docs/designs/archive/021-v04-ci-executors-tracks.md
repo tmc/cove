@@ -1,3 +1,8 @@
+---
+title: v0.4 CI executors (GitHub Actions, GitLab)
+description: landed at 19804c7; implementation shipped at 0985377, 8bd473e, 82a0ac5, 7fafe40, 9e6253a, f06d554, and c0a1433.
+icon: compass-drafting
+---
 # v0.4 CI executors (GitHub Actions, GitLab)
 
 **Status**: GitHub Actions executor surface shipped on 2026-05-05. Docs

@@ -1,3 +1,8 @@
+---
+title: Hosted Runner Examples
+description: cove is the local VM runner engine.
+icon: lightbulb
+---
 # Hosted Runner Examples
 
 `cove` is the local VM runner engine. A Cirrus-style hosted runner product

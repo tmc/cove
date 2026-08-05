@@ -1,3 +1,8 @@
+---
+title: "Design 040: Storage Budget for ~/.vz/"
+description: Phases 0-5 are shipped on main.
+icon: compass-drafting
+---
 # Design 040: Storage Budget for `~/.vz/`
 
 ## Status

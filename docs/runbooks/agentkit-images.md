@@ -1,3 +1,8 @@
+---
+title: Agentkit Images
+description: Agentkit images are local curated cove images for common agent sandboxes.
+icon: clipboard-list
+---
 # Agentkit Images
 
 Agentkit images are local curated cove images for common agent sandboxes. v1

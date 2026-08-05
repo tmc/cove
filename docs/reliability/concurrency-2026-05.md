@@ -1,3 +1,8 @@
+---
+title: Concurrency Sweep
+description: "Date: 2026-05-05"
+icon: shield-halved
+---
 # Concurrency Sweep
 
 Date: 2026-05-05

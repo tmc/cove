@@ -1,3 +1,8 @@
+---
+title: "Design 041: ScreenCaptureKit Migration"
+description: "Status: Slices 1-3 shipped; Slice 4 specced (horizon v0.6)."
+icon: compass-drafting
+---
 # Design 041: ScreenCaptureKit Migration
 
 Status: Slices 1-3 shipped; Slice 4 specced (horizon v0.6).

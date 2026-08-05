@@ -1,5 +1,7 @@
 ---
 title: HTTP API Reference
+description: cove serve exposes VM operations over HTTP, with an optional stdio MCP transport for AI agents.
+icon: book
 ---
 # HTTP API Reference
 

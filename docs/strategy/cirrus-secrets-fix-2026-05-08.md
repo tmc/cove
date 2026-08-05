@@ -4,8 +4,9 @@ date: 2026-05-08
 audience: implementor picking up the only pure-engineering Cirrus L blocker
 size: M
 parent: docs/strategy/cirrus-migration-readiness-2026-05-08.md (item 2)
+description: "logs at 29ff983, shell: add --env and --secret-env flags at 13ce8c0 (summary: fe99629)."
+icon: chess-knight
 ---
-
 # Cirrus secrets → guest env (M)
 
 **Slice 1 shipped (2026-05-08)** — `metrics: redact secret values in run

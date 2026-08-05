@@ -1,3 +1,8 @@
+---
+title: cove build — OCI-cached VM image builds
+description: "This revision addresses Council round-1 + round-2 verdicts, a second-opinion review, and decisions from a follow-up user interview:"
+icon: compass-drafting
+---
 # cove build — OCI-cached VM image builds
 
 **Status**: draft v2 (post-round-2 Council + second-opinion review)

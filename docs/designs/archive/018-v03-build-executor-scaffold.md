@@ -1,3 +1,8 @@
+---
+title: v0.3 build executor scaffold
+description: conversation 90dd1dda-c60b-4994-886f-547205ddf126, plus local code review of build.go, buildcache.go, buildlayer.go, fork.go, and clone.go.
+icon: compass-drafting
+---
 # v0.3 build executor scaffold
 
 **Status**: implemented (Slice 1 shipped).

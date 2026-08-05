@@ -1,8 +1,10 @@
 ---
+title: Shared Folders Verification
 status: Draft
 date: 2026-05-05
+description: This file records the R41 shared-folder verification gates.
+icon: bug
 ---
-
 # Shared Folders Verification
 
 This file records the R41 shared-folder verification gates.

@@ -1,5 +1,7 @@
 ---
 title: Agent Commands
+description: "cove exec runs a command in a running VM through the guest agent:"
+icon: book
 ---
 # Agent Commands
 

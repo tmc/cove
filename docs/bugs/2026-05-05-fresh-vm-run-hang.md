@@ -1,3 +1,8 @@
+---
+title: Fresh VM run hang after Configuring VM
+description: "User report: after cove -vm mlxgo-fresh-nodev-20260505 provision-agent ended with You must be root for this command, a fresh cove -vm..."
+icon: bug
+---
 # Fresh VM run hang after Configuring VM
 
 User report: after `cove -vm mlxgo-fresh-nodev-20260505 provision-agent`

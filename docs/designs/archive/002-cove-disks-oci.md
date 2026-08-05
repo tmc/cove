@@ -1,3 +1,8 @@
+---
+title: "cove disk handling & OCI — design doc"
+description: "Applied Council round-1 verdicts: - P0 dropped: snapshot refactor from clonefile to manifest."
+icon: compass-drafting
+---
 # cove disk handling & OCI — design doc
 
 **Status**: draft v6 (post-CDC trade-off review)

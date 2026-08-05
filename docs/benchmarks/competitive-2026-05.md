@@ -1,3 +1,8 @@
+---
+title: Competitive benchmark results, May 2026
+description: Competitor cells remain not measured unless this repository has a same-host run for that tool and workload.
+icon: gauge-high
+---
 # Competitive benchmark results, May 2026
 
 - Generated: `2026-05-06T18:30:44Z`

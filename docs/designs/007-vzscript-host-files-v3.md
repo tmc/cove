@@ -1,3 +1,8 @@
+---
+title: vzscript host-file copying — v3 design
+description: "v2 already killed the v1 # host-cp: directive in favor of upgrading the runtime engine command."
+icon: compass-drafting
+---
 # vzscript host-file copying — v3 design
 
 **Status**: shipped — `host-cp` runtime command (`vzscript.go:157`, `:839`) backed by `CopyIn` + `WriteFile` RPCs (`proto/agent.proto:28-34`).

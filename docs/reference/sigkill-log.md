@@ -1,3 +1,8 @@
+---
+title: Helper SIGKILL Log
+description: This log tracks host-side helper processes that exited due to SIGKILL during VM provisioning and control flows.
+icon: book
+---
 # Helper SIGKILL Log
 
 This log tracks host-side helper processes that exited due to `SIGKILL`

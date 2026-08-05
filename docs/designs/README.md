@@ -1,3 +1,8 @@
+---
+title: Design Docs
+description: Architectural proposals for cove features, post-review.
+icon: compass-drafting
+---
 # Design Docs
 
 Architectural proposals for cove features, post-review. Each doc has been through multi-agent Council review and (for most) a second-opinion pass from an independent reviewer role. Status and review rounds are in each doc's frontmatter.

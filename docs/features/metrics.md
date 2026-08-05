@@ -1,5 +1,7 @@
 ---
 title: Run Metrics
+description: cove records structured metrics for forked runs.
+icon: puzzle-piece
 ---
 # Run Metrics
 

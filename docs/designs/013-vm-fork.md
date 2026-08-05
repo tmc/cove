@@ -1,3 +1,8 @@
+---
+title: 013 — VM Forking
+description: "Status: Phases 0-5a shipped (99b3732 Phase 3, eacbf5e Phase 4, 7e4ed99/4f8035c Phase 5, 4bd435d Slice 5a identity preservation)."
+icon: compass-drafting
+---
 # 013 — VM Forking
 
 Status: Phases 0-5a shipped (`99b3732` Phase 3, `eacbf5e` Phase 4, `7e4ed99`/`4f8035c` Phase 5, `4bd435d` Slice 5a identity preservation). Phase 5b vmstate-driven `RestoreMachineStateFromURL` deferred per Phase 2 bench notes. Verified 2026-05-10: `fork.go`, `fork_ref.go`, `fork_ephemeral.go`, `internal/vmidentity` all on `origin/main`.

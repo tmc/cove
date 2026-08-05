@@ -1,3 +1,8 @@
+---
+title: v0.3 cache-hit materialization
+description: conversation 90dd1dda-c60b-4994-886f-547205ddf126, synced source 049fafcb-5297-482a-aacf-53c2ec416568 (cove-current-v03-slice2-planning), plus local code...
+icon: compass-drafting
+---
 # v0.3 cache-hit materialization
 
 **Status**: implemented (Slice 2 shipped).

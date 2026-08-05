@@ -1,3 +1,8 @@
+---
+title: NotebookLM roadmap refresh - 2026-04-30
+description: source 2284c48c-3979-4c8e-b3fc-4c5528565ce4 (cove-current-roadmap-release-state).
+icon: compass-drafting
+---
 # NotebookLM roadmap refresh - 2026-04-30
 
 **Status**: accepted docs input.

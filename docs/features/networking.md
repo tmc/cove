@@ -1,3 +1,8 @@
+---
+title: Networking
+description: Cove exposes a small network policy surface for VM runs.
+icon: puzzle-piece
+---
 # Networking
 
 Cove exposes a small network policy surface for VM runs. The default is NAT,

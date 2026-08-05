@@ -1,3 +1,8 @@
+---
+title: "Design 039: Package Boundary Extraction"
+description: "Status: Shipped through the 2026-05-07 package-boundary arc."
+icon: compass-drafting
+---
 # Design 039: Package Boundary Extraction
 
 Status: Shipped through the 2026-05-07 package-boundary arc. `internal/vmrun`

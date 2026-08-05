@@ -1,5 +1,7 @@
 ---
 title: OpenAI Agents SDK
+description: Use cove-sandbox when an Agents SDK run needs a real local macOS guest instead of a hosted or Linux sandbox.
+icon: lightbulb
 ---
 # OpenAI Agents SDK
 

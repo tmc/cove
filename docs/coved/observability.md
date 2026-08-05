@@ -1,3 +1,8 @@
+---
+title: Coved Observability
+description: coved exposes host-local observability on localhost-only ports by default.
+icon: gear
+---
 # Coved Observability
 
 `coved` exposes host-local observability on localhost-only ports by default.

@@ -1,5 +1,7 @@
 ---
 title: Push & Pull Images
+description: Cove pushes and pulls macOS and Linux VM images to any OCI-compatible registry -- ghcr.io, AWS ECR, Docker Hub, a self-hosted Harbor, anything that speaks OCI...
+icon: rocket
 ---
 # Push & Pull Images
 

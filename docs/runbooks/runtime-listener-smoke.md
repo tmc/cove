@@ -1,3 +1,8 @@
+---
+title: Runtime Listener Smoke
+description: This smoke test is opt-in.
+icon: clipboard-list
+---
 # Runtime Listener Smoke
 
 This smoke test is opt-in. It starts one VM with the runtime listeners that

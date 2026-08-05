@@ -1,5 +1,7 @@
 ---
 title: Suspend & Resume
+description: VMs suspend to disk on quit and resume where they left off on next launch.
+icon: puzzle-piece
 ---
 # Suspend & Resume
 

@@ -1,5 +1,7 @@
 ---
 title: macOS CI Runner
+description: Use cove to run macOS CI test jobs on a Mac mini.
+icon: lightbulb
 ---
 # macOS CI Runner
 

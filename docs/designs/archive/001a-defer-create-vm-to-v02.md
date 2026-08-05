@@ -1,3 +1,8 @@
+---
+title: 001a — Defer createvm via HTTP API to v0.2
+description: POST /v1/vms remains wired in v0.1 — it accepts the request, creates an LRO, and marks it failed with error.code = 'notimplemented' and a descriptive message.
+icon: compass-drafting
+---
 # 001a — Defer `create_vm` via HTTP API to v0.2
 
 **Status**: accepted

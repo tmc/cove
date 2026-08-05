@@ -1,5 +1,7 @@
 ---
 title: SIP Management
+description: Manage System Integrity Protection (SIP) for VMs with automated recovery boot.
+icon: puzzle-piece
 ---
 # SIP Management
 

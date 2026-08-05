@@ -1,3 +1,8 @@
+---
+title: cove shell — Docker-shaped exec UX
+description: plus the linux-shell-host T3 step 2 pre-flight findings (the sub-agent that landed 63d3234 and called out the vsock-ownership constraint before writing client...
+icon: compass-drafting
+---
 # cove shell — Docker-shaped exec UX
 
 **Status**: Slices 1 + 2 shipped (`17211bd` + `33fbe7e`, 2026-05-02). Slice 3 shipped as the v0.3 proto bump (`4d9043a`, `8e550d4`, `5d5876f`, 2026-05-04): additive bidi `ExecAttach` plus fallback to the v0.2 unary/`ExecStream` path for older agents.

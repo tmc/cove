@@ -1,3 +1,8 @@
+---
+title: "cove helper daemon fails to start as root: EROFS on /var/root/.vz/vms"
+description: sudo cove helper daemon exits before reaching helperDaemon() because main() unconditionally calls vmconfig.EnsureDir, which performs an os.MkdirAll rooted at...
+icon: flask
+---
 # `cove helper daemon` fails to start as root: EROFS on `/var/root/.vz/vms`
 
 ## Summary

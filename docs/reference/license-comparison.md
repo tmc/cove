@@ -1,5 +1,7 @@
 ---
 title: License and Virtualization Limits
+description: This page is a product disclosure, not legal advice.
+icon: book
 ---
 # License and Virtualization Limits
 

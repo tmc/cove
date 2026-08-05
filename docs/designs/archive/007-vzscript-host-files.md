@@ -1,3 +1,8 @@
+---
+title: vzscript host-file directives — copying host files into the guest at provision time
+description: "Several real provisioning recipes need host-side files to land in the guest before the recipe is 'done':"
+icon: compass-drafting
+---
 # vzscript host-file directives — copying host files into the guest at provision time
 
 **Status**: draft v1

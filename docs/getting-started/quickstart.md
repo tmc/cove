@@ -1,5 +1,7 @@
 ---
 title: Quick Start
+description: Start here if you want a VM running without learning every cove subsystem.
+icon: rocket
 ---
 # Quick Start
 

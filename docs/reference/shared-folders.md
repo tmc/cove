@@ -1,3 +1,8 @@
+---
+title: Shared Folders
+description: cove shared-folder add persists a host directory in the VM configuration.
+icon: book
+---
 # Shared Folders
 
 `cove shared-folder add` persists a host directory in the VM configuration.

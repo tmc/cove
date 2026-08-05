@@ -1,3 +1,8 @@
+---
+title: v0.4 Anthropic adapter v2
+description: implementation shipped at 33e5b30 and 775537f.
+icon: compass-drafting
+---
 # v0.4 Anthropic adapter v2
 
 **Status**: shipped on 2026-05-05. Design v2 update landed at `55a2463`;

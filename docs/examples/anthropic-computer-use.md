@@ -1,5 +1,7 @@
 ---
 title: Anthropic Computer Use
+description: Drive a local cove macOS VM as a Claude computer-use target.
+icon: lightbulb
 ---
 # Anthropic Computer Use
 
