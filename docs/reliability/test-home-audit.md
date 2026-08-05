@@ -19,7 +19,7 @@ argument) to scan a different checkout.
 
 Rule: tests must call `t.Setenv("HOME", t.TempDir())` before any code that resolves `~/.vz`, including `vmconfig.BaseDir`, `vmconfig.Path`, `vmconfig.EnsureDir`, `vmconfig.RunsDir`, or `ImagesBaseDir`. Tests must not call `os.RemoveAll(vmconfig.BaseDir())` as a fresh-slate hook.
 
-Scanned `617` Go test files.
+Scanned `618` Go test files.
 
 ## Findings
 
