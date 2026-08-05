@@ -1,9 +1,22 @@
 ---
 title: CLI Reference
-description: Every cove command, subcommand, and flag.
+description: Detailed reference for the cove commands that have a documented flag surface.
 icon: book
 ---
 # CLI Reference
+
+cove ships 75 commands. This page gives 50 of them a section of their own and
+lists 19 more under [Other Commands](#other-commands). Six are not covered
+here at all: `9p`, `first-run`, `inject`, `inject-agent`, `support-bundle`,
+and `uiscript` — use their `-h` output.
+
+For the complete list of commands as the installed binary reports it:
+
+```bash
+cove help advanced        # every command, grouped, with one-line summaries
+cove commands --json      # the same inventory as JSON, for automation
+cove <command> -h         # the authoritative flags for any single command
+```
 
 ## Global Flags
 
@@ -552,7 +565,7 @@ container through the guest agent.
 | `port-forward stop <hostPort>` | Stop a forward |
 | `port-forward list` | List active forwards |
 
-### Other Commands
+### Other ctl Commands
 
 | Command | Description |
 |---------|-------------|
@@ -719,7 +732,7 @@ cove image rm <name[:tag]>
 |------------|-------------|
 | `build -from <vm> -tag <ref>` | Snapshot a stopped VM into the image store. The disk is APFS-clonefiled (no copy), and the manifest records whether the source disk is raw or ASIF. vmstate is excluded; cold-boot only. |
 | `list [-json]` | Show stored images with size + creation time + source VM. `-json` emits a JSON array; empty output is `[]`. |
-| `inspect <ref> [-json]` | Print manifest (size, format, sha256, base image, source manifest digest, created-at, hw.model fingerprint) plus the live downstream fork list. `-json` emits a stable schema for tooling. With `-remote <registry/ref:tag\|digest>...`, fetch only registry metadata and summarize cove-native, Tart, Lume, or cove image-store artifacts before pulling, including digest-pinned selected refs, index/list resolution, top-level index digest refs, selectable child manifests, selected platform, cove disk format, pull plan, verification posture, and cove base-chain audit results with disk-format/size/chunk compatibility plus reusable bytes. Add `-manifest-out <path>` on a single remote ref to write the exact selected registry manifest bytes after index/list resolution. Add `-index-out <path>` when that ref resolves through an OCI index or Docker manifest list to write the exact top-level index/list bytes. Add `-manifest-dir <dir>` with `-all-platforms` on a single remote ref to write `summary.json`, `index.json`, `selected.json`, and every fetched child under `manifests/<digest>.json`; the summary records selected/index digests, platform, format, disk size/format, and per-child audit status for offline CI or fleet policy checks. Add `-platform os/arch[/variant]` to select a specific OCI image-index or Docker manifest-list child. Add `-all-platforms` to fetch each child manifest, classify every platform, and audit cove base chains for each cove-native child without downloading disk blobs. Add `-verify-blobs` to HEAD every remote config/layer descriptor and report missing blobs without downloading disk content; with `-all-platforms`, each child manifest gets its own blob audit in `index_manifests`. Multiple remote refs are inspected as a batch; `-json` emits an array only in batch mode. |
+| `inspect <ref> [-json]` | Print manifest (size, format, sha256, base image, source manifest digest, created-at, hw.model fingerprint) plus the live downstream fork list. `-json` emits a stable schema for tooling. With `-remote <registry/ref:tag\|digest>...`, fetch only registry metadata and summarize cove-native, third-party, or cove image-store artifacts before pulling, including digest-pinned selected refs, index/list resolution, top-level index digest refs, selectable child manifests, selected platform, cove disk format, pull plan, verification posture, and cove base-chain audit results with disk-format/size/chunk compatibility plus reusable bytes. Add `-manifest-out <path>` on a single remote ref to write the exact selected registry manifest bytes after index/list resolution. Add `-index-out <path>` when that ref resolves through an OCI index or Docker manifest list to write the exact top-level index/list bytes. Add `-manifest-dir <dir>` with `-all-platforms` on a single remote ref to write `summary.json`, `index.json`, `selected.json`, and every fetched child under `manifests/<digest>.json`; the summary records selected/index digests, platform, format, disk size/format, and per-child audit status for offline CI or fleet policy checks. Add `-platform os/arch[/variant]` to select a specific OCI image-index or Docker manifest-list child. Add `-all-platforms` to fetch each child manifest, classify every platform, and audit cove base chains for each cove-native child without downloading disk blobs. Add `-verify-blobs` to HEAD every remote config/layer descriptor and report missing blobs without downloading disk content; with `-all-platforms`, each child manifest gets its own blob audit in `index_manifests`. Multiple remote refs are inspected as a batch; `-json` emits an array only in batch mode. |
 | `verify <ref> [-strict] [-json] [-quiet] [-newer-than D]` | Check freshness, provenance, and layout. Warns on stale or legacy manifests; `-strict` turns missing `execattach.v3` into a failure; `-quiet` prints only on failure for CI; `-newer-than` fails stale images such as `24h` or `7d`. |
 | `bundle verify <dir> [-json]` | Verify an offline manifest bundle written by `cove image inspect -remote -manifest-dir` or `cove pull --dry-run --fetch-manifest --manifest-dir`. Checks `summary.json`, `index.json`, `selected.json`, and every `manifests/<digest>.json` child without contacting the registry, including file digests, index coverage, selected child consistency, and parsed child metadata. |
 | `push <ref> <file> [-gzip]` | Tar an image directory to a single file (atomic temp + rename). `-gzip` compresses; the load side sniffs `.gz` / `.tgz` automatically. Pass `-` as the file to stream the tarball to stdout (refuses a TTY). |
@@ -1015,9 +1028,7 @@ cove trace export work-vm --id provisioning --out provisioning-trace.tar.gz
 ## fleet
 
 Register trusted Mac hosts and route selected commands over SSH. Fleet commands
-operate on hosts you control; they do not create a hosted queue. For Cirrus
-migration context, see [Fleet Quickstart](../quickstart/fleet.md) and
-[Migrate from Cirrus](../migrations/from-cirrus.md).
+operate on hosts you control; they do not create a hosted queue.
 
 Fleet SSH calls use OpenSSH ControlMaster reuse by default. Set
 `COVE_FLEET_SSH_MULTIPLEX=0` to force a new SSH transport per command.
@@ -1423,7 +1434,7 @@ Validate or pull an OCI image into a VM disk. Pull fetches the registry
 manifest, streams verified LZ4 disk chunks into `disk.img.partial`, restores
 macOS identity metadata, and atomically renames the verified disk into place.
 OCI image indexes and Docker manifest lists resolve to a same-repository image
-manifest before parsing. Lume-format tar-split pulls prefetch disk parts
+manifest before parsing. Tar-split third-party pulls prefetch disk parts
 concurrently, then stream them in manifest order with descriptor size/digest
 checks before extraction. Use `--dry-run` to validate the target without writing
 a disk. Plain dry-runs are network-free; add `--manifest` to validate local
@@ -1462,7 +1473,7 @@ content store, disk chunks still requiring registry fetches, sparse zero
 chunks, and metadata blob store/fetch counts. Add `--json` to emit the dry-run
 plan as structured data for CI or fleet placement decisions. Add
 `--verify-blobs` to HEAD-audit the registry blobs this host would need to fetch
-for cove-native, Tart, or Lume pulls without downloading blob bodies. Use
+for cove-native or third-party pulls without downloading blob bodies. Use
 `cove image inspect -remote <ref>...` to fetch only registry metadata before a
 pull or private catalog audit. When a cove pull actually reuses a cloned base
 disk, completion output includes the same base-reuse summary.
@@ -1500,7 +1511,7 @@ cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run --fetch-manifest --json
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run --fetch-manifest --verify-blobs --json
 cove pull ghcr.io/example/macos-sequoia:15.2 --dry-run --json --manifest manifest.json
 cove pull ghcr.io/example/macos-sequoia:15.2 --resume
-cove pull ghcr.io/trycua/macos-sequoia-vanilla:latest --as sequoia --dry-run --manifest manifest.json
+cove pull ghcr.io/example/macos-sequoia-vanilla:latest --as sequoia --dry-run --manifest manifest.json
 ```
 
 ---
