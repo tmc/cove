@@ -1,6 +1,6 @@
 ---
 title: Linux Desktop Autoprovisioning
-description: "Issue #235 tracks first-boot Linux Desktop provisioning for the #122 carryover: cove up -linux -desktop -user X -password Y should install Ubuntu Desktop and..."
+description: "Design record: first-boot automatic provisioning for Linux desktop guests."
 icon: compass-drafting
 ---
 # Linux Desktop Autoprovisioning

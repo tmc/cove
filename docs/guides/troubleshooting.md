@@ -1,6 +1,6 @@
 ---
 title: Troubleshooting
-description: "Domain: com.apple.MobileDevice.MobileRestore Code: 4014 or 3004 Description: Unexpected device state 'DFU' expected 'RestoreOS'"
+description: Diagnose and fix VMs that will not install, boot, provision, or reach the network.
 icon: compass
 ---
 # Troubleshooting

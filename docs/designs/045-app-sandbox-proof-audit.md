@@ -1,6 +1,6 @@
 ---
 title: Cove App Sandbox Proof Audit
-description: "Date: 2026-05-28"
+description: "Design record: audit proving cove does not run under the macOS App Sandbox."
 icon: compass-drafting
 ---
 # Cove App Sandbox Proof Audit

@@ -1,6 +1,6 @@
 ---
 title: "Design 030: GHA Executor Slice 2 Cross-run Cache Reuse"
-description: "Follow-on work that touches the same surface but lands under other designs: 4e0a0aa (metrics: emit image gc and run cache eviction events) and ab7f159 /..."
+description: "Design record: slice 2 of the GitHub Actions executor, covering runner lifecycle and metrics."
 icon: compass-drafting
 ---
 # Design 030: GHA Executor Slice 2 Cross-run Cache Reuse

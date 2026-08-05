@@ -1,6 +1,6 @@
 ---
 title: "Design 043: Vzkit Migration Boundary"
-description: "Status: Draft."
+description: "Design record (draft): where the boundary sits between cove and an extracted vzkit library."
 icon: compass-drafting
 ---
 # Design 043: Vzkit Migration Boundary

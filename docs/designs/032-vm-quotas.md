@@ -1,6 +1,6 @@
 ---
 title: "Design 032: Per-VM Resource Quotas"
-description: "SHA chain: - 94bf2d2 design doc landed - 62a71aa internal/vmquota quota persistence and diskutil apfs setQuota wrapper - 2bad0e8 cove quota CLI plus..."
+description: "Design record: per-VM disk and resource quotas backed by APFS."
 icon: compass-drafting
 ---
 # Design 032: Per-VM Resource Quotas

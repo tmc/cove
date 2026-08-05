@@ -1,6 +1,6 @@
 ---
 title: "Design 028: Block Device Passthrough"
-description: "Verified 2026-05-10 (R360): openBlockDeviceViaHelper at blockdevice.go:114, validateBlockDevicePath/Node/Unmounted at helper.go:720/742/757, handleHelperConn..."
+description: "Design record: passing a raw block device through to a guest via the privileged helper."
 icon: compass-drafting
 ---
 # Design 028: Block Device Passthrough

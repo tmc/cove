@@ -1,6 +1,6 @@
 ---
 title: "Design 036: NixOS Guest Support"
-description: "Status: Shipped on 2026-05-05 (8324750 installer, 2427b2e vzscript base recipe, f1e6812 quickstart docs) and completed on 2026-05-07 (07835a9 cli.md install..."
+description: "Design record: NixOS guest support, from installer through the base vzscript recipe."
 icon: compass-drafting
 ---
 # Design 036: NixOS Guest Support

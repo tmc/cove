@@ -1,6 +1,6 @@
 ---
 title: cove Linux support — making it fantastic
-description: ".PHONY: proto proto: # only for contributors editing proto/.proto — commits Go stubs go run github.com/bufbuild/buf/cmd/buf@latest generate \ --template..."
+description: "Design record: Linux guest support for cove v0.2, covering installer, boot path, and provisioning."
 icon: compass-drafting
 ---
 # cove Linux support — making it fantastic

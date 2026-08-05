@@ -1,6 +1,6 @@
 ---
 title: "Design 044: Integration Harness Goal"
-description: "Status: Goal prompt."
+description: "Design record: goal prompt for the integration test harness."
 icon: compass-drafting
 ---
 # Design 044: Integration Harness Goal

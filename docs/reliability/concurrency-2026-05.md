@@ -1,6 +1,6 @@
 ---
 title: Concurrency Sweep
-description: "Date: 2026-05-05"
+description: "Engineering record: concurrency audit of cove's VM lifecycle and control paths, May 2026."
 icon: shield-halved
 ---
 # Concurrency Sweep
