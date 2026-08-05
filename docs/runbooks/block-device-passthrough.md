@@ -13,7 +13,7 @@ data you need.
 
 Build and install a fresh helper from the same cove binary you will run:
 
-```
+```sh
 go build -o cove ./cmd/cove
 codesign -s - -f --entitlements cmd/cove/vz.entitlements ./cove
 sudo ./cove helper install
@@ -21,20 +21,20 @@ sudo ./cove helper install
 
 Find the target disk:
 
-```
+```sh
 diskutil list
 diskutil info -plist /dev/diskN
 ```
 
 Use the raw device path for writable runs:
 
-```
+```text
 /dev/rdiskN
 ```
 
 For writable tests, unmount the whole disk first:
 
-```
+```sh
 diskutil unmountDisk /dev/diskN
 ```
 
@@ -42,13 +42,13 @@ diskutil unmountDisk /dev/diskN
 
 Boot an existing Linux VM with the device attached read-only:
 
-```
+```sh
 ./cove run -linux -vm <vm-name> -block /dev/rdiskN:ro
 ```
 
 Inside the guest, verify that the extra virtio block device appears:
 
-```
+```text
 lsblk
 sudo fdisk -l /dev/vdb
 ```
@@ -60,21 +60,21 @@ sees an extra block device after the root disk.
 
 Writable passthrough is destructive. Use only disposable media.
 
-```
+```sh
 diskutil unmountDisk /dev/diskN
 ./cove run -linux -vm <vm-name> -block /dev/rdiskN:rw
 ```
 
 Inside the guest:
 
-```
+```text
 lsblk
 sudo wipefs -n /dev/vdb
 ```
 
 For explicit no-sync benchmarking:
 
-```
+```sh
 ./cove run -linux -vm <vm-name> -block /dev/rdiskN:rw:sync=none
 ```
 
@@ -82,7 +82,7 @@ For explicit no-sync benchmarking:
 
 These should fail before the VM starts:
 
-```
+```sh
 ./cove run -linux -block /tmp/disk.img:rw
 ./cove run -linux -block rdisk8:rw
 ./cove run -linux -block /dev/diskN:rw
@@ -91,7 +91,7 @@ These should fail before the VM starts:
 
 The actionable helper-refresh error is:
 
-```
+```text
 block devices require an up-to-date cove-helper; run: sudo cove helper install
 ```
 

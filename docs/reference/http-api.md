@@ -52,7 +52,7 @@ Cove binds `localhost` by default. There's no TLS -- the assumption is localhost
 
 ## Lifecycle
 
-```
+```text
 GET    /healthz                              # no auth; {"status":"ok"}
 GET    /v1/vms                               # list known/allowed VMs
 GET    /v1/vms/:name/status                  # state + capabilities
@@ -162,7 +162,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 
 ## Guest agent
 
-```
+```text
 POST   /v1/vms/:name/agent/exec              # body: {"cmd": "...", "args": [...]}
 GET    /v1/vms/:name/agent/read?path=/foo    # returns raw file bytes
 POST   /v1/vms/:name/agent/write             # body: {"path": "...", "data": "<base64>", "mode": 0644}
@@ -211,7 +211,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 
 VM creation takes minutes (IPSW download, install, first boot). The API returns `202 Accepted` immediately with a Location header pointing at an operation record.
 
-```
+```text
 POST   /v1/vms                               # async create; returns 202 + Location
 ```
 
@@ -233,7 +233,7 @@ curl -i -X POST -H "Authorization: Bearer $TOKEN" \
 
 Response:
 
-```
+```text
 HTTP/1.1 202 Accepted
 Location: /v1/operations/op_a73d8770
 Content-Type: application/json
@@ -283,7 +283,7 @@ On success `status` flips to `succeeded` and a `result` field appears; on failur
 
 ## Operations
 
-```
+```text
 GET    /v1/operations                        # list recent operations
 GET    /v1/operations/:id                    # current state snapshot
 GET    /v1/operations/:id/events             # SSE stream of progress updates
@@ -305,7 +305,7 @@ Operations are written to `~/.vz/operations/<op_id>.json` with write-temp-then-r
 
 ## Snapshots
 
-```
+```text
 POST   /v1/vms/:name/snapshot                # body: {"name": "checkpoint1"}
 GET    /v1/vms/:name/snapshots
 POST   /v1/vms/:name/snapshots/:snap/restore
@@ -332,7 +332,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 ## Events (SSE)
 
-```
+```text
 GET    /v1/vms/:name/events                  # SSE stream of VM state changes
 GET    /v1/operations/:id/events             # SSE stream of operation progress
 ```
@@ -344,7 +344,7 @@ curl -N -H "Authorization: Bearer $TOKEN" \
   http://127.0.0.1:7777/v1/vms/default/events
 ```
 
-```
+```text
 event: state
 data: {"state":"paused","at":"2026-04-16T17:31:02Z"}
 

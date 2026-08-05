@@ -99,7 +99,7 @@ Cove-only fields not projected to lume:
 `buildLumeManifest` output round-trips through `ociimage.IsLumeManifest`
 + `ociimage.ParseLumeManifest` cleanly:
 
-```
+```text
 TestBuildLumeManifestRoundTripsThroughParser  PASS
 ```
 

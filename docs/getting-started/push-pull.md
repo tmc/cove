@@ -120,7 +120,7 @@ What happens:
 
 If the pull is interrupted (network loss, Ctrl-C, power), `disk.img.partial` stays on disk and `disk.img` is absent. Cove refuses to boot a VM in that state:
 
-```
+```sh
 cove: VM <name> has incomplete disk (pull was interrupted).
 Delete <path> and rerun cove pull, or use cove pull --resume <ref> to continue.
 ```

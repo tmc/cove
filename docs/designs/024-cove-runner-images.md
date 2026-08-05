@@ -123,7 +123,7 @@ cove run -fork-from cove-runner-macos:14.5 -ephemeral -vzscripts github-runner
 `cove run -fork-from <image-ref>` resolves `<image-ref>` against the
 local image store, materializes a fresh `vmconfig.BaseDir()/<child>/`
 bundle from the cached layers, then invokes the existing
-[`-fork-from`](../../fork.go) codepath. The new `-ephemeral` flag marks
+[`-fork-from`](../../cmd/cove/fork.go) codepath. The new `-ephemeral` flag marks
 the child for destroy-on-stop and skips the registry/`vm tree` entry
 that [013](013-vm-fork.md) Phase 4 added.
 

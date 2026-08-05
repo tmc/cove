@@ -97,7 +97,7 @@ The disk is attached as USB storage when booting into recovery.
 
 The automation scripts handle password prompts using OCR conditions:
 
-```
+```text
 [text-visible:Authorized+user] type 'admin'
 [text-visible:Password] type-keycodes '<admin-password>'
 [text-visible:Password] wait-prompt-clear 'Password'

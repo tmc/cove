@@ -20,7 +20,7 @@ roadmap pick.
 `cove shell <vm>` is a Docker-shaped subcommand — same UX as
 `docker exec -it <container> bash` — that runs from any terminal
 regardless of which process is hosting the VM. The v0.2 in-process
-[`cove run -linux -shell`](../../linux_shell.go) flag landed in
+[`cove run -linux -shell`](../../cmd/cove/linux_shell.go) flag landed in
 `63d3234` is the precursor: it proved the PTY allocation, SIGWINCH /
 SIGINT plumbing (`fb7bce2`), and the unary `ResizeExecTTY` /
 `SignalExec` RPCs work end-to-end. This design ships the standalone,
@@ -128,7 +128,7 @@ New subcommand `cove shell <vm> [-- <args>]`. Default `bash -l`
    `fb7bce2` pattern (so Ctrl-C goes to guest, not host); SIGWINCH
    → `agent-exec-resize`.
 4. Pump stdin (Slice 3) and stdout. Restore TTY on exit.
-5. Friendly errors: VM not running → "no running VM at <name>";
+5. Friendly errors: VM not running → "no running VM at `<name>`";
    auth fail → "control token mismatch"; agent unreachable →
    "guest agent not responding".
 

@@ -45,13 +45,13 @@ default-off.
 
 Ubuntu 24.04 Desktop autoinstall from the cached desktop ISO:
 
-```
+```text
 /Users/tmc/.vz/cache/linux-ubuntu-desktop.iso
 ```
 
 Fresh after-change command:
 
-```
+```text
 /usr/bin/time -p ./cove install -linux -desktop \
   -vm disk-io-after-20260503-2145 \
   -cpu 4 -memory 8 -disk-size 64 \
@@ -61,7 +61,7 @@ Fresh after-change command:
 
 The binary was rebuilt and re-signed before the run:
 
-```
+```sh
 go build -o cove ./cmd/cove
 codesign -s - -f --entitlements cmd/cove/vz.entitlements ./cove
 ```

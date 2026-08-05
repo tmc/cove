@@ -95,7 +95,7 @@ COPYFILE_DISABLE=1 tar -czf worktree.tgz -T files.txt
 
 VZScript recipes can declare host directories:
 
-```
+```sh
 # mount: ~/ml-explore rw
 # mount: /data ro
 ```

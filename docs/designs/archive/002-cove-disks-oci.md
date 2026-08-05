@@ -62,7 +62,7 @@ The underlying observation: **disk images are the object cove ships**. Everythin
 
 ### On-disk layout
 
-```
+```text
 ~/.vz/vms/<name>/
 ├── disk.img              # raw sparse file, guest's block device
 ├── aux.img               # NVRAM/VZMacAuxiliaryStorage
@@ -106,7 +106,7 @@ The underlying observation: **disk images are the object cove ships**. Everythin
 
 ### Two-layer model (revised: was three)
 
-```
+```text
    Transport     OCI blobs on any registry (ghcr, ECR, Docker Hub, private)
                         ↕
    Store         Content-addressed blob store at ~/.vz/store/ (v0.2 ONLY)
@@ -122,7 +122,7 @@ The underlying observation: **disk images are the object cove ships**. Everythin
 
 v0.1 adds no new directories under `~/.vz/`. The only new file is an optional `disk.provenance` marker inside the per-VM directory.
 
-```
+```text
 ~/.vz/vms/<name>/
 ├── disk.img                # raw sparse file (unchanged); only present after successful pull
 ├── disk.img.partial        # NEW (transient): streaming-pull scratch file; renamed to disk.img on success
@@ -134,7 +134,7 @@ v0.1 adds no new directories under `~/.vz/`. The only new file is an optional `d
 
 ### On-disk layout (v0.2 — store arrives)
 
-```
+```text
 ~/.vz/
 ├── store/                          # content-addressed blob store (v0.2 ONLY — not created in v0.1)
 │   ├── blobs/sha256/<digest>       # immutable LZ4-compressed chunks
@@ -243,7 +243,7 @@ Until those gates are met, `--chunk-size` is the only tuning knob. Keep the defa
 
 ### `cove pull` (v0.1 — streaming direct-to-disk, no store)
 
-```
+```sh
 cove pull ghcr.io/me/macos-15:base
 cove pull ghcr.io/me/macos-15:base --as macos-15-vm    # name the VM
 ```
@@ -275,7 +275,7 @@ No lazy mode, no FUSE. Eager is the only path in v0.1. The `--lazy` flag is rese
 
 ### `cove push`
 
-```
+```sh
 cove push my-vm ghcr.io/me/macos-15:tag
 cove push my-vm ghcr.io/me/macos-15:tag --base ghcr.io/me/macos-15:base
 cove push my-vm ghcr.io/me/macos-15:tag --chunk-size 256
@@ -408,7 +408,7 @@ Documented as optional maintenance. Recommended after heavy churn or before a `c
 
 ## CLI surface
 
-```
+```sh
 # Pull / push (v0.1)
 cove pull <ref>                       # pull image (writes disk.img.partial, renames on success)
 cove pull <ref> --as <name>           # name the new VM

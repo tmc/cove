@@ -30,7 +30,7 @@ Built-in recipes cover common tools. For project-specific setup, write a custom 
 
 Create `workstation.vzscript`:
 
-```
+```sh
 # requires: homebrew, golang
 # runs-on: daemon
 

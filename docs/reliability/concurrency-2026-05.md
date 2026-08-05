@@ -11,7 +11,7 @@ Code scanned: `3456d67c4eba48024559dff7b809400fef8ec16d`
 
 Command:
 
-```
+```sh
 go test -race ./...
 ```
 

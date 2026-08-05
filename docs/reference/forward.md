@@ -11,7 +11,7 @@ forwards each TCP connection to `127.0.0.1:<vmport>` inside the running guest.
 Slice 1 starts a guest `vz-agent -relay` process and then uses the existing
 control-socket port-forward manager:
 
-```
+```sh
 cove forward dev 8080:80
 ```
 

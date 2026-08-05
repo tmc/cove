@@ -51,7 +51,7 @@ Desktop mode adds two pieces:
   disables cloud-init after provisioning.
 - `linuxAutoLoginLateCommand` writes `/target/etc/gdm3/custom.conf` with:
 
-```
+```text
 [daemon]
 AutomaticLoginEnable=true
 AutomaticLogin=<user>

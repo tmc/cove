@@ -152,7 +152,7 @@ tears down. Exit code = runner exit code.
 - `runner.go` (new, ~30 LOC) — subcommand dispatch (`cove runner
   <verb>`); v0.2.2 only registers `job`.
 - `runner_job.go` (new, ~150 LOC) — full one-shot:
-  ```
+  ```text
   parseFlags(--image, --repo, --token, --labels, --name, --workdir, --timeout)
   jitConfig, err := acquireJITConfig(ctx, repo, token, name, labels)
     → POST /repos/{owner}/{repo}/actions/runners/generate-jitconfig
@@ -184,7 +184,7 @@ tears down. Exit code = runner exit code.
 - `docs/reference/cli.md` (+15 LOC) — `cove runner job` reference.
 - `docs/examples/ephemeral-github-runner.md` (new, ~40 LOC) — cookbook:
 
-  ```
+  ```sh
   # One-shot:
   cove runner job \
     --image cove-runner-macos:14.5 \

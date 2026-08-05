@@ -113,7 +113,7 @@ root) without weakening error reporting for everyone else.
 
 Before the fix:
 
-```
+```sh
 $ sudo ./cove helper daemon
 error: create VM dir: mkdir /var/root/.vz: read-only file system
 $ echo $?

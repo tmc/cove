@@ -37,7 +37,7 @@ quiet host before drawing release-gate conclusions.
 
 ### Fork-only wall time (`cove fork`)
 
-```
+```sh
 go run ./bench/fork-time/fork-bench -cove ./cove -parents hermes-mlx-go-60g-v10 \
     -runs 5 -max-fork 250ms
 ```

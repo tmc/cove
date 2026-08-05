@@ -22,7 +22,7 @@ These flags apply to most commands:
 
 Install macOS or Linux into a new VM.
 
-```
+```sh
 cove install [flags]
 ```
 
@@ -57,7 +57,7 @@ cove install -linux -provision-user ubuntu -provision-password <password>
 
 Boot and run a VM.
 
-```
+```sh
 cove run [flags]
 ```
 
@@ -76,7 +76,7 @@ cove run [flags]
 | `-display <spec>` | | Display config: WxH[@PPI] or preset (4k, 1080p, 720p, retina) |
 | `-network <mode>` / `--net <mode>` | nat | Network mode: nat, bridged:\<iface\>, host-only, none, named policies, or `egress:<domain,ip,cidr...>` |
 | `-http <addr>` | | Expose per-VM HTTP API |
-| `-v <mount>` / `-vol <mount>` | | Host directory mount: /host[:tag][:ro\|rw] (repeatable) |
+| `-v <mount>` / `-vol <mount>` | | Host directory mount: `/host[:tag][:ro\|rw]` (repeatable) |
 | `-usb <path>` | | USB storage: /path/to/disk.img[:ro] (repeatable) |
 | `-rosetta` | true | Enable Rosetta x86-64 translation (Linux VMs) |
 | `-clipboard` | true | Host-guest clipboard sharing |
@@ -138,7 +138,7 @@ listener to the narrowest address that fits your workflow.
 
 Run a command in a running VM through the guest agent.
 
-```
+```sh
 cove exec [options] <vm> <cmd> [args...]
 ```
 
@@ -166,7 +166,7 @@ Use `cove shell <vm>` as a shortcut for an interactive login shell.
 
 Show guest-agent and GUI-session status for a VM.
 
-```
+```sh
 cove status [-vm name] [vm]
 ```
 
@@ -182,7 +182,7 @@ cove status work-vm
 
 Create, delete, and inspect guest users through the running VM guest agent.
 
-```
+```sh
 cove user audit <vm> --user <name> [-json]
 cove user audit --user <name> [-vm <vm>] [-json]
 cove user create <vm> --user <name> [--admin] [--password SPEC] [--ssh-key PATH] [-json]
@@ -217,7 +217,7 @@ cove user delete macos-runner --user runner
 
 Print the top-level command inventory.
 
-```
+```sh
 cove commands [--json]
 cove help --json
 ```
@@ -237,7 +237,7 @@ cove help --json
 
 Diagnose host readiness or VM health.
 
-```
+```sh
 cove doctor host [-json]
 cove doctor tcc-fda -tcc-path /Volumes/<tag> [-password pass]
 cove doctor [options]
@@ -267,7 +267,7 @@ cove doctor -vm dev -v
 
 Install, provision, and boot in one command.
 
-```
+```sh
 cove up [flags]
 ```
 
@@ -326,7 +326,7 @@ saving a reusable image.
 
 Provision a VM with a user account, auto-login, and guest tools. Previously named `inject`.
 
-```
+```sh
 cove provision [flags]
 ```
 
@@ -364,7 +364,7 @@ cove provision -apply
 
 Inject only the vz-agent daemon (no user provisioning).
 
-```
+```sh
 cove provision-agent
 ```
 
@@ -374,7 +374,7 @@ cove provision-agent
 
 Diagnose VM health: provisioning, agent, and file ownership.
 
-```
+```sh
 cove doctor [flags]
 cove doctor tcc-fda -tcc-path /Volumes/<tag> [-password pass] [-upgrade-agent]
 cove doctor tcc-preauth
@@ -410,7 +410,7 @@ cove doctor sckit-preauth -json
 
 Interact with a running VM's control socket.
 
-```
+```sh
 cove ctl [options] <command> [args...]
 ```
 
@@ -582,7 +582,7 @@ cove ctl disk resize 0 96G
 
 SIP management.
 
-```
+```sh
 cove sip <command> [flags]
 ```
 
@@ -606,7 +606,7 @@ cove sip disable-auto -user admin -password <password>
 
 Run guest-agent and UI automation scripts.
 
-```
+```sh
 cove vzscript <command> [args...]
 ```
 
@@ -646,7 +646,7 @@ cove vzscript run ./custom.vzscript
 
 VM state snapshots.
 
-```
+```sh
 cove snapshot <command> [args]
 ```
 
@@ -663,7 +663,7 @@ cove snapshot <command> [args]
 
 APFS copy-on-write disk snapshots.
 
-```
+```sh
 cove disk-snapshot <command> [args]
 ```
 
@@ -681,7 +681,7 @@ cove disk-snapshot <command> [args]
 
 Clone a VM.
 
-```
+```sh
 cove clone <source> <destination> [flags]
 ```
 
@@ -698,7 +698,7 @@ If `<source>` is omitted, the active VM is cloned into `<destination>`.
 
 Local pre-baked VM image store at `~/.vz/images/<name>/<tag>/`. Snapshots a stopped VM bundle (manifest + clonefile-backed disk + identity files) so `cove run -fork-from <image-ref> -ephemeral` can spawn disposable VMs from a saved baseline. Slice 2 adds OCI registry push/pull with `oras-go`; tarball `push`/`load` remain available as operator transport. See [design 024](../designs/024-cove-runner-images.md).
 
-```
+```sh
 cove image build -from <vm> -tag <name[:tag]>
 cove image list [-json]
 cove image inspect <name[:tag]> [-json]
@@ -760,7 +760,7 @@ cove image push macos-runner:14.5 - | ssh other-mac cove image load -
 
 Manage the content-addressed blob store at `~/.vz/store`.
 
-```
+```sh
 cove store gc [-dry-run]
 ```
 
@@ -779,7 +779,7 @@ cove store gc
 
 Run a computer-use provider loop in a fresh fork from a local image.
 
-```
+```sh
 cove agent-sandbox run --provider openai|anthropic|gemini|vertex --image <ref> --task <prompt> [flags]
 ```
 
@@ -814,7 +814,7 @@ Hosted-runner integration helpers. `cove runner` does not run a scheduler or
 register GitHub runners. It prints workflow scaffolds that consume the local
 `cove` runner primitives.
 
-```
+```sh
 cove runner workflow --image <ref> [--mode self-hosted|github-hosted]
 ```
 
@@ -847,7 +847,7 @@ See [Hosted Runner Examples](../examples/hosted-runners.md).
 
 Preflight helpers for the private GitHub Actions executor.
 
-```
+```sh
 cove action doctor [--json]
 cove action prepare-image <ref> [--json] [--force] [--ttl <duration>]
 ```
@@ -906,7 +906,7 @@ are read from environment variables (`COVE_ACTION_*`) or the matching flags.
 
 Create a redacted diagnostics archive for support.
 
-```
+```sh
 cove support bundle [-vm NAME] [-out PATH]
 ```
 
@@ -930,7 +930,7 @@ Inspect and export local run artifacts under `~/.vz/runs/<run-id>/`. Run metrics
 are read from `~/.vz/runs/<run-id>/metrics.jsonl`; each line is one JSON event.
 See [Run Metrics](../features/metrics.md) and [Runs UX](../features/runs-ux.md).
 
-```
+```sh
 cove runs list [--limit N] [--since DURATION] [--status ok|fail|all] [--json|--ndjson]
 cove runs show <run-id-prefix> [--json|--summary-json]
 cove runs export <run-id-prefix> --format json|gha-summary|tar
@@ -964,7 +964,7 @@ List and export recording artifacts from run/session directories. A recording
 is any run under `~/.vz/runs/<run-id>/` with manifest, metrics, events, logs,
 screenshots, replay, or trace artifacts.
 
-```
+```sh
 cove recording list [--json] [--limit N]
 cove recording export <run-id-prefix> --out PATH
 ```
@@ -985,7 +985,7 @@ cove recording export 20260505 --out cove-recording-20260505.tar.gz
 
 Manage eslogger guest trace artifacts for macOS VMs.
 
-```
+```sh
 cove trace enable <vm>
 cove trace start <vm> [--id ID]
 cove trace stop <vm> [--id ID]
@@ -1022,7 +1022,7 @@ migration context, see [Fleet Quickstart](../quickstart/fleet.md) and
 Fleet SSH calls use OpenSSH ControlMaster reuse by default. Set
 `COVE_FLEET_SSH_MULTIPLEX=0` to force a new SSH transport per command.
 
-```
+```sh
 cove fleet add <name> <ssh-target> [--root <path>]
 cove fleet cordon <name>
 cove fleet uncordon <name>
@@ -1055,7 +1055,7 @@ cove fleet metrics [--json]
 | `image push <ref> <dst-host>` | Stream a local image ref to another fleet host. |
 | `image pull <ref> <src-host>` | Pull an image ref from another fleet host. |
 | `image sync <ref> <src-host> <dst-host>` | Copy an image ref between two fleet hosts. |
-| `run --policy=least-loaded|image-affinity` | Place one run on a non-cordoned registered host by load or image locality, counting short local placement leases as pending load. With `-manifest-bundle <dir>`, image-affinity requires `-fork-from` image provenance to match the bundle-selected digest before treating a host as warm or staging the local image. |
+| `run --policy=least-loaded\|image-affinity` | Place one run on a non-cordoned registered host by load or image locality, counting short local placement leases as pending load. With `-manifest-bundle <dir>`, image-affinity requires `-fork-from` image provenance to match the bundle-selected digest before treating a host as warm or staging the local image. |
 | `run --all` | Start the same run concurrently on every non-cordoned registered host; with `-fork-from`, stage the image to cold hosts first. `-manifest-bundle <dir>` applies the same exact digest-provenance check. |
 | `health [--json]` | Check remote cove reachability and version across registered hosts. |
 | `metrics [--json]` | Aggregate fleet-wide metrics across registered hosts. |
@@ -1079,7 +1079,7 @@ cove fleet health
 `coved` is the user-session coordinator for lifecycle enforcement and image GC.
 The one-shot `cove daemon` command starts, stops, or queries that daemon.
 
-```
+```text
 coved [-fleet-url <url>] [-fleet-id <id>] [-fleet-cove-bin <path>] [-fleet-label key=value] [-fleet-assignment-interval <duration>]
 cove daemon start [-coved <path>]
 cove daemon stop
@@ -1110,7 +1110,7 @@ cove daemon status --json
 
 Lifecycle policies and resource quotas are stored per VM.
 
-```
+```sh
 cove policy <vm> show
 cove policy <vm> clear
 cove policy <vm> idle <duration>
@@ -1127,10 +1127,10 @@ cove quota <vm> disk <gb>
 |---------|-------------|
 | `policy <vm> show` / `vm policy show` | Show idle, max-age, and run-budget policy for a VM. |
 | `policy <vm> clear` | Clear the VM lifecycle policy. |
-| `policy <vm> idle|max-age <duration>` / `run-budget <count>` | Set one lifecycle policy threshold. |
+| `policy <vm> idle\|max-age <duration>` / `run-budget <count>` | Set one lifecycle policy threshold. |
 | `policy <vm> set ...` | Set multiple lifecycle policy fields at once. |
 | `quota <vm> show` | Show durable CPU, memory, and disk quota intent. |
-| `quota <vm> cpu|memory|disk <n>` | Update quota intent; disk quota applies the APFS quota wrapper. |
+| `quota <vm> cpu\|memory\|disk <n>` | Update quota intent; disk quota applies the APFS quota wrapper. |
 
 ```bash
 cove policy ci-runner idle 30m
@@ -1146,7 +1146,7 @@ cove quota ci-runner memory 8
 Inspect the effective host-containment and host-escape policy for the current
 invocation.
 
-```
+```sh
 cove security status
 cove security status -json
 cove -host-containment security status
@@ -1165,7 +1165,7 @@ Read-only census of cove disk usage under `~/.vz/`, a persisted
 operator-set budget, and a budget-aware prune coordinator. Phases 1-3
 of design 040.
 
-```
+```sh
 cove storage census                      # JSON
 cove storage census -human               # fixed-width table
 cove storage census -top N               # surface N newest items per category (default 10)
@@ -1209,7 +1209,7 @@ Census is read-only and never mutates state. Pinned objects (see
 Mark a VM, image, run, or cache blob as pinned so `cove storage prune`
 skips it. Phase 4 of design 040.
 
-```
+```sh
 cove pin <object>
 cove unpin <object>
 cove pins list [-json]
@@ -1232,7 +1232,7 @@ cove unpin run:20260505T120000Z
 v0.4 adds small operator commands for moving data, reading logs, comparing
 images, and exposing selected ports.
 
-```
+```sh
 cove logs <vm> [-f|--follow]
 cove cp [-vm name] <host-path> <vm:/guest/path>
 cove cp [-vm name] <vm:/guest/path> <host-path>
@@ -1285,7 +1285,7 @@ walkthroughs.
 
 Docker-shaped exec into a running VM via the per-VM control socket. Default command: `bash -l`. Current agents use ExecAttach for bidirectional stdin, terminal resize, signals, stdout/stderr, and exit-code propagation. Older agents fall back to the v0.2 read-only stdin path with a warning. See [design 023](../designs/023-cove-shell-exec-ux.md).
 
-```
+```sh
 cove shell <vm> [--env NAME=VALUE]... [--secret-env NAME=value|env://VAR|file:///path]... [-- <argv>...]
 ```
 
@@ -1313,7 +1313,7 @@ cove shell my-vm --secret-env DEPLOY_KEY=file:///run/secrets/deploy.key -- ./dep
 
 VM templates.
 
-```
+```sh
 cove template <command> [args]
 ```
 
@@ -1331,7 +1331,7 @@ cove template <command> [args]
 
 VM management.
 
-```
+```sh
 cove vm <command> [args]
 ```
 
@@ -1361,7 +1361,7 @@ cove vm tree --reachable-from macos-runner:14.5 --json
 
 Manage shared folders for the active VM.
 
-```
+```sh
 cove shared-folder <command> [args]
 ```
 
@@ -1381,7 +1381,7 @@ cove shared-folder <command> [args]
 
 Clean up disposable VM clones.
 
-```
+```sh
 cove gc [flags]
 ```
 
@@ -1396,7 +1396,7 @@ cove gc [flags]
 
 Run the HTTP and MCP gateway. Exposes VM control over HTTP (for multi-VM fleets and remote clients) and/or a stdio MCP server (for AI agent integrations such as Claude Code). `/v1/vms` lists known VMs; per-VM routes proxy only running VMs with a reachable control socket.
 
-```
+```sh
 cove serve [flags]
 ```
 
@@ -1467,7 +1467,7 @@ for cove-native, Tart, or Lume pulls without downloading blob bodies. Use
 pull or private catalog audit. When a cove pull actually reuses a cloned base
 disk, completion output includes the same base-reuse summary.
 
-```
+```sh
 cove pull <ref> [flags]
 ```
 
@@ -1513,7 +1513,7 @@ disk format in cove-native manifests, uploads missing blobs, and publishes the
 manifest tag. The source can be a VM name or an existing VM directory. Use
 `--dry-run` to inspect the plan without uploading.
 
-```
+```sh
 cove push <vm|dir> <ref> [flags]
 ```
 
@@ -1541,7 +1541,7 @@ cove push dev-vm ghcr.io/me/dev-vm:v1 --dry-run --manifest-out manifest.json
 
 Reclaim unused guest blocks on the VM disk. Agent-aware: runs `fstrim` on Linux guests and `diskutil secureErase freespace 0 /` on macOS guests. Fails cleanly if the guest agent is disconnected.
 
-```
+```sh
 cove compact [options] [vm]
 ```
 
@@ -1565,7 +1565,7 @@ scratch VM. Non-dry-run execution accepts either a local VM directory or an OCI
 registry base; registry bases are first pulled into build scratch, then executed
 through the same cache-aware VM builder.
 
-```
+```sh
 cove build <name> --base <ref> --script <step> [flags]
 ```
 

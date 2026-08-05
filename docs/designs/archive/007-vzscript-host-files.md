@@ -33,7 +33,7 @@ We want a single declarative directive in the vzscript that:
 
 ## 2. Proposed directive
 
-```
+```sh
 # host-cp: <host-path> <guest-path> [mode] [owner]
 ```
 
@@ -92,7 +92,7 @@ A recipe declaring `# host-cp:` of a likely-secret path **must** also declare `#
 
 Every host-cp invocation appends to `~/.cove/host-cp.log`:
 
-```
+```text
 2026-04-20T00:45:12Z dflash-autoresearch claude-code ~/.claude/settings.json -> /Users/tmc/.claude/settings.json (4825b mode=0644 owner=tmc:staff classification=public-config consent=auto)
 ```
 

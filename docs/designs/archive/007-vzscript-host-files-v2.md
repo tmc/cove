@@ -82,7 +82,7 @@ time before the agent exists. Pre-script-but-post-boot has no such excuse.
 
 ## 3. Runtime command shape
 
-```
+```text
 host-cp [flags] <host-path> <guest-path>
 ```
 
@@ -133,7 +133,7 @@ The classifier is gone. The replacement is two narrow checks plus an opt-in.
 A small built-in list of paths is treated as "ordinary user config, copy with
 one-line audit, no prompt":
 
-```
+```text
 ~/.gitconfig          ~/.gitignore_global        ~/.zshrc      ~/.bashrc
 ~/.bash_profile       ~/.profile                 ~/.tmux.conf  ~/.editorconfig
 ~/.claude/settings.json ~/.claude/CLAUDE.md
@@ -150,7 +150,7 @@ named badly).
 For any host file under 256 KB and detected as text, scan for canonical token
 shapes before sending bytes:
 
-```
+```text
 sk-[A-Za-z0-9]{20,}        # OpenAI / Anthropic
 xox[baprs]-[0-9A-Za-z-]+   # Slack
 ghp_[A-Za-z0-9]{36}        # GitHub PAT
@@ -179,7 +179,7 @@ are gated by classification (§4.3).
 
 Prompt format (one prompt per `host-cp` invocation, not per file):
 
-```
+```text
 host-cp wants to send a host file into vm 'dflash':
   source: ~/.npmrc (1.2 KB, 0644, contains tokens matching: github_pat_, sk-)
   target: /Users/tmc/.npmrc (mode 0644, owner tmc:staff)
@@ -205,7 +205,7 @@ Allow? [y/N/always-this-recipe-on-this-vm]
 A recipe that wants to copy any file flagged by the content sniff (i.e.
 "secret" outcome) must declare:
 
-```
+```sh
 # accepts-secrets: ~/.npmrc ~/.config/gh/hosts.yml
 ```
 
@@ -238,7 +238,7 @@ Cache file: `~/.cove/host-cp-allow.json`. Schema: array of
 Unchanged from v1. Every invocation, allowed or denied, appends one line to
 `~/.cove/host-cp.log`:
 
-```
+```text
 2026-04-20T00:45:12Z dflash-autoresearch claude-code ~/.claude/settings.json -> /Users/tmc/.claude/settings.json (4825b mode=0644 owner=tmc:staff agent=user class=allowlist consent=cached-recipe)
 ```
 
@@ -252,7 +252,7 @@ root without Full Disk Access is *less* privileged than the logged-in user.
 
 v2: the engine **picks the agent based on the destination path prefix**.
 
-```
+```text
 /etc/      /Library/   /var/   /System/   /Applications/   /usr/      → daemon (port 1024)
 /Users/<u>/                                                            → user   (port 1025)
 /private/etc/   /private/var/                                          → daemon

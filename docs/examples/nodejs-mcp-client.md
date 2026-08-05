@@ -156,7 +156,7 @@ npx tsx client.ts
 
 ## Expected output
 
-```
+```text
 found 1 VM(s); using 'default' (status=running)
 saved screenshot (image/png, 184213 bytes) to /tmp/vm-shot.png
 uname -a output:

@@ -9,7 +9,7 @@ icon: compass
 
 ### DFU State Error (Code 4014 / 3004)
 
-```
+```text
 Domain: com.apple.MobileDevice.MobileRestore
 Code: 4014 or 3004
 Description: Unexpected device state 'DFU' expected 'RestoreOS'
@@ -23,7 +23,7 @@ Description: Unexpected device state 'DFU' expected 'RestoreOS'
 
 ### Sandbox Preferences Error
 
-```
+```text
 accessing these preferences requires user-preference-read or file-read-data sandbox access
 ```
 

@@ -159,7 +159,7 @@ hatchling-built package, same fork-per-run semantics.
 
 ### Package layout
 
-```
+```text
 adapters/anthropic-agents-python/
 ├── pyproject.toml                  # name = "cove-claude-sandbox"
 ├── README.md                       # live-smoke + package-check

@@ -75,7 +75,7 @@ A Go binary running inside the guest as a LaunchDaemon. Communicates with the ho
 
 ## VM Directory Layout
 
-```
+```text
 ~/.vz/vms/<name>/
 +-- disk.img               # main storage (sparse APFS or ext4)
 +-- aux.img                # macOS auxiliary storage (NVRAM)

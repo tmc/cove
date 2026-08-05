@@ -25,7 +25,7 @@ Full `go test ./...` run: all 13 packages pass, 0 failures (log:
 | 4. `cove serve -http` operates a pre-existing VM end-to-end | PASS (parity with MCP) | `dump-docs -type api` lists 26 REST endpoints under `/v1/vms/{name}/*`: status, pause, resume, stop, request-stop, screenshot, type, key, mouse, agent/exec, agent/read, agent/write, agent/cp, snapshot, snapshots (list/restore/delete), disk-snapshots, pit-snapshots, events (SSE), plus `/v1/operations/*` (list+SSE). Route handlers in `serve_gateway.go:596-628`. `POST /v1/vms` exists but returns `not_implemented` — by design for 0.1 (CLI-only create; resolved by product decision 2026-04-24). | — |
 | 5. Agents can invoke snapshots and pause/resume over HTTP/MCP | PASS | Pause + resume + snapshot save/list/restore/delete all wired on both surfaces. Live-probed on hermes VM: `ctl pause` → status `canResume:true, canStop:true`; `ctl resume` → back to running. Roadmap "suspend/resume" clarified 2026-04-24 to mean pause/resume (resolved by product decision). | — |
 | 6. `cove pull` of a lume-produced image boots in cove | PASS (code path exists; not booted E2E) | `cove pull` subcommand dispatched at `main.go:463`; `pull.go` is 471 lines with real OCI manifest fetch, LZ4 chunk streaming, atomic disk rename. `pull.go:323` calls `ociimage.NormalizeLayerAnnotations` which `internal/ociimage/annotations.go:22-49` defines a bidirectional `coveToLume`/`lumeToCove` map covering all legacy `org.trycua.lume.*` annotation keys. Pull accepts lume-produced manifests. Live boot of a lume image was not exercised. | major if lume schema diverges from the mapped keys; minor otherwise |
-| 7. `cove dump-docs` emits structured CLI/API/MCP data | PASS | `./cove dump-docs` emits a single JSON document with top-level keys `version`, `cli`, `api`, `mcp`. CLI section has 26 commands with name/summary/usage/flags/examples. API section has 26 endpoints with method/path/description/auth. MCP section has 19 tools with name/description/JSONSchema input_schema. `--help` shows `-type cli|api|mcp` and `-pretty` flags. Output is valid JSON parseable without help-text scraping. | — |
+| 7. `cove dump-docs` emits structured CLI/API/MCP data | PASS | `./cove dump-docs` emits a single JSON document with top-level keys `version`, `cli`, `api`, `mcp`. CLI section has 26 commands with name/summary/usage/flags/examples. API section has 26 endpoints with method/path/description/auth. MCP section has 19 tools with name/description/JSONSchema input_schema. `--help` shows `-type cli\|api\|mcp` and `-pretty` flags. Output is valid JSON parseable without help-text scraping. | — |
 
 ### Incidental findings
 
@@ -69,7 +69,7 @@ for smoke passes before tagging:
 
 **Pull outcome:** FAILURE at manifest-parse stage, before any blob fetch.
 
-```
+```sh
 $ ./cove pull --dry-run --as lume-smoke ghcr.io/trycua/ubuntu-noble-vanilla:latest
 error: parse registry manifest: parse manifest: missing annotation
   org.tmc.cove.uncompressed-disk-size or org.trycua.lume.uncompressed-disk-size
@@ -156,7 +156,7 @@ passes.
 `~/.vz/cache/RestoreImage.ipsw` (17.6 GB).
 
 **Command:**
-```
+```sh
 ./cove up -user smoketest -password smokepass123 -vm smoketest-vm \
   -ipsw ~/.vz/cache/RestoreImage.ipsw -headless -disk-size 48 -no-shutdown
 ```
@@ -164,7 +164,7 @@ passes.
 **Result: FAIL.** Install phase reported 100% complete, then provisioning
 aborted because the VM disk was missing. Log excerpt:
 
-```
+```text
 === Step 1/3: Installing macOS ===
 …  0.0% … 100.0%
 === Installation Complete ===

@@ -48,7 +48,7 @@ cove run -save-encrypt     # encrypt suspend state
 
 ## Suspend State Location
 
-```
+```text
 ~/.vz/vms/<name>/suspend.vmstate
 ```
 

@@ -12,7 +12,7 @@ Running VMs expose a Unix domain socket for control and monitoring.
 
 ## Connection
 
-```
+```text
 ~/.vz/vms/<name>/control.sock   # socket path
 ~/.vz/vms/<name>/control.token  # auth token (owner-read only, 0600)
 ```

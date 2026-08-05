@@ -38,7 +38,7 @@ cove -vm mlxgo-fresh-headed2-20260505 ctl agent-exec -- cat "/Volumes/My Shared 
 
 Expected result:
 
-```
+```text
 /Volumes/My Shared Files/test-folder is mounted
 ~/test-folder -> /Volumes/My Shared Files/test-folder
 cat prints ok

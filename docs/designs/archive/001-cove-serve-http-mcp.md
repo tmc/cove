@@ -44,7 +44,7 @@ All three modes live as subcommands on the existing `cove` binary. No new binary
 
 The `cove run` process already owns a Unix listener (`control_socket.go:192`). Add a second listener, optional, bound to TCP:
 
-```
+```sh
 cove run -http 127.0.0.1:7777
 cove run -http :0                      # auto-pick a free port, print it
 cove run -http-token-file ~/.cove/api.token
@@ -58,7 +58,7 @@ Why this is default-off: we don't want a random `cove run` to open a TCP port on
 
 A new subcommand — dedicated long-running process that doesn't own any VM, but reads the VM registry at `~/.vz/vms/` and proxies each VM's Unix socket under a `/vms/<name>/` prefix.
 
-```
+```sh
 cove serve                              # default :7777, localhost
 cove serve -http 127.0.0.1:7777
 cove serve -listen tcp://:7777          # unixgram:// also allowed for API-over-socket
@@ -80,7 +80,7 @@ Why this makes sense: a single HTTP endpoint that addresses all running VMs is e
 
 Same `cove serve` subcommand, different transport. When `--mcp` is set, we bind stdio instead of TCP and speak Model Context Protocol.
 
-```
+```sh
 cove serve --mcp
 ```
 
@@ -102,7 +102,7 @@ Thin CRUD mapping onto the existing control commands. Body is JSON; response is 
 
 ### Lifecycle
 
-```
+```text
 GET    /healthz                                 # 200 OK, no auth
 GET    /v1/vms                                  # list VMs + states
 GET    /v1/vms/:name/status                     # state, capabilities
@@ -117,7 +117,7 @@ POST   /v1/vms/:name/mouse                      # {"x": .., "y": .., "click": tr
 
 ### Guest agent
 
-```
+```text
 POST   /v1/vms/:name/agent/exec                 # {"cmd": "...", "args": [...], "as_user": false}
 GET    /v1/vms/:name/agent/read?path=/foo       # file body
 POST   /v1/vms/:name/agent/write                # {"path": "...", "data": "base64..."}
@@ -126,7 +126,7 @@ POST   /v1/vms/:name/agent/cp                   # {"src": "host", "dst": "guest"
 
 ### Creation
 
-```
+```text
 POST   /v1/vms                                  # create VM; returns 202 + operation
                                                 # body: {"name": "...", "installer": {...}, "cpu": 4, "memory_gb": 8, ...}
 ```
@@ -135,7 +135,7 @@ POST   /v1/vms                                  # create VM; returns 202 + opera
 
 ### Snapshots & events
 
-```
+```text
 POST   /v1/vms/:name/snapshot                   # {"name": "checkpoint1"}
 GET    /v1/vms/:name/snapshots
 POST   /v1/vms/:name/snapshots/:snap/restore
@@ -154,7 +154,7 @@ Operations that take more than ~5 seconds (VM creation today; import, clone, sna
 
 1. Client submits: `POST /v1/vms` with create payload.
 2. Server enqueues work, responds immediately:
-   ```
+   ```text
    HTTP/1.1 202 Accepted
    Location: /v1/operations/op_8f2a1c
    Content-Type: application/json
@@ -170,7 +170,7 @@ Operations that take more than ~5 seconds (VM creation today; import, clone, sna
 
 **Endpoints:**
 
-```
+```text
 GET    /v1/operations/:id                       # current state snapshot
                                                 # status: pending|running|succeeded|failed
                                                 # progress: {"phase": "download_ipsw", "percent": 42}
@@ -209,7 +209,7 @@ The description is visible on every macOS keychain access prompt. A user who see
 
 Commands used:
 
-```
+```sh
 # Store (on first serve or rotation):
 security add-generic-password -s cove-gateway -a $USER -w $TOKEN \
   -j "cove gateway — grants full access to all local VMs" -U
@@ -237,7 +237,7 @@ Rationale for master-default: Council round-1 noted that per-VM-by-default makes
 
 ## File layout
 
-```
+```text
 control_socket.go            # existing — keep as-is
 control_http.go              # NEW — http.Handler over ControlServer dispatch
 control_mcp.go               # NEW — MCP stdio handlers, reuses control_http logic

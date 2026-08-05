@@ -39,7 +39,7 @@ The headless path (`guiMode = false`) is closer to extractable (~200 LOC), but i
 
 `POST /v1/vms` returns:
 
-```
+```text
 HTTP/1.1 202 Accepted
 Location: /v1/operations/op_xxxxxxxx
 Content-Type: application/json

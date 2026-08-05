@@ -15,7 +15,7 @@ verified 2026-05-10 (R368): `nixos_installer.go` exports the
 Cove should install NixOS as a first-class Linux guest with the same user
 shape as the existing Linux path:
 
-```
+```sh
 cove install -nixos
 cove run -linux -distro nixos
 ```

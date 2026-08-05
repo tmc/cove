@@ -20,7 +20,7 @@ Date: 2026-05-03
 
 Linux installs on cove are **5-10x slower than they should be** on Apple Silicon hardware. Concrete measurement during an Ubuntu 24.04 desktop install on `linux-gui-debug`:
 
-```
+```text
 iostat -x 5 (inside guest, during cmd-system-install/unpacking ubuntu-desktop):
 Device: vda    kB_wrtn/s = 17094.53    kB_dscd/s = 122244.06
 ```
@@ -130,7 +130,7 @@ Plus matching changes in `runtime` callsites that hot-attach disks during a runn
 
 Add a hidden flag for power users / benchmarking:
 
-```
+```sh
 cove run -disk-sync=fsync   # default for run-time
 cove run -disk-sync=none    # for ephemeral / fork-from-and-throw-away
 cove run -disk-sync=full    # legacy / extra-paranoid

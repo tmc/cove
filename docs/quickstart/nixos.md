@@ -7,7 +7,7 @@ icon: bolt
 
 Install a NixOS guest:
 
-```
+```sh
 cove install -nixos -vm nixos-dev
 ```
 
@@ -22,27 +22,27 @@ The first slice boots the NixOS live ISO through EFI and makes the declarative
 install bundle available to the live environment. From the live installer,
 mount the `COVE-NIXOS` volume and run:
 
-```
+```sh
 sudo bash install-nixos.sh
 ```
 
 The script partitions the target disk, writes
 `/mnt/etc/nixos/configuration.nix`, and runs:
 
-```
+```text
 nixos-install --root /mnt --no-root-passwd
 ```
 
 After installation finishes, stop the installer VM and boot the installed
 guest:
 
-```
+```sh
 cove run -linux -distro nixos -vm nixos-dev
 ```
 
 Run the base recipe after the guest agent is reachable:
 
-```
+```sh
 cove vzscript run -os linux nixos-base
 ```
 

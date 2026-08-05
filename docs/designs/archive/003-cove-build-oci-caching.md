@@ -51,7 +51,7 @@ This is the feature that turns cove from "`docker pull` for macOS VMs" (v0.1 par
 
 ## Mental model
 
-```
+```sh
      cove pull ghcr.io/me/macos-15:sequoia               # base image M0
               │
               ▼
@@ -96,7 +96,7 @@ Net new: a cache-key scheme, a block-diff algorithm, a `cove build` orchestrator
 
 For a single vzscript step:
 
-```
+```text
 key = sha256(
     parent_manifest_digest       # OCI manifest SHA-256 of the input layer (see below)
   | script_content_hash          # sha256 of the full vzscript file (txtar-normalized)
@@ -141,7 +141,7 @@ are checked in.
 
 ### New vzscript header directives
 
-```
+```sh
 # cache-env: BUILD_NUMBER CIPHER_SUITES    # NON-SECRET inputs that influence the cache key
 # cache-url: https://go.dev/VERSION?m=text # fetch + hash body at build time
 # cache-file: ~/.ssh/known_hosts           # hash host file contents
@@ -202,7 +202,7 @@ When the invoking command is `cove build` (as opposed to `cove vzscript run`), t
 
 The error message points users to the right alternatives:
 
-```
+```text
 vzscript step 'my-step' declares `# mount: ~/src` — not allowed in `cove build` context.
 Host mounts break OCI portability: the pushed image would reference host state that
 doesn't exist for anyone else who pulls it.
@@ -249,7 +249,7 @@ The implementation supports all three modes behind `--compact <mode>`.
 
 Script authors can override via header:
 
-```
+```sh
 # compact: thorough
 ```
 
@@ -319,7 +319,7 @@ The cache-hit path is I/O-bound (writing the delta), not CPU-bound. On a full ca
 
 ## The `cove build` subcommand
 
-```
+```sh
 cove build <name> \
     --base <ref>                    # required: base image to pull
     --script <name|path> ...        # repeat for each step
@@ -350,7 +350,7 @@ cove build macos-workstation \
 
 ### Output format
 
-```
+```text
 => step 1/4: homebrew                     [cache hit: L1-a7f3c2...]     0.8s
 => step 2/4: golang                       [cache hit: L2-3d9e1b...]     1.2s
 => step 3/4: claude-code                  [CACHE MISS — running...]
@@ -386,7 +386,7 @@ cross-machine stability measurements are committed.
 
 ## On-disk layout additions
 
-```
+```text
 ~/.vz/store/
 ├── blobs/sha256/<digest>              # existing v0.2
 ├── build-cache/

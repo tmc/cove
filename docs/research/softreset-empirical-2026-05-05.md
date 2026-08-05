@@ -9,7 +9,7 @@ Date: 2026-05-05
 
 Command:
 
-```
+```sh
 cove softreset run-all ubuntu-gh-runner-headed --json --timeout=60s
 ```
 

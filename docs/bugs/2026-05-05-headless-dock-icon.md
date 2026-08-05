@@ -19,7 +19,7 @@ Password and authorization dialogs do not require a headless Dock icon. Password
 
 Built and signed the test binary:
 
-```
+```sh
 go build ./...
 go build -o cove ./cmd/cove
 codesign -s - -f --entitlements cmd/cove/vz.entitlements ./cove
@@ -28,7 +28,7 @@ go test ./...
 
 Behavioral check on `cove-test`:
 
-```
+```text
 base-cove-dock-count=1
 
 headless-status:

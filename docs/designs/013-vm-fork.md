@@ -58,7 +58,7 @@ The hard constraints come from VZ:
 
 Use case: long-lived child, will accumulate its own state.
 
-```
+```text
 parent/
   disk.img        ─clonefile→  child/disk.img    (CoW, instant, 0 B)
   hw.model        ─copy→       child/hw.model    (must be identical)
@@ -89,7 +89,7 @@ Default to A1 with a fallback to A2 on restore failure (mirrors the existing
 
 Use case: many short-lived siblings; throw all writes away on shutdown.
 
-```
+```text
 parent/disk.img  ←(read-only)─ child1 + child2 + child3 ... concurrent
                               + per-child VZTemporaryRAMStorageDeviceAttachment
 ```
@@ -136,7 +136,7 @@ The shipped current `cove run -fork-from` path takes a local image ref
 `cove fork` or `cove clone --linked` for VM parents; use `-fork-name`, not the
 older `-name` spelling, when naming image-backed run children.
 
-```
+```sh
 # Persistent fork (clone-and-diverge)
 cove fork <parent> <child> [-snapshot <name>] [-linked]
     -snapshot   restore child from parent/snapshots/<name>.vmstate at first boot
@@ -275,7 +275,7 @@ proved the important constraint: a `.vmstate` is not bound only to
 disk image}`. Slice 5a preserves that tuple for `cove run -fork-from`; Slice 5b
 is deferred and will add actual vmstate restore wiring.
 
-```
+```text
 VM start
   |
   v

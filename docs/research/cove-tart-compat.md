@@ -20,7 +20,7 @@ Verified against the cirruslabs/tart Swift sources at
 
 ### Manifest envelope (`OCI/Manifest.swift`)
 
-```
+```text
 schemaVersion: 2
 mediaType:     application/vnd.oci.image.manifest.v1+json
 config:        application/vnd.oci.image.config.v1+json   ← stub for Docker Hub
@@ -53,7 +53,7 @@ compatibility; tart does not read it back.
   (`0x184D2204`).** Apple's `.lz4` produces a *block-stream* format
   documented in `<compression.h>`:
 
-  ```
+  ```text
   ┌──────────┬─────────┬─────────┬─────────────┐
   │ 'bv41'   │ raw_sz  │ comp_sz │ LZ4 block…  │   compressed block
   └──────────┴─────────┴─────────┴─────────────┘
@@ -72,7 +72,7 @@ compatibility; tart does not read it back.
 
 ### Layer annotations (per disk layer)
 
-```
+```text
 org.cirruslabs.tart.uncompressed-size           ← uncompressed bytes (UInt64)
 org.cirruslabs.tart.uncompressed-content-digest ← sha256 of uncompressed bytes
 ```
@@ -83,14 +83,14 @@ they are present and rejects the manifest if either is missing
 
 ### Manifest annotations
 
-```
+```text
 org.cirruslabs.tart.uncompressed-disk-size   ← total uncompressed bytes (UInt64)
 org.cirruslabs.tart.upload-time              ← ISO8601 timestamp
 ```
 
 ### Manifest labels (in OCIConfig.config.Labels, not annotations)
 
-```
+```text
 org.cirruslabs.tart.disk.format              ← raw|compressed (cove only emits raw)
 ```
 

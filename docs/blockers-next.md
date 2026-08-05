@@ -34,13 +34,13 @@ reports install 100%, then fails at provision stage because the VM
 directory does not exist.
 
 **Reproduction.**
-```
+```sh
 ./cove up -user smoketest -password smokepass123 -vm smoketest-vm \
   -ipsw ~/.vz/cache/RestoreImage.ipsw -headless -disk-size 48 -no-shutdown
 ```
 
 **Observed output (abbreviated).**
-```
+```text
 === Step 1/3: Installing macOS ===
 …  0.0% … 100.0%
 === Installation Complete ===
@@ -96,7 +96,7 @@ disk. `find /Users/tmc/.vz -name 'smoketest*'` returns nothing.
 **Original symptom.** `cove pull` of any `ghcr.io/trycua/*` image failed at
 manifest parse before any blob fetch:
 
-```
+```sh
 $ ./cove pull --dry-run --as lume-smoke \
     ghcr.io/trycua/ubuntu-noble-vanilla:latest
 error: parse registry manifest: parse manifest:
@@ -135,7 +135,7 @@ error: parse registry manifest: parse manifest:
 `docs/handoff/r107-deferred-validation-smoke-2026-05-10.md`. A signed
 throwaway `/tmp/cove-r107` from `b305c86` ran:
 
-```
+```text
 /tmp/cove-r107 pull --dry-run --as r107-lume-ghcr-smoke \
   docker://ghcr.io/trycua/ubuntu-noble-vanilla:latest
 ```

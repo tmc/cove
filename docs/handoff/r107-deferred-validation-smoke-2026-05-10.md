@@ -16,21 +16,21 @@ Dirty worktree note: pre-existing edits in `agent_control.go`,
 
 Built and signed a throwaway binary:
 
-```
+```sh
 go build -o /tmp/cove-r107 ./cmd/cove
 codesign -s - -f --entitlements cmd/cove/vz.entitlements /tmp/cove-r107
 ```
 
 Smoke command:
 
-```
+```text
 /tmp/cove-r107 pull --dry-run --as r107-lume-ghcr-smoke \
   docker://ghcr.io/trycua/ubuntu-noble-vanilla:latest
 ```
 
 Output:
 
-```
+```text
 Pull dry run
   ref: ghcr.io/trycua/ubuntu-noble-vanilla:latest
   vm: r107-lume-ghcr-smoke
@@ -49,7 +49,7 @@ disk blobs, import the VM, or boot it.
 
 Post-check:
 
-```
+```text
 test ! -e /Users/tmc/.vz/vms/r107-lume-ghcr-smoke
 ```
 
@@ -63,7 +63,7 @@ the Lume GHCR smoke produced a safe live result without touching it.
 
 Command to run on an isolated host:
 
-```
+```text
 VZ_DEBUG_INSTALL=1 ./cove up -user smoketest -password smokepass123 \
   -vm r107-cleanhost-smoketest -ipsw ~/.vz/cache/RestoreImage.ipsw \
   -headless -disk-size 48 -no-shutdown

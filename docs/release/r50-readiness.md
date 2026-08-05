@@ -137,7 +137,7 @@ This audit folds those findings forward and adds a v0.5 scope decision and a
       `34fdf4d` (softreset `hostPort`), `4349d8d` (`activeConnections`),
       `1adbfaa` (dead `httpListeners`), `b52d2d6` (dead agentBridge wrappers).
 - Cumulative since v0.4 anchor `14cabac`: 225 commits.
-  ```
+  ```sh
   $ git log --oneline 14cabac..origin/main | wc -l
   225
   ```

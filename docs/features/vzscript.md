@@ -37,7 +37,7 @@ only when you explicitly need a visible terminal window in the guest.
 
 Scripts are [txtar](https://pkg.go.dev/golang.org/x/tools/txtar) archives. The comment section contains commands; embedded files are extracted to a working directory.
 
-```
+```sh
 # Wait for the guest agent
 guest-wait 3m
 
@@ -53,7 +53,7 @@ guest-shell install.sh
 
 Scripts declare dependencies with a header directive:
 
-```
+```sh
 # requires: homebrew
 ```
 
@@ -63,7 +63,7 @@ Dependencies are resolved automatically. Each recipe runs at most once, even whe
 
 Recipes declare the guest OS they support:
 
-```
+```sh
 # guest-os: darwin
 ```
 
@@ -79,7 +79,7 @@ commands when a recipe does not match the target VM's OS.
 
 Scripts can declare host directories to mount via VirtioFS:
 
-```
+```sh
 # mount: ~/projects rw
 # mount: /data ro
 ```
@@ -94,7 +94,7 @@ mount still applies on a future cold boot.
 
 Scripts that need root (e.g., installing packages, writing to `/etc`) should declare:
 
-```
+```sh
 # runs-on: daemon
 ```
 
@@ -102,7 +102,7 @@ This routes commands through the root daemon agent (port 1024) instead of the us
 
 Recipes can also request terminal output:
 
-```
+```sh
 # runs-on: terminal
 ```
 
@@ -116,13 +116,13 @@ Terminal automation is not already allowed by macOS TCC.
 metadata parsing and execution. Pass values with repeated `-var name=value`
 flags. The renderer provides `quote`, `queryescape`, and `env` functions.
 
-```
+```text
 label-push {{quote (printf "SIP %s" .Mode)}}
 type-keycodes {{quote .Command}}
 [text-visible:{{queryescape .SuccessText}}] screenshot
 ```
 
-```
+```sh
 cove vzscript run -template \
   -var Mode=disable \
   -var Command="csrutil disable" \

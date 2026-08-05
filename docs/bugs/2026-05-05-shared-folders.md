@@ -27,7 +27,7 @@ The route helper already classifies `/Volumes/My Shared Files` as a user path:
 all `/Volumes/<name>` paths route to the user agent except `Macintosh HD` and
 `Macintosh HD - Data`. Exact regression coverage now pins:
 
-```
+```text
 /Volumes/My Shared Files
 /Volumes/My Shared Files/<tag>/...
 ```

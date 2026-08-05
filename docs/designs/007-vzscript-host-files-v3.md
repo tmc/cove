@@ -69,7 +69,7 @@ on user creation, app-state materialization, or `[condition]` guards.
 
 ## 3. Runtime command shape
 
-```
+```text
 host-cp [flags] <host-path> <guest-path>
 ```
 
@@ -135,7 +135,7 @@ content-shape sniffing.
 
 A small built-in list:
 
-```
+```text
 ~/.gitconfig          ~/.gitignore_global        ~/.zshrc      ~/.bashrc
 ~/.bash_profile       ~/.profile                 ~/.tmux.conf  ~/.editorconfig
 ~/.claude/settings.json ~/.claude/CLAUDE.md
@@ -156,7 +156,7 @@ membership the engine MUST:
    `~/.config/gcloud/`, `~/.docker/config.json`, `~/.netrc`,
    `~/.config/op/`, `~/.gnupg/`), reject and emit:
 
-   ```
+   ```text
    host-cp: ~/.gitconfig is a symlink to ~/.ssh/id_rsa
             (matches sensitive directory ~/.ssh/) — refusing.
             If this is intentional, reference the real path directly.
@@ -173,7 +173,7 @@ This costs one stat per copy; negligible.
 For any host file under 256 KB and detected as text, scan for canonical
 token shapes:
 
-```
+```text
 sk-[A-Za-z0-9]{20,}        # OpenAI / Anthropic
 xox[baprs]-[0-9A-Za-z-]+   # Slack
 ghp_[A-Za-z0-9]{36}        # GitHub PAT
@@ -201,7 +201,7 @@ are gated by classification (§4.3) and the binary check (§4.4).
 
 Prompt format (one prompt per `host-cp` invocation):
 
-```
+```text
 host-cp wants to send a host file into vm 'dflash':
   source: ~/.npmrc (1.2 KB, 0644, contains tokens matching: github_pat_, sk-)
   target: /Users/tmc/.npmrc (mode 0644, owner tmc:staff)
@@ -243,7 +243,7 @@ copying `/Applications/Xcode.app` with `-recursive -allow-binary`).
 A recipe that wants to copy any file flagged by the content sniff (i.e.
 "secret" outcome) must declare:
 
-```
+```sh
 # accepts-secrets: ~/.npmrc ~/.config/gh/hosts.yml
 ```
 
@@ -282,7 +282,7 @@ until 2026-07-19."
 Unchanged from v1/v2. Every invocation appends one line to
 `~/.cove/host-cp.log`:
 
-```
+```text
 2026-04-20T00:45:12Z dflash claude-code ~/.claude/settings.json -> /Users/tmc/.claude/settings.json (4825b mode=0644 owner=tmc:staff agent=user class=allowlist consent=cached-recipe symlink=no)
 ```
 
@@ -292,7 +292,7 @@ For the user, not for security.
 
 The engine picks the agent based on destination path prefix:
 
-```
+```text
 /etc/   /Library/   /var/   /System/   /Applications/   /usr/   → daemon (port 1024)
 /private/etc/   /private/var/                                    → daemon
 /Users/<u>/                                                      → user   (port 1025)
@@ -407,7 +407,7 @@ deterministic failure.
 If `host-cp` targets `/Users/foo/...` (or `~/`) but the user agent isn't
 reachable (no GUI user logged in), block with:
 
-```
+```text
 host-cp: target /Users/tmc/.claude/settings.json requires the user agent,
          but no console user is logged in. Either log in (cove ctl
          user-login), wait for auto-login (-no-resume cold boot), or pass

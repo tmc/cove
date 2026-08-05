@@ -132,7 +132,7 @@ cove doctor
 
 Expected output for successful injection:
 
-```
+```text
 + Library/LaunchDaemons/com.vz.provision.plist
     Status: OK
 + private/var/db/vz-provision.sh
@@ -155,7 +155,7 @@ cove doctor --fix
 
 ## Boot Sequence
 
-```
+```text
 Kernel -> launchd -> LaunchDaemons (provision runs here) -> WindowServer -> loginwindow
                                                                              |
                                                                    .AppleSetupDone?

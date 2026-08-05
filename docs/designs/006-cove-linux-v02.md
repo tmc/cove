@@ -277,7 +277,7 @@ Sub-items:
 **4a. Distro shortcut on `cove run`**: `cove run --linux --distro fedora` (same semantics as macOS `cove up -user`).
 
 **4b. Rosetta auto-mount**: a default vzscript `rosetta-setup.vzscript` that runs on first boot:
-```
+```text
 guest-exec mkdir -p /run/rosetta
 guest-exec mount -t virtiofs rosetta /run/rosetta
 guest-exec /run/rosetta/rosetta --register
@@ -480,7 +480,7 @@ We can't ship Pillar 1 on vibes. We need a CI-ish harness that boots a cove VM w
 
 A new script at `vzscripts/kvm-test.vzscript`:
 
-```
+```sh
 # kvm-test — verify KVM works inside a cove Linux guest.
 # deps: ubuntu-kvm-userspace
 

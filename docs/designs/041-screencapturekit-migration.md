@@ -40,7 +40,7 @@ Date: 2026-05-07
 Services screen-capture API. As of macOS 14 (Sonoma) Apple ships a
 `staticcheck` SA1019:
 
-```
+```text
 screenshots.go:211:13: coregraphics.CGWindowListCreateImage is
     deprecated: Please use ScreenCaptureKit instead.
 ```

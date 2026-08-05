@@ -233,23 +233,20 @@ plan.
 
 **Key sources backing this matrix:**
 
-- [/tmp/cove-research-update-2026-04-25.md][r1] (notebook source, partially
+- `tmp/cove-research-update-2026-04-25.md` (working note, never committed) (notebook source, partially
   reconstructed; specific dates flagged for re-verification) — OpenAI ↔ Cirrus deal,
   Apple `container` Linux-only stance, Daytona Series A, OpenAI Agents SDK partner
   list, Anthropic sandbox-runtime semantics, OrbStack pricing.
-- [/tmp/cove-competitor-landscape-2026.md][r2] (notebook source) — original
+- `tmp/cove-competitor-landscape-2026.md` (working note, never committed) (notebook source) — original
   research seed.
-- [/tmp/cirruslabs-review.md][r4] (notebook source) — direct source review of
+- `tmp/cirruslabs-review.md` (working note, never committed) (notebook source) — direct source review of
   `cirruslabs/tart`, `cirruslabs/orchard`, and `cirruslabs/tart-guest-agent` with
   file:line citations for license, snapshot model, OCI surface, and architecture.
   This is the receipts trail for the Tart and Orchard rows in the matrix above.
 - [011-beat-lume-roadmap.md][r3] — internal stance on lume and the engineering
   release themes (0.1 → 0.4) cove's marquee features map onto.
 
-[r1]: ../../../tmp/cove-research-update-2026-04-25.md
-[r2]: ../../../tmp/cove-competitor-landscape-2026.md
 [r3]: 011-beat-lume-roadmap.md
-[r4]: ../../../tmp/cirruslabs-review.md
 
 ### The four real fights
 
