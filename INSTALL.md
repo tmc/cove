@@ -23,7 +23,7 @@ On first launch, cove signs the local binary with the Virtualization.framework
 entitlements it needs. If autosigning fails, sign the binary manually:
 
 ```bash
-codesign -s - -f --entitlements internal/autosign/vz.entitlements "$(command -v cove)"
+codesign -s - -f --entitlements cmd/cove/vz.entitlements "$(command -v cove)"
 ```
 
 The Homebrew formula is not the recommended first-run path yet. Packaged
