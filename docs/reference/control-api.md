@@ -91,20 +91,20 @@ The `data` field carries legacy string responses (base64 images, JSON, plain tex
 
 Health check. No parameters.
 
-#### Shell
+**Shell**
 
 ```bash
 echo '{"type":"ping","auth_token":"'$TOKEN'"}' | nc -U ~/.vz/vms/default/control.sock
 ```
 
-#### Python
+**Python**
 
 ```python
 resp = send({"type": "ping"})
 assert resp["success"]
 ```
 
-#### Go
+**Go**
 
 ```go
 err := client.Ping()
@@ -116,20 +116,20 @@ err := client.Ping()
 
 VM state and capabilities. No parameters.
 
-#### Shell
+**Shell**
 
 ```bash
 echo '{"type":"status","auth_token":"'$TOKEN'"}' | nc -U ~/.vz/vms/default/control.sock
 ```
 
-#### Python
+**Python**
 
 ```python
 resp = send({"type": "status"})
 print(resp["status"]["state"])  # "running"
 ```
 
-#### Go
+**Go**
 
 ```go
 st, err := client.Status()
@@ -157,20 +157,20 @@ Response:
 
 Machine-readable protocol capabilities. No parameters.
 
-#### Shell
+**Shell**
 
 ```bash
 echo '{"type":"capabilities","auth_token":"'$TOKEN'"}' | nc -U ~/.vz/vms/default/control.sock
 ```
 
-#### Python
+**Python**
 
 ```python
 resp = send({"type": "capabilities"})
 print(resp["data"])
 ```
 
-#### Go
+**Go**
 
 ```go
 caps, err := client.Capabilities()
@@ -184,7 +184,7 @@ Response includes protocol version, encoding, available commands, and feature fl
 
 Capture VM display.
 
-#### Parameters
+**Parameters**
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -192,7 +192,7 @@ Capture VM display.
 | `format` | string | `"png"` | Image format: `"png"` or `"jpeg"` |
 | `quality` | int | `90` | JPEG quality (1-100), ignored for PNG |
 
-#### Shell
+**Shell**
 
 ```bash
 # Default (base64 PNG in data field)
@@ -202,7 +202,7 @@ echo '{"type":"screenshot","auth_token":"'$TOKEN'"}' | nc -U ~/.vz/vms/default/c
 echo '{"type":"screenshot","auth_token":"'$TOKEN'","screenshot":{"scale":0.5,"format":"jpeg","quality":80}}' | nc -U ~/.vz/vms/default/control.sock
 ```
 
-#### Python
+**Python**
 
 ```python
 import base64
@@ -211,7 +211,7 @@ img_bytes = base64.b64decode(resp["data"])
 open("screen.jpg", "wb").write(img_bytes)
 ```
 
-#### Go
+**Go**
 
 ```go
 img, err := client.Screenshot()                // full-size PNG as image.Image
@@ -225,7 +225,7 @@ data, fmt, err := client.ScreenshotData()      // raw bytes + format string
 
 Send keyboard event.
 
-#### Parameters
+**Parameters**
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -234,7 +234,7 @@ Send keyboard event.
 | `modifiers` | uint32 | `0` | Modifier flags (e.g. 256 for Cmd) |
 | `use_cg_event` | bool | `false` | Use CGEvent path (needed for app-level shortcuts) |
 
-#### Shell
+**Shell**
 
 ```bash
 # Return key (keycode 36)
@@ -244,14 +244,14 @@ echo '{"type":"key","auth_token":"'$TOKEN'","key":{"key_code":36}}' | nc -U ~/.v
 echo '{"type":"key","auth_token":"'$TOKEN'","key":{"key_code":0,"modifiers":256}}' | nc -U ~/.vz/vms/default/control.sock
 ```
 
-#### Python
+**Python**
 
 ```python
 send({"type": "key", "key": {"key_code": 36}})                        # Return
 send({"type": "key", "key": {"key_code": 0, "modifiers": 256}})       # Cmd+A
 ```
 
-#### Go
+**Go**
 
 ```go
 err := client.KeyPress(36)                          // Return key
@@ -264,25 +264,25 @@ err = client.KeyPressWithModifiers(0, 256)           // Cmd+A
 
 Type a string character by character.
 
-#### Parameters
+**Parameters**
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `text` | string | (required) | Text to type |
 
-#### Shell
+**Shell**
 
 ```bash
 echo '{"type":"text","auth_token":"'$TOKEN'","text":{"text":"hello world"}}' | nc -U ~/.vz/vms/default/control.sock
 ```
 
-#### Python
+**Python**
 
 ```python
 send({"type": "text", "text": {"text": "hello world"}})
 ```
 
-#### Go
+**Go**
 
 ```go
 err := client.TypeText("hello world")
@@ -294,7 +294,7 @@ err := client.TypeText("hello world")
 
 Send mouse event.
 
-#### Parameters
+**Parameters**
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -304,19 +304,19 @@ Send mouse event.
 | `button` | int | `0` | Mouse button (0=left, 1=right, 2=middle) |
 | `absolute` | bool | `false` | If true, coordinates are absolute window pixels |
 
-#### Shell
+**Shell**
 
 ```bash
 echo '{"type":"mouse","auth_token":"'$TOKEN'","mouse":{"x":0.5,"y":0.5,"action":"click","button":0}}' | nc -U ~/.vz/vms/default/control.sock
 ```
 
-#### Python
+**Python**
 
 ```python
 send({"type": "mouse", "mouse": {"x": 0.5, "y": 0.5, "action": "click", "button": 0}})
 ```
 
-#### Go
+**Go**
 
 ```go
 err := client.MouseClick(0.5, 0.5)                  // normalized coordinates
@@ -329,21 +329,21 @@ err = client.MouseClickAbsolute(960, 540)            // absolute pixels
 
 Pause or resume the VM. No parameters.
 
-#### Shell
+**Shell**
 
 ```bash
 echo '{"type":"pause","auth_token":"'$TOKEN'"}' | nc -U ~/.vz/vms/default/control.sock
 echo '{"type":"resume","auth_token":"'$TOKEN'"}' | nc -U ~/.vz/vms/default/control.sock
 ```
 
-#### Python
+**Python**
 
 ```python
 send({"type": "pause"})
 send({"type": "resume"})
 ```
 
-#### Go
+**Go**
 
 ```go
 err := client.Pause()
@@ -356,19 +356,19 @@ err = client.Resume()
 
 Stop the VM. No parameters.
 
-#### Shell
+**Shell**
 
 ```bash
 echo '{"type":"stop","auth_token":"'$TOKEN'"}' | nc -U ~/.vz/vms/default/control.sock
 ```
 
-#### Python
+**Python**
 
 ```python
 send({"type": "stop"})
 ```
 
-#### Go
+**Go**
 
 ```go
 err := client.Stop()
@@ -380,14 +380,14 @@ err := client.Stop()
 
 Manage VM state snapshots.
 
-#### Parameters
+**Parameters**
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `action` | string | (required) | `"save"`, `"restore"`, `"list"`, or `"delete"` |
 | `name` | string | (required for save/restore/delete) | Snapshot name |
 
-#### Shell
+**Shell**
 
 ```bash
 # Save
@@ -403,7 +403,7 @@ echo '{"type":"snapshot","auth_token":"'$TOKEN'","snapshot":{"action":"restore",
 echo '{"type":"snapshot","auth_token":"'$TOKEN'","snapshot":{"action":"delete","name":"cp1"}}' | nc -U ~/.vz/vms/default/control.sock
 ```
 
-#### Python
+**Python**
 
 ```python
 send({"type": "snapshot", "snapshot": {"action": "save", "name": "cp1"}})
@@ -412,7 +412,7 @@ send({"type": "snapshot", "snapshot": {"action": "restore", "name": "cp1"}})
 send({"type": "snapshot", "snapshot": {"action": "delete", "name": "cp1"}})
 ```
 
-#### Go
+**Go**
 
 ```go
 msg, err := client.SnapshotSave("cp1")
@@ -427,14 +427,14 @@ msg, err = client.SnapshotDelete("cp1")
 
 Runtime memory balloon control.
 
-#### Parameters
+**Parameters**
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `action` | string | (required) | `"info"` or `"set"` |
 | `size_gb` | float | (required for set) | Target memory size in GB |
 
-#### Shell
+**Shell**
 
 ```bash
 # Info
@@ -444,14 +444,14 @@ echo '{"type":"memory","auth_token":"'$TOKEN'","memory":{"action":"info"}}' | nc
 echo '{"type":"memory","auth_token":"'$TOKEN'","memory":{"action":"set","size_gb":8}}' | nc -U ~/.vz/vms/default/control.sock
 ```
 
-#### Python
+**Python**
 
 ```python
 resp = send({"type": "memory", "memory": {"action": "info"}})
 send({"type": "memory", "memory": {"action": "set", "size_gb": 8}})
 ```
 
-#### Go
+**Go**
 
 ```go
 info, err := client.MemoryInfo()
@@ -464,7 +464,7 @@ msg, err := client.MemorySet(8.0)
 
 OCR operations on the VM display.
 
-#### Parameters
+**Parameters**
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -472,7 +472,7 @@ OCR operations on the VM display.
 | `text` | string | (required for click/wait/gone) | Text to find |
 | `timeout` | string | `"10s"` | Timeout duration for wait/gone (Go duration format) |
 
-#### Shell
+**Shell**
 
 ```bash
 # Get all text
@@ -491,7 +491,7 @@ echo '{"type":"ocr","auth_token":"'$TOKEN'","ocr":{"action":"gone","text":"Loadi
 echo '{"type":"ocr","auth_token":"'$TOKEN'","ocr":{"action":"detect-screen"}}' | nc -U ~/.vz/vms/default/control.sock
 ```
 
-#### Python
+**Python**
 
 ```python
 resp = send({"type": "ocr", "ocr": {"action": "all-text"}})
@@ -502,7 +502,7 @@ send({"type": "ocr", "ocr": {"action": "wait", "text": "Desktop", "timeout": "30
 send({"type": "ocr", "ocr": {"action": "gone", "text": "Loading", "timeout": "60s"}})
 ```
 
-#### Go
+**Go**
 
 ```go
 text, err := client.OCRAllText()
@@ -515,7 +515,7 @@ err = client.OCRClickText("Continue", 10*time.Second)
 
 Manage host TCP to guest vsock forwarding.
 
-#### Parameters
+**Parameters**
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -523,7 +523,7 @@ Manage host TCP to guest vsock forwarding.
 | `host_port` | int | (required for start/stop) | Host TCP port |
 | `guest_port` | int | (required for start) | Guest vsock port |
 
-#### Shell
+**Shell**
 
 ```bash
 # Start
@@ -536,7 +536,7 @@ echo '{"type":"port_forward","auth_token":"'$TOKEN'","port_forward":{"action":"l
 echo '{"type":"port_forward","auth_token":"'$TOKEN'","port_forward":{"action":"stop","host_port":8080}}' | nc -U ~/.vz/vms/default/control.sock
 ```
 
-#### Python
+**Python**
 
 ```python
 send({"type": "port_forward", "port_forward": {"action": "start", "host_port": 8080, "guest_port": 80}})
@@ -544,7 +544,7 @@ resp = send({"type": "port_forward", "port_forward": {"action": "list"}})
 send({"type": "port_forward", "port_forward": {"action": "stop", "host_port": 8080}})
 ```
 
-#### Go
+**Go**
 
 Port forwarding is managed through the raw request interface. See the `sendRequest` method for custom commands.
 
@@ -564,20 +564,20 @@ Run a command in the guest.
 | `env` | object | `{}` | Environment variables |
 | `working_dir` | string | `""` | Working directory |
 
-##### Shell
+**Shell**
 
 ```bash
 echo '{"type":"agent-exec","auth_token":"'$TOKEN'","agent_exec":{"args":["ls","/tmp"]}}' | nc -U ~/.vz/vms/default/control.sock
 ```
 
-##### Python
+**Python**
 
 ```python
 resp = send({"type": "agent-exec", "agent_exec": {"args": ["ls", "/tmp"]}})
 print(resp["data"])
 ```
 
-##### Go
+**Go**
 
 ```go
 result, err := client.AgentExecTyped([]string{"ls", "/tmp"}, nil, "")
@@ -597,7 +597,7 @@ Open a long-lived attach to a guest exec session with PTY allocation. The server
 
 The `cove shell <vm>` client (see [`cove shell`](cli.md#shell)) is the canonical consumer.
 
-##### Shell
+**Shell**
 
 ```bash
 echo '{"type":"agent-exec-attach","auth_token":"'$TOKEN'","agent_exec":{"args":["bash","-l"],"tty":true}}' \
@@ -614,7 +614,7 @@ Resize the PTY of an active exec session.
 | `cols` | int | (required) | New column count |
 | `rows` | int | (required) | New row count |
 
-##### Shell
+**Shell**
 
 ```bash
 echo '{"type":"agent-exec-resize","auth_token":"'$TOKEN'","exec_id":"'$EID'","cols":120,"rows":40}' \
@@ -630,7 +630,7 @@ Send a signal to an active exec session's process group.
 | `exec_id` | string | (required) | Exec session ID returned by `agent-exec-attach` |
 | `signal` | int | (required) | Unix signal number (e.g. `2` for SIGINT, `15` for SIGTERM) |
 
-##### Shell
+**Shell**
 
 ```bash
 echo '{"type":"agent-exec-signal","auth_token":"'$TOKEN'","exec_id":"'$EID'","signal":2}' \
@@ -645,19 +645,19 @@ Read a file from the guest.
 |-----------|------|---------|-------------|
 | `path` | string | (required) | Guest file path |
 
-##### Shell
+**Shell**
 
 ```bash
 echo '{"type":"agent-read","auth_token":"'$TOKEN'","agent_read":{"path":"/etc/hosts"}}' | nc -U ~/.vz/vms/default/control.sock
 ```
 
-##### Python
+**Python**
 
 ```python
 resp = send({"type": "agent-read", "agent_read": {"path": "/etc/hosts"}})
 ```
 
-##### Go
+**Go**
 
 ```go
 data, err := client.AgentReadFile("/etc/hosts")
@@ -673,19 +673,19 @@ Write a file to the guest.
 | `data` | string | (required) | File contents |
 | `mode` | int | `420` | File mode (420 = 0644) |
 
-##### Shell
+**Shell**
 
 ```bash
 echo '{"type":"agent-write","auth_token":"'$TOKEN'","agent_write":{"path":"/tmp/test","data":"hello","mode":420}}' | nc -U ~/.vz/vms/default/control.sock
 ```
 
-##### Python
+**Python**
 
 ```python
 send({"type": "agent-write", "agent_write": {"path": "/tmp/test", "data": "hello", "mode": 420}})
 ```
 
-##### Go
+**Go**
 
 Agent file write is available through the raw request interface.
 
@@ -699,19 +699,19 @@ Copy files between host and guest.
 | `guest_path` | string | (required) | Guest file path |
 | `to_guest` | bool | (required) | `true` to copy host-to-guest, `false` for guest-to-host |
 
-##### Shell
+**Shell**
 
 ```bash
 echo '{"type":"agent-cp","auth_token":"'$TOKEN'","agent_cp":{"host_path":"/local/file","guest_path":"/tmp/file","to_guest":true}}' | nc -U ~/.vz/vms/default/control.sock
 ```
 
-##### Python
+**Python**
 
 ```python
 send({"type": "agent-cp", "agent_cp": {"host_path": "/local/file", "guest_path": "/tmp/file", "to_guest": True}})
 ```
 
-##### Go
+**Go**
 
 Agent copy is available through the raw request interface.
 
@@ -719,19 +719,19 @@ Agent copy is available through the raw request interface.
 
 Check if the guest agent is alive.
 
-##### Shell
+**Shell**
 
 ```bash
 echo '{"type":"agent-ping","auth_token":"'$TOKEN'"}' | nc -U ~/.vz/vms/default/control.sock
 ```
 
-##### Python
+**Python**
 
 ```python
 resp = send({"type": "agent-ping"})
 ```
 
-##### Go
+**Go**
 
 ```go
 version, err := client.AgentPingTyped()
@@ -741,19 +741,19 @@ version, err := client.AgentPingTyped()
 
 Get guest system information.
 
-##### Shell
+**Shell**
 
 ```bash
 echo '{"type":"agent-info","auth_token":"'$TOKEN'"}' | nc -U ~/.vz/vms/default/control.sock
 ```
 
-##### Python
+**Python**
 
 ```python
 resp = send({"type": "agent-info"})
 ```
 
-##### Go
+**Go**
 
 ```go
 info, err := client.AgentInfo()
@@ -763,19 +763,19 @@ info, err := client.AgentInfo()
 
 Shut down the guest OS.
 
-##### Shell
+**Shell**
 
 ```bash
 echo '{"type":"agent-shutdown","auth_token":"'$TOKEN'","agent_shutdown":{}}' | nc -U ~/.vz/vms/default/control.sock
 ```
 
-##### Python
+**Python**
 
 ```python
 send({"type": "agent-shutdown", "agent_shutdown": {}})
 ```
 
-##### Go
+**Go**
 
 Agent shutdown is available through the raw request interface.
 
@@ -787,19 +787,19 @@ Manage SSH daemon in the guest.
 |-----------|------|---------|-------------|
 | `action` | string | (required) | `"on"` or `"off"` |
 
-##### Shell
+**Shell**
 
 ```bash
 echo '{"type":"agent-sshd","auth_token":"'$TOKEN'","agent_sshd":{"action":"on"}}' | nc -U ~/.vz/vms/default/control.sock
 ```
 
-##### Python
+**Python**
 
 ```python
 send({"type": "agent-sshd", "agent_sshd": {"action": "on"}})
 ```
 
-##### Go
+**Go**
 
 Agent SSHD management is available through the raw request interface.
 
