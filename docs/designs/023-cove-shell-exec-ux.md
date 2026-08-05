@@ -217,7 +217,7 @@ interactive shell rather than a tail. `ExecStream` remains unchanged.
 ## Handoff
 
 Slice 1 is a v0.2.1 candidate (no proto bump). Slices 2–3 want the
-v0.3 proto bump. Per [022](archive/022-v04-anthropic-adapter.md)'s shape
+v0.3 proto bump. Per `022`'s shape
 decision (the standalone subcommand owns its own loop), `cove shell`
 owns the host TTY/signal/stream loop end-to-end — not a thin wrapper
 around `runLinuxShellSession`.

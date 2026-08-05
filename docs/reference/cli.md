@@ -98,7 +98,7 @@ cove run [flags]
 | `-fork-from <image-ref\|vm>` | | Boot a fresh VM from a local image ref (`<name>:<tag>`) or stopped VM parent; see [`cove image`](#image). VM parents use a temporary linked clone while the temporary-RAM overlay path remains disabled. Auto-bundles per-run artifacts (`manifest.json`, `events.jsonl`, `stdout.log`, `stderr.log`, `screenshots/`) under `~/.vz/runs/<run-id>/` for post-mortem inspection. |
 | `-fork-name <name>` | | Explicit name for the forked VM |
 | `-keep` | false | Keep the forked VM directory after exit |
-| `-ephemeral` | false | With `-fork-from <image-ref>`, remove the materialized child on stop and sweep it with `cove gc`. VM-parent forks are short-lived by default and use `-keep` to retain the child. Useful for disposable CI runners; see [design 024](../designs/024-cove-runner-images.md). |
+| `-ephemeral` | false | With `-fork-from <image-ref>`, remove the materialized child on stop and sweep it with `cove gc`. VM-parent forks are short-lived by default and use `-keep` to retain the child. Useful for disposable CI runners; see `design 024`. |
 | `-launch-order <mode>` | window-first | GUI startup order: window-first or start-first |
 | `-runtime-profile <mode>` | full | macOS device profile: full or minimal |
 | `-apple-log` | false | Stream Apple unified logs |
@@ -696,7 +696,7 @@ If `<source>` is omitted, the active VM is cloned into `<destination>`.
 
 ## image
 
-Local pre-baked VM image store at `~/.vz/images/<name>/<tag>/`. Snapshots a stopped VM bundle (manifest + clonefile-backed disk + identity files) so `cove run -fork-from <image-ref> -ephemeral` can spawn disposable VMs from a saved baseline. Slice 2 adds OCI registry push/pull with `oras-go`; tarball `push`/`load` remain available as operator transport. See [design 024](../designs/024-cove-runner-images.md).
+Local pre-baked VM image store at `~/.vz/images/<name>/<tag>/`. Snapshots a stopped VM bundle (manifest + clonefile-backed disk + identity files) so `cove run -fork-from <image-ref> -ephemeral` can spawn disposable VMs from a saved baseline. Slice 2 adds OCI registry push/pull with `oras-go`; tarball `push`/`load` remain available as operator transport. See `design 024`.
 
 ```sh
 cove image build -from <vm> -tag <name[:tag]>
@@ -1283,7 +1283,7 @@ walkthroughs.
 
 ## shell
 
-Docker-shaped exec into a running VM via the per-VM control socket. Default command: `bash -l`. Current agents use ExecAttach for bidirectional stdin, terminal resize, signals, stdout/stderr, and exit-code propagation. Older agents fall back to the v0.2 read-only stdin path with a warning. See [design 023](../designs/023-cove-shell-exec-ux.md).
+Docker-shaped exec into a running VM via the per-VM control socket. Default command: `bash -l`. Current agents use ExecAttach for bidirectional stdin, terminal resize, signals, stdout/stderr, and exit-code propagation. Older agents fall back to the v0.2 read-only stdin path with a warning. See `design 023`.
 
 ```sh
 cove shell <vm> [--env NAME=VALUE]... [--secret-env NAME=value|env://VAR|file:///path]... [-- <argv>...]

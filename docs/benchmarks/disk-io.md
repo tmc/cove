@@ -140,7 +140,7 @@ should compare:
 
 ## Slice 4: -block (block device passthrough)
 
-Slice 4 of design [027](../designs/027-disk-io-tuning.md) adds `-block` for
+Slice 4 of design `027` adds `-block` for
 attaching a raw block device through `VZDiskBlockDeviceStorageDeviceAttachment`.
 The unprivileged VM process never opens the device; `cove-helper` opens and
 validates the node, then passes the file descriptor over `SCM_RIGHTS`.

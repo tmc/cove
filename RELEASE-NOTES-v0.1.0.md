@@ -104,7 +104,7 @@ local build.
   Access is granted per-binary, not per-session, so `vz-agent-user`
   needs an explicit FDA grant before `cove ctl agent-exec ls
   /Volumes/<share>` succeeds. See
-  [docs/research/tcc-via-user-agent.md](docs/research/tcc-via-user-agent.md)
+  `docs/research/tcc-via-user-agent.md`
   for the manual grant step. v0.1.1 documents this; a tighter
   unattended path is tracked as a follow-up.
 - Self-upgrade bounces both LaunchAgent and LaunchDaemon; directional

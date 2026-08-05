@@ -13,9 +13,9 @@ icon: right-left
 
 Cirrus CI shuts down 2026-06-01. This walkthrough maps a `.cirrus.yml`
 workflow onto cove on a trusted Apple Silicon host. For the readiness gap
-report see [cirrus-migration-readiness-2026-05-08.md](../strategy/cirrus-migration-readiness-2026-05-08.md)
+report see `cirrus-migration-readiness-2026-05-08.md`
 (`fe99629`). For competitive context see
-[competitive-2026-05.md](../strategy/competitive-2026-05.md) (`ffd7cc6`).
+`competitive-2026-05.md` (`ffd7cc6`).
 A longer task-by-task reference lives at
 [../migrations/from-cirrus.md](../migrations/from-cirrus.md).
 
@@ -51,7 +51,7 @@ cove run -fork-from acme/runner:latest -ephemeral -headless -- ./ci/test.sh
 Cirrus `ENCRYPTED[…]` URIs and OIDC-issued tokens do not survive a
 straight lift. Map them to GitHub Actions secrets, then plumb through
 cove's redacted secret env path. Slice 1+2 shipped 2026-05-08; see
-[cirrus-secrets-fix-2026-05-08.md](../strategy/cirrus-secrets-fix-2026-05-08.md)
+`cirrus-secrets-fix-2026-05-08.md`
 (`c9df361`).
 
 ```yaml

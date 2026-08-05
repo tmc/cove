@@ -586,7 +586,7 @@ fmt.Println(string(result.Stdout))
 
 #### agent-exec-attach
 
-Open a long-lived attach to a guest exec session with PTY allocation. The server streams JSON-line frames (`{"type":"attached"}`, `{"type":"stdout","data":"<base64>"}`, `{"type":"stderr","data":"<base64>"}`, `{"type":"done","exit":N}`). Stdin frames (`{"type":"stdin","data":"<base64>"}`) are decoded and discarded in this slice; bidirectional stdin is the v0.3 proto bump (see [design 023](../designs/023-cove-shell-exec-ux.md) Slice 3).
+Open a long-lived attach to a guest exec session with PTY allocation. The server streams JSON-line frames (`{"type":"attached"}`, `{"type":"stdout","data":"<base64>"}`, `{"type":"stderr","data":"<base64>"}`, `{"type":"done","exit":N}`). Stdin frames (`{"type":"stdin","data":"<base64>"}`) are decoded and discarded in this slice; bidirectional stdin is the v0.3 proto bump (see `design 023` Slice 3).
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|

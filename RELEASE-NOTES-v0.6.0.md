@@ -133,7 +133,7 @@ $ cove doctor sckit-preauth -json
 ## Cirrus secrets → guest env
 
 Cirrus CI shuts down 2026-06-01. The migration audit
-([cirrus-migration-readiness-2026-05-08.md](docs/strategy/cirrus-migration-readiness-2026-05-08.md))
+(`cirrus-migration-readiness-2026-05-08.md`)
 identified one purely-engineering blocker: lifting Cirrus
 `ENCRYPTED[…]` secrets into the guest environment without leaking them
 into workflow logs. v0.6 closes that blocker.
@@ -143,7 +143,7 @@ into workflow logs. v0.6 closes that blocker.
 | 1 | `cove shell --env NAME=VALUE` and `--secret-env NAME=env://VAR\|file:///path` flags; metrics redactor scrubs resolved secret values from run logs. | Shipped 2026-05-08 | [`fe99629`](https://github.com/tmc/cove/commit/fe99629) |
 | 2 | `cove-action` composite parses a multi-line `secrets:` input and forwards each entry as a `--secret-env` flag to `cove shell`. Same redaction guarantees as Slice 1. | Shipped 2026-05-08 | [`c9df361`](https://github.com/tmc/cove/commit/c9df361) |
 
-Full design and host-side rationale: [docs/strategy/cirrus-secrets-fix-2026-05-08.md](docs/strategy/cirrus-secrets-fix-2026-05-08.md).
+Full design and host-side rationale: `docs/strategy/cirrus-secrets-fix-2026-05-08.md`.
 
 ### How to use `--secret-env`
 

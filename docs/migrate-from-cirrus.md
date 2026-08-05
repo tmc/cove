@@ -45,7 +45,7 @@ cove action prepare-image acme/runner:latest
 cove image verify --strict --newer-than 168h acme/runner:latest
 ```
 
-For multi-host execution, register Macs with the fleet slice 1 commands in [Fleet Quickstart](quickstart/fleet.md). For strategy and competitive context, see [Competitive Matrix, May 2026](strategy/competitive-2026-05.md).
+For multi-host execution, register Macs with the fleet slice 1 commands in [Fleet Quickstart](quickstart/fleet.md). For strategy and competitive context, see `Competitive Matrix, May 2026`.
 
 ## Example 1: simple build
 

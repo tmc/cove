@@ -18,7 +18,7 @@ Cove is the local Apple Silicon VM substrate for that migration. Keep GitHub
 Actions, Buildkite, or your existing scheduler. Replace hosted Cirrus VM tasks
 with disposable cove forks from verified runner images. Current citable
 benchmark evidence lives in
-[`docs/strategy/proof.md`](../strategy/proof.md); quote numbers from that table,
+``docs/strategy/proof.md``; quote numbers from that table,
 not from memory.
 
 ## Five-line migration
@@ -39,9 +39,9 @@ spawn a fresh ephemeral fork from the same image and delete it at shutdown.
 ## Feature parity
 
 The broader comparison lives in
-[`docs/strategy/competitive-2026-05.md`](../strategy/competitive-2026-05.md).
+``docs/strategy/competitive-2026-05.md``.
 Measured or explicitly unmeasured benchmark rows live in
-[`docs/strategy/proof.md`](../strategy/proof.md).
+``docs/strategy/proof.md``.
 
 | Need | Cirrus / Tart | Cove replacement |
 |---|---|---|
@@ -61,14 +61,14 @@ artifacts, and tears the child down. The same primitive is available locally
 with `cove run -fork-from <image-ref> -ephemeral`.
 
 That is deliberate. Design 015
-([`docs/designs/archive/015-soft-reset-empirical.md`](../designs/archive/015-soft-reset-empirical.md))
+(``docs/designs/archive/015-soft-reset-empirical.md``)
 measured warm-guest soft reset and found it was not a reliable isolation
 primitive for privacy-critical work. Cove therefore does not ask displaced
 Cirrus users to trust UID recycling, cache cleanup, or a persistent worker
 reset hook as the security boundary.
 
 Design 030
-([`docs/designs/030-gha-executor-slice-2.md`](../designs/030-gha-executor-slice-2.md))
+(``docs/designs/030-gha-executor-slice-2.md``)
 adds cache reuse without changing that boundary: cache hits restore a local
 whole-VM image, then each job still runs in its own disposable fork.
 

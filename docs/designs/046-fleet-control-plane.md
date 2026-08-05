@@ -416,7 +416,7 @@ Nomad/Orchard prior art, not existing cove code or shipped commitments.)*
   this builds on; its Deferred list is this design's input.
 - [`033-cove-daemon.md`](033-cove-daemon.md) — `coved`, the single-host daemon
   that becomes the fleet worker.
-- [`013-vm-fork.md`](013-vm-fork.md) / [`archive/015-soft-reset-empirical.md`](archive/015-soft-reset-empirical.md)
+- [`013-vm-fork.md`](013-vm-fork.md) / ``archive/015-soft-reset-empirical.md``
   — the fork/restore isolation primitive and why soft reset is rejected.
 - [`031-vm-lifecycle.md`](031-vm-lifecycle.md), [`032-vm-quotas.md`](032-vm-quotas.md),
   [`040-storage-budget.md`](040-storage-budget.md) — the per-host signals the
@@ -424,7 +424,7 @@ Nomad/Orchard prior art, not existing cove code or shipped commitments.)*
 - [`026-ephemeral-self-hosted-runners.md`](026-ephemeral-self-hosted-runners.md)
   — `cove runner job` (fork-per-job on one host); the fleet coordinates a pool of
   these across hosts.
-- [`../strategy/competitive-2026-05.md`](../strategy/competitive-2026-05.md) and
-  [`../strategy/non-goals.md`](../strategy/non-goals.md) — the competitive
+- ``../strategy/competitive-2026-05.md`` and
+  ``../strategy/non-goals.md`` — the competitive
   position and the "do not build a generic hosted queue" constraint this design
   honors (cove orchestrates VM/image/fork execution; it is not a CI queue).
