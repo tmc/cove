@@ -623,7 +623,7 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - Anthropic sandbox-runtime adapter for computer-use workflows.
 - Run metrics for forked runs: `~/.vz/runs/<run-id>/metrics.jsonl` records structured lifecycle events for run start/end, fork materialization, VM start, and agent-ready timing. JSONL is the default local sink; OTLP export is available through `OTEL_EXPORTER_OTLP_ENDPOINT`. See [Run Metrics](../features/metrics.md).
 - Minimal network policy surface for `cove run` and `cove up`: `-network` / `--net` modes for `nat`, `bridged:<iface>`, `host-only`, and `none`, plus `cove ctl port-forward start|stop|list` for host-to-guest TCP access. See [Networking](../features/networking.md).
-- [Agent Sandbox Quickstart](../quickstart-agent-sandbox.md): a packaged computer-use quickstart covering OpenAI Agents SDK, Anthropic Claude computer use, Gemini computer use, fork-per-task isolation, and per-run artifacts.
+- [Agent Sandbox Quickstart](../agent-sandbox/quickstart.md): a packaged computer-use quickstart covering OpenAI Agents SDK, Anthropic Claude computer use, Gemini computer use, fork-per-task isolation, and per-run artifacts.
 - Private GitHub Actions executor verification for `cove-action`: simple commands, multiline scripts, and intentional guest-command failure have all been exercised end-to-end with the expected exit-code surface.
 
 ### Deferred

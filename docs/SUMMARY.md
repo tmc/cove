@@ -63,7 +63,6 @@ icon: list
 * [Check the integration matrix](integrations/matrix.md)
 * [Browse all examples](examples/README.md)
 * [Run a fleet](quickstart/fleet.md)
-* [Start an agent sandbox from scratch](quickstart-agent-sandbox.md)
 
 ## Operate and release cove
 * [Run the release pipeline](release-pipeline.md)
