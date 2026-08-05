@@ -108,6 +108,10 @@ func EnsureDir(vmName, currentDir string) (string, error) {
 		return "", fmt.Errorf("migration failed: %w", err)
 	}
 	resolvedDir := ResolveDir(vmName, currentDir)
+	if target, dangling := danglingLink(resolvedDir); dangling {
+		return "", fmt.Errorf("VM %q is registered but its bundle is missing: %s points at %s, which does not exist\n  list VMs: cove list\n  remove the stale entry: cove rm %s",
+			filepath.Base(resolvedDir), resolvedDir, target, filepath.Base(resolvedDir))
+	}
 	if err := os.MkdirAll(resolvedDir, 0755); err != nil {
 		return "", fmt.Errorf("create VM dir: %w", err)
 	}
@@ -125,6 +129,25 @@ func EnsureDir(vmName, currentDir string) (string, error) {
 		}
 	}
 	return resolvePath(resolvedDir), nil
+}
+
+// danglingLink reports whether path is a symlink whose target does not exist,
+// and returns the target it names. os.MkdirAll on such a path fails with
+// EEXIST ("file exists") because the link itself is present while Stat fails,
+// which reads as a confusing error unless the caller names the real cause.
+func danglingLink(path string) (string, bool) {
+	info, err := os.Lstat(path)
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		return "", false
+	}
+	if _, err := os.Stat(path); err == nil {
+		return "", false
+	}
+	target, err := os.Readlink(path)
+	if err != nil {
+		return "", true
+	}
+	return target, true
 }
 
 // IsSubdir reports whether path is below base.

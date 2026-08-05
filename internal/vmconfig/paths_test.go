@@ -3,6 +3,7 @@ package vmconfig
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -125,5 +126,39 @@ func TestEnsureDir(t *testing.T) {
 		t.Fatalf("Readlink(fresh) error = %v", err)
 	} else if link != want {
 		t.Fatalf("fresh compatibility alias = %q, want %q", link, want)
+	}
+}
+
+func TestEnsureDirReportsDanglingActiveAlias(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	base := BaseDir()
+	if err := os.MkdirAll(base, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// A VM whose bundle was removed out of band leaves the compatibility
+	// alias behind. ResolveDir builds the active VM path by name, so unlike
+	// Path it never falls back to the .covevm form.
+	link := filepath.Join(base, "ghost")
+	if err := os.Symlink(filepath.Join(base, "ghost.covevm"), link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(StateDir(), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(link, CurrentLink()); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := EnsureDir("", "")
+	if err == nil {
+		t.Fatal("EnsureDir succeeded on a dangling active alias, want error")
+	}
+	for _, want := range []string{"bundle is missing", "ghost", "cove rm"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q missing %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), "file exists") {
+		t.Errorf("error still surfaces raw mkdir EEXIST: %v", err)
 	}
 }
