@@ -17,7 +17,7 @@ go build -o cove ./cmd/cove
 ./cove up -user me
 ```
 
-That downloads the latest macOS IPSW, installs, provisions a user named `me`, and boots to desktop. ~5 minutes on an M3.
+That downloads the latest macOS IPSW, installs, provisions a user named `me`, and boots to desktop. Most of the wall time is Apple's restore, which runs unattended.
 
 Need Linux? `cove up -linux -user me`. Want to pull from a registry instead of installing from scratch? See [Push & Pull](getting-started/push-pull.md).
 

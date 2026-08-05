@@ -63,8 +63,6 @@ icon: list
 * [Check the integration matrix](integrations/matrix.md)
 * [Browse all examples](examples/README.md)
 * [Run a fleet](quickstart/fleet.md)
-
-## Migrate from another tool
 * [Start an agent sandbox from scratch](quickstart-agent-sandbox.md)
 
 ## Operate and release cove
@@ -98,13 +96,8 @@ Dated engineering records, kept for provenance. They describe the project at the
 date each was written and are not maintained as current documentation. For how
 cove behaves today, use the groups above.
 
-### Design docs
-
-### Archived design docs
-
-### Bug investigations
-
-### Research notes
+Design docs, bug investigations, and research notes are kept on disk under
+`docs/designs/` and are not tracked in git or published here.
 
 ### Release readiness records
 * [Release post-tag checklist](release/release-checklist.md)
@@ -114,5 +107,3 @@ cove behaves today, use the groups above.
 * [cove shell roundtrip latency](benchmarks/cove-shell-latency.md)
 * [Disk I/O Benchmark](benchmarks/disk-io.md)
 * [R53 perf snapshot](benchmarks/r53-perf-snapshot.md)
-
-### Strategy and positioning
