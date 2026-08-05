@@ -14,26 +14,55 @@ icon: rocket
   but it is sparse: a fresh macOS install consumed about 6 GB in our test run.
   Size for growth, not for the initial write.
 
-## Go Install
+## Build from a checkout
 
-Install from source for now:
+Building from a checkout is the only current install path.
 
 ```bash
-go install github.com/tmc/cove/cmd/cove@latest
+git clone https://github.com/tmc/cove
+cd cove
+go build -o cove ./cmd/cove
 ```
 
-Make sure `$GOPATH/bin` or `$HOME/go/bin` is on `PATH`, then verify the
-installed command:
+Put the resulting binary on `PATH`, then verify it:
 
 ```bash
 cove version
 cove doctor host
 ```
 
-The Homebrew formula is not the recommended first-run path yet. Future packages
-should install the `cove` binary only. Guest account setup remains explicit: the
-first VM asks for a username and prompts for a password when `-password` is
-omitted. Cove does not create fixed default guest credentials.
+> [!WARNING]
+> The build needs an unreleased `github.com/tmc/apple` that provides
+> `x/codesign` and `x/guest/portfwd`. No tagged version supplies them, so the
+> checkout carries a `go.work` overlay pointing at a local
+> `github.com/tmc/apple` checkout. Without that checkout the build stops at:
+>
+> ```text
+> cmd/cove/autosign.go:8:2: no required module provides package github.com/tmc/apple/x/codesign
+> internal/controlserver/port_forward.go:19:2: no required module provides package github.com/tmc/apple/x/guest/portfwd
+> ```
+>
+> We have not verified a clean-machine build, because the overlay checkout is
+> the only configuration we can currently build in.
+
+`go install` does not work yet. The published module is `v0.6.0`, which
+predates both the rename to `github.com/tmc/cove` and the move of the binary
+to `cmd/cove`, so neither spelling resolves:
+
+```text
+$ go install github.com/tmc/cove/cmd/cove@latest
+module github.com/tmc/cove@latest found (v0.6.0), but does not contain package github.com/tmc/cove/cmd/cove
+
+$ go install github.com/tmc/cove@v0.6.0
+module declares its path as: github.com/tmc/vz-macos
+        but was required as: github.com/tmc/cove
+```
+
+`go install github.com/tmc/cove/cmd/cove@latest` starts working once a release
+is tagged after the rename. The Homebrew formula is not a recommended path
+either. Guest account setup remains explicit: the first VM asks for a username
+and prompts for a password when `-password` is omitted. Cove does not create
+fixed default guest credentials.
 
 The Go module path is `github.com/tmc/cove`.
 
@@ -121,10 +150,11 @@ optional VM-specific doctor/control diagnostics.
 
 ## Update
 
-For source builds:
+For source builds, rebuild from the checkout:
 
 ```bash
-go install github.com/tmc/cove/cmd/cove@latest
+git pull
+go build -o cove ./cmd/cove
 cove doctor host
 cove helper status
 ```

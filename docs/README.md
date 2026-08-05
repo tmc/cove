@@ -12,8 +12,9 @@ cove is a CLI for creating and managing macOS and Linux virtual machines on Appl
 ## Get a VM running
 
 ```bash
-go install github.com/tmc/cove/cmd/cove@latest
-cove up -user me
+git clone https://github.com/tmc/cove && cd cove
+go build -o cove ./cmd/cove
+./cove up -user me
 ```
 
 That downloads the latest macOS IPSW, installs, provisions a user named `me`, and boots to desktop. ~5 minutes on an M3.

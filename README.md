@@ -26,13 +26,19 @@ it, snapshots it, and deletes it in about 15 minutes.
 
 ## Install
 
-Install from source for now:
+Build from a checkout — the only current install path:
 
 ```bash
-go install github.com/tmc/cove/cmd/cove@latest
+git clone https://github.com/tmc/cove
+cd cove
+go build -o cove ./cmd/cove
 ```
 
-The Homebrew formula is not the recommended first-run path yet.
+The build needs an unreleased `github.com/tmc/apple`, supplied by the
+checkout's `go.work` overlay; `go install ...@latest` does not resolve until a
+release is tagged after the module rename. See
+[Install cove](docs/getting-started/install.md) for the exact errors and what
+they mean. The Homebrew formula is not a recommended path either.
 
 After installing, check the host before creating a VM:
 
@@ -237,7 +243,7 @@ cove uses Apple's Virtualization.framework through [purego](https://github.com/e
 
 ### Project Structure
 
-```
+```text
 cove/
 ├── cmd/cove/                   # cove CLI command
 │   └── main.go                 # CLI entry point, subcommand routing
