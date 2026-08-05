@@ -93,4 +93,4 @@ graph TD
 |-------|----------|
 | GA | install, run, provisioning, vzscripts, suspend/resume |
 | Beta | snapshots, guest agent, clipboard sharing, shared folders, Linux guests, OCI push/pull, VM fork/restore, `cove compact`, local content-addressed store, `cove build` for local VM-directory and registry bases (cache-aware execution, OCI cache import/export, `# secret:` tmpfs, compaction) |
-| Experimental | UTM import, memory balloon, Windows stub |
+| Experimental | Third-party VM import, memory balloon, Windows stub |

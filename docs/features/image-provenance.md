@@ -18,7 +18,7 @@ icon: puzzle-piece
 - `default_sandbox`
 - `disk_format`
 
-When the source VM came from `cove pull`, Tart pull, or Lume pull,
+When the source VM came from `cove pull` or a third-party image pull,
 `disk.provenance` is copied into `source_manifest_digest`. Image-backed forks
 write that digest back to the child VM's `disk.provenance`, so a later
 `cove image build` keeps the registry manifest chain. `cove store gc` also

@@ -9,13 +9,13 @@ Cove pushes and pulls macOS and Linux VM images to any OCI-compatible registry -
 
 ```bash
 # Pull a prebuilt macOS image
-cove pull ghcr.io/trycua/macos-sequoia-vanilla:15.2
+cove pull ghcr.io/example/macos-sequoia-vanilla:15.2
 
 # Boot it
 cove run
 ```
 
-Cove's pull path accepts both cove-native and lume-produced manifests, so migrating a library of lume images to cove is a single command per image.
+Cove's pull path also accepts several third-party OCI VM image layouts, so migrating an existing image library is a single command per image.
 
 ## Pull
 
@@ -46,7 +46,7 @@ cove image inspect -remote <ref> <ref> -json      # audit several registry refs
 ```
 
 Current implementation supports registry pulls for cove-native LZ4 manifests,
-Tart manifests, and Lume tar-split manifests. Tags may point directly at an
+and two third-party manifest layouts (single-layer and tar-split). Tags may point directly at an
 image manifest or at an OCI image index / Docker manifest list; cove resolves
 the index to a same-repository image manifest before parsing. Add
 `--platform os/arch[/variant]` on `cove pull` or `-platform os/arch[/variant]`
@@ -56,7 +56,7 @@ pulling disks. Multiple refs are inspected as a batch, with JSON emitted as an
 array for private catalog audits. Remote inspect reports index/list resolution
 details, selectable child manifests, the selected platform, the disk format for
 cove-native and image-store artifacts, the pull plan for
-cove/Tart/Lume/image-store artifacts, cove base-chain
+cove and third-party image-store artifacts, cove base-chain
 availability/compatibility when a base manifest is declared, and the
 verification work cove will perform during pull/import. It also prints
 copy-pasteable digest refs for the selected manifest and, when a tag resolved
@@ -108,11 +108,11 @@ fetches, sparse zero chunks, and metadata blobs already present or still needed.
 Add `--json` to emit that dry-run as structured data for CI jobs or fleet
 controllers deciding which host should pull the image. Add `--verify-blobs` to
 HEAD-audit the registry blobs this host would need to fetch without downloading
-blob bodies; this works for cove-native, Tart, and Lume pull plans.
+blob bodies; this works for cove-native and third-party pull plans.
 
 What happens:
 
-1. The manifest is fetched and its annotations are parsed (cove-native or lume -- both work).
+1. The manifest is fetched and its annotations are parsed (cove-native or third-party — both work).
 2. `~/.vz/vms/<name>/disk.img.partial` is pre-allocated sparse at the full uncompressed disk size.
 3. Chunks are pulled in parallel (4 at a time) into `~/.vz/store/blobs/sha256/`, then LZ4-decompressed, digest-verified, and `WriteAt`-ed at their fixed offsets. Zero chunks skip the write entirely and stay as holes.
 4. `aux.img`, `hw.model`, and VM config are written.
@@ -174,24 +174,24 @@ chunks, uploads missing blobs, and publishes the manifest tag. Use `--dry-run`
 to see the detected disk format plus how many chunks and bytes a push would
 produce without touching the network.
 
-## Lume compatibility
+## Third-party image compatibility
 
 Cove is asymmetric by design:
 
 - **Pull**: reads both cove-native (`org.tmc.cove.*`) and lume (`org.trycua.lume.*`) annotations. A lume-produced image imports with no flags.
 - **Push**: emits cove-native annotations only by default.
 
-If you need a pushed image to be consumable by both cove and lume (mixed-tool teams, handoff to a lume-based pipeline), pass `--lume-compat`:
+If you need a pushed image to be consumable by another tool that reads the `org.trycua.lume.*` annotation set, pass `--lume-compat`:
 
 ```bash
 cove push my-vm ghcr.io/me/macos-15:tag --lume-compat
 ```
 
-The resulting manifest carries both annotation sets with identical values. Cove's default stays cove-native-only so our schema isn't coupled to lume's evolution -- `--lume-compat` is the one-flag escape valve when you need interop. See [`cove push` flags](../reference/cli.md#push) for the full syntax.
+The resulting manifest carries both annotation sets with identical values. Cove's default stays cove-native-only so our schema isn't coupled to another project's evolution -- `--lume-compat` is the one-flag escape valve when you need interop. See [`cove push` flags](../reference/cli.md#push) for the full syntax.
 
 ## Size reality
 
-macOS images are large. A vanilla macOS 15 base is ~20 GB pushed (LZ4-compressed, chunked). A developer image with Xcode, Homebrew, and tooling lands at 25-40 GB. This matches what lume sees with the same underlying disks -- cove doesn't magically shrink the bytes, it just moves them efficiently.
+macOS images are large. A vanilla macOS 15 base is ~20 GB pushed (LZ4-compressed, chunked). A developer image with Xcode, Homebrew, and tooling lands at 25-40 GB. Cove doesn't magically shrink the bytes, it just moves them efficiently.
 
 Where you win:
 

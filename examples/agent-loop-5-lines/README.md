@@ -6,7 +6,7 @@ This is the smallest Go shape for a fork-isolated local agent loop:
 ctx := context.Background()
 sb, _ := agentsandbox.New("openai", "agentkit/macos-base:latest")
 defer sb.Close()
-_ = sb.Run(ctx, "Open Safari and search for cove vs lume")
+_ = sb.Run(ctx, "Open Safari and search for Apple Virtualization")
 ```
 
 Swap only the first argument to change providers:

@@ -312,15 +312,15 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   includes per-ref errors while returning a failing exit status if any ref fails.
 - `cove pull`, registry-base builds, build-cache imports, delta-base checks, and
   `cove image inspect -remote` now resolve OCI image indexes and Docker manifest
-  lists to a same-repository image manifest before parsing cove/Tart/Lume
+  lists to a same-repository image manifest before parsing cove and third-party
   metadata.
 - `cove image inspect -remote [-json] <registry/ref:tag|digest>...` now fetches
-  registry metadata without pulling disks and summarizes cove-native, Tart,
-  Lume, and cove image-store artifacts with digest, format, disk/chunk/part
+  registry metadata without pulling disks and summarizes cove-native, third-party,
+  and cove image-store artifacts with digest, format, disk/chunk/part
   counts, sidecar sizes, and base-manifest reuse.
 - Remote image inspect now reports OCI index / Docker manifest-list resolution
   details, selected platform, pull plan, and the descriptor/blob verification
-  posture for cove, Tart, Lume, and cove image-store artifacts.
+  posture for cove and third-party image-store artifacts.
 - Remote image inspect now walks declared cove base-manifest chains by digest,
   reports missing or incompatible parents before disk download, and includes
   disk format plus matching chunk counts and bytes for reusable base layers.
@@ -389,7 +389,7 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
   inspect now HEAD-audits each child manifest's config and layer descriptors and
   reports per-child blob status.
 - `cove pull --dry-run --verify-blobs` now HEAD-audits registry blobs this host
-  would need to fetch for cove-native, Tart, or Lume pulls without downloading
+  would need to fetch for cove-native or third-party pulls without downloading
   blob bodies.
 - `cove image inspect -remote -verify-blobs` now audits every remote config and
   layer descriptor with HEAD requests, reporting missing registry blobs without
@@ -443,7 +443,7 @@ All notable changes to cove are documented here. Format follows [Keep a Changelo
 - Fleet SSH calls now enable OpenSSH ControlMaster reuse by default, with
   `COVE_FLEET_SSH_MULTIPLEX=0` available for troubleshooting isolated
   transports.
-- Lume-format `cove pull` now prefetches tar-split disk parts concurrently,
+- Tar-split third-party `cove pull` now prefetches disk parts concurrently,
   writes them back in manifest order, and verifies each part's OCI
   size/digest before extraction.
 - `cove-fleetd` now provides the first stateful fleet-control-plane boundary:
