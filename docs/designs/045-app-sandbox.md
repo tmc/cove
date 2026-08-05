@@ -1,6 +1,6 @@
 ---
 title: Apple App Sandbox proof lane
-description: "Status: v0.7 proof lane."
+description: install -preflight can consume a staged media bookmark and prove the sandboxed process can read the ISO/IPSW without creating a VM.
 icon: compass-drafting
 ---
 # Apple App Sandbox proof lane

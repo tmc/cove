@@ -1,6 +1,6 @@
 ---
 title: "Design 040: Storage Budget for ~/.vz/"
-description: Phases 0-5 are shipped on main.
+description: SHAs below were verified reachable from origin/main on 2026-05-10.
 icon: compass-drafting
 ---
 # Design 040: Storage Budget for `~/.vz/`

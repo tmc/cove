@@ -1,6 +1,6 @@
 ---
 title: "Design 046: Fleet Control Plane (open-core, north-star + slices)"
-description: "Status: Roadmap input, 2026-05-29."
+description: Every cove claim below was verified against origin/main; every competitor claim carries a citation.
 icon: compass-drafting
 ---
 # Design 046: Fleet Control Plane (open-core, north-star + slices)

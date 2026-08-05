@@ -1,6 +1,6 @@
 ---
 title: CLI Reference
-description: "These flags apply to most commands:"
+description: Every cove command, subcommand, and flag.
 icon: book
 ---
 # CLI Reference

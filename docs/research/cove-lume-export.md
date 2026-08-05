@@ -1,6 +1,6 @@
 ---
 title: cove → lume export
-description: "Status: live publish implemented."
+description: cove push --format lume uploads the tar-split OCI blobs, publishes the manifest, and still supports --dry-run for inspecting the plan without touching a...
 icon: flask
 ---
 # cove → lume export

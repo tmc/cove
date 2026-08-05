@@ -1,6 +1,6 @@
 ---
 title: "cove helper daemon fails to start as root: EROFS on /var/root/.vz/vms"
-description: sudo cove helper daemon exits before reaching helperDaemon() because main() unconditionally calls vmconfig.EnsureDir, which performs an os.MkdirAll rooted at...
+description: Under sudo (or launchd) the process runs as root, $HOME is /var/root, and /var/root lives on the SIP-sealed system volume.
 icon: flask
 ---
 # `cove helper daemon` fails to start as root: EROFS on `/var/root/.vz/vms`

@@ -1,6 +1,6 @@
 ---
 title: Node.js MCP Client for cove
-description: A minimal TypeScript program that connects to cove serve --mcp over stdio using the official Model Context Protocol SDK, lists running VMs, captures a...
+description: A minimal TypeScript client that drives cove over MCP with the official SDK.
 icon: lightbulb
 ---
 # Node.js MCP Client for cove

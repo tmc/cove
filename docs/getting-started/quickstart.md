@@ -7,6 +7,9 @@ icon: rocket
 
 Start here if you want a VM running without learning every cove subsystem.
 
+This page assumes `cove` is already on your `PATH`. If it is not, do
+[Install cove](install.md) first — every command below starts with `cove`.
+
 ## Check This Mac
 
 Run the host readiness check first:

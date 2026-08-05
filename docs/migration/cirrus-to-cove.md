@@ -1,9 +1,15 @@
 ---
 title: Cirrus to cove
-description: Cirrus CI shuts down 2026-06-01.
+description: This walkthrough maps a .cirrus.yml workflow onto cove on a trusted Apple Silicon host.
 icon: right-left
 ---
 # Cirrus to cove
+
+> [!NOTE]
+> [Migrating from Cirrus CI to cove](../migrations/from-cirrus.md) is the canonical migration
+> guide. This page covers one slice of that move; start there if you are
+> planning the migration rather than looking up a specific step.
+
 
 Cirrus CI shuts down 2026-06-01. This walkthrough maps a `.cirrus.yml`
 workflow onto cove on a trusted Apple Silicon host. For the readiness gap

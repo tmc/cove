@@ -13,8 +13,11 @@ Every other cove workflow — CI runners, agent sandboxes, dev environments — 
 assembled from these four moves. Do this once and the rest of the docs read as
 variations.
 
-You need an Apple Silicon Mac and about 70 GB of free disk. If you have not
-installed cove yet, do [Install cove](install.md) first.
+You need an Apple Silicon Mac. The VM cove builds here uses a 64 GB disk image,
+but it is sparse — this run consumed about 6 GB of real disk, plus 1.4 GB for
+the snapshot in step 5.
+
+If you have not installed cove yet, do [Install cove](install.md) first.
 
 ## 1. Check the Mac before you build anything
 

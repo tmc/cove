@@ -1,6 +1,6 @@
 ---
 title: Cove for Cirrus CI migration
-description: This page is the short migration note.
+description: The blog-post-ready landing-page draft is docs/landing/cove-vs-cirrus.md.
 icon: signs-post
 ---
 # Cove for Cirrus CI migration

@@ -1,6 +1,6 @@
 ---
 title: Architecture Overview
-description: "graph TD subgraph Host['Host (macOS)'] CLI['cove CLIbr/main.go'] VF['Virtualization.frameworkbr/(via purego)'] CS['Control Socket..."
+description: "How cove is put together: the CLI, Virtualization.framework via purego, the control socket, and the guest agent."
 icon: sitemap
 ---
 # Architecture Overview

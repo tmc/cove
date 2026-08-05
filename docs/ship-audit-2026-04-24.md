@@ -1,6 +1,6 @@
 ---
 title: cove 0.1 Ship-Gate Audit — 2026-04-24
-description: "Auditor: Claude (Opus 4.7, 1M-ctx)."
+description: "Source of truth: docs/designs/011-beat-lume-roadmap.md §114–124."
 icon: file-lines
 ---
 # cove 0.1 Ship-Gate Audit — 2026-04-24

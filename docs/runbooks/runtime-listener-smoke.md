@@ -1,6 +1,6 @@
 ---
 title: Runtime Listener Smoke
-description: This smoke test is opt-in.
+description: It starts one VM with the runtime listeners that have host-visible surfaces, then checks each listener from the host.
 icon: clipboard-list
 ---
 # Runtime Listener Smoke

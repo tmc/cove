@@ -1,6 +1,6 @@
 ---
 title: Image provenance and freshness
-description: "cove image build records provenance in manifest.json for each local image:"
+description: How cove records image provenance in manifest.json and how to check image freshness.
 icon: puzzle-piece
 ---
 # Image provenance and freshness

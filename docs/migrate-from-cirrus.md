@@ -7,6 +7,12 @@ icon: file-lines
 ---
 # Migrate from Cirrus to cove
 
+> [!NOTE]
+> [Migrating from Cirrus CI to cove](migrations/from-cirrus.md) is the canonical migration
+> guide. This page covers one slice of that move; start there if you are
+> planning the migration rather than looking up a specific step.
+
+
 Cirrus hosted CI shuts down on **2026-06-01**. This guide is the short path for a team moving a typical `.cirrus.yml` to cove while keeping VM-backed isolation and local control.
 
 Cove is not a hosted queue. It replaces the VM image, fork-per-job, logs, and artifact substrate. Keep scheduling in GitHub Actions, your existing CI, or a small host-side runner script.

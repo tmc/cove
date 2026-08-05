@@ -1,6 +1,6 @@
 ---
 title: "Design 029: VirtioFS Hot-Add for Shared Folders"
-description: "Status: Shipped."
+description: SHA-chain commits 16853bb/fdda2ab/f6553e5/39d0916/c5a3c67/27e52f2/e202836 all on main.
 icon: compass-drafting
 ---
 # Design 029: VirtioFS Hot-Add for Shared Folders

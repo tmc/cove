@@ -5,6 +5,12 @@ icon: right-left
 ---
 # Cirrus migration preflight checklist
 
+> [!NOTE]
+> [Migrating from Cirrus CI to cove](from-cirrus.md) is the canonical migration
+> guide. This page covers one slice of that move; start there if you are
+> planning the migration rather than looking up a specific step.
+
+
 Use this checklist before changing a `.cirrus.yml` task. The goal is to
 preserve the important inputs while there is still time to run the old job and
 the new cove job side by side.

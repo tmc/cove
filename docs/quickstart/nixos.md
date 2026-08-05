@@ -1,6 +1,6 @@
 ---
 title: NixOS Quickstart
-description: "Install a NixOS guest:"
+description: Install and boot a NixOS guest with cove.
 icon: bolt
 ---
 # NixOS Quickstart

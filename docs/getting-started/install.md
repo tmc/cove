@@ -1,6 +1,6 @@
 ---
 title: Installation
-description: "Install from source for now:"
+description: Install cove from source, put it on PATH, and check the host before building a VM.
 icon: rocket
 ---
 # Installation
@@ -10,7 +10,9 @@ icon: rocket
 - Apple Silicon Mac (M1/M2/M3/M4)
 - macOS 14.0+ (Sonoma or later)
 - Xcode Command Line Tools (`xcode-select --install`)
-- ~20GB free disk space for a macOS VM
+- Disk space for the guest. `cove up` creates a 64 GB disk image by default,
+  but it is sparse: a fresh macOS install consumed about 6 GB in our test run.
+  Size for growth, not for the initial write.
 
 ## Go Install
 

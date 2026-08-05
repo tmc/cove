@@ -1,6 +1,6 @@
 ---
 title: "Design 033: Cove Daemon Mode"
-description: Cove is currently command-driven.
+description: Each CLI process discovers VM state, applies policy, starts or controls one VM, emits run metrics, and exits.
 icon: compass-drafting
 ---
 # Design 033: Cove Daemon Mode

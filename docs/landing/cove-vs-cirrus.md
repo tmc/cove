@@ -1,6 +1,6 @@
 ---
 title: Cove after Cirrus CI
-description: "Status: private landing-page draft."
+description: Do not publish this page until the release, privacy, and trademark review gates are complete.
 icon: signs-post
 ---
 # Cove after Cirrus CI

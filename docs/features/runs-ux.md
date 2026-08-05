@@ -1,6 +1,6 @@
 ---
 title: Runs UX
-description: "cove stores per-run artifacts under:"
+description: Where cove stores per-run artifacts and how to inspect run history.
 icon: puzzle-piece
 ---
 # Runs UX

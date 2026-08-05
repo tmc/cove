@@ -1,9 +1,15 @@
 ---
 title: Quickstart from Cirrus
-description: "Status: private migration quickstart."
+description: Keep public install instructions gated until the release, privacy, trademark, and Homebrew tap availability checks are complete.
 icon: file-lines
 ---
 # Quickstart from Cirrus
+
+> [!NOTE]
+> [Migrating from Cirrus CI to cove](migrations/from-cirrus.md) is the canonical migration
+> guide. This page covers one slice of that move; start there if you are
+> planning the migration rather than looking up a specific step.
+
 
 Status: private migration quickstart. Keep public install instructions gated
 until the release, privacy, trademark, and Homebrew tap availability checks are

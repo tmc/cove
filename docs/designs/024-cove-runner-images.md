@@ -1,6 +1,6 @@
 ---
 title: "cove runner images: publish & fork-from"
-description: cf6a506, 0349570, 2026-05-04).
+description: Image lifecycle and operator commands shipped on 2026-05-05 at fb37866, 75c1897, 1e9806e, 7cbbf9c, 6f0d396, b46deb0, dbe1520, fca848e, 9fc8303, and 535db8c.
 icon: compass-drafting
 ---
 # cove runner images: publish & fork-from

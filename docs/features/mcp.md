@@ -1,6 +1,6 @@
 ---
 title: MCP (Model Context Protocol)
-description: cove serve --mcp speaks the Model Context Protocol over stdio, so AI agents like Claude Code, Cursor, and Cline can list, inspect, screenshot, snapshot, pause...
+description: Serve cove over the Model Context Protocol so AI agents can drive VMs as tools.
 icon: puzzle-piece
 ---
 # MCP (Model Context Protocol)

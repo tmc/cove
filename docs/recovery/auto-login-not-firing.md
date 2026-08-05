@@ -1,6 +1,6 @@
 ---
 title: Auto-login watchdog not firing
-description: Use this when a macOS VM was provisioned successfully but the next headed boot stops at the login screen and the user agent does not connect until the password...
+description: Diagnose a provisioned macOS VM that stops at the login screen instead of auto-logging in.
 icon: life-ring
 ---
 # Auto-login watchdog not firing

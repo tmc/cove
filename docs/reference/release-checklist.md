@@ -1,6 +1,6 @@
 ---
 title: Release Checklist
-description: Use this checklist for production tags.
+description: The historical docs/v0.1.0-publish-checklist.md records the first release; this page is the current runbook.
 icon: book
 ---
 # Release Checklist

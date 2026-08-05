@@ -1,6 +1,6 @@
 ---
 title: Hosted Runner Examples
-description: cove is the local VM runner engine.
+description: How a hosted runner product would sit outside this repository and call into cove.
 icon: lightbulb
 ---
 # Hosted Runner Examples

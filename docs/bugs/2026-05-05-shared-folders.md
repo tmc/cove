@@ -2,7 +2,7 @@
 title: "Shared Folders: Hot-Mount EPERM and Guest Path UX"
 status: Draft
 date: 2026-05-05
-description: "QA saw mountvirtiofs: failed to mount /Volumes/My Shared Files: Operation not permitted on mlxgo-fresh-headed2-20260505, followed by root-agent reads of..."
+description: QA also expected the host folder /Users/tmc/ml-explore to appear in the guest as ~/ml-explore; cove only reported the system mount path.
 icon: bug
 ---
 # Shared Folders: Hot-Mount EPERM and Guest Path UX

@@ -1,6 +1,6 @@
 ---
 title: "Design 028: Block Device Passthrough"
-description: "Status: Implemented (2026-05-04)."
+description: "Verified 2026-05-10 (R360): openBlockDeviceViaHelper at blockdevice.go:114, validateBlockDevicePath/Node/Unmounted at helper.go:720/742/757, handleHelperConn..."
 icon: compass-drafting
 ---
 # Design 028: Block Device Passthrough

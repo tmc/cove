@@ -1,6 +1,6 @@
 ---
 title: cove shell — Docker-shaped exec UX
-description: plus the linux-shell-host T3 step 2 pre-flight findings (the sub-agent that landed 63d3234 and called out the vsock-ownership constraint before writing client...
+description: "Roadmap: candidate v0.2.1 (Slices 1–2 reuse the v0.2 unary RPCs) or v0.3 (Slice 3 ships the proto bidi extension)."
 icon: compass-drafting
 ---
 # cove shell — Docker-shaped exec UX
