@@ -1,13 +1,11 @@
 ---
 title: Release Checklist
-description: The historical docs/v0.1.0-publish-checklist.md records the first release; this page is the current runbook.
+description: The current release runbook for cutting and publishing a cove tag.
 icon: book
 ---
 # Release Checklist
 
-Use this checklist for production tags. The historical
-`docs/v0.1.0-publish-checklist.md` records the first release; this page is the
-current runbook.
+Use this checklist for production tags.
 
 ## Preflight
 

@@ -29,7 +29,7 @@ re-signed after every `go build`.
 ## v0.2.1
 
 Do not cut `v0.2.1` at current `main` until the operator accepts the
-version-order warning in `docs/release/v0.2.1-readiness-final.md`.
+version-order warning recorded at the time of the cut.
 
 ```bash
 git tag -a v0.2.1 -m "v0.2.1 release"
@@ -51,7 +51,7 @@ tap after `dist/build-v0.2.1.sh` fills in the real SHA256.
 ## v0.3.0
 
 Do not cut `v0.3.0` until the operator either runs the live local-base smoke or
-accepts the blocked smoke gate in `docs/release/v0.3-readiness-final.md`.
+accepts the blocked smoke gate.
 
 ```bash
 git tag -a v0.3.0 -m "v0.3.0 release"
