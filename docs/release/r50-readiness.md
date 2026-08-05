@@ -99,7 +99,7 @@ This audit folds those findings forward and adds a v0.5 scope decision and a
   cluster (`b9c06ee`, `e512329`, `a1742f4`, `14e2bdb`, `ca4d824`); Cirrus
   migration docs (`bdd1912`, `2642d01`, `e413e0e`, `6017373`, `4635254`).
 - Mechanical gates: PASS per R41 `v0.4.0-readiness.md`. `go build`,
-  `codesign --entitlements internal/autosign/vz.entitlements`, `go test ./...`
+  `codesign --entitlements cmd/cove/vz.entitlements`, `go test ./...`
   all green.
 - Operator-gated blocker: `#224` and `#225` user approvals remain open.
 - Visible release-notes risks kept open: Ubuntu Desktop first-boot reliability
@@ -250,7 +250,7 @@ git status --short --branch
 git log --oneline origin/main..HEAD
 go test ./...
 go build -o cove ./cmd/cove
-codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+codesign -s - -f --entitlements cmd/cove/vz.entitlements ./cove
 codesign -d --entitlements - ./cove 2>&1 | grep -E 'com.apple.security.virtualization|com.apple.vm'
 make release-check
 ```

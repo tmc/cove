@@ -123,7 +123,7 @@ to start if its precondition is not met.
    `dist/cove_darwin_arm64*/cove`.
 3. **Codesign the binary.** `codesign --sign "$DEVELOPER_ID"
    --options runtime --timestamp --force --entitlements
-   internal/autosign/vz.entitlements <binary>`. Hardened runtime + a
+   cmd/cove/vz.entitlements <binary>`. Hardened runtime + a
    secure timestamp + the virtualization entitlements are all required
    for notarization to accept the binary.
 4. **Notarize the binary.** Wrap the binary with `ditto -c -k
@@ -184,7 +184,7 @@ follow-up.
 
 ```bash
 GOWORK=off go build -o /tmp/cove ./cmd/cove
-codesign -s - -f --entitlements internal/autosign/vz.entitlements /tmp/cove
+codesign -s - -f --entitlements cmd/cove/vz.entitlements /tmp/cove
 ./scripts/build-dmg.sh /tmp/cove 0.1.4-dryrun /tmp/cove-dryrun.dmg
 hdiutil verify /tmp/cove-dryrun.dmg
 ```

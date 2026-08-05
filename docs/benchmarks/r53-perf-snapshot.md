@@ -25,7 +25,7 @@ quiet host before drawing release-gate conclusions.
 ## Setup
 
 - Cove binary: built at `a4b39d7`, signed with
-  `internal/autosign/vz.entitlements`. `cove version` reported
+  `cmd/cove/vz.entitlements`. `cove version` reported
   `cove a4b39d755613 (commit a4b39d755613, built 2026-05-08T01:23:47Z)`.
 - Parent VM: `hermes-mlx-go-60g-v10` (60 GiB logical, 39.2 GiB stat-blocks,
   stopped). This is the same parent used for the v0.1.1 baseline at

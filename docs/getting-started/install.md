@@ -44,7 +44,7 @@ cove auto-signs itself on first launch with the required Virtualization.framewor
 If you need to sign manually:
 
 ```bash
-codesign -s - -f --entitlements internal/autosign/vz.entitlements "$(command -v cove)"
+codesign -s - -f --entitlements cmd/cove/vz.entitlements "$(command -v cove)"
 ```
 
 Required entitlements:

@@ -17,7 +17,7 @@ git status --short --branch
 git log --oneline origin/main..HEAD
 go test ./...
 go build -o cove ./cmd/cove
-codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+codesign -s - -f --entitlements cmd/cove/vz.entitlements ./cove
 codesign -d --entitlements - ./cove 2>&1 | grep -E 'com.apple.security.virtualization|com.apple.vm'
 make release-check
 ```

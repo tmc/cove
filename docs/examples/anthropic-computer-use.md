@@ -14,7 +14,7 @@ adapter (design 022) will sit on top of.
 - cove built and signed locally:
   ```bash
   go build -o cove ./cmd/cove
-  codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+  codesign -s - -f --entitlements cmd/cove/vz.entitlements ./cove
   ```
 - A long-lived macOS VM with the control socket exposed and the guest
   agent up.

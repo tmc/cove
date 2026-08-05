@@ -41,7 +41,7 @@ one scratch VM without mutating existing user VMs.
 The normal entitlement file only grants local networking and
 Virtualization.framework access:
 
-- `internal/autosign/vz.entitlements`
+- `cmd/cove/vz.entitlements`
 - `macgo_bundle.go`
 - `doctor_host.go`
 
@@ -269,7 +269,7 @@ smoke tests so the project can measure breakage without rewriting the product.
 
 Current supported shape:
 
-- Unsandboxed `cove` CLI, signed with `internal/autosign/vz.entitlements`.
+- Unsandboxed `cove` CLI, signed with `cmd/cove/vz.entitlements`.
   This is the only supported production shape today. It owns normal install,
   run, provision, helper, image, and control-socket workflows.
 
@@ -404,7 +404,7 @@ Minimum non-mutating gate:
 ```bash
 go test -count=1 ./...
 go build -o cove ./cmd/cove
-codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+codesign -s - -f --entitlements cmd/cove/vz.entitlements ./cove
 go build -o /Users/tmc/tmp/cove-sandboxed ./cmd/cove
 codesign -s - -f --entitlements internal/autosign/app_sandbox.entitlements /Users/tmc/tmp/cove-sandboxed
 codesign -d --entitlements :- /Users/tmc/tmp/cove-sandboxed

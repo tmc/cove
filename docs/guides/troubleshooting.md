@@ -28,7 +28,7 @@ accessing these preferences requires user-preference-read or file-read-data sand
 **Solution:** sign the binary with virtualization entitlements:
 
 ```bash
-codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+codesign -s - -f --entitlements cmd/cove/vz.entitlements ./cove
 ```
 
 This should happen automatically on first launch. If it doesn't, run the codesign command manually.

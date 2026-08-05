@@ -13,7 +13,7 @@ Built and signed a throwaway binary:
 
 ```
 go build -o /tmp/cove-r107 ./cmd/cove
-codesign -s - -f --entitlements internal/autosign/vz.entitlements /tmp/cove-r107
+codesign -s - -f --entitlements cmd/cove/vz.entitlements /tmp/cove-r107
 ```
 
 Smoke command:

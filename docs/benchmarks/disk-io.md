@@ -58,7 +58,7 @@ The binary was rebuilt and re-signed before the run:
 
 ```
 go build -o cove ./cmd/cove
-codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+codesign -s - -f --entitlements cmd/cove/vz.entitlements ./cove
 ```
 
 ## Slice 1 Results
@@ -114,7 +114,7 @@ Before the run, rebuild and re-sign:
 
 ```sh
 go build -o cove ./cmd/cove
-codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+codesign -s - -f --entitlements cmd/cove/vz.entitlements ./cove
 ```
 
 ## Interpretation
@@ -186,5 +186,5 @@ Rebuild and re-sign before each run:
 
 ```sh
 go build -o cove ./cmd/cove
-codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+codesign -s - -f --entitlements cmd/cove/vz.entitlements ./cove
 ```

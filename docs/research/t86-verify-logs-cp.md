@@ -11,7 +11,7 @@ Command:
 
 ```sh
 go build -o cove ./cmd/cove
-codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+codesign -s - -f --entitlements cmd/cove/vz.entitlements ./cove
 ```
 
 Result: pass. The binary was signed successfully.

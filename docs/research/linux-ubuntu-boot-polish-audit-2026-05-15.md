@@ -192,7 +192,7 @@ Commands run on 2026-05-15:
 
 ```bash
 go build -o cove ./cmd/cove
-codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+codesign -s - -f --entitlements cmd/cove/vz.entitlements ./cove
 go test ./...
 ./cove -vm ubuntu-gui-kvm -display 1280x720 up -linux -desktop -nested \
   -cpu 4 -memory 8 -user ubuntu -password ubuntu \

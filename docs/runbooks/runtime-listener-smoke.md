@@ -7,7 +7,7 @@ Build and sign the local binary first:
 
 ```bash
 go build -o cove ./cmd/cove
-codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+codesign -s - -f --entitlements cmd/cove/vz.entitlements ./cove
 ```
 
 Start a disposable VM with HTTP, VNC, and debug-stub listeners:

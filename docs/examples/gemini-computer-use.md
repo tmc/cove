@@ -12,7 +12,7 @@ the next screenshot back as a `function_response`.
 ## Prerequisites
 
 - A cove binary built and codesigned with the virtualization entitlement
-  (`go build && codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove`).
+  (`go build && codesign -s - -f --entitlements cmd/cove/vz.entitlements ./cove`).
 - A long-lived macOS VM with the control socket exposed in GUI mode
   (`cove -vm macos-eval run -gui`).
 - A Gemini API key from [Google AI Studio](https://aistudio.google.com/).

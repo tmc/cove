@@ -5,7 +5,7 @@ installed VM, and opens the GUI.
 
 ```sh
 go build -o cove ./cmd/cove
-codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+codesign -s - -f --entitlements cmd/cove/vz.entitlements ./cove
 
 ./cove -vm linux-gui-debug -display 1280x720 up -linux -desktop -user debug -gui
 ```

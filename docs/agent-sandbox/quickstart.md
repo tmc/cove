@@ -6,7 +6,7 @@ From zero to a fork-isolated provider loop:
 git clone git@github.com:tmc/cove.git
 cd cove
 go build -o cove ./cmd/cove
-codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+codesign -s - -f --entitlements cmd/cove/vz.entitlements ./cove
 export PATH="$PWD:$PATH"
 
 cove run -fork-from agentkit/macos-base:latest -fork-name agent-smoke -ephemeral -gui

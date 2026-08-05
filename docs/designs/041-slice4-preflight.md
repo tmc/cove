@@ -8,7 +8,7 @@ Commands run from an isolated worktree at `origin/main` (`b305c86`):
 
 ```sh
 go build -o cove ./cmd/cove
-codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+codesign -s - -f --entitlements cmd/cove/vz.entitlements ./cove
 ./cove doctor sckit-preauth -json
 ./cove list
 COVE_TEST_SCKIT_GRANT=1 go test -v -tags sckit_live ./internal/sckit/ -run TestCaptureWindowLive
@@ -29,7 +29,7 @@ Run later on a TCC-granted host with a visible cove GUI VM:
 
 ```sh
 go build -o cove ./cmd/cove
-codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+codesign -s - -f --entitlements cmd/cove/vz.entitlements ./cove
 ./cove doctor sckit-preauth
 COVE_TEST_SCKIT_GRANT=1 COVE_TEST_SCKIT_WINDOW_ID=<id> go test -tags sckit_live ./internal/sckit/
 ./cove doctor sckit-spike -n 30 -threshold 50ms -title-prefix cove
@@ -79,7 +79,7 @@ git worktree add ../vz-macos-sckit-slice4-merge origin/main
 cd ../vz-macos-sckit-slice4-merge
 git merge --no-commit --no-ff origin/conductor/sckit-slice4
 go build -o cove ./cmd/cove
-codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+codesign -s - -f --entitlements cmd/cove/vz.entitlements ./cove
 ./cove doctor sckit-preauth
 COVE_TEST_SCKIT_GRANT=1 go test -tags sckit_live ./internal/sckit/
 ./cove doctor sckit-spike -n 30 -threshold 50ms -title-prefix cove

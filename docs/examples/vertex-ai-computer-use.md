@@ -20,7 +20,7 @@ project.
 ## Prerequisites
 
 - A cove binary built and codesigned with the virtualization entitlement
-  (`go build && codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove`).
+  (`go build && codesign -s - -f --entitlements cmd/cove/vz.entitlements ./cove`).
 - A long-lived macOS VM with the control socket exposed in GUI mode
   (`cove -vm vertex-eval run -gui`).
 - A Google Cloud project with the Vertex AI API enabled.

@@ -14,7 +14,7 @@ replacement job. For the detailed mapping, see
 git clone git@github.com:tmc/cove.git
 cd cove
 go build -o cove ./cmd/cove
-codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+codesign -s - -f --entitlements cmd/cove/vz.entitlements ./cove
 ```
 
 Put that signed `cove` binary on the trusted Apple Silicon runner host.

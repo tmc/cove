@@ -67,7 +67,7 @@ trusted Apple Silicon runner host:
 git clone git@github.com:tmc/cove.git
 cd cove
 go build -o cove ./cmd/cove
-codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+codesign -s - -f --entitlements cmd/cove/vz.entitlements ./cove
 ```
 
 Then migrate one Cirrus task from your existing repository:

@@ -36,7 +36,7 @@ brew install goreleaser
 ```bash
 go test ./...
 go build -o cove ./cmd/cove
-codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+codesign -s - -f --entitlements cmd/cove/vz.entitlements ./cove
 codesign -dv --entitlements - ./cove
 make release-check
 ```
@@ -268,7 +268,7 @@ Expected: at least one match line containing
 If no match, re-sign:
 
 ```bash
-codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+codesign -s - -f --entitlements cmd/cove/vz.entitlements ./cove
 ```
 
 ### Known limitations gates
