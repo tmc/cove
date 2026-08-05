@@ -1,3 +1,8 @@
+---
+title: Documentation map
+description: Every cove documentation page, grouped by what you are trying to do.
+icon: list
+---
 # Summary
 
 ## Start here
