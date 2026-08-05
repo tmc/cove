@@ -90,4 +90,4 @@
 package main
 
 //go:generate go build -o ../../cove .
-//go:generate codesign --entitlements ../../internal/autosign/vz.entitlements -f -s - ../../cove
+//go:generate codesign --entitlements vz.entitlements -f -s - ../../cove
