@@ -99,7 +99,7 @@ Design docs, bug investigations, and research notes are kept on disk under
 `docs/designs/` and are not tracked in git or published here.
 
 ### Release readiness records
-* [Release post-tag checklist](release/release-checklist.md)
+* [Release post-tag checklist](release/post-tag-checklist.md)
 * [Tag cut runbook](release/tag-cut-runbook.md)
 
 ### Benchmarks

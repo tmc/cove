@@ -7,8 +7,11 @@ icon: book
 
 cove ships 75 commands. This page gives 50 of them a section of their own and
 lists 19 more under [Other Commands](#other-commands). Six are not covered
-here at all: `9p`, `first-run`, `inject`, `inject-agent`, `support-bundle`,
-and `uiscript` — use their `-h` output.
+here at all: `9p`, `first-run`, and `support-bundle`, plus three deprecated
+aliases — `inject` for [provision](#provision), `inject-agent` for
+[provision-agent](#provision-agent), and `uiscript` for [vzscript](#vzscript).
+Use their `-h` output; the aliases print a deprecation notice and run the
+current command.
 
 For the complete list of commands as the installed binary reports it:
 
