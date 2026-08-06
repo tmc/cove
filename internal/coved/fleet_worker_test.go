@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tmc/cove/internal/fleetcontrol"
+	"github.com/tmc/cove-marina/fleetcontrol"
 )
 
 const fleetWorkerTestTimeout = 5 * time.Second

@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/tmc/cove/internal/fleetcontrol"
+	"github.com/tmc/cove-marina/fleetcontrol"
 	buildversion "github.com/tmc/cove/internal/version"
 )
 

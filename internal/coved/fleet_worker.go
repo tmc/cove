@@ -19,8 +19,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tmc/cove-marina/fleetcontrol"
 	"github.com/tmc/cove/internal/diskimages2"
-	"github.com/tmc/cove/internal/fleetcontrol"
 	"github.com/tmc/cove/internal/vmquota"
 )
 

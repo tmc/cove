@@ -37,7 +37,13 @@ require (
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
+	github.com/tmc/cove-marina v0.0.0
+	github.com/tmc/cove-ocispec v0.0.0
 	golang.org/x/image v0.38.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
 )
+
+replace github.com/tmc/cove-marina => ../cove-marina
+
+replace github.com/tmc/cove-ocispec => ../cove-ocispec

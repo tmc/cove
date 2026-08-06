@@ -9,7 +9,7 @@ import (
 	"io"
 	"strings"
 
-	fleetpkg "github.com/tmc/cove/internal/fleet"
+	fleetpkg "github.com/tmc/cove-marina/fleet"
 )
 
 func runFleetMetricsCommand(ctx context.Context, args []string, path string, runner fleetRunner, out, errOut io.Writer) error {

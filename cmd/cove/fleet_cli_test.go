@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	fleetpkg "github.com/tmc/cove/internal/fleet"
+	fleetpkg "github.com/tmc/cove-marina/fleet"
 )
 
 type fakeReadWriteCloser struct {
