@@ -26,21 +26,23 @@ cove doctor host
 ```
 
 ```text
-Host readiness: warn
+Host readiness: pass
   PASS  apple-silicon: running on darwin/arm64
   PASS  macos-version: 26.6
   PASS  virtualization-entitlement: cove binary has virtualization entitlement
   PASS  apple-app-sandbox: not active for this process
-  PASS  disk-capacity: 419.2 GB free under /Users/tmc/.vz
-  PASS  state-writable: /Users/tmc/.vz writable
+  PASS  disk-capacity: 404.4 GB free under ~/.vz
+  PASS  state-writable: ~/.vz writable
   PASS  network: active interface anpi2
-  WARN  helper: privileged helper installed but socket is not present; it may be stopped.
+  PASS  helper: privileged helper installed and socket present
   PASS  xcode-cli: /Applications/Xcode-rc.app/Contents/Developer
 ```
 
-Your version numbers, free space, and interface name will differ.
+Your macOS version, free space, interface name, and Xcode path will differ, and
+the home directory shown in place of `~` will be yours.
 
-Fix any `FAIL` before continuing. A `WARN` on `helper` is worth fixing now:
+Fix any `FAIL` before continuing. On a first run you will usually see `WARN` on
+`helper` instead of `PASS`, which is worth fixing now:
 
 ```sh
 sudo cove helper install
@@ -91,11 +93,12 @@ Detaching /dev/disk27...
 === Step 3/3: Booting VM ===
 Starting virtual machine...
 VM started successfully
-Control socket: /Users/tmc/.vz/vms/docs-tutorial.covevm/control.sock
+Control socket: ~/.vz/vms/docs-tutorial.covevm/control.sock
 ```
 
-The installer step is the slow one. The device node in `Detaching /dev/disk27`
-varies per run.
+The installer step is the slow one: this run reached a booted VM in about
+nine and a half minutes. The device node in `Detaching /dev/disk27` varies per
+run, and the control socket path is under your own home directory.
 
 Without `-ipsw`, cove downloads the latest macOS restore image first, which
 is the slowest part of a first run. `-no-shutdown` leaves the VM running so
@@ -176,9 +179,13 @@ snapshot 'tutorial-checkpoint' saved
 ```
 
 Note where `-vm` sits: **before** the subcommand. `cove snapshot -vm <name>`
-puts the flag after the subcommand, where it is not parsed as the VM selector,
-and the command acts on your active VM instead. This bites on every subcommand
-that takes `-vm`.
+puts the flag after the subcommand, where `snapshot` does not parse it as the
+VM selector, and the command acts on your active VM instead.
+
+Putting `-vm` before the subcommand always works. Some subcommands — `ctl`,
+`cp`, `logs`, `status`, `compact`, `vzscript`, and `verify` among them —
+register their own `-vm` and accept it afterwards too, which is why you will
+see `cove ctl -vm <name> ...` elsewhere in these docs. `snapshot` does not.
 
 ```sh
 cove -vm docs-tutorial snapshot list
