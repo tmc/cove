@@ -251,31 +251,6 @@ func registryIndexPlatformScore(platform *Platform) int {
 	}
 }
 
-// ParsePlatform parses an OCI platform in os/arch or os/arch/variant form.
-func ParsePlatform(value string) (Platform, error) {
-	var out Platform
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return out, fmt.Errorf("platform is empty")
-	}
-	parts := strings.Split(value, "/")
-	if len(parts) < 2 || len(parts) > 3 {
-		return out, fmt.Errorf("platform %q must be os/arch or os/arch/variant", value)
-	}
-	for i := range parts {
-		parts[i] = strings.TrimSpace(parts[i])
-		if parts[i] == "" {
-			return out, fmt.Errorf("platform %q has an empty component", value)
-		}
-	}
-	out.OS = strings.ToLower(parts[0])
-	out.Architecture = strings.ToLower(parts[1])
-	if len(parts) == 3 {
-		out.Variant = strings.ToLower(parts[2])
-	}
-	return out, nil
-}
-
 func platformSpecString(platform Platform) string {
 	var b strings.Builder
 	b.WriteString(platform.OS)
