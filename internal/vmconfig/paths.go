@@ -113,7 +113,14 @@ func EnsureDir(vmName, currentDir string) (string, error) {
 			filepath.Base(resolvedDir), resolvedDir, target, filepath.Base(resolvedDir))
 	}
 	if err := os.MkdirAll(resolvedDir, 0755); err != nil {
-		return "", fmt.Errorf("create VM dir: %w", err)
+		// A concurrent cove invocation (e.g. two terminals racing on the
+		// same VM name) can win the mkdir between our dangling-link check
+		// and this call. If the path is a real directory now, treat it as
+		// success instead of failing the whole command.
+		info, statErr := os.Stat(resolvedDir)
+		if statErr != nil || !info.IsDir() {
+			return "", fmt.Errorf("create VM dir: %w", err)
+		}
 	}
 	if filepath.Base(resolvedDir) == PackageName(filepath.Base(resolvedDir)) {
 		if err := markFinderPackage(resolvedDir); err != nil {
