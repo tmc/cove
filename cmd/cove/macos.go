@@ -759,7 +759,7 @@ func buildVMConfigurationWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig, dis
 	config.SetBootLoader(&bootloader.VZBootLoader)
 
 	// Storage
-	diskAttachment, err := createSystemDiskAttachment(diskImagePath, false)
+	diskAttachment, err := createSystemDiskAttachmentWithCaching(diskImagePath, false)
 	if err != nil {
 		return config, fmt.Errorf("failed to create disk attachment: %w", err)
 	}

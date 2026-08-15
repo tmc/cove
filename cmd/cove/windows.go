@@ -289,7 +289,7 @@ func windowsDisplaySize() (int, int) {
 }
 
 func windowsNVMeStorageDevice(path string, readOnly bool) (vz.VZStorageDeviceConfiguration, error) {
-	attachment, err := createSystemDiskAttachment(path, readOnly)
+	attachment, err := createSystemDiskAttachmentWithCaching(path, readOnly)
 	if err != nil {
 		return vz.VZStorageDeviceConfiguration{}, fmt.Errorf("create disk attachment: %w", err)
 	}

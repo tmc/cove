@@ -262,6 +262,7 @@ func init() {
 	flag.StringVar(&proxyURL, "proxy", "", "configure guest system HTTP/HTTPS proxy after boot (for example http://192.168.64.1:8080)")
 	flag.StringVar(&pcapPath, "pcap", "", "write captured Ethernet frames to a PCAP file when using -network filehandle")
 	flag.StringVar(&diskSyncMode, "disk-sync", "", "disk image synchronization override: fsync, none, or full")
+	flag.StringVar(&diskCachingModeFlag, "disk-caching", "", "disk image caching override: auto, cached, or uncached")
 	// USB storage
 	flag.Var(&usbDevices, "usb", "USB storage device: /path/to/disk.img[:ro] (can be repeated)")
 	flag.Var(&blockDevices, "block", "raw block device: /dev/rdiskN:ro|rw[:sync=full|none] (can be repeated)")
@@ -1028,6 +1029,9 @@ func writeUnknownCommand(w io.Writer, cmd string) {
 func printCommandDefaults(w *os.File, fs *flag.FlagSet) {
 	fs.VisitAll(func(f *flag.Flag) {
 		if f.Name == "disk-sync" {
+			return
+		}
+		if f.Name == "disk-caching" {
 			return
 		}
 		if f.Name == "nvme" {

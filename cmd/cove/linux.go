@@ -515,7 +515,7 @@ func runLinuxVMWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig, bundle *RunBu
 }
 
 func createLinuxRootStorageDevice(path string, readOnly bool) (vz.VZStorageDeviceConfiguration, error) {
-	attachment, err := createSystemDiskAttachment(path, readOnly)
+	attachment, err := createSystemDiskAttachmentWithCaching(path, readOnly)
 	if err != nil {
 		return vz.VZStorageDeviceConfiguration{}, fmt.Errorf("create disk attachment: %w", err)
 	}
