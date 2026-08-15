@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"image"
 	"log/slog"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -42,6 +43,25 @@ func warnSCKitFallbackOnce(cause string, err error) {
 	v, _ := sckitFallbackOnce.LoadOrStore(cause, &sync.Once{})
 	v.(*sync.Once).Do(func() {
 		slog.Warn("sckit-fallback", "cause", cause, "err", err)
+	})
+}
+
+// vzfbBackendEnv selects the windowless private-VZ-framebuffer screenshot
+// backend when set to "framebuffer". Any failure on that path falls back
+// to the default capture dispatch and logs once.
+const vzfbBackendEnv = "COVE_SCREENSHOT_BACKEND"
+
+func vzfbBackendRequested() bool {
+	return os.Getenv(vzfbBackendEnv) == "framebuffer"
+}
+
+// vzfbFallbackOnce de-duplicates the warning emitted when the framebuffer
+// backend fails and capture falls back to the existing paths.
+var vzfbFallbackOnce sync.Once
+
+func warnVZFramebufferFallbackOnce(errMsg string) {
+	vzfbFallbackOnce.Do(func() {
+		slog.Warn("vzframebuffer-fallback", "err", errMsg)
 	})
 }
 
@@ -142,6 +162,30 @@ func (s *ControlServer) captureDisplayImage() (image.Image, string) {
 
 func (s *ControlServer) captureDisplayImageResult() captureDisplayResult {
 	state := s.captureState()
+	if vzfbBackendRequested() {
+		img, errMsg := s.captureVZFramebuffer()
+		if errMsg == "" {
+			return captureDisplayResult{
+				img:              img,
+				backend:          "vzframebuffer",
+				requestedBackend: "vzframebuffer",
+			}
+		}
+		// Fall through to the default paths; log the cause once.
+		warnVZFramebufferFallbackOnce(errMsg)
+		result := s.captureDisplayImageDefault(state)
+		result.requestedBackend = "vzframebuffer"
+		result.fallback = true
+		result.fallbackCause = "vzframebuffer-error"
+		return result
+	}
+	return s.captureDisplayImageDefault(state)
+}
+
+// captureDisplayImageDefault is the pre-existing backend dispatch:
+// -automation-backend selection, then headless private capture, then the
+// SCKit/CGWindowList window paths.
+func (s *ControlServer) captureDisplayImageDefault(state screenshotCaptureState) captureDisplayResult {
 	switch s.captureBackend() {
 	case automationBackendFramebuffer:
 		img, errMsg := s.capturePrivateGraphicsDisplay()

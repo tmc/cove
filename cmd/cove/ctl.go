@@ -216,7 +216,11 @@ Print machine-readable control protocol capabilities.`)
 	case "screenshot":
 		fmt.Fprintln(w, `Usage: cove ctl screenshot [-o file] [file]
 
-Capture the VM screen. Without -o or a file operand, screenshot data is written to stdout.`)
+Capture the VM screen. Without -o or a file operand, screenshot data is written to stdout.
+
+Set COVE_SCREENSHOT_BACKEND=framebuffer on the cove run process to capture
+via the private VZ framebuffer (windowless/headless); the default window
+capture path is used as a fallback.`)
 	case "display":
 		fmt.Fprintln(w, `Usage: cove ctl display
 
