@@ -9,6 +9,12 @@
 //   - optionally preserves machine.id + MAC for vmstate fidelity
 //   - records lineage so cove vm tree / cove gc see it
 //
+// Fork suspend-state saves go through saveMachineStateWithRunConfig
+// (runtime_private.go); with COVE_COMPRESSED_SUSPEND=1 or -save-compress
+// the state file is written compressed via the private save options
+// (see compressedSuspendRequested in runtime_lifecycle.go), shrinking
+// per-fork storage under the design 040 budget. Opt-in, default-off.
+//
 // On normal exit the vmDir is removed. On crash, the .ephemeral sentinel
 // stays in place; cove gc discovers it later, verifies the run.lock is
 // releasable (no live process), and removes the dir.

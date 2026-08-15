@@ -387,7 +387,11 @@ func saveMachineStateWithRunConfig(machine vz.VZVirtualMachine, url foundation.N
 	options := pvz.NewVZVirtualMachineSaveOptions()
 	options.SetCompress(rc.SaveCompress)
 	options.SetEncrypt(rc.SaveEncrypt)
-	pvz.VZVirtualMachineFromID(machine.ID).SaveMachineStateToURLOptionsCompletionHandler(url, options, completion)
+	if err := pvz.VZVirtualMachineFromID(machine.ID).SaveMachineStateToURLOptionsCompletionHandler(url, options, completion); err != nil {
+		// Private selector unavailable on this host; the completion handler
+		// was never invoked, so fall back to the public uncompressed save.
+		machine.SaveMachineStateToURLCompletionHandler(url, completion)
+	}
 }
 
 func privateRuntimeSummaryForRun(rc vmrun.RunConfig) string {

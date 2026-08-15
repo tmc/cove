@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/tmc/apple/dispatch"
+	"github.com/tmc/apple/objc"
+	pvz "github.com/tmc/apple/private/virtualization"
 	vz "github.com/tmc/apple/virtualization"
 
 	"github.com/tmc/cove/internal/disposable"
@@ -175,6 +177,14 @@ func runVMWithConfig(cfg RunConfig) error {
 	}
 	hooks := cfg.Hooks.withDefaults()
 	rc, hc := cfg.vmrunConfigs()
+	if rc.SaveCompress || compressedSuspendRequested() {
+		if compressedSuspendAvailable() {
+			rc.SaveCompress = true
+		} else {
+			rc.SaveCompress = false
+			fmt.Fprintf(cfg.Stderr, "warning: compressed suspend requested but private save options unavailable on this host; using uncompressed save\n")
+		}
+	}
 	originalVMName := cfg.VM.Name
 	originalVMDir := cfg.VM.Directory
 
@@ -711,4 +721,38 @@ func missingForkFromParentError(parent string) error {
 		return fmt.Errorf("cove run -fork-from: no VM named %q under %s", parent, vmconfig.BaseDir())
 	}
 	return fmt.Errorf("cove run -fork-from: no VM named %q under %s and no local image %s; run 'cove image list' or 'cove image search %s' to find images", parent, vmconfig.BaseDir(), ref, ref.Name)
+}
+
+// Compressed suspend states (roadmap 3.6).
+//
+// compressedSuspendRequested reports the operator opt-in to compressed
+// suspend/snapshot state files: COVE_COMPRESSED_SUSPEND=1 or the
+// -save-compress flag. Compressed states are written via the private
+// _saveMachineStateToURL:options: selector; restore compatibility of
+// compressed states across macOS versions is unverified, so this stays
+// opt-in and default-off. Encryption is deliberately not wired up:
+// there is no key-management story yet.
+func compressedSuspendRequested() bool {
+	return saveCompress || os.Getenv("COVE_COMPRESSED_SUSPEND") == "1"
+}
+
+// compressedSuspendAvailable reports whether the private save-options
+// class and the private save selector exist on this host. Both are
+// probed at runtime so missing private API degrades to the public,
+// uncompressed save path.
+func compressedSuspendAvailable() bool {
+	if pvz.GetVZVirtualMachineSaveOptionsClass().Class() == 0 {
+		return false
+	}
+	cls := objc.GetClass("VZVirtualMachine")
+	if cls == 0 {
+		return false
+	}
+	return objc.Send[bool](objc.ID(cls), objc.Sel("instancesRespondToSelector:"), objc.Sel("_saveMachineStateToURL:options:completionHandler:"))
+}
+
+// compressedSuspendEnabled reports whether compressed suspend is both
+// requested and usable on this host.
+func compressedSuspendEnabled() bool {
+	return compressedSuspendRequested() && compressedSuspendAvailable()
 }

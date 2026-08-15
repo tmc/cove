@@ -781,7 +781,14 @@ Commands:
   restore <name>          Restore a snapshot into the running VM
   delete <name>           Delete a snapshot
 
-Snapshots are stored under ~/.vz/vms/<vm>/snapshots/.`)
+Snapshots are stored under ~/.vz/vms/<vm>/snapshots/.
+
+Compressed state files (opt-in): set COVE_COMPRESSED_SUSPEND=1 or pass
+-save-compress to write suspend/snapshot state compressed via a private
+Virtualization selector. Falls back to the public uncompressed save if
+the private API is unavailable or errors. Restore compatibility of
+compressed states across macOS versions is unverified; leave off unless
+storage pressure demands it.`)
 }
 
 func printPITUsageHelp(w io.Writer) {

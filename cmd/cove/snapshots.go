@@ -23,6 +23,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tmc/apple/foundation"
+	pvz "github.com/tmc/apple/private/virtualization"
+	vz "github.com/tmc/apple/virtualization"
 	snapshotx "github.com/tmc/apple/x/vzkit/snapshot"
 	vmruntime "github.com/tmc/apple/x/vzkit/vm"
 	"github.com/tmc/cove/internal/bytefmt"
@@ -291,7 +294,7 @@ func (s *ControlServer) handleSnapshotCommand(cmd *controlpb.SnapshotCommand) *c
 		if cmd.Async {
 			return s.handleSnapshotSaveAsync(mgr, cmd.Name)
 		}
-		if err := mgr.Save(s.vm, vmruntime.WrapQueue(s.vmQueue), cmd.Name); err != nil {
+		if err := saveVMStateSnapshot(mgr, s.vm, vmruntime.WrapQueue(s.vmQueue), cmd.Name); err != nil {
 			return &controlpb.ControlResponse{Error: err.Error()}
 		}
 		msg := fmt.Sprintf("snapshot '%s' saved", cmd.Name)
@@ -365,7 +368,7 @@ func (s *ControlServer) handleSnapshotSaveAsync(mgr *snapshotx.Manager, name str
 	vm := s.vm
 	queue := s.vmQueue
 	go func() {
-		if err := mgr.Save(vm, vmruntime.WrapQueue(queue), name); err != nil {
+		if err := saveVMStateSnapshot(mgr, vm, vmruntime.WrapQueue(queue), name); err != nil {
 			_ = reg.Fail(op.ID, "snapshot_save", err.Error())
 			return
 		}
@@ -649,4 +652,146 @@ func snapshotViaControlSocket(action, name string) error {
 		return fmt.Errorf("%w\n\nNote: save/restore require a running VM with the control socket active", err)
 	}
 	return ctlPrintResponse(resp, "snapshot", false, "")
+}
+
+// saveVMStateSnapshot saves a named VM state snapshot via mgr. When
+// compressed suspend is enabled (COVE_COMPRESSED_SUSPEND=1 or
+// -save-compress; see runtime_lifecycle.go) it writes the state through
+// the private _saveMachineStateToURL:options: selector with compression
+// on, falling back to the public uncompressed save if the private call
+// is unavailable or errors. Encryption is deliberately not offered:
+// there is no key-management story yet.
+func saveVMStateSnapshot(mgr *snapshotx.Manager, machine vz.VZVirtualMachine, queue *vmruntime.Queue, name string) error {
+	if !compressedSuspendEnabled() {
+		return mgr.Save(machine, queue, name)
+	}
+
+	// Mirror snapshotx.Manager.Save's pause/save/resume flow, swapping
+	// in the compressed private save with public fallback. Layout and
+	// metadata stay byte-compatible with the Manager so List/Restore/
+	// Delete keep working on compressed snapshots.
+	snapshotsDir := filepath.Join(vmDir, "snapshots")
+	if err := os.MkdirAll(snapshotsDir, 0755); err != nil {
+		return fmt.Errorf("create snapshots directory: %w", err)
+	}
+	state := vmruntime.State(queue, machine)
+	wasPaused := state == vz.VZVirtualMachineStatePaused
+	switch state {
+	case vz.VZVirtualMachineStateRunning:
+		errCh := make(chan error, 1)
+		queue.Sync(func() {
+			machine.PauseWithCompletionHandler(func(err error) { errCh <- err })
+		})
+		if err := <-errCh; err != nil {
+			return fmt.Errorf("pause VM: %w", err)
+		}
+	case vz.VZVirtualMachineStatePaused:
+		// Already pause-safe.
+	default:
+		return fmt.Errorf("VM must be running or paused to save snapshot (current state: %s)", state.String())
+	}
+
+	snapshotFile := filepath.Join(snapshotsDir, name+".vmstate")
+	saveURL := foundation.NewURLFileURLWithPath(snapshotFile)
+	saveURL.Retain()
+
+	saveErr := func() error {
+		err := saveMachineStateCompressed(machine, queue, saveURL)
+		if err == nil {
+			// fall through to metadata below
+		} else if errors.Is(err, errCompressedSaveTimeout) {
+			// The private save may still be writing snapshotFile; a
+			// concurrent public save to the same URL could corrupt it.
+			// Fail rather than race.
+			return fmt.Errorf("save snapshot: %w", err)
+		} else {
+			// Automatic fallback: retry the public, uncompressed save.
+			fmt.Fprintf(os.Stderr, "warning: compressed snapshot save failed (%v); retrying uncompressed\n", err)
+			os.Remove(snapshotFile) // clear any partial write from the failed private save
+			if err := saveMachineStatePublic(machine, queue, saveURL); err != nil {
+				return fmt.Errorf("save snapshot: %w", err)
+			}
+		}
+
+		var size int64
+		if info, err := os.Stat(snapshotFile); err == nil {
+			size = info.Size()
+		}
+		metadata := snapshotx.Meta{
+			Name:     name,
+			Created:  time.Now(),
+			Size:     size,
+			VMState:  "paused",
+			FilePath: snapshotFile,
+		}
+		metaBytes, _ := json.MarshalIndent(metadata, "", "  ")
+		if err := os.WriteFile(filepath.Join(snapshotsDir, name+".json"), metaBytes, 0644); err != nil {
+			return fmt.Errorf("write snapshot metadata: %w", err)
+		}
+		return nil
+	}()
+
+	if !wasPaused && !errors.Is(saveErr, errCompressedSaveTimeout) {
+		errCh := make(chan error, 1)
+		queue.Sync(func() {
+			machine.ResumeWithCompletionHandler(func(err error) { errCh <- err })
+		})
+		if err := <-errCh; err != nil {
+			if saveErr != nil {
+				return fmt.Errorf("resume VM after snapshot (save also failed: %v): %w", saveErr, err)
+			}
+			return fmt.Errorf("resume VM after snapshot: %w", err)
+		}
+	}
+	return saveErr
+}
+
+// saveMachineStateCompressed writes machine state to url using the
+// private save-options selector with compression enabled. It returns an
+// error (never hangs) when the private class or selector is missing.
+func saveMachineStateCompressed(machine vz.VZVirtualMachine, queue *vmruntime.Queue, url foundation.NSURL) error {
+	options := pvz.NewVZVirtualMachineSaveOptions()
+	if options.ID == 0 {
+		return errors.New("private save options class unavailable")
+	}
+	options.SetCompress(true)
+	// SetEncrypt intentionally not called: no key-management story yet.
+
+	errCh := make(chan error, 1)
+	var callErr error
+	queue.Sync(func() {
+		callErr = pvz.VZVirtualMachineFromID(machine.ID).SaveMachineStateToURLOptionsCompletionHandler(url, options, func(err error) { errCh <- err })
+	})
+	if callErr != nil {
+		return fmt.Errorf("private save selector: %w", callErr)
+	}
+	select {
+	case err := <-errCh:
+		if err != nil {
+			return fmt.Errorf("compressed save: %w", err)
+		}
+		return nil
+	case <-time.After(60 * time.Second):
+		return errCompressedSaveTimeout
+	}
+}
+
+// errCompressedSaveTimeout means the private compressed save did not
+// complete in time; the save may still be writing the state file, so
+// callers must not retry to the same URL or resume the VM.
+var errCompressedSaveTimeout = errors.New("compressed save timed out")
+
+// saveMachineStatePublic writes machine state to url using the public
+// SaveMachineStateToURL path.
+func saveMachineStatePublic(machine vz.VZVirtualMachine, queue *vmruntime.Queue, url foundation.NSURL) error {
+	errCh := make(chan error, 1)
+	queue.Sync(func() {
+		machine.SaveMachineStateToURLCompletionHandler(url, func(err error) { errCh <- err })
+	})
+	select {
+	case err := <-errCh:
+		return err
+	case <-time.After(60 * time.Second):
+		return errors.New("save timed out")
+	}
 }
