@@ -94,6 +94,38 @@ func (s *ControlServer) handleServerInfo() *controlpb.ControlResponse {
 	})
 }
 
+// DisplayStatus reports read-only metrics from the private PGDisplay
+// object owned by the VZ graphics stack. Available is false (with
+// Reason set) when the display cannot be located; that is a structured
+// result, not an error.
+type DisplayStatus struct {
+	Available             bool                `json:"available"`
+	Reason                string              `json:"reason,omitempty"`
+	Class                 string              `json:"class,omitempty"`
+	Path                  string              `json:"path,omitempty"`
+	Name                  string              `json:"name,omitempty"`
+	SerialNum             uint32              `json:"serial_num,omitempty"`
+	Port                  uint64              `json:"port,omitempty"`
+	GuestPresentCount     uint64              `json:"guest_present_count"`
+	HostPresentCount      uint64              `json:"host_present_count"`
+	CursorX               uint16              `json:"cursor_x"`
+	CursorY               uint16              `json:"cursor_y"`
+	SizeMillimetersWidth  float64             `json:"size_mm_width,omitempty"`
+	SizeMillimetersHeight float64             `json:"size_mm_height,omitempty"`
+	Modes                 []DisplayModeStatus `json:"modes,omitempty"`
+}
+
+// DisplayModeStatus describes one entry of the PGDisplay mode list.
+type DisplayModeStatus struct {
+	Width     uint16  `json:"width"`
+	Height    uint16  `json:"height"`
+	RefreshHz float64 `json:"refresh_hz"`
+}
+
+func (s *ControlServer) handleDisplayStatus() *controlpb.ControlResponse {
+	return statusControlResponse(s.pgDisplayStatus())
+}
+
 func statusControlResponse(value any) *controlpb.ControlResponse {
 	data, err := json.Marshal(value)
 	if err != nil {

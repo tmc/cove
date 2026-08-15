@@ -66,6 +66,7 @@ Commands:
   status                Get VM state and capabilities
   server-info           Show the cove process that owns this VM socket
   capabilities          Get machine-readable control protocol capabilities
+  display               Report VZ graphics display status (present counts, mode)
   screenshot            Capture VM screen (base64 JPEG)
   screenshot -o file    Save screenshot to file
   pause                 Pause VM
@@ -216,6 +217,12 @@ Print machine-readable control protocol capabilities.`)
 		fmt.Fprintln(w, `Usage: cove ctl screenshot [-o file] [file]
 
 Capture the VM screen. Without -o or a file operand, screenshot data is written to stdout.`)
+	case "display":
+		fmt.Fprintln(w, `Usage: cove ctl display
+
+Report VZ graphics display status (guest/host present counts, mode, cursor)
+read from the live paravirtualized display. Read-only; reports
+available=false when the display cannot be located.`)
 	case "pause":
 		fmt.Fprintln(w, `Usage: cove ctl pause
 
@@ -743,6 +750,8 @@ func ctlCommand(args []string) error {
 		default:
 			return fmt.Errorf("unknown vnc action: %s (use status; start VNC with cove run -vnc :5901 -vnc-password <password>)", subArgs[0])
 		}
+	case "display":
+		return ctlSimpleCommand(sock, "display", *timeout, *raw)
 	case "debug-stub":
 		if len(subArgs) < 1 {
 			return fmt.Errorf("debug-stub requires action: status")

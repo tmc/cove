@@ -518,6 +518,8 @@ func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.
 		return s.handleDebugStubStatus()
 	case "server-info":
 		return s.handleServerInfo()
+	case "display":
+		return s.handleDisplayStatus()
 	case "ping":
 		return &controlpb.ControlResponse{Success: true, Data: "pong", Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: "pong"}}}
 	case "status":
@@ -1351,7 +1353,7 @@ func controlCapabilityCommands(linuxGuest, windowsGuest bool) []string {
 		"ping", "status", "capabilities", "screenshot", "key", "mouse", "text",
 		"pause", "resume", "stop", "request-stop", "snapshot", "memory", "network-info",
 		"shared-folders-apply", "shared-folders-runtime-status", "gui-open", "gui-close", "gui-status", "port-forward",
-		"vnc-status", "debug-stub-status", "server-info", "disk", "pit", "usb",
+		"vnc-status", "debug-stub-status", "server-info", "display", "disk", "pit", "usb",
 		"agent-connect", "agent-ping", "agent-info", "agent-exec", "agent-exec-stream",
 		"agent-exec-attach", "agent-exec-resize", "agent-exec-signal",
 		"agent-read", "agent-write", "agent-cp", "agent-shutdown", "agent-reboot",
