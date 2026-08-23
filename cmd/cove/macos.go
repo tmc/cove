@@ -2237,9 +2237,10 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 	// path, so keep the app responsive with the shared AppKit event pump.
 	var overlayFadeStep int = -1 // -1 means not fading
 	var pauseOverlay appkit.NSView
-	var pauseFadeStep int = -1    // -1 means not fading; >0 means fading in; used for fade-out too
-	var healthPollCounter int     // poll agent health every ~1s (30 frames)
-	var lastHealthSubtitle string // avoid redundant SetSubtitle calls
+	var pauseOverlayLabelText string // label currently rendered by pauseOverlay
+	var pauseFadeStep int = -1       // -1 means not fading; >0 means fading in; used for fade-out too
+	var healthPollCounter int        // poll agent health every ~1s (30 frames)
+	var lastHealthSubtitle string    // avoid redundant SetSubtitle calls
 	// holdFrames bounds how long the boot overlay may stay held when the agent
 	// never reports connected (e.g. agent not installed, or a stalled first
 	// boot). Without this, a held overlay would linger forever. First-boot
@@ -2248,6 +2249,16 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 	// bootOverlayReadyToFade. ~30 Hz * 180s.
 	const maxBootOverlayHoldFrames = 30 * 180
 	var bootOverlayHoldFrames int
+
+	removePauseOverlay := func() {
+		if pauseOverlay.ID == 0 {
+			return
+		}
+		objc.Send[objc.ID](pauseOverlay.ID, objc.Sel("removeFromSuperview"))
+		pauseOverlay = appkit.NSView{}
+		pauseOverlayLabelText = ""
+		pauseFadeStep = -1
+	}
 
 	// Self-rescheduling one-shot timer handles state updates on the main
 	// thread at ~30 Hz. Each invocation creates a fresh reflect frame via
@@ -2293,45 +2304,50 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 							overlayFadeStep = 15 // ~0.5s fade at 30 Hz
 						}
 
-						// Show/hide pause overlay based on VM state.
-						isPaused := stateUpdate.newState == vz.VZVirtualMachineStatePaused ||
-							stateUpdate.newState == vz.VZVirtualMachineStateSaving ||
-							stateUpdate.newState == vz.VZVirtualMachineStateRestoring
-						if isPaused {
-							// Always recreate the overlay if the state changes to ensure the label is correct.
-							needsFadeIn := true
-							if pauseOverlay.ID != 0 {
-								objc.Send[objc.ID](pauseOverlay.ID, objc.Sel("removeFromSuperview"))
-								needsFadeIn = false // already fading or faded in
-							}
-							pauseOverlay = createPauseOverlay(currentVMViewSize(vmView, contentRect.Size), stateUpdate.newState)
-							if needsFadeIn {
-								objc.Send[objc.ID](pauseOverlay.ID, objc.Sel("setAlphaValue:"), 0.0)
-								pauseFadeStep = 0 // start fade-in
-							} else {
-								// Inherit alpha or just be fully visible if it was already showing
-								alpha := 1.0
-								if pauseFadeStep >= 0 && pauseFadeStep < 10 {
-									alpha = float64(pauseFadeStep) / 10.0
-								}
-								objc.Send[objc.ID](pauseOverlay.ID, objc.Sel("setAlphaValue:"), alpha)
-							}
-							vmViewAsNSView(vmView).AddSubview(&pauseOverlay)
-						} else if !isPaused && pauseOverlay.ID != 0 {
-							objc.Send[objc.ID](pauseOverlay.ID, objc.Sel("removeFromSuperview"))
-							pauseOverlay = appkit.NSView{}
-							pauseFadeStep = -1
-						}
 					}
 					if stateUpdate.terminate {
 						os.Remove(suspendStatePathForVM(hc.VMDir))
 						clearInjectSucceeded()
 						appLoopStop.Store(true)
 						stateUpdate.mu.Unlock()
+						removePauseOverlay()
 						return // don't reschedule — app is stopping
 					}
 				}
+				latestState := stateUpdate.newState
 				stateUpdate.mu.Unlock()
+
+				// Reconcile the pause overlay against the latest observed VM state
+				// every frame rather than only on observed transitions. A
+				// transition-driven overlay latches on screen whenever the edge that
+				// would remove it is missed — the 500ms state poller can coalesce
+				// Restoring -> Running into a single sample, or the update can be
+				// dropped — leaving "Restoring..." painted over a live desktop
+				// forever. Reconciling against the level is self-correcting.
+				wantLabel, wantOverlay := pauseOverlayLabel(latestState)
+				switch {
+				case !wantOverlay:
+					removePauseOverlay()
+				case pauseOverlay.ID == 0:
+					pauseOverlay = createPauseOverlay(currentVMViewSize(vmView, contentRect.Size), latestState)
+					pauseOverlayLabelText = wantLabel
+					objc.Send[objc.ID](pauseOverlay.ID, objc.Sel("setAlphaValue:"), 0.0)
+					pauseFadeStep = 0 // start fade-in
+					vmViewAsNSView(vmView).AddSubview(&pauseOverlay)
+				case wantLabel != pauseOverlayLabelText:
+					// Same overlay, new label: swap the view in place and keep the
+					// current opacity so the text changes without a flash.
+					alpha := 1.0
+					if pauseFadeStep >= 0 && pauseFadeStep < pauseFadeFrames {
+						alpha = float64(pauseFadeStep) / float64(pauseFadeFrames)
+					}
+					objc.Send[objc.ID](pauseOverlay.ID, objc.Sel("removeFromSuperview"))
+					pauseOverlay = createPauseOverlay(currentVMViewSize(vmView, contentRect.Size), latestState)
+					pauseOverlayLabelText = wantLabel
+					objc.Send[objc.ID](pauseOverlay.ID, objc.Sel("setAlphaValue:"), alpha)
+					vmViewAsNSView(vmView).AddSubview(&pauseOverlay)
+				}
+
 				if title := controlServer.WindowTitle(); title != "" && title != lastWindowTitle {
 					lastWindowTitle = title
 					window.SetTitle(title)
@@ -2359,7 +2375,6 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 
 				// Animate pause overlay fade-in.
 				if pauseFadeStep >= 0 && pauseOverlay.ID != 0 {
-					const pauseFadeFrames = 10 // ~0.33s at 30 Hz
 					if pauseFadeStep < pauseFadeFrames {
 						pauseFadeStep++
 						alpha := float64(pauseFadeStep) / float64(pauseFadeFrames)
@@ -2756,6 +2771,25 @@ func addMessageOverlayDismissButton(overlay appkit.NSView, size corefoundation.C
 	overlay.AddSubview(&button.NSView)
 }
 
+// pauseFadeFrames is the pause overlay fade-in length, ~0.33s at 30 Hz.
+const pauseFadeFrames = 10
+
+// pauseOverlayLabel reports the text the pause overlay should show for state,
+// and whether the overlay belongs on screen at all. It is the single source of
+// truth for the overlay: any state that is not paused-like yields ("", false),
+// so a caller reconciling against it can never leave a stale overlay behind.
+func pauseOverlayLabel(state vz.VZVirtualMachineState) (string, bool) {
+	switch state {
+	case vz.VZVirtualMachineStatePaused:
+		return "Paused", true
+	case vz.VZVirtualMachineStateSaving:
+		return "Saving...", true
+	case vz.VZVirtualMachineStateRestoring:
+		return "Restoring...", true
+	}
+	return "", false
+}
+
 // createPauseOverlay creates a semi-transparent overlay shown when the VM is paused or saving.
 func createPauseOverlay(size corefoundation.CGSize, state vz.VZVirtualMachineState) appkit.NSView {
 	frame := corefoundation.CGRect{
@@ -2782,11 +2816,9 @@ func createPauseOverlay(size corefoundation.CGSize, state vz.VZVirtualMachineSta
 	}
 
 	// Status label.
-	text := "Paused"
-	if state == vz.VZVirtualMachineStateSaving {
-		text = "Saving..."
-	} else if state == vz.VZVirtualMachineStateRestoring {
-		text = "Restoring..."
+	text, ok := pauseOverlayLabel(state)
+	if !ok {
+		text = "Paused"
 	}
 	label := appkit.NewTextFieldLabelWithString(text)
 	fontClass := appkit.GetNSFontClass()

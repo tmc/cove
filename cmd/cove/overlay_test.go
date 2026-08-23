@@ -4,6 +4,7 @@ import (
 	"os"
 	"testing"
 
+	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/cove/internal/vmrun"
 )
 
@@ -148,5 +149,56 @@ func TestInstallOverlayMessage(t *testing.T) {
 				t.Fatalf("installOverlayMessage() = %q, %q, %v; want %q, %q, true", title, subtitle, hold, tt.wantTitle, tt.wantSubtitle)
 			}
 		})
+	}
+}
+
+func TestPauseOverlayLabel(t *testing.T) {
+	tests := []struct {
+		name  string
+		state vz.VZVirtualMachineState
+		want  string
+		show  bool
+	}{
+		{"paused", vz.VZVirtualMachineStatePaused, "Paused", true},
+		{"saving", vz.VZVirtualMachineStateSaving, "Saving...", true},
+		{"restoring", vz.VZVirtualMachineStateRestoring, "Restoring...", true},
+		{"running", vz.VZVirtualMachineStateRunning, "", false},
+		{"resuming", vz.VZVirtualMachineStateResuming, "", false},
+		{"starting", vz.VZVirtualMachineStateStarting, "", false},
+		{"stopped", vz.VZVirtualMachineStateStopped, "", false},
+		{"error", vz.VZVirtualMachineStateError, "", false},
+		{"unobserved", vz.VZVirtualMachineState(-1), "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, show := pauseOverlayLabel(tt.state)
+			if got != tt.want || show != tt.show {
+				t.Fatalf("pauseOverlayLabel(%v) = %q, %v; want %q, %v", tt.state, got, show, tt.want, tt.show)
+			}
+		})
+	}
+}
+
+// TestPauseOverlayReconcileClearsRestoring models the run-loop reconcile: an
+// overlay put up during Restoring must come down once the VM reports Running,
+// even if the intermediate Paused and Resuming samples are never observed.
+func TestPauseOverlayReconcileClearsRestoring(t *testing.T) {
+	var shown string
+	reconcile := func(state vz.VZVirtualMachineState) {
+		label, want := pauseOverlayLabel(state)
+		if !want {
+			shown = ""
+			return
+		}
+		shown = label
+	}
+	reconcile(vz.VZVirtualMachineStateRestoring)
+	if shown != "Restoring..." {
+		t.Fatalf("during restore = %q, want %q", shown, "Restoring...")
+	}
+	// Restoring -> Running with every intermediate sample coalesced away.
+	reconcile(vz.VZVirtualMachineStateRunning)
+	if shown != "" {
+		t.Fatalf("after resume = %q, want no overlay", shown)
 	}
 }
