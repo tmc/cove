@@ -48,26 +48,24 @@ func Platform(vmDirectory string) string {
 }
 
 func updateConfig(vmDirectory string, update func(*vmconfig.AgentConfig)) error {
-	cfg, err := vmconfig.Load(vmDirectory)
+	_, err := vmconfig.Update(vmDirectory, func(cfg *vmconfig.Config) (bool, error) {
+		agent := CloneConfig(cfg.Agent)
+		if agent == nil {
+			agent = &vmconfig.AgentConfig{}
+		}
+		update(agent)
+		if agent.Platform == "" {
+			agent.Platform = DetectPlatform(vmDirectory)
+		}
+		cfg.Agent = agent
+
+		if !agent.Requested && !agent.Verified && agent.VerifiedAt.IsZero() && agent.Source == "" {
+			cfg.Agent = nil
+		}
+		return true, nil
+	})
 	if err != nil {
-		return fmt.Errorf("load vm config: %w", err)
-	}
-
-	agent := CloneConfig(cfg.Agent)
-	if agent == nil {
-		agent = &vmconfig.AgentConfig{}
-	}
-	update(agent)
-	if agent.Platform == "" {
-		agent.Platform = DetectPlatform(vmDirectory)
-	}
-	cfg.Agent = agent
-
-	if !agent.Requested && !agent.Verified && agent.VerifiedAt.IsZero() && agent.Source == "" {
-		cfg.Agent = nil
-	}
-	if err := vmconfig.Save(vmDirectory, cfg); err != nil {
-		return fmt.Errorf("save vm config: %w", err)
+		return fmt.Errorf("update vm config: %w", err)
 	}
 	return nil
 }

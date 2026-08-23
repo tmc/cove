@@ -128,12 +128,11 @@ func (fileQuotaManager) SetCPU(ctx context.Context, vm string, cpus uint) error 
 	if err := vmquota.Save(dir, q); err != nil {
 		return err
 	}
-	cfg, err := vmconfig.Load(dir)
-	if err != nil {
-		return err
-	}
-	cfg.CPU = cpus
-	return vmconfig.Save(dir, cfg)
+	_, err = vmconfig.Update(dir, func(cfg *vmconfig.Config) (bool, error) {
+		cfg.CPU = cpus
+		return true, nil
+	})
+	return err
 }
 
 func (fileQuotaManager) SetMemory(ctx context.Context, vm string, gb uint64) error {
@@ -145,12 +144,11 @@ func (fileQuotaManager) SetMemory(ctx context.Context, vm string, gb uint64) err
 	if err := vmquota.Save(dir, q); err != nil {
 		return err
 	}
-	cfg, err := vmconfig.Load(dir)
-	if err != nil {
-		return err
-	}
-	cfg.MemoryGB = gb
-	return vmconfig.Save(dir, cfg)
+	_, err = vmconfig.Update(dir, func(cfg *vmconfig.Config) (bool, error) {
+		cfg.MemoryGB = gb
+		return true, nil
+	})
+	return err
 }
 
 func (fileQuotaManager) SetDisk(ctx context.Context, vm string, gb uint64) error {

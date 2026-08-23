@@ -57,6 +57,11 @@ type HardwareExplicit struct {
 
 // Load reads dir/config.json. It returns an empty config if the file is missing.
 func Load(dir string) (*Config, error) {
+	return load(dir)
+}
+
+// load reads dir/config.json without taking the config lock.
+func load(dir string) (*Config, error) {
 	path := filepath.Join(dir, "config.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -87,20 +92,71 @@ func Save(dir string, cfg *Config) error {
 			return fmt.Errorf("save vm config: %w", err)
 		}
 	}
+	return withConfigLock(dir, func() error { return save(dir, cfg) })
+}
+
+// save writes cfg to dir/config.json without taking the config lock.
+//
+// The temp file name is unique per writer, so concurrent writers cannot
+// interleave on a shared scratch path and rename a partial file into
+// place: each rename publishes one writer's complete config.
+func save(dir string, cfg *Config) error {
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal vm config: %w", err)
 	}
+	data = append(data, '\n')
 	path := filepath.Join(dir, "config.json")
-	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, append(data, '\n'), 0644); err != nil {
+	tmp, err := os.CreateTemp(dir, "config-*.json")
+	if err != nil {
+		return fmt.Errorf("create vm config temp: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer func() {
+		if err != nil {
+			tmp.Close()
+			os.Remove(tmpPath)
+		}
+	}()
+	if _, err = tmp.Write(data); err != nil {
 		return fmt.Errorf("write vm config: %w", err)
 	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		os.Remove(tmpPath)
+	if err = tmp.Sync(); err != nil {
+		return fmt.Errorf("sync vm config: %w", err)
+	}
+	if err = tmp.Chmod(0644); err != nil {
+		return fmt.Errorf("chmod vm config: %w", err)
+	}
+	if err = tmp.Close(); err != nil {
+		return fmt.Errorf("close vm config: %w", err)
+	}
+	if err = os.Rename(tmpPath, path); err != nil {
 		return fmt.Errorf("rename vm config: %w", err)
 	}
 	return nil
+}
+
+// Update runs mutate against the VM's saved config and persists the
+// result, holding the config lock across the whole read-modify-write so
+// concurrent updaters cannot drop each other's changes. mutate reports
+// whether anything changed; an unchanged config is not rewritten.
+//
+// mutate must not call back into Load, Save, or any SetXxx function:
+// the config lock is not reentrant.
+func Update(dir string, mutate func(cfg *Config) (bool, error)) (bool, error) {
+	changed := false
+	err := withConfigLock(dir, func() error {
+		cfg, err := load(dir)
+		if err != nil {
+			return err
+		}
+		changed, err = mutate(cfg)
+		if err != nil || !changed {
+			return err
+		}
+		return save(dir, cfg)
+	})
+	return changed, err
 }
 
 // ApplyHardware resolves runtime hardware settings against cfg.
@@ -129,47 +185,43 @@ func ApplyHardware(cfg *Config, current Hardware, explicit HardwareExplicit) (Ha
 
 // SetHardware persists CPU and memory settings.
 func SetHardware(dir string, hardware Hardware) (bool, error) {
-	cfg, err := Load(dir)
-	if err != nil {
-		return false, err
-	}
-	if cfg.CPU == hardware.CPU && cfg.MemoryGB == hardware.MemoryGB {
-		return false, nil
-	}
-	cfg.CPU = hardware.CPU
-	cfg.MemoryGB = hardware.MemoryGB
-	if err := Save(dir, cfg); err != nil {
-		return true, err
-	}
-	return true, nil
+	return Update(dir, func(cfg *Config) (bool, error) {
+		if cfg.CPU == hardware.CPU && cfg.MemoryGB == hardware.MemoryGB {
+			return false, nil
+		}
+		cfg.CPU = hardware.CPU
+		cfg.MemoryGB = hardware.MemoryGB
+		return true, nil
+	})
 }
 
 func SetGuestUser(dir string, uid, gid uint32) error {
-	cfg, err := Load(dir)
-	if err != nil {
-		return err
-	}
-	cfg.GuestUserUID = uid
-	cfg.GuestUserGID = gid
-	return Save(dir, cfg)
+	_, err := Update(dir, func(cfg *Config) (bool, error) {
+		cfg.GuestUserUID = uid
+		cfg.GuestUserGID = gid
+		return true, nil
+	})
+	return err
 }
 
 // SetPostInstallRecipes persists the selected post-install recipes.
+// An unreadable config is replaced rather than reported.
 func SetPostInstallRecipes(dir, recipes string) error {
-	cfg, err := Load(dir)
-	if err != nil {
-		cfg = &Config{}
-	}
-	cfg.PostInstallRecipes = recipes
-	return Save(dir, cfg)
+	return withConfigLock(dir, func() error {
+		cfg, err := load(dir)
+		if err != nil {
+			cfg = &Config{}
+		}
+		cfg.PostInstallRecipes = recipes
+		return save(dir, cfg)
+	})
 }
 
 // SetVolumes persists volume mounts.
 func SetVolumes(dir string, mounts []VolumeMount) error {
-	cfg, err := Load(dir)
-	if err != nil {
-		return err
-	}
-	cfg.Volumes = mounts
-	return Save(dir, cfg)
+	_, err := Update(dir, func(cfg *Config) (bool, error) {
+		cfg.Volumes = mounts
+		return true, nil
+	})
+	return err
 }
