@@ -192,6 +192,21 @@ func tryLoginFallback(socketPath string, creds loginScreenCredentials, force boo
 		fmt.Printf("[login-watchdog] first login attempt did not reach desktop: %v\n", err)
 	}
 
+	// The first attempt may have succeeded even though waitForLoginConsoleUser
+	// reported an error: right after a login the guest agent is usually not
+	// reachable yet, so every poll returns an inconclusive query error. Never
+	// type the password again without fresh, conclusive evidence that the
+	// screen is still a login screen.
+	if user, err := loginConsoleUser(client); err == nil && user == creds.Username {
+		fmt.Println("Login successful - reached desktop")
+		return nil
+	}
+	_, retryState, retryScreenErr := client.DetectScreen()
+	_, retryConsoleErr := loginConsoleUser(client)
+	if ok, why := loginRetryAllowed(retryState, retryScreenErr, retryConsoleErr); !ok {
+		return fmt.Errorf("login unverified, not retyping password: %s", why)
+	}
+
 	fmt.Println("Still at login screen - trying to click user and retry...")
 	if err := client.MouseClick(0.5, 0.78); err != nil {
 		fmt.Printf("warning: mouse click failed: %v\n", err)
@@ -217,6 +232,31 @@ func tryLoginFallback(socketPath string, creds loginScreenCredentials, force boo
 
 	fmt.Println("Login successful after retry")
 	return nil
+}
+
+// loginRetryAllowed reports whether it is safe to type the cached password
+// again after a login attempt failed to confirm, given a freshly sampled
+// screen state and the error from a fresh console-user query.
+//
+// Typing is allowed only on conclusive evidence that nobody is logged in: a
+// login screen, or a desktop classification the guest agent confirms has no
+// console user. An unreadable screen or an inconclusive console-user error
+// (agent not connected, exec timeout) means unknown, and unknown must never
+// put a plaintext password on the keyboard.
+func loginRetryAllowed(state ScreenState, screenErr, consoleErr error) (bool, string) {
+	if screenErr != nil {
+		return false, fmt.Sprintf("screen state unknown: %v", screenErr)
+	}
+	switch {
+	case state == ScreenStateLoginScreen:
+		return true, ""
+	case state == ScreenStateDesktop && errors.Is(consoleErr, controlserver.ErrNoConsoleUser):
+		return true, ""
+	case state == ScreenStateDesktop:
+		return false, "desktop reached; console user not conclusively empty"
+	default:
+		return false, fmt.Sprintf("screen state is %s", state)
+	}
 }
 
 func waitForLoginConsoleUser(client *ControlClient, username string, timeout time.Duration, stopAtLoginScreen bool) error {
