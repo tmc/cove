@@ -31,9 +31,9 @@ import (
 // VM selector window dimensions.
 const (
 	selectorWindowWidth  = 920
-	selectorWindowHeight = 520
+	selectorWindowHeight = 600
 	selectorMinWidth     = 760
-	selectorMinHeight    = 380
+	selectorMinHeight    = 460
 	selectorBarHeight    = 52
 	selectorButtonHeight = 30
 	selectorDetailWidth  = 290
@@ -67,6 +67,12 @@ type VMSelector struct {
 	detailSize    appkit.NSTextField
 	detailDate    appkit.NSTextField
 	detailPath    appkit.NSTextField
+	cpuField      appkit.NSTextField
+	cpuStepper    appkit.NSStepper
+	memoryField   appkit.NSTextField
+	memoryStepper appkit.NSStepper
+	hardwareHint  appkit.NSTextField
+	bounds        hardwareBounds
 	selectedRow   int
 	vms           []vmconfig.Info
 	activeVM      string
@@ -1259,6 +1265,9 @@ func (s *VMSelector) registerDelegate() {
 			{Cmd: objc.RegisterName("refreshVMs:"), Fn: s.handleRefresh},
 			{Cmd: objc.RegisterName("revealVMInFinder:"), Fn: s.handleRevealInFinder},
 			{Cmd: objc.RegisterName("openVZScriptRunner:"), Fn: s.handleOpenVZScriptRunner},
+			// Hardware editing
+			{Cmd: objc.RegisterName("hardwareCPUChanged:"), Fn: s.handleCPUChanged},
+			{Cmd: objc.RegisterName("hardwareMemoryChanged:"), Fn: s.handleMemoryChanged},
 		},
 	)
 	if err != nil {
@@ -1566,10 +1575,12 @@ func (s *VMSelector) buildDetailsPanel(x, y, width, height float64) appkit.NSVie
 	s.detailSize = addDetailRow("Disk", boxHeight-130)
 	s.detailDate = addDetailRow("Created", boxHeight-156)
 
+	s.buildHardwareControls(box, width, boxHeight)
+
 	pathLabel := selectorLabel(
 		"Path",
 		corefoundation.CGRect{
-			Origin: corefoundation.CGPoint{X: 18, Y: boxHeight - 194},
+			Origin: corefoundation.CGPoint{X: 18, Y: boxHeight - 268},
 			Size:   corefoundation.CGSize{Width: width - 36, Height: 18},
 		},
 		appkit.GetNSFontClass().SystemFontOfSize(13),
@@ -1581,7 +1592,7 @@ func (s *VMSelector) buildDetailsPanel(x, y, width, height float64) appkit.NSVie
 	s.detailPath = selectorLabel(
 		"",
 		corefoundation.CGRect{
-			Origin: corefoundation.CGPoint{X: 18, Y: boxHeight - 226},
+			Origin: corefoundation.CGPoint{X: 18, Y: boxHeight - 300},
 			Size:   corefoundation.CGSize{Width: width - 36, Height: 34},
 		},
 		appkit.GetNSFontClass().SystemFontOfSize(11),
@@ -1844,6 +1855,7 @@ func (s *VMSelector) updateDetailsPanel(vm *vmconfig.Info) {
 		s.detailSize.SetStringValue("-")
 		s.detailDate.SetStringValue("-")
 		s.detailPath.SetStringValue("")
+		s.updateHardwareControls(nil)
 		return
 	}
 
@@ -1857,6 +1869,7 @@ func (s *VMSelector) updateDetailsPanel(vm *vmconfig.Info) {
 	s.detailSize.SetStringValue(bytefmt.Size(vm.DiskSize))
 	s.detailDate.SetStringValue(vm.Created.Format("2006-01-02 15:04"))
 	s.detailPath.SetStringValue(vm.Path)
+	s.updateHardwareControls(vm)
 }
 
 func (s *VMSelector) selectRowByName(name string) bool {
