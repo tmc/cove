@@ -1151,39 +1151,23 @@ func (s *ControlServer) rebootToRecovery() *controlpb.ControlResponse {
 	}
 
 	done := make(chan error, 1)
-	DispatchAsyncQueue(queue, func() {
-		startRecovery := func() {
-			if hasSuspendStateForVM(s.vmDir) {
-				moveAsideSuspendStateForVM(s.vmDir, "recovery-mode")
-			}
-			setActiveBootSessionMode(bootSessionModeRecovery)
+	beginVMBootTransition()
+	go func() {
+		defer endVMBootTransition()
+		if err := stopVMForBootTransition("control", vm, queue); err != nil {
+			done <- fmt.Errorf("stop before recovery: %w", err)
+			return
+		}
+		if hasSuspendStateForVM(s.vmDir) {
+			moveAsideSuspendStateForVM(s.vmDir, "recovery-mode")
+		}
+		setActiveBootSessionMode(bootSessionModeRecovery)
+		done <- startVMAfterStop(vm, queue, func(handler func(error)) {
 			opts := vz.NewVZMacOSVirtualMachineStartOptions()
 			opts.SetStartUpFromMacOSRecovery(true)
-			vm.StartWithOptionsCompletionHandler(&opts.VZVirtualMachineStartOptions, func(err error) {
-				done <- snapshotNSError(err)
-			})
-		}
-
-		state := vz.VZVirtualMachineState(vm.State())
-		switch state {
-		case vz.VZVirtualMachineStateStopped:
-			startRecovery()
-		case vz.VZVirtualMachineStateRunning, vz.VZVirtualMachineStatePaused:
-			if !vm.CanStop() {
-				done <- fmt.Errorf("cannot stop VM in state: %s", state.String())
-				return
-			}
-			vm.StopWithCompletionHandler(func(err error) {
-				if err := snapshotNSError(err); err != nil {
-					done <- fmt.Errorf("stop before recovery: %w", err)
-					return
-				}
-				startRecovery()
-			})
-		default:
-			done <- fmt.Errorf("cannot boot recovery from state: %s", state.String())
-		}
-	})
+			vm.StartWithOptionsCompletionHandler(&opts.VZVirtualMachineStartOptions, handler)
+		})
+	}()
 
 	select {
 	case err := <-done:

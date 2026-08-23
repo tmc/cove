@@ -72,62 +72,58 @@ func toggleVMStartPause(source string, vm vz.VZVirtualMachine, queue dispatch.Qu
 	})
 }
 
+// restartVM stops the VM and starts it again. The stop half is a real VM stop,
+// which the run-loop state monitors would otherwise read as the VM having
+// exited, so the whole sequence runs inside a boot transition.
 func restartVM(source string, vm vz.VZVirtualMachine, queue dispatch.Queue) {
 	label := actionSourceLabel(source)
 	fmt.Printf("%s: restarting VM...\n", label)
-	DispatchAsyncQueue(queue, func() {
-		vm.StopWithCompletionHandler(func(err error) {
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "error: vm stop during restart: %v\n", err)
-				return
-			}
-			fmt.Printf("%s: VM stopped, starting again...\n", label)
-			setActiveBootSessionMode(bootSessionModeNormal)
-			vm.StartWithCompletionHandler(func(err error) {
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "error: vm start during restart: %v\n", err)
-				}
-			})
+	beginVMBootTransition()
+	go func() {
+		defer endVMBootTransition()
+		if err := stopVMForBootTransition(label, vm, queue); err != nil {
+			reportBootTransitionFailure(label, "vm stop during restart", vm, queue, err)
+			return
+		}
+		fmt.Printf("%s: VM stopped, starting again...\n", label)
+		setActiveBootSessionMode(bootSessionModeNormal)
+		err := startVMAfterStop(vm, queue, func(handler func(error)) {
+			vm.StartWithCompletionHandler(handler)
 		})
-	})
+		if err != nil {
+			reportBootTransitionFailure(label, "vm start during restart", vm, queue, err)
+			return
+		}
+		fmt.Printf("%s: VM restarted\n", label)
+	}()
 }
 
 func bootVMToRecovery(source string, vm vz.VZVirtualMachine, queue dispatch.Queue, vmDirectory string) {
 	label := actionSourceLabel(source)
 	fmt.Printf("%s: booting to recovery mode...\n", label)
-	DispatchAsyncQueue(queue, func() {
-		startRecovery := func() {
-			if hasSuspendStateForVM(vmDirectory) {
-				fmt.Printf("%s: recovery mode requires a cold boot; moving aside saved suspend state...\n", label)
-				moveAsideSuspendStateForVM(vmDirectory, "recovery-mode")
-			}
-			setActiveBootSessionMode(bootSessionModeRecovery)
-			opts := vz.NewVZMacOSVirtualMachineStartOptions()
-			opts.SetStartUpFromMacOSRecovery(true)
-			vm.StartWithOptionsCompletionHandler(
-				&opts.VZVirtualMachineStartOptions,
-				func(err error) {
-					if err != nil {
-						fmt.Fprintf(os.Stderr, "error: vm recovery start: %v\n", err)
-						return
-					}
-					fmt.Printf("%s: VM started in recovery mode\n", label)
-				},
-			)
-		}
-
-		if vz.VZVirtualMachineState(vm.State()) == vz.VZVirtualMachineStateStopped {
-			startRecovery()
+	beginVMBootTransition()
+	go func() {
+		defer endVMBootTransition()
+		if err := stopVMForBootTransition(label, vm, queue); err != nil {
+			reportBootTransitionFailure(label, "vm stop before recovery", vm, queue, err)
 			return
 		}
-		vm.StopWithCompletionHandler(func(err error) {
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "error: vm stop before recovery: %v\n", err)
-				return
-			}
-			startRecovery()
+		if hasSuspendStateForVM(vmDirectory) {
+			fmt.Printf("%s: recovery mode requires a cold boot; moving aside saved suspend state...\n", label)
+			moveAsideSuspendStateForVM(vmDirectory, "recovery-mode")
+		}
+		setActiveBootSessionMode(bootSessionModeRecovery)
+		err := startVMAfterStop(vm, queue, func(handler func(error)) {
+			opts := vz.NewVZMacOSVirtualMachineStartOptions()
+			opts.SetStartUpFromMacOSRecovery(true)
+			vm.StartWithOptionsCompletionHandler(&opts.VZVirtualMachineStartOptions, handler)
 		})
-	})
+		if err != nil {
+			reportBootTransitionFailure(label, "vm recovery start", vm, queue, err)
+			return
+		}
+		fmt.Printf("%s: VM started in recovery mode\n", label)
+	}()
 }
 
 func requestVMSuspend(source string, vm vz.VZVirtualMachine, queue dispatch.Queue, rc vmrun.RunConfig, hc vmrun.HostConfig) {

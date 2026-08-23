@@ -1617,6 +1617,11 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBund
 				stateUpdate.mu.Unlock()
 			}
 			if state == vz.VZVirtualMachineStateStopped || state == vz.VZVirtualMachineStateError {
+				if vmBootTransitionInProgress() {
+					// A restart or recovery boot is stopping the VM on
+					// purpose; it will start it again.
+					continue
+				}
 				stateUpdate.mu.Lock()
 				if stateUpdate.signalCleanup {
 					stateUpdate.mu.Unlock()
@@ -2187,6 +2192,11 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 				stateUpdate.mu.Unlock()
 			}
 			if state == vz.VZVirtualMachineStateStopped || state == vz.VZVirtualMachineStateError {
+				if vmBootTransitionInProgress() {
+					// A restart or recovery boot is stopping the VM on
+					// purpose; it will start it again.
+					continue
+				}
 				stateUpdate.mu.Lock()
 				if stateUpdate.signalCleanup {
 					// Signal handler is managing the exit; don't trigger app.Stop
