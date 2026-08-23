@@ -1976,6 +1976,7 @@ func (s *VMSelector) selectionDidChange(_ objc.ID, _ objc.SEL, _ objc.ID) {
 
 // handleRun runs the selected VM.
 func (s *VMSelector) handleRun(_ objc.ID, _ objc.SEL, _ objc.ID) {
+	s.commitHardwareEdits()
 	vm := s.selectedVM()
 	if vm == nil {
 		return
@@ -1991,6 +1992,7 @@ func (s *VMSelector) handleRun(_ objc.ID, _ objc.SEL, _ objc.ID) {
 
 // handleColdBoot runs the selected VM after discarding any saved suspend state.
 func (s *VMSelector) handleColdBoot(_ objc.ID, _ objc.SEL, _ objc.ID) {
+	s.commitHardwareEdits()
 	vm := s.selectedVM()
 	if vm == nil || vm.State != "suspended" {
 		return
@@ -2096,6 +2098,11 @@ func performSelectorAction(action selectorAction) error {
 	case selectorActionRun:
 		vmDir = action.vm.Path
 		vmName = action.vm.Name
+		// The process-wide CPU/memory defaults were loaded from whichever VM
+		// was resolved at startup. Re-apply the selected VM's saved config so
+		// it boots with its own hardware and does not have the previous VM's
+		// values written back over its config.json.
+		applyVMConfig(vmDir)
 		guiMode = true
 		skipResume = action.coldBoot
 		linuxMode = action.vm.OSType == "Linux"

@@ -100,16 +100,36 @@ func (b hardwareBounds) hint() string {
 }
 
 // loadVMHardware reports the saved hardware for the VM directory, falling back
-// to the process defaults when the config has no values.
-func loadVMHardware(dir string, b hardwareBounds) vmconfig.Hardware {
+// to the process defaults when the config has no values. A config that cannot
+// be read is reported: the defaults would otherwise be shown as if they were
+// the VM's saved values, and editing them would overwrite the broken config.
+func loadVMHardware(dir string, b hardwareBounds) (vmconfig.Hardware, error) {
 	var cfg vmconfig.Config
-	if loaded, err := vmconfig.Load(dir); err == nil && loaded != nil {
+	loaded, err := vmconfig.Load(dir)
+	if err != nil {
+		return vmconfig.Hardware{
+			CPU:      b.clampCPU(0, cpuCount),
+			MemoryGB: b.clampMemoryGB(0, memoryGB),
+		}, err
+	}
+	if loaded != nil {
 		cfg = *loaded
 	}
 	return vmconfig.Hardware{
 		CPU:      b.clampCPU(cfg.CPU, cpuCount),
 		MemoryGB: b.clampMemoryGB(cfg.MemoryGB, memoryGB),
+	}, nil
+}
+
+// hardwareEditHint describes what an edit will do to the VM in dir. A VM with
+// a saved suspend state cannot resume after a hardware change: the restore
+// fingerprint no longer matches and the saved session is discarded, so say so
+// before the user edits rather than after.
+func (b hardwareBounds) editHint(dir string) string {
+	if hasSuspendStateForVM(dir) {
+		return "Changing CPU or memory discards the suspended session - " + b.hint()
 	}
+	return b.hint()
 }
 
 // buildHardwareControls adds editable CPU and memory fields to the details box.
@@ -143,6 +163,11 @@ func (s *VMSelector) buildHardwareControls(box appkit.NSBox, width, boxHeight fl
 		field.SetAlignment(appkit.NSTextAlignmentRight)
 		field.SetAccessibilityLabel(title)
 		objc.Send[objc.ID](field.ID, objc.Sel("setAutoresizingMask:"), uint(selectorViewMinX|selectorViewMinY))
+		// Commit typed values when editing ends, not only on Enter, so a value
+		// typed and then abandoned (clicking Run) is still applied.
+		if cell := objc.Send[objc.ID](field.ID, objc.Sel("cell")); cell != 0 {
+			objc.Send[objc.ID](cell, objc.Sel("setSendsActionOnEndEditing:"), true)
+		}
 		objc.Send[objc.ID](field.ID, objc.Sel("setTarget:"), s.delegateID)
 		objc.Send[objc.ID](field.ID, objc.Sel("setAction:"), objc.RegisterName(action))
 		objc.Send[objc.ID](box.ID, objc.Sel("addSubview:"), field.ID)
@@ -195,14 +220,27 @@ func (s *VMSelector) updateHardwareControls(vm *vmconfig.Info) {
 		s.setHardwareControlsEnabled(false)
 		return
 	}
-	hw := loadVMHardware(vm.Path, s.bounds)
+	hw, err := loadVMHardware(vm.Path, s.bounds)
 	s.setHardwareValues(hw)
 	s.setHardwareControlsEnabled(vm.State != "running")
-	if vm.State == "running" {
+	switch {
+	case vm.State == "running":
 		s.hardwareHint.SetStringValue("Stop the VM to change CPU or memory")
+	case err != nil:
+		s.hardwareHint.SetStringValue(fmt.Sprintf("config unreadable, showing defaults: %v", err))
+	default:
+		s.hardwareHint.SetStringValue(s.bounds.editHint(vm.Path))
+	}
+}
+
+// commitHardwareEdits flushes an in-progress field edit. NSTextField only
+// sends its action on Enter or focus loss, so a typed value would otherwise be
+// dropped when the window closes on Run.
+func (s *VMSelector) commitHardwareEdits() {
+	if s.window.ID == 0 || s.cpuField.ID == 0 {
 		return
 	}
-	s.hardwareHint.SetStringValue(s.bounds.hint())
+	objc.Send[bool](s.window.ID, objc.Sel("makeFirstResponder:"), objc.ID(0))
 }
 
 func (s *VMSelector) setHardwareValues(hw vmconfig.Hardware) {
@@ -232,10 +270,22 @@ func (s *VMSelector) handleMemoryChanged(_ objc.ID, _ objc.SEL, sender objc.ID) 
 // writes it back to both controls, and persists it to the VM config.
 func (s *VMSelector) applyHardwareEdit(fromStepper, isCPU bool) {
 	vm := s.selectedVM()
-	if vm == nil || vm.State == "running" {
+	if vm == nil {
 		return
 	}
-	hw := loadVMHardware(vm.Path, s.bounds)
+	// vm.State comes from the cached list; a VM started elsewhere since the
+	// window opened still reads "stopped". Re-check the live state.
+	state := detectVMState(vm.Path)
+	if state == "running" {
+		s.setHardwareControlsEnabled(false)
+		s.hardwareHint.SetStringValue("Stop the VM to change CPU or memory")
+		return
+	}
+	hw, err := loadVMHardware(vm.Path, s.bounds)
+	if err != nil {
+		s.hardwareHint.SetStringValue(fmt.Sprintf("config unreadable, not saving: %v", err))
+		return
+	}
 	if isCPU {
 		value := s.cpuField.IntegerValue()
 		if fromStepper {
@@ -257,8 +307,13 @@ func (s *VMSelector) applyHardwareEdit(fromStepper, isCPU bool) {
 	}
 	s.setHardwareValues(hw)
 
+	hadSuspendState := hasSuspendStateForVM(vm.Path)
 	if _, err := vmconfig.SetHardware(vm.Path, hw); err != nil {
 		s.hardwareHint.SetStringValue(fmt.Sprintf("save failed: %v", err))
+		return
+	}
+	if hadSuspendState {
+		s.hardwareHint.SetStringValue("Saved - next boot is a cold boot; the suspended session is discarded")
 		return
 	}
 	s.hardwareHint.SetStringValue(fmt.Sprintf("Saved - applies on next boot (%s)", s.bounds.hint()))

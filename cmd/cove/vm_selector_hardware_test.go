@@ -1,6 +1,11 @@
 package main
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 func TestNormalizeHardwareBounds(t *testing.T) {
 	tests := []struct {
@@ -56,5 +61,72 @@ func TestHardwareBoundsClamp(t *testing.T) {
 		if got := b.clampMemoryGB(tt.in, tt.fallback); got != tt.want {
 			t.Errorf("clampMemoryGB(%d, %d) = %d, want %d", tt.in, tt.fallback, got, tt.want)
 		}
+	}
+}
+
+func TestLoadVMHardware(t *testing.T) {
+	b := hardwareBounds{MinCPU: 1, MaxCPU: 8, MinMemoryGB: 1, MaxMemoryGB: 32}
+
+	t.Run("saved values win", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"cpu":4,"memoryGB":16}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		hw, err := loadVMHardware(dir, b)
+		if err != nil {
+			t.Fatalf("loadVMHardware() error = %v", err)
+		}
+		if hw.CPU != 4 || hw.MemoryGB != 16 {
+			t.Fatalf("loadVMHardware() = %+v, want cpu=4 memory=16", hw)
+		}
+	})
+
+	t.Run("corrupt config reports error", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte("{not json"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := loadVMHardware(dir, b); err == nil {
+			t.Fatal("loadVMHardware() error = nil, want parse error")
+		}
+	})
+}
+
+func TestHardwareBoundsEditHint(t *testing.T) {
+	b := hardwareBounds{MinCPU: 1, MaxCPU: 8, MinMemoryGB: 1, MaxMemoryGB: 32}
+
+	dir := t.TempDir()
+	if got, want := b.editHint(dir), b.hint(); got != want {
+		t.Fatalf("editHint() = %q, want %q", got, want)
+	}
+
+	if err := os.WriteFile(suspendStatePathForVM(dir), []byte("state"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := b.editHint(dir); !strings.Contains(got, "discards the suspended session") {
+		t.Fatalf("editHint() = %q, want suspend-state warning", got)
+	}
+}
+
+// TestApplyVMConfigSwitchesVM covers the selector Run path: switching to
+// another VM must adopt that VM's saved hardware, not keep the previous one's.
+func TestApplyVMConfigSwitchesVM(t *testing.T) {
+	first, second := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(first, "config.json"), []byte(`{"cpu":2,"memoryGB":4}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(second, "config.json"), []byte(`{"cpu":6,"memoryGB":24}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	savedCPU, savedMem := cpuCount, memoryGB
+	defer func() { cpuCount, memoryGB = savedCPU, savedMem }()
+
+	applyVMConfig(first)
+	if cpuCount != 2 || memoryGB != 4 {
+		t.Fatalf("after first VM: cpu=%d memory=%d, want 2/4", cpuCount, memoryGB)
+	}
+	applyVMConfig(second)
+	if cpuCount != 6 || memoryGB != 24 {
+		t.Fatalf("after second VM: cpu=%d memory=%d, want 6/24", cpuCount, memoryGB)
 	}
 }
