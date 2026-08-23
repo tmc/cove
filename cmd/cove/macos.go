@@ -1551,7 +1551,8 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBund
 		}()
 	} else if rc.ProvisionUser != "" && shouldRunGUIAutomationForRun(target, rc) {
 		go runProvisioningAutomation(controlServer, rc)
-	} else if creds := resolveLoginScreenWatchdogCredentialsForRun(rc, target); creds.Valid() {
+	} else if creds := resolveLoginScreenWatchdogCredentialsForRun(rc, target); creds.Valid() &&
+		loginScreenWatchdogWanted(rc, hc.VMDir, canSaveRestore) {
 		go runLoginScreenWatchdog(controlServer, creds)
 	}
 
@@ -2141,7 +2142,11 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 		})
 	} else if rc.ProvisionUser != "" && shouldRunGUIAutomationForRun(target, rc) {
 		startAutomation(func() { runProvisioningAutomation(controlServer, rc) })
-	} else if creds := resolveLoginScreenWatchdogCredentialsForRun(rc, target); creds.Valid() {
+	} else if creds := resolveLoginScreenWatchdogCredentialsForRun(rc, target); creds.Valid() &&
+		loginScreenWatchdogWanted(rc, hc.VMDir, canSaveRestore) {
+		// Disk inject already provisioned the user, but kcpassword auto-login
+		// can still fail in headed boots. Watch for a login screen in the
+		// background; if one appears, type the cached password.
 		startAutomation(func() { runLoginScreenWatchdog(controlServer, creds) })
 	}
 

@@ -122,3 +122,20 @@ func resolveLoginScreenWatchdogCredentialsForRun(rc vmrun.RunConfig, target vmSe
 	}
 	return bootLoginScreenCredentials
 }
+
+// loginScreenWatchdogWanted reports whether arming the login-screen watchdog
+// makes sense for this run.
+//
+// A run that resumes a saved suspend state continues a guest that was already
+// running, typically at a logged-in desktop; no login screen can appear, so the
+// watchdog is pure risk — screen detection is heuristic and a misclassified
+// desktop would put the cached plaintext password on the keyboard of a live
+// session. Mirrors the resume decision in startConfiguredVM; if that decision
+// later falls back to a cold boot the watchdog stays disarmed, which only
+// forgoes an auto-login rescue that is rarely needed.
+func loginScreenWatchdogWanted(rc vmrun.RunConfig, vmDir string, saveRestore bool) bool {
+	if saveRestore && !rc.SkipResume && !runRequiresColdBootForRun(rc) && hasSuspendStateForVM(vmDir) {
+		return false
+	}
+	return true
+}

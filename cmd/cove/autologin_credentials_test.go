@@ -224,3 +224,39 @@ func TestResolveLoginScreenWatchdogCredentialsPrefersProvisionAfterInject(t *tes
 		t.Fatalf("got = %+v, want provision creds (after inject succeeded)", got)
 	}
 }
+
+func TestLoginScreenWatchdogWanted(t *testing.T) {
+	withSuspendState := func(t *testing.T) string {
+		t.Helper()
+		dir := t.TempDir()
+		if err := os.WriteFile(suspendStatePathForVM(dir), []byte("state"), 0600); err != nil {
+			t.Fatalf("write suspend state: %v", err)
+		}
+		return dir
+	}
+
+	tests := []struct {
+		name        string
+		rc          vmrun.RunConfig
+		suspend     bool
+		saveRestore bool
+		want        bool
+	}{
+		{name: "cold boot without suspend state", saveRestore: true, want: true},
+		{name: "resume from suspend state", suspend: true, saveRestore: true, want: false},
+		{name: "suspend state but resume skipped", rc: vmrun.RunConfig{SkipResume: true}, suspend: true, saveRestore: true, want: true},
+		{name: "suspend state but cold boot forced", rc: vmrun.RunConfig{BootCommandsFile: "boot.txt"}, suspend: true, saveRestore: true, want: true},
+		{name: "suspend state but save/restore unsupported", suspend: true, want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if tt.suspend {
+				dir = withSuspendState(t)
+			}
+			if got := loginScreenWatchdogWanted(tt.rc, dir, tt.saveRestore); got != tt.want {
+				t.Fatalf("loginScreenWatchdogWanted() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

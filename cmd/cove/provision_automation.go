@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -16,7 +17,80 @@ import (
 const (
 	loginConsoleUserTimeout = 90 * time.Second
 	loginScreenRetryDelay   = 8 * time.Second
+
+	// desktopNoConsoleUserConfirmations is how many consecutive conclusive
+	// "no console user" answers are required before a desktop classification
+	// is downgraded to a login screen.
+	desktopNoConsoleUserConfirmations = 3
+
+	// unknownConsoleUserGrace bounds how long the watchdog waits on an
+	// unreachable guest agent while the screen looks like a desktop. After
+	// it elapses the watchdog assumes the session is logged in and exits.
+	unknownConsoleUserGrace = 45 * time.Second
+
+	// loginScreenConfirmations is how many consecutive login-screen
+	// classifications are required before typing the cached password when
+	// the console user cannot be determined. Screen detection is heuristic
+	// ("light overall, top brighter than bottom"), so a light wallpaper or a
+	// transient compositing frame during boot can look like a login screen
+	// for a frame or two; a real login screen stays put. Three samples at
+	// the watchdog's 3s poll interval means roughly ten seconds of stable
+	// classification, which no transient survives and which delays a genuine
+	// automated login only slightly.
+	loginScreenConfirmations = 3
+
+	// loginScreenConfirmInterval is the delay between the extra screen
+	// samples tryLoginFallback takes when it has to corroborate a login
+	// screen on its own.
+	loginScreenConfirmInterval = 2 * time.Second
 )
+
+// loginTypeAction is the outcome of the "may we type the cached password now?"
+// decision.
+type loginTypeAction int
+
+const (
+	// loginTypeWait means the evidence is not yet sufficient; sample again.
+	loginTypeWait loginTypeAction = iota
+	// loginTypeType means it is safe to type the cached password.
+	loginTypeType
+	// loginTypeAbort means somebody is logged in; stop trying entirely.
+	loginTypeAbort
+)
+
+// loginTypeDecision decides whether the cached password may be typed, given a
+// screen classification, the result of a console-user query, and how many
+// consecutive login-screen classifications have been observed.
+//
+// Screen detection alone is never enough: DetectScreen is a pixel heuristic
+// and a real desktop can classify as a login screen. The console user is the
+// corroborating evidence.
+//
+//   - A console user exists: somebody is logged in, abort.
+//   - Login screen plus a conclusive controlserver.ErrNoConsoleUser: type.
+//   - Login screen with an inconclusive console query (the usual case at a
+//     genuine login screen, where the user agent is not up yet): type only
+//     once the classification has held for loginScreenConfirmations samples.
+//   - Anything else: wait.
+func loginTypeDecision(state ScreenState, screenErr error, consoleUser string, consoleErr error, loginStreak int) (loginTypeAction, string) {
+	if screenErr != nil {
+		return loginTypeWait, fmt.Sprintf("screen state unknown: %v", screenErr)
+	}
+	if consoleErr == nil && consoleUser != "" {
+		return loginTypeAbort, fmt.Sprintf("console user %q is logged in", consoleUser)
+	}
+	if state != ScreenStateLoginScreen {
+		return loginTypeWait, fmt.Sprintf("screen state is %s", state)
+	}
+	if errors.Is(consoleErr, controlserver.ErrNoConsoleUser) {
+		return loginTypeType, ""
+	}
+	if loginStreak >= loginScreenConfirmations {
+		return loginTypeType, ""
+	}
+	return loginTypeWait, fmt.Sprintf("login screen unconfirmed (%d/%d), console user unknown: %v",
+		loginStreak, loginScreenConfirmations, consoleErr)
+}
 
 // runProvisioningAutomation starts the Setup Assistant automation using
 // the ControlServer directly (in-process) for reliable HID-based input.
@@ -156,20 +230,13 @@ func tryLoginFallback(socketPath string, creds loginScreenCredentials, force boo
 		return fmt.Errorf("control socket not available: %w", err)
 	}
 
-	_, state, err := client.DetectScreen()
-	if err != nil {
-		return fmt.Errorf("screen detection failed: %w", err)
+	// Corroborate before typing, regardless of caller. force only relaxes the
+	// screen classification (a desktop the caller downgraded); it never
+	// removes the requirement that nobody is logged in.
+	if err := confirmLoginTypeAllowed(client, force); err != nil {
+		return err
 	}
-
-	if state != ScreenStateLoginScreen && !(force && state == ScreenStateDesktop) {
-		return fmt.Errorf("not at login screen (current state: %s)", state)
-	}
-
-	if force && state == ScreenStateDesktop {
-		fmt.Println("Desktop classified without a console user - attempting keyboard login...")
-	} else {
-		fmt.Println("Detected login screen - attempting keyboard login...")
-	}
+	fmt.Println("Detected login screen - attempting keyboard login...")
 
 	if err := client.MouseClick(0.5, 0.78); err != nil && verbose {
 		fmt.Printf("warning: focus password field: %v\n", err)
@@ -234,6 +301,42 @@ func tryLoginFallback(socketPath string, creds loginScreenCredentials, force boo
 	return nil
 }
 
+// confirmLoginTypeAllowed samples the screen and the console user until it has
+// conclusive evidence that typing the cached password is safe, or gives up.
+//
+// It is the last gate before any keystroke: callers may have their own
+// corroboration, but tryLoginFallback must be safe on its own.
+func confirmLoginTypeAllowed(client *ControlClient, force bool) error {
+	streak := 0
+	why := "no screen samples taken"
+	for i := 0; i < loginScreenConfirmations; i++ {
+		if i > 0 {
+			time.Sleep(loginScreenConfirmInterval)
+		}
+		_, state, screenErr := client.DetectScreen()
+		user, consoleErr := loginConsoleUser(client)
+		if screenErr == nil && state == ScreenStateLoginScreen {
+			streak++
+		} else {
+			streak = 0
+		}
+		// A caller that already confirmed a desktop without a console user
+		// (the login-screen watchdog) has conclusive evidence of its own.
+		if force && screenErr == nil && state == ScreenStateDesktop && errors.Is(consoleErr, controlserver.ErrNoConsoleUser) {
+			return nil
+		}
+		var action loginTypeAction
+		action, why = loginTypeDecision(state, screenErr, user, consoleErr, streak)
+		switch action {
+		case loginTypeType:
+			return nil
+		case loginTypeAbort:
+			return fmt.Errorf("not typing password: %s", why)
+		}
+	}
+	return fmt.Errorf("not typing password: %s", why)
+}
+
 // loginRetryAllowed reports whether it is safe to type the cached password
 // again after a login attempt failed to confirm, given a freshly sampled
 // screen state and the error from a fresh console-user query.
@@ -248,6 +351,9 @@ func loginRetryAllowed(state ScreenState, screenErr, consoleErr error) (bool, st
 		return false, fmt.Sprintf("screen state unknown: %v", screenErr)
 	}
 	switch {
+	case consoleErr == nil:
+		// Somebody is logged in; the screen classification is irrelevant.
+		return false, "a console user is logged in"
 	case state == ScreenStateLoginScreen:
 		return true, ""
 	case state == ScreenStateDesktop && errors.Is(consoleErr, controlserver.ErrNoConsoleUser):
