@@ -8,6 +8,7 @@ package controlserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"log/slog"
@@ -322,6 +323,13 @@ func (b *AgentBridge) ConsoleUser() (string, int, error) {
 	return b.consoleUserLocked()
 }
 
+// ErrNoConsoleUser reports that the guest agent answered the console
+// owner query and nobody is logged in to the GUI session. It is the
+// only conclusive "not logged in" signal: every other console-user
+// error (agent not connected, exec timeout, unparsable output) means
+// "unknown", not "no user".
+var ErrNoConsoleUser = errors.New("no logged-in GUI user on /dev/console")
+
 // ParseConsoleOwnerOutput is the package-private parser for the
 // `stat -f "%Su %u" /dev/console` output the macOS console-user query
 // produces.
@@ -335,7 +343,7 @@ func ParseConsoleOwnerOutput(stdout string) (string, int, error) {
 		return "", 0, fmt.Errorf("parse console uid %q: %w", fields[1], err)
 	}
 	if fields[0] == "root" || uid == 0 {
-		return "", 0, fmt.Errorf("no logged-in GUI user on /dev/console")
+		return "", 0, ErrNoConsoleUser
 	}
 	return fields[0], uid, nil
 }
