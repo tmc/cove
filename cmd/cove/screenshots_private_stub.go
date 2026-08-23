@@ -7,3 +7,7 @@ import "image"
 func (s *ControlServer) capturePrivateGraphicsDisplay() (image.Image, string) {
 	return nil, "private graphics capture unavailable"
 }
+
+func (s *ControlServer) capturePrivateGraphicsDisplayMode() (image.Image, string, string) {
+	return nil, "", "private graphics capture unavailable"
+}

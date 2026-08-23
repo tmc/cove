@@ -2016,7 +2016,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 		vmViewAsNSView(vmView).AddSubview(&bootOverlay)
 		// While the overlay is held through a long first-boot/provisioning wait,
 		// pulse the subtitle so the dark screen reads as working, not frozen.
-		if holdBootOverlay {
+		if holdBootOverlay || bootOverlaySubtitle != "" {
 			pulseMessageOverlaySubtitle(bootOverlay)
 		}
 	}
@@ -2305,6 +2305,13 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 	// bootOverlayReadyToFade. ~30 Hz * 180s.
 	const maxBootOverlayHoldFrames = 30 * 180
 	var bootOverlayHoldFrames int
+	// Boot overlay fade gate inputs (see shouldFadeBootOverlay).
+	var (
+		bootOverlayAgentReady       bool // guest agent checked in
+		bootOverlayGuestPainted     bool // guest framebuffer showed content
+		bootOverlayPaintProbeWorks  bool // framebuffer sampling is usable here
+		bootOverlayPaintPollCounter int  // sample the framebuffer ~1x/sec
+	)
 
 	removePauseOverlay := func() {
 		if pauseOverlay.ID == 0 {
@@ -2354,12 +2361,10 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 						if stateUpdate.newState == vz.VZVirtualMachineStateRunning {
 							startRuntimeFeatureServices(runtimeFeatures, vm, queue)
 						}
-						// Start fading the boot overlay once the VM is running, unless
-						// a first-boot automation path is still hiding transient UI.
-						if stateUpdate.newState == vz.VZVirtualMachineStateRunning && !holdBootOverlay && overlayFadeStep == -1 && bootOverlay.ID != 0 {
-							overlayFadeStep = 15 // ~0.5s fade at 30 Hz
-						}
-
+						// The boot overlay fade is decided per frame below by
+						// shouldFadeBootOverlay: reaching Running is necessary but
+						// not sufficient, because the guest framebuffer is still
+						// black for a long while after that on a cold boot.
 					}
 					if stateUpdate.terminate {
 						// The guest stopped on its own; discard the state and the
@@ -2424,7 +2429,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 
 				// Animate boot overlay fade-out.
 				if overlayFadeStep >= 0 && bootOverlay.ID != 0 {
-					alpha := float64(overlayFadeStep) / 15.0
+					alpha := float64(overlayFadeStep) / float64(bootOverlayFadeFrames)
 					objc.Send[objc.ID](bootOverlay.ID, objc.Sel("setAlphaValue:"), alpha)
 					overlayFadeStep--
 					if overlayFadeStep < 0 {
@@ -2452,7 +2457,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 					}
 					if holdBootOverlay && bootOverlay.ID != 0 && overlayFadeStep == -1 && bootOverlayReadyToFade(subtitle) {
 						holdBootOverlay = false
-						overlayFadeStep = 15
+						bootOverlayAgentReady = true
 						// Record a completed first boot so later launches of this VM
 						// don't hold the overlay again. Only a fade that means the
 						// account exists counts: the hold also releases when the
@@ -2463,15 +2468,38 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 					}
 				}
 
-				// Safety release: never hold the overlay indefinitely. If the agent
-				// never reports connected (not installed, or a stalled boot), fade
-				// once the bounded window elapses so the user is not stuck behind a
-				// dark screen.
-				if holdBootOverlay && bootOverlay.ID != 0 && overlayFadeStep == -1 {
+				// Decide the boot overlay fade against the level, not against a
+				// single state transition. Reaching Running only means the
+				// virtualization started; the guest framebuffer stays black well
+				// past that on a cold boot, so also require an actually painted
+				// guest frame. Bounded by maxBootOverlayHoldFrames: a guest that
+				// never paints (or an agent that never connects) still gets the
+				// screen back rather than being stuck behind a dark overlay.
+				if bootOverlay.ID != 0 && overlayFadeStep == -1 {
 					bootOverlayHoldFrames++
-					if bootOverlayHoldFrames >= maxBootOverlayHoldFrames {
+					// Sample the guest framebuffer ~1x/sec until it shows content.
+					if latestState == vz.VZVirtualMachineStateRunning && !bootOverlayGuestPainted {
+						bootOverlayPaintPollCounter++
+						if bootOverlayPaintPollCounter >= 30 {
+							bootOverlayPaintPollCounter = 0
+							painted, ok := probeGuestPainted(controlServer)
+							bootOverlayPaintProbeWorks = ok
+							if painted {
+								bootOverlayGuestPainted = true
+							}
+						}
+					}
+					if shouldFadeBootOverlay(bootOverlayFadeInput{
+						vmRunning:        latestState == vz.VZVirtualMachineStateRunning,
+						holdForFirstBoot: holdBootOverlay,
+						agentReady:       bootOverlayAgentReady,
+						paintProbeWorks:  bootOverlayPaintProbeWorks,
+						guestPainted:     bootOverlayGuestPainted,
+						heldFrames:       bootOverlayHoldFrames,
+						maxHoldFrames:    maxBootOverlayHoldFrames,
+					}) {
 						holdBootOverlay = false
-						overlayFadeStep = 15
+						overlayFadeStep = bootOverlayFadeFrames
 					}
 				}
 
@@ -2574,6 +2602,12 @@ func bootOverlayMessageForRun(rc vmrun.RunConfig, target vmSelection) (title, su
 	// automation strategy and the login watchdog.
 	if didInjectSucceedForVM(target) && !runWillResumeFromSuspend(rc, target) && !didShowFirstBootOverlayForVM(target) {
 		return "Preparing macOS", "Creating your account and signing in...", true
+	}
+	if !runWillResumeFromSuspend(rc, target) {
+		// A cold boot shows nothing at all for a long time — the guest
+		// framebuffer stays black well past the point where the VM reports
+		// Running. Say so instead of implying something is wrong.
+		return "Booting...", "Cold boot: the guest display can stay black for a minute or two.", false
 	}
 	return "Booting...", "", false
 }

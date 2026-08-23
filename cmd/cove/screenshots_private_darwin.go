@@ -15,9 +15,19 @@ import (
 )
 
 func (s *ControlServer) capturePrivateGraphicsDisplay() (image.Image, string) {
+	img, _, errMsg := s.capturePrivateGraphicsDisplayMode()
+	return img, errMsg
+}
+
+// capturePrivateGraphicsDisplayMode is capturePrivateGraphicsDisplay plus the
+// view it captured: "private-framebuffer" when the guest framebuffer subview
+// was found, "view-cache" when it fell back to caching the whole VM view.
+// Callers that must not see cove's own overlays (which are subviews of the VM
+// view, and so are included by the view-cache path) check the mode.
+func (s *ControlServer) capturePrivateGraphicsDisplayMode() (image.Image, string, string) {
 	state := s.captureState()
 	if state.vmView.ID == 0 {
-		return nil, "vm view not set"
+		return nil, "", "vm view not set"
 	}
 
 	var (
@@ -82,10 +92,10 @@ func (s *ControlServer) capturePrivateGraphicsDisplay() (image.Image, string) {
 	})
 
 	if errMsg != "" {
-		return nil, errMsg
+		return nil, mode, errMsg
 	}
 	if cgImage == 0 {
-		return nil, "private capture returned nil image"
+		return nil, mode, "private capture returned nil image"
 	}
 	defer coregraphics.CGImageRelease(cgImage)
 
@@ -94,7 +104,7 @@ func (s *ControlServer) capturePrivateGraphicsDisplay() (image.Image, string) {
 	}
 	img, err := capture.GoImageFromCGImage(cgImage, 0)
 	if err != nil {
-		return nil, err.Error()
+		return nil, mode, err.Error()
 	}
-	return img, ""
+	return img, mode, ""
 }

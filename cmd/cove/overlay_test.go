@@ -20,8 +20,10 @@ func TestBootOverlayMessage(t *testing.T) {
 	rc := vmrun.RunConfig{}
 	setActiveBootSessionMode(bootSessionModeNormal)
 	bootLoginScreenCredentials = loginScreenCredentials{}
+	// A cold boot (no suspend state) says so: the guest display stays black for
+	// a long time, but the overlay is not held for it.
 	title, subtitle, hold := bootOverlayMessageForRun(rc, target)
-	if title != "Booting..." || subtitle != "" || hold {
+	if title != "Booting..." || subtitle == "" || hold {
 		t.Fatalf("bootOverlayMessage() = %q, %q, %v", title, subtitle, hold)
 	}
 
@@ -66,7 +68,7 @@ func TestBootOverlayMessage(t *testing.T) {
 	// the VM is still provisioned.
 	markFirstBootOverlayShownForVM(target)
 	title, subtitle, hold = bootOverlayMessageForRun(rc, target)
-	if title != "Booting..." || subtitle != "" || hold {
+	if title != "Booting..." || subtitle == "" || hold {
 		t.Fatalf("bootOverlayMessage() after first boot = %q, %q, %v", title, subtitle, hold)
 	}
 	if !didInjectSucceedForVM(target) {
