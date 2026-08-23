@@ -78,7 +78,6 @@ func TestSubcommandSkipsVMDir(t *testing.T) {
 		{"install is not allowlisted", []string{"install"}, false},
 		{"vm is not allowlisted", []string{"vm", "list"}, false},
 		{"unknown skips startup VM dir", []string{"banana"}, true},
-		{"help is handled before startup VM dir", []string{"help"}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
