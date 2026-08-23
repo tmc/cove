@@ -137,6 +137,14 @@ func (s vmSelection) injectSucceededMarker() string {
 	return filepath.Join(s.Directory, ".inject-succeeded")
 }
 
+// firstBootOverlayMarker names the file recording that the first-boot
+// "Preparing macOS" overlay has already covered a completed first boot for this
+// VM. It is presentation state only: unlike injectSucceededMarker it says
+// nothing about whether the VM is provisioned.
+func (s vmSelection) firstBootOverlayMarker() string {
+	return filepath.Join(s.Directory, ".first-boot-overlay-shown")
+}
+
 func (s vmSelection) elevationLabel() string {
 	if s.Name != "" {
 		return s.Name

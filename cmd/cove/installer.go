@@ -151,6 +151,29 @@ func didInjectSucceedForVM(target vmSelection) bool {
 	return err == nil
 }
 
+// markFirstBootOverlayShownForVM records that the first-boot overlay has already
+// covered a completed first boot, so later launches of the same VM boot straight
+// to the guest display. This marker is separate from the inject-succeeded marker
+// on purpose: whether the overlay has been shown is a presentation detail, while
+// inject-succeeded is the provisioned-ness of the VM, read by `up`, `inject`, the
+// GUI automation strategy and the login watchdog.
+func markFirstBootOverlayShownForVM(target vmSelection) {
+	if err := os.WriteFile(target.firstBootOverlayMarker(), nil, 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: mark first-boot overlay shown: %v\n", err)
+	}
+}
+
+func clearFirstBootOverlayShownForVM(target vmSelection) {
+	os.Remove(target.firstBootOverlayMarker())
+}
+
+// didShowFirstBootOverlayForVM reports whether a completed first boot has already
+// been covered by the overlay for this VM.
+func didShowFirstBootOverlayForVM(target vmSelection) bool {
+	_, err := os.Stat(target.firstBootOverlayMarker())
+	return err == nil
+}
+
 // installerWindowTitle is the NSWindow title for the macOS installation
 // window. Includes the VM name when one is set so users running multiple
 // installs in parallel can tell windows apart.
@@ -433,8 +456,10 @@ func checkExistingVMWithForce(dir, diskName string, force bool) error {
 		if err := os.Remove(diskFile); err != nil {
 			return fmt.Errorf("remove existing disk: %w", err)
 		}
-		// Clear stale provisioning marker from previous install.
+		// Clear stale provisioning marker from previous install. The new install
+		// gets a genuine first boot, so let the overlay cover it again too.
 		clearInjectSucceeded()
+		clearFirstBootOverlayShownForVM(currentVMSelection())
 		return nil
 	}
 	return fmt.Errorf("vm disk already exists: %s (%d MB)\n\nTo install over this disk, use -force (THIS WILL DESTROY ALL DATA IN THE VM).\nTo use a different VM, use -vm <name>", diskFile, info.Size()/(1024*1024))

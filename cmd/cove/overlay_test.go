@@ -61,6 +61,19 @@ func TestBootOverlayMessage(t *testing.T) {
 	if err := os.Remove(suspendStatePathForVM(target.Directory)); err != nil {
 		t.Fatalf("remove suspend state: %v", err)
 	}
+	// Once a first boot has been covered, later cold boots of the same VM go
+	// straight to the guest display. The inject-succeeded marker still stands:
+	// the VM is still provisioned.
+	markFirstBootOverlayShownForVM(target)
+	title, subtitle, hold = bootOverlayMessageForRun(rc, target)
+	if title != "Booting..." || subtitle != "" || hold {
+		t.Fatalf("bootOverlayMessage() after first boot = %q, %q, %v", title, subtitle, hold)
+	}
+	if !didInjectSucceedForVM(target) {
+		t.Fatal("didInjectSucceedForVM() = false after first-boot overlay; provisioned-ness must survive")
+	}
+	clearFirstBootOverlayShownForVM(target)
+
 	if err := os.Remove(target.injectSucceededMarker()); err != nil {
 		t.Fatalf("remove inject marker: %v", err)
 	}
@@ -94,6 +107,50 @@ func TestBootOverlayReadyToFade(t *testing.T) {
 				t.Fatalf("bootOverlayReadyToFade(%q) = %v, want %v", tt.summary, got, tt.want)
 			}
 		})
+	}
+}
+
+// The fade release is deliberately looser than the first-boot record: a summary
+// that only proves the daemon is up releases the overlay but must not mark first
+// boot complete, since the injected daemon may not have created the account yet.
+func TestBootOverlayFirstBootComplete(t *testing.T) {
+	tests := []struct {
+		summary string
+		want    bool
+	}{
+		{summary: "Agent: connected", want: true},
+		{summary: "Agent: connected (no user session)", want: false},
+		{summary: "daemon connected; user agent unavailable", want: false},
+		{summary: "Agent: starting (first boot)", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.summary, func(t *testing.T) {
+			if got := bootOverlayFirstBootComplete(tt.summary); got != tt.want {
+				t.Fatalf("bootOverlayFirstBootComplete(%q) = %v, want %v", tt.summary, got, tt.want)
+			}
+		})
+	}
+}
+
+// The overlay marker and the provisioned-ness marker are independent files:
+// recording a shown overlay must never look like a provisioned VM, and clearing
+// it must never unprovision one.
+func TestFirstBootOverlayMarkerIndependentOfInjectMarker(t *testing.T) {
+	target := vmSelection{Directory: t.TempDir(), Name: "test"}
+	if target.firstBootOverlayMarker() == target.injectSucceededMarker() {
+		t.Fatal("first-boot overlay marker and inject marker share a path")
+	}
+	markFirstBootOverlayShownForVM(target)
+	if didInjectSucceedForVM(target) {
+		t.Fatal("didInjectSucceedForVM() = true after only marking the overlay")
+	}
+	markInjectSucceededForVM(target)
+	clearFirstBootOverlayShownForVM(target)
+	if !didInjectSucceedForVM(target) {
+		t.Fatal("didInjectSucceedForVM() = false after clearing the overlay marker")
+	}
+	if didShowFirstBootOverlayForVM(target) {
+		t.Fatal("didShowFirstBootOverlayForVM() = true after clear")
 	}
 }
 

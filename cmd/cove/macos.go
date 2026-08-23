@@ -82,6 +82,15 @@ func hasSuspendStateForVM(vmDirectory string) bool {
 	return true
 }
 
+// discardSuspendStateForVM removes both halves of a saved suspend: the state
+// file and the config fingerprint that describes it. The fingerprint only ever
+// describes one state file, so leaving it behind strands a stale device topology
+// for a state that no longer exists.
+func discardSuspendStateForVM(vmDirectory string) {
+	os.Remove(suspendStatePathForVM(vmDirectory))
+	os.Remove(suspendConfigPathForVM(vmDirectory))
+}
+
 func removeCorruptSuspendState(path string) {
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		fmt.Fprintf(os.Stderr, "warning: corrupt suspend state detected but could not be removed: %v\n", err)
@@ -269,13 +278,22 @@ func saveSuspendConfigForRun(rc vmrun.RunConfig, hc vmrun.HostConfig) {
 }
 
 func checkSuspendConfigMatchForRun(rc vmrun.RunConfig, hc vmrun.HostConfig) error {
-	data, err := os.ReadFile(suspendConfigPathForVM(hc.VMDir))
+	path := suspendConfigPathForVM(hc.VMDir)
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil // No saved config, skip check
+		if errors.Is(err, os.ErrNotExist) {
+			return nil // No saved config, nothing to compare against.
+		}
+		// Any other read failure means the guard cannot run. Report it rather
+		// than reporting a match: an unreadable fingerprint is not evidence that
+		// the device topology still matches, and restoring into a mismatched
+		// config fails deep inside Virtualization.framework with the opaque error
+		// this fingerprint exists to prevent.
+		return fmt.Errorf("read suspend config fingerprint %s: %w", path, err)
 	}
 	var saved suspendConfigFingerprint
 	if err := json.Unmarshal(data, &saved); err != nil {
-		return nil // Corrupt, skip check
+		return fmt.Errorf("suspend config fingerprint %s is corrupt: %w", path, err)
 	}
 	current := currentConfigFingerprintForRun(rc, hc)
 	var diffs []string
@@ -1615,8 +1633,15 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBund
 	// Setup cleanup on exit — save state if possible, otherwise hard stop.
 	var statusItem *VMStatusItemController
 	var appLoopStop atomic.Bool
+	// suspendSaved records that cleanup actually wrote a suspend state, and
+	// cleanupBegan/cleanupDone let the exit path wait for an in-flight cleanup.
+	// Without both, the exit path below would delete the state file cleanup just
+	// saved — and could do so while the save was still running.
+	var suspendSaved atomic.Bool
+	var cleanupBegan atomic.Bool
+	cleanupDone := make(chan struct{})
 	cleanup := func() {
-		appLoopStop.Store(true)
+		defer close(cleanupDone)
 		stopMonitor()
 		stopControlRuntimeInfrastructure(controlServer)
 		guiController.Shutdown()
@@ -1629,6 +1654,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBund
 				fmt.Printf("Suspend failed: %v, stopping VM...\n", err)
 				hardStopVM(vm, queue)
 			} else {
+				suspendSaved.Store(true)
 				fmt.Println("VM suspended")
 			}
 		} else {
@@ -1641,6 +1667,9 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBund
 			hardStopVM(vm, queue)
 		}
 		closeSerialOutputFile()
+		// Stop the event pump only once the suspend (or hard stop) has finished,
+		// so the exit path can never race the save it is about to inspect.
+		appLoopStop.Store(true)
 		postDummyEvent(app)
 	}
 	var cleanupOnce sync.Once
@@ -1648,6 +1677,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBund
 		stateUpdate.mu.Lock()
 		stateUpdate.signalCleanup = true
 		stateUpdate.mu.Unlock()
+		cleanupBegan.Store(true)
 		cleanupOnce.Do(cleanup)
 	}
 	shellQuit.Store(&quitRuntime)
@@ -1672,9 +1702,11 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBund
 						statusItem.UpdateState(state)
 					}
 					if terminate {
-						os.Remove(suspendStatePathForVM(hc.VMDir))
-						os.Remove(suspendConfigPathForVM(hc.VMDir))
-						clearInjectSucceeded()
+						// The guest stopped on its own: any saved state predates
+						// that shutdown and must not be restored. The VM stopping
+						// says nothing about whether it is provisioned, so the
+						// inject-succeeded marker is left alone.
+						discardSuspendStateForVM(hc.VMDir)
 						appLoopStop.Store(true)
 						postDummyEvent(app)
 						stateUpdate.mu.Unlock()
@@ -1698,9 +1730,18 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBund
 	if restoreTerminal != nil {
 		restoreTerminal()
 	}
-	os.Remove(suspendStatePathForVM(hc.VMDir))
-	os.Remove(suspendConfigPathForVM(hc.VMDir))
-	clearInjectSucceeded()
+	// Wait out an in-flight cleanup before deciding the fate of the suspend
+	// state: cleanup runs on the signal-handler goroutine and its saveMachineState
+	// has a 120s budget, so removing the file here unsynchronized could tear a
+	// save in progress.
+	if cleanupBegan.Load() {
+		<-cleanupDone
+	}
+	if !suspendSaved.Load() {
+		// No state was saved on this exit (hard stop, failed suspend, or a guest
+		// shutdown), so anything left on disk is stale.
+		discardSuspendStateForVM(hc.VMDir)
+	}
 	closeSerialOutputFile()
 	noteVMRuntimeState(target.Directory, "stopped")
 	fmt.Println("VM stopped")
@@ -2306,8 +2347,11 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 
 					}
 					if stateUpdate.terminate {
-						os.Remove(suspendStatePathForVM(hc.VMDir))
-						clearInjectSucceeded()
+						// The guest stopped on its own; discard the state and the
+						// fingerprint that describes it. Stopping is not evidence
+						// that the VM became unprovisioned, so the inject-succeeded
+						// marker is left alone.
+						discardSuspendStateForVM(hc.VMDir)
 						appLoopStop.Store(true)
 						stateUpdate.mu.Unlock()
 						removePauseOverlay()
@@ -2394,10 +2438,13 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 					if holdBootOverlay && bootOverlay.ID != 0 && overlayFadeStep == -1 && bootOverlayReadyToFade(subtitle) {
 						holdBootOverlay = false
 						overlayFadeStep = 15
-						// First boot completed: the injected provisioning has run and
-						// the agent is up. Drop the marker so later launches of this
-						// already-provisioned VM don't hold the overlay again.
-						clearInjectSucceededForVM(target)
+						// Record a completed first boot so later launches of this VM
+						// don't hold the overlay again. Only a fade that means the
+						// account exists counts: the hold also releases when the
+						// daemon reports in before provisioning has created it.
+						if bootOverlayFirstBootComplete(subtitle) {
+							markFirstBootOverlayShownForVM(target)
+						}
 					}
 				}
 
@@ -2505,8 +2552,12 @@ func bootOverlayMessageForRun(rc vmrun.RunConfig, target vmSelection) (title, su
 	// connects. The agent is injected by default, so a provisioned VM will connect.
 	// Skip the hold when this run resumes a saved suspend state: the guest is
 	// already past first boot (usually sitting at the desktop), so holding a
-	// dark "Preparing macOS" overlay over a live session is just wrong.
-	if didInjectSucceedForVM(target) && !runWillResumeFromSuspend(rc, target) {
+	// dark "Preparing macOS" overlay over a live session is just wrong. Skip it
+	// too once a first boot has already been covered, tracked by its own marker
+	// rather than by consuming the inject-succeeded marker — that one records
+	// that the VM is provisioned and is read by `up`, `inject`, the GUI
+	// automation strategy and the login watchdog.
+	if didInjectSucceedForVM(target) && !runWillResumeFromSuspend(rc, target) && !didShowFirstBootOverlayForVM(target) {
 		return "Preparing macOS", "Creating your account and signing in...", true
 	}
 	return "Booting...", "", false
@@ -2534,6 +2585,19 @@ func bootOverlayReadyToFade(agentSummary string) bool {
 	default:
 		return false
 	}
+}
+
+// bootOverlayFirstBootComplete reports whether agentSummary means first boot
+// genuinely finished — the user agent is up, which on the injected-provisioning
+// path implies the account was created and logged in.
+//
+// This is deliberately stricter than bootOverlayReadyToFade, which also releases
+// the hold for "no user session" and for a bare daemon connection. Those are
+// good enough to stop covering the screen, but they can be reported before the
+// injected daemon has created the account, so they must not record first boot as
+// done for later launches.
+func bootOverlayFirstBootComplete(agentSummary string) bool {
+	return agentSummary == "Agent: connected"
 }
 
 func currentVMViewSize(vmView vz.VZVirtualMachineView, fallback corefoundation.CGSize) corefoundation.CGSize {
