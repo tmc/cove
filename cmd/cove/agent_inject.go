@@ -15,6 +15,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -630,37 +631,68 @@ echo "Boot the VM with: cove%s run"
 	return errRestrictedNoElevation
 }
 
-// checkAgentAvailability runs in the background after VM start. It waits
-// for the guest to reach Running state, allows time for the OS to boot,
-// then tries to connect to the vz-agent with retries. If the agent is
-// not reachable after all attempts, it prints a hint.
+// Guest-agent availability polling budget. A cold-booting macOS guest can
+// take several minutes to reach launchd's daemon start, so the poll window is
+// generous and backs off rather than giving up after a handful of tries.
+var (
+	agentAvailabilityBootGrace   = 20 * time.Second
+	agentAvailabilityWindow      = 8 * time.Minute
+	agentAvailabilityMinInterval = 5 * time.Second
+	agentAvailabilityMaxInterval = 30 * time.Second
+)
+
+// shouldWarnAgentUnavailable reports whether the loud "agent is not running"
+// advice should be printed. A VM whose agent was verified at some point in
+// the past is assumed to still have it installed: failing to connect now is
+// transient (guest still booting, vsock not up yet), not evidence of absence.
+func shouldWarnAgentUnavailable(connected, previouslyVerified bool) bool {
+	return !connected && !previouslyVerified
+}
+
+// checkAgentAvailability runs in the background after VM start. It waits for
+// the guest to reach Running state, allows time for the OS to boot, then
+// polls for the vz-agent over a multi-minute window with backoff. It returns
+// early whenever the VM leaves the Running state.
 func checkAgentAvailability(target runtimeAgentAvailabilityTarget) {
+	checkAgentAvailabilityContext(context.Background(), target)
+}
+
+func checkAgentAvailabilityContext(ctx context.Context, target runtimeAgentAvailabilityTarget) {
 	if target == nil {
 		return
 	}
 
 	// Wait for the VM to reach Running state (up to 60s).
-	for i := 0; i < 120; i++ {
-		time.Sleep(500 * time.Millisecond)
+	running := false
+	for i := 0; i < 120 && !running; i++ {
+		if !agentAvailabilitySleep(ctx, 500*time.Millisecond) {
+			return
+		}
 		state, err := target.currentVMState()
 		if err != nil {
 			return
 		}
-		if state == vz.VZVirtualMachineStateRunning {
-			break
-		}
-		if state == vz.VZVirtualMachineStateStopped || state == vz.VZVirtualMachineStateError {
+		switch state {
+		case vz.VZVirtualMachineStateRunning:
+			running = true
+		case vz.VZVirtualMachineStateStopped, vz.VZVirtualMachineStateError:
 			return // VM stopped before we could check
 		}
 	}
+	if !running {
+		return
+	}
 
 	// Allow time for the guest OS to boot and launchd to start daemons.
-	time.Sleep(20 * time.Second)
+	if !agentAvailabilitySleep(ctx, agentAvailabilityBootGrace) {
+		return
+	}
 
-	// Retry agent connection a few times (launchd may still be starting).
-	for attempt := 0; attempt < 3; attempt++ {
-		_, err := target.getAgent()
-		if err == nil {
+	deadline := time.Now().Add(agentAvailabilityWindow)
+	interval := agentAvailabilityMinInterval
+	var lastErr error
+	for {
+		if _, err := target.getAgent(); err == nil {
 			vmDirectory := target.effectiveVMDir()
 			if err := agentstate.MarkVerified(vmDirectory, agentstate.DetectPlatform(vmDirectory), agentstate.SourceRuntime, time.Now()); err != nil && verbose {
 				fmt.Printf("warning: record guest agent capability: %v\n", err)
@@ -669,17 +701,47 @@ func checkAgentAvailability(target runtimeAgentAvailabilityTarget) {
 				fmt.Println("Guest agent: connected")
 			}
 			return
+		} else {
+			lastErr = err
 		}
-		time.Sleep(5 * time.Second)
+		if time.Now().After(deadline) {
+			break
+		}
+		// Stop polling as soon as the VM is no longer running.
+		state, err := target.currentVMState()
+		if err != nil {
+			return
+		}
+		if state != vz.VZVirtualMachineStateRunning && state != vz.VZVirtualMachineStateStarting {
+			return
+		}
+		if !agentAvailabilitySleep(ctx, interval) {
+			return
+		}
+		if interval < agentAvailabilityMaxInterval {
+			interval *= 2
+			if interval > agentAvailabilityMaxInterval {
+				interval = agentAvailabilityMaxInterval
+			}
+		}
+	}
+
+	vmDirectory := target.effectiveVMDir()
+	if !shouldWarnAgentUnavailable(false, agentstate.Verified(vmDirectory)) {
+		if verbose {
+			fmt.Printf("Guest agent: not reachable after %s; it was verified previously, assuming it is still starting (last error: %v)\n",
+				agentAvailabilityWindow, lastErr)
+		}
+		return
 	}
 
 	fmt.Println()
-	fmt.Println("Note: vz-agent is not running in this VM.")
+	fmt.Printf("Note: vz-agent did not respond within %s of boot.\n", agentAvailabilityWindow)
 	fmt.Println("  The agent enables remote command execution, file transfer, and SSH control.")
+	fmt.Println("  It has never connected for this VM, so it is likely not installed.")
 	fmt.Println()
 	exe := "./cove"
 	vmFlag := target.vmHintFlag()
-	vmDirectory := target.effectiveVMDir()
 	if agentstate.DetectPlatform(vmDirectory) == agentstate.PlatformMacOS {
 		fmt.Println("  To fix, stop the VM and re-provision:")
 		fmt.Println()
@@ -692,6 +754,18 @@ func checkAgentAvailability(target runtimeAgentAvailabilityTarget) {
 	fmt.Println()
 	fmt.Printf("    %s%s provision-agent\n", exe, vmFlag)
 	fmt.Println()
+}
+
+// agentAvailabilitySleep sleeps for d, reporting false if ctx was cancelled.
+func agentAvailabilitySleep(ctx context.Context, d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
 }
 
 // upgradeAgent builds a new vz-agent binary and deploys it to a running VM
