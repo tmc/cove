@@ -2379,6 +2379,10 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 					if holdBootOverlay && bootOverlay.ID != 0 && overlayFadeStep == -1 && bootOverlayReadyToFade(subtitle) {
 						holdBootOverlay = false
 						overlayFadeStep = 15
+						// First boot completed: the injected provisioning has run and
+						// the agent is up. Drop the marker so later launches of this
+						// already-provisioned VM don't hold the overlay again.
+						clearInjectSucceededForVM(target)
 					}
 				}
 
@@ -2484,10 +2488,22 @@ func bootOverlayMessageForRun(rc vmrun.RunConfig, target vmSelection) (title, su
 	// already-set-up VM it only lingers for the few seconds until the agent reports
 	// in; a hard timeout in the run loop guards the case where no agent ever
 	// connects. The agent is injected by default, so a provisioned VM will connect.
-	if didInjectSucceedForVM(target) {
+	// Skip the hold when this run resumes a saved suspend state: the guest is
+	// already past first boot (usually sitting at the desktop), so holding a
+	// dark "Preparing macOS" overlay over a live session is just wrong.
+	if didInjectSucceedForVM(target) && !runWillResumeFromSuspend(rc, target) {
 		return "Preparing macOS", "Creating your account and signing in...", true
 	}
 	return "Booting...", "", false
+}
+
+// runWillResumeFromSuspend reports whether this run restores the VM from a
+// saved suspend state instead of booting it.
+func runWillResumeFromSuspend(rc vmrun.RunConfig, target vmSelection) bool {
+	if rc.SkipResume || runRequiresColdBootForRun(rc) {
+		return false
+	}
+	return hasSuspendStateForVM(target.Directory)
 }
 
 func bootOverlayReadyToFade(agentSummary string) bool {

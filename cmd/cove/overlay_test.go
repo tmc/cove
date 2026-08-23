@@ -48,6 +48,18 @@ func TestBootOverlayMessage(t *testing.T) {
 	if title != "Preparing macOS" || subtitle == "" || !hold {
 		t.Fatalf("bootOverlayMessage() injected first boot = %q, %q, %v", title, subtitle, hold)
 	}
+	// Resuming a saved suspend state means the guest is already past first boot,
+	// so the overlay must not be held over a live session.
+	if err := os.WriteFile(suspendStatePathForVM(target.Directory), []byte("state"), 0644); err != nil {
+		t.Fatalf("write suspend state: %v", err)
+	}
+	title, subtitle, hold = bootOverlayMessageForRun(rc, target)
+	if title != "Booting..." || subtitle != "" || hold {
+		t.Fatalf("bootOverlayMessage() resume = %q, %q, %v", title, subtitle, hold)
+	}
+	if err := os.Remove(suspendStatePathForVM(target.Directory)); err != nil {
+		t.Fatalf("remove suspend state: %v", err)
+	}
 	if err := os.Remove(target.injectSucceededMarker()); err != nil {
 		t.Fatalf("remove inject marker: %v", err)
 	}
