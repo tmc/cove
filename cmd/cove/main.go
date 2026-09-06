@@ -128,6 +128,10 @@ var (
 	windowsGraphicsMode string
 	// Windows VM backend.
 	windowsBackendMode string
+	// Windows QEMU guest display geometry, WxH.
+	windowsDisplaySizeFlag string
+	// Host directory shared with the Windows guest over SMB.
+	windowsSharedDirFlag string
 	// Experimental Windows serial port device.
 	windowsSerialMode string
 	// Experimental Windows EFI ROM image.
@@ -204,7 +208,7 @@ func init() {
 	flag.BoolVar(&headlessMode, "headless", false, "run without GUI window")
 
 	flag.BoolVar(&linuxMode, "linux", false, "run a Linux VM instead of macOS")
-	flag.BoolVar(&windowsMode, "windows", false, "run a Windows ARM64 VM instead of macOS (experimental)")
+	flag.BoolVar(&windowsMode, "windows", false, "run a Windows ARM64 VM instead of macOS")
 	flag.BoolVar(&linuxDesktop, "desktop", false, "use Ubuntu Desktop ISO (implies -linux)")
 	flag.BoolVar(&nixosMode, "nixos", false, "install or run a NixOS Linux VM")
 	flag.StringVar(&linuxDistro, "distro", "ubuntu", "Linux distro: ubuntu, debian, fedora, alpine, nixos")
@@ -274,7 +278,9 @@ func init() {
 	flag.BoolVar(&enableRosetta, "rosetta", true, "enable Rosetta translation support when running Linux VMs")
 	// Clipboard sharing
 	flag.BoolVar(&enableClipboard, "clipboard", true, "enable host↔guest clipboard sharing via SPICE agent (requires spice-vdagent in guest; macOS 15+ for macOS guests)")
-	flag.StringVar(&windowsBackendMode, "windows-backend", "vz", "Windows VM backend: vz or qemu")
+	flag.StringVar(&windowsBackendMode, "windows-backend", "qemu", "Windows VM backend: qemu or vz")
+	flag.StringVar(&windowsDisplaySizeFlag, "display-size", "", "Windows guest display size WxH (default 1280x800; overrides COVE_QEMU_DISPLAY_SIZE)")
+	flag.StringVar(&windowsSharedDirFlag, "shared-dir", "", "host directory shared with the Windows guest over SMB (overrides COVE_QEMU_SMB_DIR)")
 	flag.StringVar(&windowsGraphicsMode, "windows-graphics", "virtio", "Windows graphics mode: virtio or linear-framebuffer")
 	flag.StringVar(&windowsSerialMode, "windows-serial", "virtio", "Windows serial port: virtio, pl011, or 16550")
 	flag.StringVar(&windowsEFIRomPath, "windows-efi-rom", "", "Windows EFI ROM image for private VZEFIBootLoader experiment")
@@ -993,13 +999,12 @@ Linux VM:
   cove up -linux -user me                                # Server: install + boot
   cove up -linux -desktop -user me                       # Desktop: install + boot
 
-Windows VM (experimental):
+Windows VM (QEMU/HVF backend by default):
+  cove doctor qemu                                      # check QEMU/HVF prerequisites
   cove install -windows -iso /path/to/Win11_ARM64.iso
   cove run -windows
-  cove run -windows -windows-graphics linear-framebuffer # use private framebuffer experiment
-  cove doctor qemu                                      # check QEMU/HVF prerequisites
-  cove install -windows -windows-backend qemu -iso /path/to/Win11_ARM64.iso
-  cove run -windows -windows-backend qemu
+  cove run -windows -display-size 1920x1200 -shared-dir ~/share
+  cove run -windows -windows-backend vz                 # experimental Virtualization.framework backend
 
 Volume Mounting (-vol flag):
   Docker-style volume mounts. Format: /host/path[:tag][:ro|rw][:opt=val,...]
@@ -1118,6 +1123,11 @@ func validateLaunchOptions() error {
 	}
 	if _, err := parseWindowsBackend(windowsBackendMode); err != nil {
 		return err
+	}
+	if s := strings.TrimSpace(windowsDisplaySizeFlag); s != "" {
+		if _, _, err := parseDisplaySize(s); err != nil {
+			return fmt.Errorf("-display-size: %w", err)
+		}
 	}
 	if _, err := parseWindowsGraphicsMode(windowsGraphicsMode); err != nil {
 		return err

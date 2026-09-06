@@ -28,12 +28,12 @@ const (
 
 func parseWindowsBackend(s string) (windowsBackend, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "", string(windowsBackendVZ), "virtualization":
-		return windowsBackendVZ, nil
-	case string(windowsBackendQEMU):
+	case "", string(windowsBackendQEMU):
 		return windowsBackendQEMU, nil
+	case string(windowsBackendVZ), "virtualization":
+		return windowsBackendVZ, nil
 	default:
-		return "", fmt.Errorf("invalid -windows-backend %q (must be vz or qemu)", s)
+		return "", fmt.Errorf("invalid -windows-backend %q (must be qemu or vz)", s)
 	}
 }
 
@@ -58,6 +58,7 @@ type windowsQEMUConfig struct {
 	InputDevice          string
 	Nodefaults           bool
 	EnableClipboard      bool
+	DisplaySize          string
 	SMBSharedDirectory   string
 	SerialOutput         string
 	SerialLogPath        string
@@ -281,7 +282,10 @@ func windowsQEMUConfigFromRun(rc vmrun.RunConfig, hc vmrun.HostConfig, install b
 	if !flagWasProvided(flag.CommandLine, "serial") {
 		serialOutput = serialLogPath
 	}
-	smbSharedDirectory, err := windowsQEMUSMBSharedDirectoryFromEnv()
+	// Values recorded by an earlier install or run of this VM outrank the
+	// environment and the built-in defaults, so a later `cove run` reuses them.
+	persisted := qemuMetadataForVMDir(hc.VMDir)
+	smbSharedDirectory, err := windowsQEMUSharedDirectory(windowsSharedDirFlag, persisted.SMBSharedDirectory)
 	if err != nil {
 		return windowsQEMUConfig{}, err
 	}
@@ -304,6 +308,7 @@ func windowsQEMUConfigFromRun(rc vmrun.RunConfig, hc vmrun.HostConfig, install b
 		InputDevice:         windowsQEMUInputDeviceFromEnv(),
 		Nodefaults:          windowsQEMUNodefaultsFromEnv(),
 		EnableClipboard:     rc.EnableClipboard,
+		DisplaySize:         windowsQEMUDisplaySize(windowsDisplaySizeFlag, persisted.DisplaySize),
 		SMBSharedDirectory:  smbSharedDirectory,
 		SerialOutput:        serialOutput,
 		SerialLogPath:       serialLogPath,
@@ -773,7 +778,7 @@ func windowsQEMUArgs(cfg windowsQEMUConfig) ([]string, error) {
 			return nil, fmt.Errorf("stat Windows ISO: %w", err)
 		}
 	}
-	displayArgs, err := windowsQEMUDisplayDeviceArgs(cfg.DisplayDevice)
+	displayArgs, err := windowsQEMUDisplayDeviceArgsSize(cfg.DisplayDevice, windowsQEMUDisplaySizeArgFor(cfg.DisplaySize))
 	if err != nil {
 		return nil, err
 	}
@@ -858,7 +863,11 @@ func windowsQEMUClipboardArgs() []string {
 }
 
 func windowsQEMUDisplayDeviceArgs(device string) ([]string, error) {
-	virtioGPU := "virtio-gpu-pci," + windowsQEMUDisplaySizeArg()
+	return windowsQEMUDisplayDeviceArgsSize(device, windowsQEMUDisplaySizeArg())
+}
+
+func windowsQEMUDisplayDeviceArgsSize(device, sizeArg string) ([]string, error) {
+	virtioGPU := "virtio-gpu-pci," + sizeArg
 	switch strings.ToLower(strings.TrimSpace(device)) {
 	case "", "ramfb":
 		return []string{"-device", "ramfb"}, nil
@@ -878,21 +887,54 @@ func windowsQEMUDisplayDeviceArgs(device string) ([]string, error) {
 	}
 }
 
-func windowsQEMUDisplaySizeArg() string {
-	s := strings.TrimSpace(os.Getenv("COVE_QEMU_DISPLAY_SIZE"))
-	if s == "" {
-		return "xres=1280,yres=800"
-	}
-	w, h, ok := strings.Cut(strings.ToLower(s), "x")
+// windowsQEMUDefaultDisplaySize is the guest display geometry used when
+// neither -display-size, the VM metadata, nor COVE_QEMU_DISPLAY_SIZE applies.
+const windowsQEMUDefaultDisplaySize = "1280x800"
+
+// parseDisplaySize parses a WxH display geometry such as "1440x900".
+func parseDisplaySize(s string) (width, height int, err error) {
+	trimmed := strings.ToLower(strings.TrimSpace(s))
+	w, h, ok := strings.Cut(trimmed, "x")
 	if !ok {
-		return "xres=1280,yres=800"
+		return 0, 0, fmt.Errorf("invalid display size %q (must be WxH, for example 1280x800)", s)
 	}
-	width, errW := strconv.Atoi(strings.TrimSpace(w))
-	height, errH := strconv.Atoi(strings.TrimSpace(h))
-	if errW != nil || errH != nil || width < 640 || height < 480 {
-		return "xres=1280,yres=800"
+	width, err = strconv.Atoi(strings.TrimSpace(w))
+	if err != nil || width <= 0 {
+		return 0, 0, fmt.Errorf("invalid display size %q (width must be a positive integer)", s)
+	}
+	height, err = strconv.Atoi(strings.TrimSpace(h))
+	if err != nil || height <= 0 {
+		return 0, 0, fmt.Errorf("invalid display size %q (height must be a positive integer)", s)
+	}
+	return width, height, nil
+}
+
+// windowsQEMUDisplaySize resolves the guest display geometry from, in order of
+// precedence, the -display-size flag, the size persisted in the VM metadata,
+// COVE_QEMU_DISPLAY_SIZE, and the built-in default. Unparseable values are
+// skipped; the flag is validated when it is parsed.
+func windowsQEMUDisplaySize(flagValue, persisted string) string {
+	for _, s := range []string{flagValue, persisted, os.Getenv("COVE_QEMU_DISPLAY_SIZE")} {
+		width, height, err := parseDisplaySize(s)
+		if err != nil {
+			continue
+		}
+		return fmt.Sprintf("%dx%d", width, height)
+	}
+	return windowsQEMUDefaultDisplaySize
+}
+
+// windowsQEMUDisplaySizeArgFor renders a WxH size as virtio-gpu device options.
+func windowsQEMUDisplaySizeArgFor(size string) string {
+	width, height, err := parseDisplaySize(size)
+	if err != nil || width < 640 || height < 480 {
+		width, height, _ = parseDisplaySize(windowsQEMUDefaultDisplaySize)
 	}
 	return fmt.Sprintf("xres=%d,yres=%d", width, height)
+}
+
+func windowsQEMUDisplaySizeArg() string {
+	return windowsQEMUDisplaySizeArgFor(windowsQEMUDisplaySize("", ""))
 }
 
 func windowsQEMUInputDeviceFromEnv() string {
@@ -1000,25 +1042,39 @@ func pickFreeLocalTCPPort() (int, error) {
 	return addr.Port, nil
 }
 
-func windowsQEMUSMBSharedDirectoryFromEnv() (string, error) {
-	path := strings.TrimSpace(os.Getenv("COVE_QEMU_SMB_DIR"))
-	if path == "" {
-		return "", nil
+// windowsQEMUSharedDirectory resolves the host directory shared with the guest
+// over SMB from, in order of precedence, the -shared-dir flag, the directory
+// persisted in the VM metadata, and COVE_QEMU_SMB_DIR. It returns "" when none
+// is set.
+func windowsQEMUSharedDirectory(flagValue, persisted string) (string, error) {
+	for _, src := range []struct{ name, path string }{
+		{"-shared-dir", flagValue},
+		{"qemu/metadata.json smbSharedDirectory", persisted},
+		{"COVE_QEMU_SMB_DIR", os.Getenv("COVE_QEMU_SMB_DIR")},
+	} {
+		path := strings.TrimSpace(src.path)
+		if path == "" {
+			continue
+		}
+		return validateWindowsQEMUSharedDirectory(src.name, path)
 	}
-	path = expandTilde(path)
-	abs, err := filepath.Abs(path)
+	return "", nil
+}
+
+func validateWindowsQEMUSharedDirectory(source, path string) (string, error) {
+	abs, err := filepath.Abs(expandTilde(path))
 	if err != nil {
-		return "", fmt.Errorf("COVE_QEMU_SMB_DIR: %w", err)
+		return "", fmt.Errorf("%s: %w", source, err)
 	}
 	info, err := os.Stat(abs)
 	if err != nil {
-		return "", fmt.Errorf("COVE_QEMU_SMB_DIR: %w", err)
+		return "", fmt.Errorf("%s: %w", source, err)
 	}
 	if !info.IsDir() {
-		return "", fmt.Errorf("COVE_QEMU_SMB_DIR: %s is not a directory", abs)
+		return "", fmt.Errorf("%s: %s is not a directory", source, abs)
 	}
 	if strings.Contains(abs, ",") {
-		return "", fmt.Errorf("COVE_QEMU_SMB_DIR: %s contains comma, which qemu -netdev user cannot parse", abs)
+		return "", fmt.Errorf("%s: %s contains comma, which qemu -netdev user cannot parse", source, abs)
 	}
 	return abs, nil
 }
@@ -1069,6 +1125,7 @@ type windowsQEMUMetadata struct {
 	DiskFormat           string   `json:"diskFormat"`
 	ISOPath              string   `json:"isoPath,omitempty"`
 	Display              string   `json:"display"`
+	DisplaySize          string   `json:"displaySize,omitempty"`
 	InputDevice          string   `json:"inputDevice,omitempty"`
 	Clipboard            bool     `json:"clipboard"`
 	SMBSharedDirectory   string   `json:"smbSharedDirectory,omitempty"`
@@ -1137,6 +1194,7 @@ func writeWindowsQEMUMetadata(path string, cfg windowsQEMUConfig, args []string)
 		DiskFormat:           cfg.DiskFormat,
 		ISOPath:              cfg.ISOPath,
 		Display:              cfg.DisplayDevice,
+		DisplaySize:          cfg.DisplaySize,
 		InputDevice:          cfg.InputDevice,
 		Clipboard:            cfg.EnableClipboard,
 		SMBSharedDirectory:   cfg.SMBSharedDirectory,

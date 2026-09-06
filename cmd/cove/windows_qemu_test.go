@@ -18,11 +18,12 @@ func TestParseWindowsBackend(t *testing.T) {
 		in   string
 		want windowsBackend
 	}{
-		{name: "default", in: "", want: windowsBackendVZ},
+		{name: "default", in: "", want: windowsBackendQEMU},
 		{name: "vz", in: "vz", want: windowsBackendVZ},
 		{name: "virtualization", in: "virtualization", want: windowsBackendVZ},
 		{name: "qemu", in: "qemu", want: windowsBackendQEMU},
 		{name: "trim case", in: " QEMU ", want: windowsBackendQEMU},
+		{name: "trim case vz", in: " VZ ", want: windowsBackendVZ},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := parseWindowsBackend(tt.in)
@@ -685,6 +686,183 @@ func TestWindowsQEMUMachineArg(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := windowsQEMUMachineArg(tt.memoryGB); got != tt.want {
 				t.Fatalf("windowsQEMUMachineArg(%d) = %q, want %q", tt.memoryGB, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseDisplaySize(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		in      string
+		wantW   int
+		wantH   int
+		wantErr bool
+	}{
+		{name: "plain", in: "1280x800", wantW: 1280, wantH: 800},
+		{name: "upper", in: "1920X1200", wantW: 1920, wantH: 1200},
+		{name: "spaces", in: " 640 x 480 ", wantW: 640, wantH: 480},
+		{name: "empty", in: "", wantErr: true},
+		{name: "no separator", in: "1280", wantErr: true},
+		{name: "not a number", in: "wide x tall", wantErr: true},
+		{name: "zero width", in: "0x800", wantErr: true},
+		{name: "negative height", in: "1280x-800", wantErr: true},
+		{name: "trailing junk", in: "1280x800p", wantErr: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			w, h, err := parseDisplaySize(tt.in)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("parseDisplaySize(%q) = %d, %d, want error", tt.in, w, h)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseDisplaySize(%q): %v", tt.in, err)
+			}
+			if w != tt.wantW || h != tt.wantH {
+				t.Fatalf("parseDisplaySize(%q) = %d, %d, want %d, %d", tt.in, w, h, tt.wantW, tt.wantH)
+			}
+		})
+	}
+}
+
+func TestWindowsQEMUDisplaySizePrecedence(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		flag      string
+		persisted string
+		env       string
+		want      string
+	}{
+		{name: "default", want: "1280x800"},
+		{name: "env only", env: "1600x1000", want: "1600x1000"},
+		{name: "persisted beats env", persisted: "1440x900", env: "1600x1000", want: "1440x900"},
+		{name: "flag beats persisted", flag: "1920x1200", persisted: "1440x900", env: "1600x1000", want: "1920x1200"},
+		{name: "flag beats default", flag: "1024x768", want: "1024x768"},
+		{name: "bad flag falls through", flag: "wide", persisted: "1440x900", want: "1440x900"},
+		{name: "bad persisted falls through", persisted: "wide", env: "1600x1000", want: "1600x1000"},
+		{name: "bad env falls back to default", env: "wide", want: "1280x800"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("COVE_QEMU_DISPLAY_SIZE", tt.env)
+			if got := windowsQEMUDisplaySize(tt.flag, tt.persisted); got != tt.want {
+				t.Fatalf("windowsQEMUDisplaySize(%q, %q) = %q, want %q", tt.flag, tt.persisted, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestWindowsQEMUSharedDirectoryPrecedence(t *testing.T) {
+	flagDir := t.TempDir()
+	persistedDir := t.TempDir()
+	envDir := t.TempDir()
+	for _, tt := range []struct {
+		name      string
+		flag      string
+		persisted string
+		env       string
+		want      string
+	}{
+		{name: "unset"},
+		{name: "env only", env: envDir, want: envDir},
+		{name: "persisted beats env", persisted: persistedDir, env: envDir, want: persistedDir},
+		{name: "flag beats persisted", flag: flagDir, persisted: persistedDir, env: envDir, want: flagDir},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("COVE_QEMU_SMB_DIR", tt.env)
+			got, err := windowsQEMUSharedDirectory(tt.flag, tt.persisted)
+			if err != nil {
+				t.Fatalf("windowsQEMUSharedDirectory: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("windowsQEMUSharedDirectory(%q, %q) = %q, want %q", tt.flag, tt.persisted, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestWindowsQEMUSharedDirectoryRejectsBadPaths(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "not-a-dir")
+	if err := os.WriteFile(file, nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name string
+		flag string
+		want string
+	}{
+		{name: "missing", flag: filepath.Join(dir, "absent"), want: "-shared-dir"},
+		{name: "not a directory", flag: file, want: "is not a directory"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("COVE_QEMU_SMB_DIR", "")
+			_, err := windowsQEMUSharedDirectory(tt.flag, "")
+			if err == nil {
+				t.Fatalf("windowsQEMUSharedDirectory(%q) succeeded", tt.flag)
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("windowsQEMUSharedDirectory(%q) error = %v, want %q", tt.flag, err, tt.want)
+			}
+		})
+	}
+}
+
+func TestWindowsQEMUMetadataDisplaySizeRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	qemuDir := filepath.Join(dir, "qemu")
+	if err := os.MkdirAll(qemuDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	shared := t.TempDir()
+	cfg := windowsQEMUConfig{
+		DiskFormat:         "qcow2",
+		DisplayDevice:      "ramfb",
+		DisplaySize:        "1920x1200",
+		SMBSharedDirectory: shared,
+		MonitorSockPath:    filepath.Join(qemuDir, "monitor.sock"),
+	}
+	if err := writeWindowsQEMUMetadata(filepath.Join(qemuDir, "metadata.json"), cfg, nil); err != nil {
+		t.Fatalf("writeWindowsQEMUMetadata: %v", err)
+	}
+	got := qemuMetadataForVMDir(dir)
+	if got.DisplaySize != cfg.DisplaySize {
+		t.Fatalf("metadata DisplaySize = %q, want %q", got.DisplaySize, cfg.DisplaySize)
+	}
+	if got.SMBSharedDirectory != shared {
+		t.Fatalf("metadata SMBSharedDirectory = %q, want %q", got.SMBSharedDirectory, shared)
+	}
+
+	// A later run with no flag and no environment reuses the persisted values.
+	t.Setenv("COVE_QEMU_DISPLAY_SIZE", "")
+	t.Setenv("COVE_QEMU_SMB_DIR", "")
+	if size := windowsQEMUDisplaySize("", got.DisplaySize); size != cfg.DisplaySize {
+		t.Fatalf("resolved display size = %q, want %q", size, cfg.DisplaySize)
+	}
+	resolved, err := windowsQEMUSharedDirectory("", got.SMBSharedDirectory)
+	if err != nil {
+		t.Fatalf("windowsQEMUSharedDirectory: %v", err)
+	}
+	if resolved != shared {
+		t.Fatalf("resolved shared dir = %q, want %q", resolved, shared)
+	}
+}
+
+func TestWindowsQEMUDisplaySizeArgFor(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "valid", in: "1920x1200", want: "xres=1920,yres=1200"},
+		{name: "default", in: "1280x800", want: "xres=1280,yres=800"},
+		{name: "too small", in: "320x240", want: "xres=1280,yres=800"},
+		{name: "unparseable", in: "wide", want: "xres=1280,yres=800"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := windowsQEMUDisplaySizeArgFor(tt.in); got != tt.want {
+				t.Fatalf("windowsQEMUDisplaySizeArgFor(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
 	}

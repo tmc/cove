@@ -60,6 +60,8 @@ type runtimeOptions struct {
 	CPUExplicit bool
 
 	WindowsBackendMode  string
+	WindowsDisplaySize  string
+	WindowsSharedDir    string
 	WindowsGraphicsMode string
 	WindowsSerialMode   string
 	WindowsEFIRomPath   string
@@ -158,6 +160,8 @@ func currentRuntimeOptions() runtimeOptions {
 		CPUExplicit: cpuExplicit,
 
 		WindowsBackendMode:  windowsBackendMode,
+		WindowsDisplaySize:  windowsDisplaySizeFlag,
+		WindowsSharedDir:    windowsSharedDirFlag,
 		WindowsGraphicsMode: windowsGraphicsMode,
 		WindowsSerialMode:   windowsSerialMode,
 		WindowsEFIRomPath:   windowsEFIRomPath,

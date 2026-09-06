@@ -146,7 +146,7 @@ func TestParseUpFlagsWindowsRejectsSetupScript(t *testing.T) {
 	if err == nil {
 		t.Fatal("parseUpFlags succeeded, want error")
 	}
-	if !strings.Contains(err.Error(), "does not support -setup-script") {
+	if !strings.Contains(err.Error(), "does not support -setup-script") || !strings.Contains(err.Error(), "-vzscripts") {
 		t.Fatalf("error = %v, want setup-script rejection", err)
 	}
 }
@@ -249,5 +249,61 @@ func TestParseUpFlagsLinuxDefaultsPassword(t *testing.T) {
 	}
 	if cfg.password != "alice" {
 		t.Errorf("cfg.password = %q, want %q (default = user for linux)", cfg.password, "alice")
+	}
+}
+
+func TestParseUpFlagsWindowsDefaultsAndDisplayFlags(t *testing.T) {
+	home := t.TempDir()
+	shared := t.TempDir()
+	t.Setenv("HOME", home)
+	restoreVMGlobals(t)
+	// An unset -windows-backend must resolve to the qemu default.
+	saved := windowsBackendMode
+	windowsBackendMode = ""
+	t.Cleanup(func() { windowsBackendMode = saved })
+
+	cfg, err := parseUpFlags(commandTestEnv(), []string{
+		"-windows",
+		"-iso", filepath.Join(home, "Win11.iso"),
+		"-user", "cove",
+		"-password", "secret",
+		"-headless",
+		"-display-size", "1920x1200",
+		"-shared-dir", shared,
+	})
+	if err != nil {
+		t.Fatalf("parseUpFlags: %v", err)
+	}
+	backend, err := parseWindowsBackend(cfg.windowsBackend)
+	if err != nil {
+		t.Fatalf("parseWindowsBackend(%q): %v", cfg.windowsBackend, err)
+	}
+	if backend != windowsBackendQEMU {
+		t.Fatalf("backend = %q, want %q", backend, windowsBackendQEMU)
+	}
+	if cfg.displaySize != "1920x1200" {
+		t.Fatalf("displaySize = %q, want 1920x1200", cfg.displaySize)
+	}
+	if cfg.sharedDir != shared {
+		t.Fatalf("sharedDir = %q, want %q", cfg.sharedDir, shared)
+	}
+}
+
+func TestParseUpFlagsWindowsRejectsBadDisplaySize(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	restoreVMGlobals(t)
+
+	_, err := parseUpFlags(commandTestEnv(), []string{
+		"-windows",
+		"-user", "cove",
+		"-password", "secret",
+		"-display-size", "1920by1200",
+	})
+	if err == nil {
+		t.Fatal("parseUpFlags succeeded, want error")
+	}
+	if !strings.Contains(err.Error(), "-display-size") {
+		t.Fatalf("error = %v, want display-size rejection", err)
 	}
 }

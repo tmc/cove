@@ -45,6 +45,8 @@ type upConfig struct {
 	linux                    bool
 	windows                  bool
 	windowsBackend           string
+	displaySize              string
+	sharedDir                string
 	isoPath                  string
 	desktop                  bool
 	desktopInstaller         string
@@ -125,7 +127,12 @@ func parseUpFlags(env commandEnv, args []string) (upConfig, error) {
 			return upConfig{}, err
 		}
 		if cfg.setupScriptPath != "" {
-			return upConfig{}, fmt.Errorf("cove up -windows does not support -setup-script yet; use -vzscripts")
+			return upConfig{}, fmt.Errorf("cove up -windows does not support -setup-script; use -vzscripts <recipe> instead")
+		}
+		if s := strings.TrimSpace(cfg.displaySize); s != "" {
+			if _, _, err := parseDisplaySize(s); err != nil {
+				return upConfig{}, fmt.Errorf("-display-size: %w", err)
+			}
 		}
 	}
 	if *headless {
@@ -198,6 +205,8 @@ func newUpFlagSet(errOut io.Writer) (*flag.FlagSet, *upConfig, *bool) {
 		linux:          linuxMode,
 		windows:        windowsMode,
 		windowsBackend: windowsBackendMode,
+		displaySize:    windowsDisplaySizeFlag,
+		sharedDir:      windowsSharedDirFlag,
 		isoPath:        isoPath,
 		distro:         linuxDistro,
 	}
@@ -224,7 +233,9 @@ func newUpFlagSet(errOut io.Writer) (*flag.FlagSet, *upConfig, *bool) {
 	fs.StringVar(&cfg.vmName, "vm", "", "VM name (default: active VM or 'default')")
 	fs.BoolVar(&cfg.linux, "linux", cfg.linux, "Install a Linux VM instead of macOS")
 	fs.BoolVar(&cfg.windows, "windows", cfg.windows, "Install a Windows ARM64 VM instead of macOS")
-	fs.StringVar(&cfg.windowsBackend, "windows-backend", cfg.windowsBackend, "Windows VM backend: vz or qemu")
+	fs.StringVar(&cfg.windowsBackend, "windows-backend", cfg.windowsBackend, "Windows VM backend: qemu or vz")
+	fs.StringVar(&cfg.displaySize, "display-size", cfg.displaySize, "Windows guest display size WxH (default 1280x800; overrides COVE_QEMU_DISPLAY_SIZE)")
+	fs.StringVar(&cfg.sharedDir, "shared-dir", cfg.sharedDir, "host directory shared with the Windows guest over SMB (overrides COVE_QEMU_SMB_DIR)")
 	fs.StringVar(&cfg.isoPath, "iso", cfg.isoPath, "Path to Windows ISO when using -windows")
 	fs.BoolVar(&cfg.desktop, "desktop", false, "Use Ubuntu Desktop ISO (implies -linux)")
 	fs.StringVar(&cfg.desktopInstaller, "desktop-installer", "oem", "ubuntu desktop install path: 'oem' (default Desktop ISO autoinstall) or 'server' (boot Server ISO + apt install ubuntu-desktop)")
@@ -287,7 +298,7 @@ Examples:
   cove up -linux -user tmc -password <password>                # Linux with custom user
   cove up -linux -desktop -user me                         # Ubuntu Desktop
   cove up -linux -headless -cpu 4 -memory 8                # Headless Linux Server
-  cove up -windows -windows-backend qemu -iso ~/Win11_ARM64.iso -user me
+  cove up -windows -iso ~/Win11_ARM64.iso -user me          # Windows (QEMU/HVF)
 
 Linux username/password defaults are for disposable local VMs. Pass -user and
 -password for reusable images, remote access, or shared runners.
@@ -322,6 +333,8 @@ func runtimeOptionsForUp(cfg upConfig) runtimeOptions {
 	opts.Linux = cfg.linux
 	opts.Windows = cfg.windows
 	opts.WindowsBackendMode = cfg.windowsBackend
+	opts.WindowsDisplaySize = cfg.displaySize
+	opts.WindowsSharedDir = cfg.sharedDir
 	opts.ProvisionUser = cfg.user
 	opts.ProvisionPassword = cfg.password
 	opts.ProvisionAdmin = true
@@ -360,6 +373,8 @@ func withUpRuntimeOptions(opts runtimeOptions, fn func() error) error {
 	linuxMode = opts.Linux
 	windowsMode = opts.Windows
 	windowsBackendMode = opts.WindowsBackendMode
+	windowsDisplaySizeFlag = opts.WindowsDisplaySize
+	windowsSharedDirFlag = opts.WindowsSharedDir
 	provisionUser = opts.ProvisionUser
 	provisionPassword = opts.ProvisionPassword
 	provisionAdmin = opts.ProvisionAdmin
@@ -393,6 +408,8 @@ func withUpRuntimeOptions(opts runtimeOptions, fn func() error) error {
 		linuxMode = prev.Linux
 		windowsMode = prev.Windows
 		windowsBackendMode = prev.WindowsBackendMode
+		windowsDisplaySizeFlag = prev.WindowsDisplaySize
+		windowsSharedDirFlag = prev.WindowsSharedDir
 		provisionUser = prev.ProvisionUser
 		provisionPassword = prev.ProvisionPassword
 		provisionAdmin = prev.ProvisionAdmin

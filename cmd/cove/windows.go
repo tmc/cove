@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/tmc/apple/dispatch"
 	"github.com/tmc/apple/foundation"
@@ -357,13 +358,26 @@ func loadOrCreateWindowsMachineIdentifier() vz.VZGenericMachineIdentifier {
 	return machineID
 }
 
+// warnWindowsVZBackend reports once per process that the vz Windows backend is
+// experimental. Windows expects a linear-framebuffer GOP, which
+// Virtualization.framework does not expose publicly, so the guest boots without
+// a usable display.
+func warnWindowsVZBackend(w io.Writer) {
+	windowsVZBackendWarning.Do(func() {
+		fmt.Fprintln(w, "windows-backend=vz is experimental: Windows needs a linear-framebuffer GOP that Virtualization.framework does not expose publicly; use -windows-backend qemu")
+	})
+}
+
+var windowsVZBackendWarning sync.Once
+
 func runWindowsVMWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig, bundle *RunBundle, metrics runMetricRecorder) error {
 	if backend, err := parseWindowsBackend(rc.WindowsBackendMode); err != nil {
 		return err
 	} else if backend == windowsBackendQEMU {
 		return runWindowsQEMUVMWithConfigLocked(rc, hc)
 	}
-	fmt.Println("=== Windows VM Runner (experimental) ===")
+	warnWindowsVZBackend(os.Stderr)
+	fmt.Println("=== Windows VM Runner (vz, experimental) ===")
 	if err := validateVMSettings(); err != nil {
 		return err
 	}
@@ -420,7 +434,8 @@ func installWindowsVM(quotaWarnings io.Writer) error {
 	} else if backend == windowsBackendQEMU {
 		return installWindowsQEMUVMWithConfig(rc, hc, quotaWarnings)
 	}
-	fmt.Println("=== Windows VM Installer (experimental) ===")
+	warnWindowsVZBackend(os.Stderr)
+	fmt.Println("=== Windows VM Installer (vz, experimental) ===")
 	if err := validateVMSettings(); err != nil {
 		return err
 	}

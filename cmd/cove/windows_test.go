@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -237,4 +238,19 @@ func buildWindowsBaseConfigurationForTest(t *testing.T) (vz.VZVirtualMachineConf
 		t.Fatalf("createDiskImage: %v", err)
 	}
 	return buildWindowsVMConfiguration(disk)
+}
+
+func TestWarnWindowsVZBackend(t *testing.T) {
+	var buf bytes.Buffer
+	warnWindowsVZBackend(&buf)
+	warnWindowsVZBackend(&buf)
+	got := buf.String()
+	if n := strings.Count(got, "\n"); n != 1 {
+		t.Fatalf("warnWindowsVZBackend wrote %d lines, want 1: %q", n, got)
+	}
+	for _, want := range []string{"windows-backend=vz is experimental", "linear-framebuffer GOP", "-windows-backend qemu"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("warning = %q, want it to mention %q", got, want)
+		}
+	}
 }
