@@ -23,6 +23,9 @@ import (
 
 var errDoctorQEMUFailed = errors.New("qemu readiness failed")
 
+// qemuDoctorCheck is one QEMU readiness check. Status is "pass", "fail",
+// "warn", or "info". An "info" check reports something cove treats as
+// optional, so it never degrades the report status.
 type qemuDoctorCheck struct {
 	Name    string `json:"name"`
 	Status  string `json:"status"`
@@ -150,7 +153,7 @@ Check whether this Mac has the direct QEMU/HVF Windows backend prerequisites.
 Checks:
   host             macOS on Apple Silicon for hvf
   qemu-system      qemu-system-aarch64 executable
-  qemu-version     qemu-system-aarch64 is new enough for qcow2 snapshots
+  qemu-version     qemu-system-aarch64 is a version cove is tested against
   qemu-img         qemu-img executable
   efi-code         AArch64 EFI pflash code image
   efi-vars         writable pflash vars template
@@ -158,7 +161,6 @@ Checks:
   screenshot-backend COVE_QEMU_SCREENSHOT_BACKEND value
   text-backend    COVE_QEMU_TEXT_BACKEND value
   qemu-vdagent     QEMU SPICE vdagent chardev for clipboard transport
-  swtpm            swtpm for the optional TPM 2.0 device
   aqua-session     console session for the Cove display window
   virtio-drivers   cached ARM64 VirtIO driver ISO, if present
 
@@ -184,7 +186,6 @@ func collectQEMUDoctorReport() qemuDoctorReport {
 		qemuDoctorBackendEnvCheck("screenshot-backend", "COVE_QEMU_SCREENSHOT_BACKEND", []string{"auto", "rfb", "vnc", "monitor", "screendump"}),
 		qemuDoctorBackendEnvCheck("text-backend", "COVE_QEMU_TEXT_BACKEND", []string{"auto", "rfb", "vnc", "monitor", "sendkey"}),
 		qemuDoctorVDAgentCheck(),
-		qemuDoctorSWTPMCheck(),
 		qemuDoctorAquaSessionCheck(),
 		qemuDoctorVirtIODriversCheck(),
 	}
@@ -323,14 +324,17 @@ func windowsQEMUVDAgentSupported(qemuPath string) error {
 	return nil
 }
 
+// qemuDoctorVirtIODriversCheck reports whether the ARM64 VirtIO driver ISO is
+// cached. The first Windows install downloads it, so its absence is
+// informational rather than a defect in the host.
 func qemuDoctorVirtIODriversCheck() qemuDoctorCheck {
 	cacheDir, err := winsetup.DefaultVirtIODriversCacheDir()
 	if err != nil {
-		return qemuDoctorCheck{"virtio-drivers", "warn", fmt.Sprintf("could not find driver cache directory: %v", err)}
+		return qemuDoctorCheck{"virtio-drivers", "info", fmt.Sprintf("could not find driver cache directory: %v", err)}
 	}
 	matches, err := filepath.Glob(filepath.Join(cacheDir, "virtio-win-*.iso"))
 	if err != nil {
-		return qemuDoctorCheck{"virtio-drivers", "fail", fmt.Sprintf("scan %s: %v", cacheDir, err)}
+		return qemuDoctorCheck{"virtio-drivers", "info", fmt.Sprintf("scan %s: %v", cacheDir, err)}
 	}
 	for _, path := range matches {
 		info, err := os.Stat(path)
@@ -338,11 +342,14 @@ func qemuDoctorVirtIODriversCheck() qemuDoctorCheck {
 			return qemuDoctorCheck{"virtio-drivers", "pass", fmt.Sprintf("%s (%s)", path, bytefmt.Size(info.Size()))}
 		}
 	}
-	return qemuDoctorCheck{"virtio-drivers", "warn", fmt.Sprintf("not cached under %s; first Windows install downloads ARM64 VirtIO drivers", cacheDir)}
+	return qemuDoctorCheck{"virtio-drivers", "info", fmt.Sprintf("not cached under %s; first Windows install downloads ARM64 VirtIO drivers", cacheDir)}
 }
 
-// minQEMUVersion is the oldest QEMU whose qcow2 support has the
-// snapshot-save and snapshot-load monitor commands cove relies on.
+// minQEMUVersion is the oldest QEMU cove's Windows backend is tested against.
+// Nothing in the backend is known to require it, so an older QEMU is reported
+// as untested rather than broken. The phase that adds qcow2 snapshot-save and
+// snapshot-load to the QEMU path should raise this floor and grade it as a
+// hard failure, since those monitor commands landed in QEMU 6.0.
 var minQEMUVersion = qemuVersion{Major: 6}
 
 // qemuVersion is a parsed QEMU major.minor.patch version.
@@ -417,27 +424,17 @@ func qemuDoctorVersionCheck() qemuDoctorCheck {
 }
 
 // qemuDoctorVersionStatus grades the first line of "qemu-system-aarch64
-// --version" against minQEMUVersion.
+// --version" against minQEMUVersion. An older QEMU only warns: no shipped
+// part of the backend is known to need 6.0.
 func qemuDoctorVersionStatus(line string) qemuDoctorCheck {
 	version, err := parseQEMUVersion(line)
 	if err != nil {
-		return qemuDoctorCheck{"qemu-version", "warn", fmt.Sprintf("could not read the QEMU version (%v); cove needs %s or newer for qcow2 snapshots%s", err, minQEMUVersion, qemuDoctorInstallHint("qemu"))}
+		return qemuDoctorCheck{"qemu-version", "warn", fmt.Sprintf("could not read the QEMU version (%v); cove is tested against %s or newer%s", err, minQEMUVersion, qemuDoctorInstallHint("qemu"))}
 	}
 	if version.less(minQEMUVersion) {
-		return qemuDoctorCheck{"qemu-version", "fail", fmt.Sprintf("found QEMU %s, need %s or newer for qcow2 snapshot-save and snapshot-load%s", version, minQEMUVersion, qemuDoctorInstallHint("qemu"))}
+		return qemuDoctorCheck{"qemu-version", "warn", fmt.Sprintf("found QEMU %s, older than the %s cove is tested against; the Windows backend may still work%s", version, minQEMUVersion, qemuDoctorInstallHint("qemu"))}
 	}
-	return qemuDoctorCheck{"qemu-version", "pass", fmt.Sprintf("found QEMU %s, need %s or newer", version, minQEMUVersion)}
-}
-
-// qemuDoctorSWTPMCheck looks for swtpm, which backs the optional TPM 2.0
-// device. Windows installs through cove's unattended answer file without one,
-// so a missing swtpm only warns.
-func qemuDoctorSWTPMCheck() qemuDoctorCheck {
-	path, err := exec.LookPath("swtpm")
-	if err != nil {
-		return qemuDoctorCheck{"swtpm", "warn", "swtpm not found; TPM 2.0 is optional today" + qemuDoctorInstallHint("swtpm")}
-	}
-	return qemuDoctorCheck{"swtpm", "pass", path}
+	return qemuDoctorCheck{"qemu-version", "pass", fmt.Sprintf("found QEMU %s, tested against %s or newer", version, minQEMUVersion)}
 }
 
 // qemuDoctorSessionName reports this process's launchd session type: "Aqua"
@@ -458,46 +455,51 @@ func qemuDoctorAquaSessionCheck() qemuDoctorCheck {
 
 // qemuDoctorAquaSessionStatus grades a launchd session name. The Cove display
 // window is an AppKit window, so it can only bind WindowServer from the
-// console session.
+// console session. A headless invocation still runs the VM and can reach it
+// over VNC, so a non-Aqua session is reported informationally.
 func qemuDoctorAquaSessionStatus(name string, err error) qemuDoctorCheck {
-	const remedy = "launch the viewer into the console session with: launchctl asuser $(id -u) cove gui open, or point a VNC client at the VM's -vnc endpoint"
+	const remedy = `run "cove gui open" from a terminal inside the logged-in desktop session, or from here run: sudo launchctl asuser "$(stat -f %u /dev/console)" cove qemu-display -vm <name>, or point a VNC client at the VM's -vnc endpoint`
 	if err != nil {
-		return qemuDoctorCheck{"aqua-session", "warn", fmt.Sprintf("could not read the launchd session type (%v); if the display window fails to open, %s", err, remedy)}
+		return qemuDoctorCheck{"aqua-session", "info", fmt.Sprintf("could not read the launchd session type (%v); if the display window fails to open, %s", err, remedy)}
 	}
 	if !strings.EqualFold(name, "Aqua") {
 		if name == "" {
 			name = "unknown"
 		}
-		return qemuDoctorCheck{"aqua-session", "warn", fmt.Sprintf("launchd session is %s, not Aqua: the Cove display window cannot bind WindowServer here; %s", name, remedy)}
+		return qemuDoctorCheck{"aqua-session", "info", fmt.Sprintf("launchd session is %s, not Aqua: the Cove display window cannot bind WindowServer here; %s", name, remedy)}
 	}
 	return qemuDoctorCheck{"aqua-session", "pass", "Aqua session; the Cove display window can bind WindowServer"}
 }
 
 // qemuDoctorSelection records why a default doctor run would include the QEMU
-// Windows checks. A Mac with no Windows VM and no Windows intent does not pay
-// for them.
+// Windows checks. The prerequisites belong to the QEMU backend alone: a host
+// running Windows under Virtualization.framework needs none of them, so the
+// selection is backend-scoped, not Windows-scoped.
 type qemuDoctorSelection struct {
-	// Explicit is set when the invocation itself is about Windows.
+	// Explicit is set when the invocation itself asks for a QEMU Windows VM.
 	Explicit bool
-	// WindowsVMs counts the Windows VMs found on this host.
-	WindowsVMs int
+	// QEMUWindowsVMs counts the QEMU-backed Windows VMs on this host.
+	QEMUWindowsVMs int
 }
 
 // include reports whether the QEMU checks belong in this doctor run.
 func (s qemuDoctorSelection) include() bool {
-	return s.Explicit || s.WindowsVMs > 0
+	return s.Explicit || s.QEMUWindowsVMs > 0
 }
 
 // currentQEMUDoctorSelection describes this host and invocation.
 func currentQEMUDoctorSelection() qemuDoctorSelection {
+	backend, err := parseWindowsBackend(windowsBackendMode)
 	return qemuDoctorSelection{
-		Explicit:   windowsMode || strings.EqualFold(strings.TrimSpace(windowsBackendMode), "qemu"),
-		WindowsVMs: countWindowsVMs(vmconfig.BaseDir()),
+		Explicit:       windowsMode && err == nil && backend == windowsBackendQEMU,
+		QEMUWindowsVMs: countQEMUWindowsVMs(vmconfig.BaseDir()),
 	}
 }
 
-// countWindowsVMs counts the VM directories under root holding a Windows VM.
-func countWindowsVMs(root string) int {
+// countQEMUWindowsVMs counts the VM directories under root laid out for the
+// QEMU Windows backend: a qcow2 system disk, or the qemu subdirectory that
+// holds the backend's metadata and staged guest tools.
+func countQEMUWindowsVMs(root string) int {
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return 0
@@ -507,11 +509,23 @@ func countWindowsVMs(root string) int {
 		if !entry.IsDir() {
 			continue
 		}
-		if vmconfig.DetectOSType(filepath.Join(root, entry.Name())) == "Windows" {
+		if isQEMUWindowsVMDir(filepath.Join(root, entry.Name())) {
 			n++
 		}
 	}
 	return n
+}
+
+// isQEMUWindowsVMDir reports whether dir holds a QEMU-backed Windows VM.
+//
+// TODO: windows_qemu.go is growing a backend-detection helper; fold this into
+// it once both have landed.
+func isQEMUWindowsVMDir(dir string) bool {
+	if _, err := os.Stat(filepath.Join(dir, "windows.qcow2")); err == nil {
+		return true
+	}
+	info, err := os.Stat(filepath.Join(dir, "qemu"))
+	return err == nil && info.IsDir()
 }
 
 // hostDoctorQEMUChecks returns the QEMU Windows readiness checks in the host

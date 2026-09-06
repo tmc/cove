@@ -73,10 +73,10 @@ func TestQEMUDoctorVersionStatus(t *testing.T) {
 		wantStatus string
 		wantSubstr string
 	}{
-		{name: "new enough", line: "QEMU emulator version 9.1.0", wantStatus: "pass", wantSubstr: "found QEMU 9.1.0, need 6.0.0 or newer"},
+		{name: "new enough", line: "QEMU emulator version 9.1.0", wantStatus: "pass", wantSubstr: "found QEMU 9.1.0, tested against 6.0.0 or newer"},
 		{name: "exactly minimum", line: "QEMU emulator version 6.0.0", wantStatus: "pass"},
-		{name: "too old", line: "QEMU emulator version 5.2.0", wantStatus: "fail", wantSubstr: "brew install qemu"},
-		{name: "too old reports both versions", line: "QEMU emulator version 5.2.0", wantStatus: "fail", wantSubstr: "found QEMU 5.2.0, need 6.0.0 or newer"},
+		{name: "too old", line: "QEMU emulator version 5.2.0", wantStatus: "warn", wantSubstr: "brew install qemu"},
+		{name: "too old reports both versions", line: "QEMU emulator version 5.2.0", wantStatus: "warn", wantSubstr: "found QEMU 5.2.0, older than the 6.0.0 cove is tested against"},
 		{name: "unreadable", line: "no version here", wantStatus: "warn", wantSubstr: "brew install qemu"},
 	}
 	for _, tt := range tests {
@@ -105,9 +105,10 @@ func TestQEMUDoctorAquaSessionStatus(t *testing.T) {
 	}{
 		{name: "console", session: "Aqua", wantStatus: "pass"},
 		{name: "case insensitive", session: "aqua", wantStatus: "pass"},
-		{name: "ssh", session: "Background", wantStatus: "warn", wantSubstr: "launchctl asuser"},
-		{name: "empty", session: "", wantStatus: "warn", wantSubstr: "unknown"},
-		{name: "launchctl failed", err: errors.New("boom"), wantStatus: "warn", wantSubstr: "boom"},
+		{name: "ssh", session: "Background", wantStatus: "info", wantSubstr: `sudo launchctl asuser "$(stat -f %u /dev/console)"`},
+		{name: "ssh suggests the desktop session", session: "Background", wantStatus: "info", wantSubstr: `run "cove gui open" from a terminal inside the logged-in desktop session`},
+		{name: "empty", session: "", wantStatus: "info", wantSubstr: "unknown"},
+		{name: "launchctl failed", err: errors.New("boom"), wantStatus: "info", wantSubstr: "boom"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

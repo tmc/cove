@@ -18,6 +18,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// hostDoctorCheck is one host readiness check. Status is "pass", "fail",
+// "warn", or "info"; an "info" check reports something optional and does not
+// degrade the report status.
 type hostDoctorCheck struct {
 	Name    string `json:"name"`
 	Status  string `json:"status"`
@@ -73,7 +76,7 @@ Checks:
   volume-shares  saved VM volumes referencing missing paths or duplicate tags
   xcode          Xcode Command Line Tools availability
   qemu/*         QEMU Windows backend readiness, included when this host has a
-                 Windows VM or the invocation asks for Windows
+                 QEMU-backed Windows VM or the invocation asks for one
 
 Flags:
   -json          emit machine-readable JSON`)
@@ -93,8 +96,9 @@ func collectHostDoctorReport() hostDoctorReport {
 	checks = append(checks, hostDoctorVolumeSharesCheck())
 	checks = append(checks, hostDoctorXcodeCheck())
 	// The QEMU/HVF Windows prerequisites are only interesting to a host that
-	// has a Windows VM, or to an invocation that asked for Windows. A macOS
-	// user with neither should not pay for the qemu subprocess probes.
+	// has a QEMU-backed Windows VM, or to an invocation that asked for one.
+	// Nobody else should pay for the qemu subprocess probes, and a Windows
+	// VM running under Virtualization.framework needs none of them.
 	if currentQEMUDoctorSelection().include() {
 		checks = append(checks, hostDoctorQEMUChecks()...)
 	}
