@@ -10,6 +10,17 @@ let cfg = config.services.cove; in
       # No default — requires user to pass `services.cove.package = inputs.cove.packages.${pkgs.system}.cove;`
     };
 
+    qemu = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Install qemu system-wide. Windows guests run on the direct QEMU/HVF
+        backend, which shells out to qemu-system-aarch64 and qemu-img and
+        reads the EDK2 AArch64 pflash images from the same package. Set to
+        false if only macOS and Linux guests are used.
+      '';
+    };
+
     users = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ ];
@@ -30,7 +41,7 @@ let cfg = config.services.cove; in
   };
 
   config = lib.mkIf cfg.enable {
-    environment.systemPackages = [ cfg.package ];
+    environment.systemPackages = [ cfg.package ] ++ lib.optional cfg.qemu pkgs.qemu;
 
     launchd.daemons.cove-helper = {
       serviceConfig = {

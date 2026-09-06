@@ -14,6 +14,28 @@ icon: rocket
   but it is sparse: a fresh macOS install consumed about 6 GB in our test run.
   Size for growth, not for the initial write.
 
+## Windows guest prerequisite: QEMU
+
+macOS and Linux guests need nothing beyond the requirements above. Windows
+guests run on the direct QEMU/HVF backend, which shells out to
+`qemu-system-aarch64` and `qemu-img` and boots from the EDK2 AArch64 pflash
+images (`edk2-aarch64-code.fd`, `edk2-arm-vars.fd`) that ship in the same
+formula:
+
+```bash
+brew install qemu
+```
+
+Check that cove finds all of it before creating a Windows VM:
+
+```bash
+cove doctor qemu
+```
+
+The check reports each tool and firmware file it resolved. `COVE_QEMU_SYSTEM_AARCH64`,
+`COVE_QEMU_IMG`, `COVE_QEMU_EFI_CODE`, and `COVE_QEMU_EFI_VARS_TEMPLATE` override
+the lookup when QEMU is installed somewhere off `PATH`.
+
 ## Build from a checkout
 
 Building from a checkout is the only current install path.

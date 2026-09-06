@@ -39,6 +39,15 @@
             # vendorHash will be computed on first nix build; replace lib.fakeHash with the suggested hash.
             vendorHash = lib.fakeHash;
             subPackages = [ "." ];
+            # The Windows backend shells out to qemu-system-aarch64 and
+            # qemu-img and reads the EDK2 AArch64 pflash images from the same
+            # package, so put qemu on the wrapped command's PATH. Suffixed so
+            # a qemu the user already has installed still wins.
+            nativeBuildInputs = [ pkgs.makeWrapper ];
+            postInstall = ''
+              wrapProgram $out/bin/cove \
+                --suffix PATH : ${lib.makeBinPath [ pkgs.qemu ]}
+            '';
             inherit meta;
           };
 

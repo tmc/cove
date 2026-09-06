@@ -79,7 +79,9 @@ changelog:
 
 # Homebrew cask publishing was removed when signing moved off CI. The cask
 # at tmc/homebrew-tap is now bumped manually after each release; see
-# docs/release-pipeline.md for the procedure.
+# docs/release-pipeline.md for the procedure. Bump from the newest cask in
+# dist/Casks/ so its `depends_on formula: "qemu"` (the Windows backend
+# prerequisite) survives the copy.
 
 release:
   github:
@@ -116,5 +118,8 @@ release:
     ### Requirements
     - Apple Silicon Mac (M1/M2/M3/M4)
     - macOS 12.0+ (Monterey or later)
+    - Windows guests only: `brew install qemu` (the QEMU/HVF backend runs
+      `qemu-system-aarch64` and `qemu-img` and uses that formula's EDK2
+      firmware). Verify with `cove doctor qemu`.
   footer: |
     **Full Changelog**: https://github.com/tmc/cove/compare/{{ .PreviousTag }}...{{ .Tag }}

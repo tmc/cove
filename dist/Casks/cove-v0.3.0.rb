@@ -7,5 +7,16 @@ cask "cove" do
   desc "macOS and Linux VM management using Apple's Virtualization framework"
   homepage "https://github.com/tmc/cove"
 
+  # Windows guests run on the direct QEMU/HVF backend, which shells out to
+  # qemu-system-aarch64 and qemu-img and reads the EDK2 AArch64 pflash images
+  # shipped by the same formula. macOS and Linux guests do not need it.
+  depends_on formula: "qemu"
+
   binary "cove"
+
+  caveats <<~EOS
+    Windows guests use the QEMU/HVF backend. Check its prerequisites with:
+
+      cove doctor qemu
+  EOS
 end
