@@ -11,11 +11,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/tmc/cove/internal/bytefmt"
 	"github.com/tmc/cove/internal/rfb"
+	"github.com/tmc/cove/internal/vmconfig"
 	winsetup "github.com/tmc/cove/internal/windows"
 )
 
@@ -148,6 +150,7 @@ Check whether this Mac has the direct QEMU/HVF Windows backend prerequisites.
 Checks:
   host             macOS on Apple Silicon for hvf
   qemu-system      qemu-system-aarch64 executable
+  qemu-version     qemu-system-aarch64 is new enough for qcow2 snapshots
   qemu-img         qemu-img executable
   efi-code         AArch64 EFI pflash code image
   efi-vars         writable pflash vars template
@@ -155,6 +158,8 @@ Checks:
   screenshot-backend COVE_QEMU_SCREENSHOT_BACKEND value
   text-backend    COVE_QEMU_TEXT_BACKEND value
   qemu-vdagent     QEMU SPICE vdagent chardev for clipboard transport
+  swtpm            swtpm for the optional TPM 2.0 device
+  aqua-session     console session for the Cove display window
   virtio-drivers   cached ARM64 VirtIO driver ISO, if present
 
 Flags:
@@ -165,6 +170,7 @@ func collectQEMUDoctorReport() qemuDoctorReport {
 	checks := []qemuDoctorCheck{
 		qemuDoctorHostCheck(),
 		qemuDoctorToolCheck("qemu-system-aarch64", "COVE_QEMU_SYSTEM_AARCH64", "qemu-system-aarch64"),
+		qemuDoctorVersionCheck(),
 		qemuDoctorToolCheck("qemu-img", "COVE_QEMU_IMG", "qemu-img"),
 		qemuDoctorFileCheck("efi-code", "COVE_QEMU_EFI_CODE", []string{
 			"edk2-aarch64-code.fd",
@@ -178,6 +184,8 @@ func collectQEMUDoctorReport() qemuDoctorReport {
 		qemuDoctorBackendEnvCheck("screenshot-backend", "COVE_QEMU_SCREENSHOT_BACKEND", []string{"auto", "rfb", "vnc", "monitor", "screendump"}),
 		qemuDoctorBackendEnvCheck("text-backend", "COVE_QEMU_TEXT_BACKEND", []string{"auto", "rfb", "vnc", "monitor", "sendkey"}),
 		qemuDoctorVDAgentCheck(),
+		qemuDoctorSWTPMCheck(),
+		qemuDoctorAquaSessionCheck(),
 		qemuDoctorVirtIODriversCheck(),
 	}
 
@@ -236,7 +244,7 @@ func qemuDoctorHostCheck() qemuDoctorCheck {
 func qemuDoctorToolCheck(name, envName, tool string) qemuDoctorCheck {
 	path, err := findQEMUTool(envName, tool)
 	if err != nil {
-		return qemuDoctorCheck{name, "fail", err.Error()}
+		return qemuDoctorCheck{name, "fail", err.Error() + qemuDoctorInstallHint("qemu")}
 	}
 	msg := path
 	if name == "qemu-system-aarch64" {
@@ -290,10 +298,10 @@ func qemuDoctorBackendEnvCheck(name, envName string, allowed []string) qemuDocto
 func qemuDoctorVDAgentCheck() qemuDoctorCheck {
 	qemuPath, err := findQEMUTool("COVE_QEMU_SYSTEM_AARCH64", "qemu-system-aarch64")
 	if err != nil {
-		return qemuDoctorCheck{"qemu-vdagent", "fail", err.Error()}
+		return qemuDoctorCheck{"qemu-vdagent", "fail", err.Error() + qemuDoctorInstallHint("qemu")}
 	}
 	if err := windowsQEMUVDAgentSupported(qemuPath); err != nil {
-		return qemuDoctorCheck{"qemu-vdagent", "fail", err.Error()}
+		return qemuDoctorCheck{"qemu-vdagent", "fail", err.Error() + qemuDoctorInstallHint("qemu")}
 	}
 	return qemuDoctorCheck{"qemu-vdagent", "pass", "qemu-vdagent chardev is available"}
 }
@@ -331,4 +339,193 @@ func qemuDoctorVirtIODriversCheck() qemuDoctorCheck {
 		}
 	}
 	return qemuDoctorCheck{"virtio-drivers", "warn", fmt.Sprintf("not cached under %s; first Windows install downloads ARM64 VirtIO drivers", cacheDir)}
+}
+
+// minQEMUVersion is the oldest QEMU whose qcow2 support has the
+// snapshot-save and snapshot-load monitor commands cove relies on.
+var minQEMUVersion = qemuVersion{Major: 6}
+
+// qemuVersion is a parsed QEMU major.minor.patch version.
+type qemuVersion struct {
+	Major int
+	Minor int
+	Patch int
+}
+
+func (v qemuVersion) String() string {
+	return fmt.Sprintf("%d.%d.%d", v.Major, v.Minor, v.Patch)
+}
+
+// less reports whether v orders before other.
+func (v qemuVersion) less(other qemuVersion) bool {
+	switch {
+	case v.Major != other.Major:
+		return v.Major < other.Major
+	case v.Minor != other.Minor:
+		return v.Minor < other.Minor
+	default:
+		return v.Patch < other.Patch
+	}
+}
+
+// parseQEMUVersion extracts the version from the first line of
+// "qemu-system-aarch64 --version", such as "QEMU emulator version 9.1.0".
+// A pre-release or packaging suffix ("8.2.0-rc1", "6.2.0-dirty") is dropped:
+// only the numeric core is compared, so a release candidate counts as its
+// release.
+func parseQEMUVersion(line string) (qemuVersion, error) {
+	fields := strings.Fields(line)
+	number := ""
+	for i, field := range fields {
+		if field == "version" && i+1 < len(fields) {
+			number = fields[i+1]
+			break
+		}
+	}
+	if number == "" {
+		return qemuVersion{}, fmt.Errorf("no version in %q", strings.TrimSpace(line))
+	}
+	number, _, _ = strings.Cut(number, "-")
+	parts := strings.Split(number, ".")
+	if len(parts) > 3 {
+		return qemuVersion{}, fmt.Errorf("malformed version %q", number)
+	}
+	var version qemuVersion
+	into := []*int{&version.Major, &version.Minor, &version.Patch}
+	for i, part := range parts {
+		n, err := strconv.Atoi(part)
+		if err != nil || strings.ContainsAny(part, "+-") {
+			return qemuVersion{}, fmt.Errorf("malformed version %q", number)
+		}
+		*into[i] = n
+	}
+	return version, nil
+}
+
+// qemuDoctorInstallHint returns the remediation suffix for a check that a
+// Homebrew formula can satisfy.
+func qemuDoctorInstallHint(formula string) string {
+	return "; install with: brew install " + formula
+}
+
+func qemuDoctorVersionCheck() qemuDoctorCheck {
+	path, err := findQEMUTool("COVE_QEMU_SYSTEM_AARCH64", "qemu-system-aarch64")
+	if err != nil {
+		return qemuDoctorCheck{"qemu-version", "fail", err.Error() + qemuDoctorInstallHint("qemu")}
+	}
+	return qemuDoctorVersionStatus(windowsQEMUVersion(path))
+}
+
+// qemuDoctorVersionStatus grades the first line of "qemu-system-aarch64
+// --version" against minQEMUVersion.
+func qemuDoctorVersionStatus(line string) qemuDoctorCheck {
+	version, err := parseQEMUVersion(line)
+	if err != nil {
+		return qemuDoctorCheck{"qemu-version", "warn", fmt.Sprintf("could not read the QEMU version (%v); cove needs %s or newer for qcow2 snapshots%s", err, minQEMUVersion, qemuDoctorInstallHint("qemu"))}
+	}
+	if version.less(minQEMUVersion) {
+		return qemuDoctorCheck{"qemu-version", "fail", fmt.Sprintf("found QEMU %s, need %s or newer for qcow2 snapshot-save and snapshot-load%s", version, minQEMUVersion, qemuDoctorInstallHint("qemu"))}
+	}
+	return qemuDoctorCheck{"qemu-version", "pass", fmt.Sprintf("found QEMU %s, need %s or newer", version, minQEMUVersion)}
+}
+
+// qemuDoctorSWTPMCheck looks for swtpm, which backs the optional TPM 2.0
+// device. Windows installs through cove's unattended answer file without one,
+// so a missing swtpm only warns.
+func qemuDoctorSWTPMCheck() qemuDoctorCheck {
+	path, err := exec.LookPath("swtpm")
+	if err != nil {
+		return qemuDoctorCheck{"swtpm", "warn", "swtpm not found; TPM 2.0 is optional today" + qemuDoctorInstallHint("swtpm")}
+	}
+	return qemuDoctorCheck{"swtpm", "pass", path}
+}
+
+// qemuDoctorSessionName reports this process's launchd session type: "Aqua"
+// in the console session, "Background" or "StandardIO" over ssh and from
+// launchd daemons.
+var qemuDoctorSessionName = func() (string, error) {
+	out, err := exec.Command("launchctl", "managername").Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func qemuDoctorAquaSessionCheck() qemuDoctorCheck {
+	name, err := qemuDoctorSessionName()
+	return qemuDoctorAquaSessionStatus(name, err)
+}
+
+// qemuDoctorAquaSessionStatus grades a launchd session name. The Cove display
+// window is an AppKit window, so it can only bind WindowServer from the
+// console session.
+func qemuDoctorAquaSessionStatus(name string, err error) qemuDoctorCheck {
+	const remedy = "launch the viewer into the console session with: launchctl asuser $(id -u) cove gui open, or point a VNC client at the VM's -vnc endpoint"
+	if err != nil {
+		return qemuDoctorCheck{"aqua-session", "warn", fmt.Sprintf("could not read the launchd session type (%v); if the display window fails to open, %s", err, remedy)}
+	}
+	if !strings.EqualFold(name, "Aqua") {
+		if name == "" {
+			name = "unknown"
+		}
+		return qemuDoctorCheck{"aqua-session", "warn", fmt.Sprintf("launchd session is %s, not Aqua: the Cove display window cannot bind WindowServer here; %s", name, remedy)}
+	}
+	return qemuDoctorCheck{"aqua-session", "pass", "Aqua session; the Cove display window can bind WindowServer"}
+}
+
+// qemuDoctorSelection records why a default doctor run would include the QEMU
+// Windows checks. A Mac with no Windows VM and no Windows intent does not pay
+// for them.
+type qemuDoctorSelection struct {
+	// Explicit is set when the invocation itself is about Windows.
+	Explicit bool
+	// WindowsVMs counts the Windows VMs found on this host.
+	WindowsVMs int
+}
+
+// include reports whether the QEMU checks belong in this doctor run.
+func (s qemuDoctorSelection) include() bool {
+	return s.Explicit || s.WindowsVMs > 0
+}
+
+// currentQEMUDoctorSelection describes this host and invocation.
+func currentQEMUDoctorSelection() qemuDoctorSelection {
+	return qemuDoctorSelection{
+		Explicit:   windowsMode || strings.EqualFold(strings.TrimSpace(windowsBackendMode), "qemu"),
+		WindowsVMs: countWindowsVMs(vmconfig.BaseDir()),
+	}
+}
+
+// countWindowsVMs counts the VM directories under root holding a Windows VM.
+func countWindowsVMs(root string) int {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if vmconfig.DetectOSType(filepath.Join(root, entry.Name())) == "Windows" {
+			n++
+		}
+	}
+	return n
+}
+
+// hostDoctorQEMUChecks returns the QEMU Windows readiness checks in the host
+// doctor's shape so a plain `cove doctor host` reports them alongside the
+// rest. The QEMU host check is dropped: the host report already covers macOS
+// on Apple Silicon.
+func hostDoctorQEMUChecks() []hostDoctorCheck {
+	report := collectQEMUDoctorReport()
+	checks := make([]hostDoctorCheck, 0, len(report.Checks))
+	for _, check := range report.Checks {
+		if check.Name == "host" {
+			continue
+		}
+		checks = append(checks, hostDoctorCheck{Name: "qemu/" + check.Name, Status: check.Status, Message: check.Message})
+	}
+	return checks
 }

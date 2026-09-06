@@ -72,6 +72,8 @@ Checks:
   stale-disk     stopped VM disks held open by orphaned VZ processes
   volume-shares  saved VM volumes referencing missing paths or duplicate tags
   xcode          Xcode Command Line Tools availability
+  qemu/*         QEMU Windows backend readiness, included when this host has a
+                 Windows VM or the invocation asks for Windows
 
 Flags:
   -json          emit machine-readable JSON`)
@@ -90,6 +92,12 @@ func collectHostDoctorReport() hostDoctorReport {
 	checks = append(checks, hostDoctorStaleDiskCheck())
 	checks = append(checks, hostDoctorVolumeSharesCheck())
 	checks = append(checks, hostDoctorXcodeCheck())
+	// The QEMU/HVF Windows prerequisites are only interesting to a host that
+	// has a Windows VM, or to an invocation that asked for Windows. A macOS
+	// user with neither should not pay for the qemu subprocess probes.
+	if currentQEMUDoctorSelection().include() {
+		checks = append(checks, hostDoctorQEMUChecks()...)
+	}
 
 	status := "pass"
 	ok := true
