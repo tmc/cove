@@ -5,7 +5,10 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
+
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 func TestParseExecArgsDockerShapedFlags(t *testing.T) {
@@ -60,6 +63,54 @@ func TestParseExecArgsDoesNotRewriteGuestFlags(t *testing.T) {
 	}
 }
 
+func TestParseExecArgsUsesDefaultVM(t *testing.T) {
+	opts, vm, argv, err := parseExecArgsWithDefault([]string{"--", "powershell.exe", "-NoProfile"}, "win")
+	if err != nil {
+		t.Fatalf("parseExecArgsWithDefault: %v", err)
+	}
+	if vm != "win" {
+		t.Fatalf("vm = %q, want win", vm)
+	}
+	if opts.tty || opts.interactive {
+		t.Fatalf("tty/interactive = %v/%v, want false/false", opts.tty, opts.interactive)
+	}
+	if want := []string{"powershell.exe", "-NoProfile"}; !reflect.DeepEqual(argv, want) {
+		t.Fatalf("argv = %#v, want %#v", argv, want)
+	}
+}
+
+func TestParseExecArgsUsesVMFlag(t *testing.T) {
+	opts, vm, argv, err := parseExecArgs([]string{"-vm", "win", "whoami"})
+	if err != nil {
+		t.Fatalf("parseExecArgs: %v", err)
+	}
+	if vm != "win" {
+		t.Fatalf("vm = %q, want win", vm)
+	}
+	if opts.tty || opts.interactive {
+		t.Fatalf("tty/interactive = %v/%v, want false/false", opts.tty, opts.interactive)
+	}
+	if want := []string{"whoami"}; !reflect.DeepEqual(argv, want) {
+		t.Fatalf("argv = %#v, want %#v", argv, want)
+	}
+}
+
+func TestParseExecArgsDaemonFlag(t *testing.T) {
+	opts, vm, argv, err := parseExecArgs([]string{"--daemon", "win", "whoami"})
+	if err != nil {
+		t.Fatalf("parseExecArgs: %v", err)
+	}
+	if vm != "win" {
+		t.Fatalf("vm = %q, want win", vm)
+	}
+	if !opts.daemon {
+		t.Fatal("daemon = false, want true")
+	}
+	if want := []string{"whoami"}; !reflect.DeepEqual(argv, want) {
+		t.Fatalf("argv = %#v, want %#v", argv, want)
+	}
+}
+
 func TestExecSessionSendsDockerShapedFields(t *testing.T) {
 	dir, err := os.MkdirTemp("", "execsess*")
 	if err != nil {
@@ -109,5 +160,28 @@ func TestExecSessionSendsDockerShapedFields(t *testing.T) {
 	}
 	if srv.lastEnv["CI"] != "1" {
 		t.Fatalf("CI env = %q, want 1", srv.lastEnv["CI"])
+	}
+}
+
+func TestExecCommandWindowsQEMURejectsUnsupportedSessionFlags(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	name := "qemu-exec"
+	dir := filepath.Join(vmconfig.BaseDir(), name+".covevm")
+	if err := os.MkdirAll(filepath.Join(dir, "qemu"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "windows.qcow2"), []byte("disk"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "qemu", "metadata.json"), []byte(`{"agentHostAddress":"127.0.0.1","agentHostPort":32102}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := execCommand([]string{"-t", name, "whoami"})
+	if err == nil {
+		t.Fatal("execCommand succeeded")
+	}
+	if !strings.Contains(err.Error(), "qemu windows exec currently supports non-interactive commands") {
+		t.Fatalf("execCommand error = %v", err)
 	}
 }

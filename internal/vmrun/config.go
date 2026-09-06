@@ -92,6 +92,7 @@ type RunConfig struct {
 	LinuxShell  bool
 
 	// Windows-specific.
+	WindowsBackendMode  string
 	WindowsGraphicsMode string
 	WindowsSerialMode   string
 	WindowsEFIRomPath   string

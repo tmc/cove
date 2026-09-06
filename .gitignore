@@ -33,5 +33,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
-# Design records: kept on disk as local engineering records, not tracked.
+# Design and research records: kept on disk as local engineering records,
+# not tracked.
 docs/designs/
+docs/research/

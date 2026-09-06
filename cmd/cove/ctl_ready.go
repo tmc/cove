@@ -209,6 +209,96 @@ func ctlReady(sock string, args []string) error {
 	return nil // unreachable
 }
 
+func ctlReadyWindowsQEMU(vmDir string, args []string) error {
+	names, asJSON, timeout, useDaemon, err := parseReadyArgs(args)
+	if err != nil {
+		if err == flag.ErrHelp {
+			return nil
+		}
+		return err
+	}
+
+	agentOK, agentDetail := probeWindowsQEMUReadyAgent(vmDir, timeout, useDaemon)
+	results := make([]readyResult, 0, len(names))
+	if !agentOK {
+		for _, n := range names {
+			results = append(results, readyResult{Name: n, OK: false, Detail: agentDetail})
+		}
+	} else {
+		for _, n := range names {
+			if n == "agent-ping" {
+				results = append(results, readyResult{Name: n, OK: true})
+				continue
+			}
+			results = append(results, runWindowsQEMUReadyCheck(vmDir, resolveWindowsQEMUReadyCheck(n), timeout, useDaemon))
+		}
+	}
+
+	report := readyReport{Agent: agentStatus(agentOK), Mode: readyMode(useDaemon), Checks: results}
+	if asJSON {
+		printReadyJSON(report)
+	} else {
+		printReadyText(report)
+	}
+	os.Exit(readyExitCode(agentOK, results))
+	return nil
+}
+
+func probeWindowsQEMUReadyAgent(vmDir string, timeout time.Duration, useDaemon bool) (bool, string) {
+	if useDaemon {
+		if _, err := qemuAgentPing(qemuAgentAddressForVMDir(vmDir), timeout); err != nil {
+			return false, "agent-ping: " + err.Error()
+		}
+		return true, ""
+	}
+	stdout, stderr, exitCode, err := qemuUserAgentExec(qemuUserAgentAddressForVMDir(vmDir), []string{"cmd.exe", "/c", "echo ok"}, nil, timeout)
+	if err != nil {
+		return false, "agent-ping: " + err.Error()
+	}
+	if exitCode != 0 || strings.TrimSpace(stdout) != "ok" {
+		return false, "agent-ping: " + pickReadyDetail(stdout, stderr, int(exitCode))
+	}
+	return true, ""
+}
+
+func resolveWindowsQEMUReadyCheck(name string) readyCheck {
+	switch name {
+	case "agent-ping":
+		return readyCheck{Name: name, Args: nil}
+	case "can-exec":
+		return readyCheck{Name: name, Args: []string{"cmd.exe", "/c", "echo hi"}}
+	case "go":
+		return readyCheck{Name: name, Args: []string{"go", "version"}}
+	case "node", "docker":
+		return readyCheck{Name: name, Args: []string{"cmd.exe", "/c", "where " + name}}
+	case "homebrew", "xcode-cli":
+		return readyCheck{Name: name, Args: []string{"cmd.exe", "/c", "echo not applicable on Windows && exit /b 1"}}
+	default:
+		return readyCheck{Name: name, Args: []string{"cmd.exe", "/c", "where " + name}}
+	}
+}
+
+func runWindowsQEMUReadyCheck(vmDir string, c readyCheck, timeout time.Duration, useDaemon bool) readyResult {
+	var stdout, stderr string
+	var exitCode int32
+	var err error
+	if useDaemon {
+		stdout, stderr, exitCode, err = qemuAgentExecStream(
+			vzscriptConfig{qemuAgentAddress: qemuAgentAddressForVMDir(vmDir)},
+			c.Args,
+			timeout,
+			nil,
+			nil,
+		)
+	} else {
+		stdout, stderr, exitCode, err = qemuUserAgentExec(qemuUserAgentAddressForVMDir(vmDir), c.Args, nil, timeout)
+	}
+	if err != nil {
+		return readyResult{Name: c.Name, OK: false, Detail: err.Error()}
+	}
+	return readyResult{Name: c.Name, OK: exitCode == 0, Detail: pickReadyDetail(stdout, stderr, int(exitCode))}
+}
+
 // agentStatus stringifies the agent-reachable flag for the report.
 func agentStatus(ok bool) string {
 	if ok {

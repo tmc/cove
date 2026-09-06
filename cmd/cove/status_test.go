@@ -182,6 +182,38 @@ func TestStatusStoppedExistingVMReportsStoppedState(t *testing.T) {
 	}
 }
 
+func TestStatusCommandWindowsQEMUUsesMetadata(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	oldVMName, oldVMDir := vmName, vmDir
+	t.Cleanup(func() {
+		vmName, vmDir = oldVMName, oldVMDir
+	})
+	vmName = "qemu-status-vm"
+	vmDir = ""
+	dir := filepath.Join(vmconfig.BaseDir(), vmName+".covevm")
+	if err := os.MkdirAll(filepath.Join(dir, "qemu"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "windows.qcow2"), []byte("disk"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	metadata := `{"vncEndpoint":"127.0.0.1:5907","vncURL":"vnc://127.0.0.1:5907"}`
+	if err := os.WriteFile(filepath.Join(dir, "qemu", "metadata.json"), []byte(metadata), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	err := statusCommand(commandEnv{Stdout: &out, Stderr: new(bytes.Buffer)})
+	if err != nil {
+		t.Fatalf("statusCommand: %v", err)
+	}
+	for _, want := range []string{"backend: qemu-hvf", "vncURL:  vnc://127.0.0.1:5907"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("status output missing %q:\n%s", want, out.String())
+		}
+	}
+}
+
 func TestStatusAppSandboxMissingVMRequiresGrant(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "Library", "Containers", "com.tmc.cove", "Data")
 	if err := os.MkdirAll(home, 0700); err != nil {

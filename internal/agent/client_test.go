@@ -187,6 +187,29 @@ func TestAgentClientExecControlRPCs(t *testing.T) {
 	}
 }
 
+func TestAgentClientAppendFile(t *testing.T) {
+	h := &writeFileAgentHandler{}
+	client := newTestAgentClient(t, h)
+	defer client.Close()
+
+	ctx := context.Background()
+	if err := client.WriteFile(ctx, `C:\tmp\agent.exe`, []byte("one"), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if err := client.AppendFile(ctx, `C:\tmp\agent.exe`, []byte("two"), 0644); err != nil {
+		t.Fatalf("AppendFile: %v", err)
+	}
+	if len(h.writes) != 2 {
+		t.Fatalf("writes = %d, want 2", len(h.writes))
+	}
+	if got := h.writes[0]; got.GetPath() != `C:\tmp\agent.exe` || got.GetAppend() || !got.GetCreateParents() || string(got.GetData()) != "one" {
+		t.Fatalf("first write = %+v, want non-append create-parent write", got)
+	}
+	if got := h.writes[1]; got.GetPath() != `C:\tmp\agent.exe` || !got.GetAppend() || !got.GetCreateParents() || string(got.GetData()) != "two" {
+		t.Fatalf("second write = %+v, want append create-parent write", got)
+	}
+}
+
 type testAgentHandler struct {
 	agentpbconnect.UnimplementedAgentHandler
 	started chan string
@@ -196,6 +219,11 @@ type testAgentHandler struct {
 type echoAgentHandler struct {
 	agentpbconnect.UnimplementedAgentHandler
 	calls int
+}
+
+type writeFileAgentHandler struct {
+	agentpbconnect.UnimplementedAgentHandler
+	writes []*pb.WriteFileRequest
 }
 
 func (h *testAgentHandler) Ping(context.Context, *connect.Request[pb.PingRequest]) (*connect.Response[pb.PingResponse], error) {
@@ -212,6 +240,11 @@ func (h *testAgentHandler) Exec(ctx context.Context, req *connect.Request[pb.Exe
 func (h *echoAgentHandler) Exec(ctx context.Context, req *connect.Request[pb.ExecRequest]) (*connect.Response[pb.ExecResponse], error) {
 	h.calls++
 	return connect.NewResponse(&pb.ExecResponse{ExitCode: 0}), nil
+}
+
+func (h *writeFileAgentHandler) WriteFile(ctx context.Context, req *connect.Request[pb.WriteFileRequest]) (*connect.Response[pb.WriteFileResponse], error) {
+	h.writes = append(h.writes, req.Msg)
+	return connect.NewResponse(&pb.WriteFileResponse{}), nil
 }
 
 type testUserAgentHandler struct {

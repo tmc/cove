@@ -1,0 +1,24 @@
+# windows-webdav-client - Enable the Windows WebDAV client service
+# guest-os: windows
+# runs-on: daemon
+
+guest-wait 10m
+guest-write C:/ProgramData/cove/enable-webdav-client.ps1 enable-webdav-client.ps1
+guest-exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:/ProgramData/cove/enable-webdav-client.ps1
+
+-- enable-webdav-client.ps1 --
+$ErrorActionPreference = 'Stop'
+$Root = 'C:\ProgramData\cove'
+New-Item -ItemType Directory -Force $Root | Out-Null
+try { Start-Transcript -Path (Join-Path $Root 'enable-webdav-client.log') -Force | Out-Null } catch {}
+
+$svc = Get-Service WebClient -ErrorAction Stop
+if ($svc.StartType -eq 'Disabled') {
+  Set-Service WebClient -StartupType Manual
+}
+if ($svc.Status -ne 'Running') {
+  Start-Service WebClient
+}
+
+$svc = Get-Service WebClient
+Write-Output "WebClient $($svc.Status)"

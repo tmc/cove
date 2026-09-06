@@ -51,6 +51,30 @@ func TestCtlCommandEarlyBranches(t *testing.T) {
 	})
 }
 
+func TestControlAliasArgsGUIDefaultsToOpen(t *testing.T) {
+	tests := []struct {
+		name string
+		kind string
+		args []string
+		want []string
+	}{
+		{name: "gui no args", kind: "gui", want: []string{"gui", "open"}},
+		{name: "gui vm flag", kind: "gui", args: []string{"-vm", "win"}, want: []string{"-vm", "win", "gui", "open"}},
+		{name: "gui vm equals", kind: "gui", args: []string{"-vm=win"}, want: []string{"-vm=win", "gui", "open"}},
+		{name: "gui explicit status", kind: "gui", args: []string{"-vm", "win", "status"}, want: []string{"-vm", "win", "gui", "status"}},
+		{name: "vnc defaults status", kind: "vnc", args: []string{"-vm", "win"}, want: []string{"-vm", "win", "vnc", "status"}},
+		{name: "vnc explicit open", kind: "vnc", args: []string{"-vm", "win", "open"}, want: []string{"-vm", "win", "vnc", "open"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := controlAliasArgs(tt.kind, tt.args)
+			if strings.Join(got, "\x00") != strings.Join(tt.want, "\x00") {
+				t.Fatalf("controlAliasArgs(%q, %#v) = %#v, want %#v", tt.kind, tt.args, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestCtlCommandVMNotFoundBeforeControlSocketHint(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	err := ctlCommand([]string{"-vm", "deleted-vm", "status"})

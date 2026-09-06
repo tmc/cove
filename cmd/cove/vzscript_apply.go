@@ -53,10 +53,10 @@ func printVzscriptUsage(w io.Writer) {
 	fmt.Fprintf(w, `Usage: cove vzscript <command> [args...]
 
 Commands:
-  list [-os darwin|linux] [-vm <name>]
+  list [-os darwin|linux|windows] [-vm <name>]
                           List built-in recipes
   show <recipe>           Print recipe contents
-  run [-v] [-timeout d] [-terminal|-terminal-gui] [-env KEY=VALUE] <recipe...>
+  run [-v] [-timeout d] [-terminal|-terminal-gui] [-env KEY=VALUE] [-qemu-monitor path] [-qemu-agent host:port] <recipe...>
                           Run one or more recipes against a running VM
 
 Use "cove vzscript <command> -h" for subcommand-specific flags, including
@@ -92,6 +92,16 @@ UI automation commands (via control socket):
   wait <duration>             Sleep for a duration (1s, 500ms, 2m)
   detect-page                 Detect Setup Assistant page via OCR
   detect-screen               Detect screen state (desktop, login, etc.)
+
+QEMU Windows automation:
+  -qemu-monitor <path>         Route OCR/key/type/screenshot commands through a
+                               QEMU HMP monitor. When -vm points at a QEMU
+                               Windows VM, cove auto-detects qemu/monitor.sock.
+  -qemu-agent <host:port>      Route guest-ping/guest-wait/guest-exec through a
+                               QEMU-forwarded Windows vz-agent endpoint. When
+                               -vm points at a QEMU Windows VM, cove reads this
+                               from qemu/metadata.json.
+  windows-install [timeout]    Drive Windows setup with OCR and keyboard input.
 
 Additional UI helpers such as answer-visible, click-menu-item, label-push,
 label-pop, recovery-options, startup-options, type-keycodes, wait-menu-text,
@@ -133,14 +143,14 @@ Examples:
 
 func vzscriptList(args []string) error {
 	fs := flag.NewFlagSet("vzscript list", flag.ExitOnError)
-	osFilter := fs.String("os", "", "Filter recipes by guest OS: darwin or linux")
+	osFilter := fs.String("os", "", "Filter recipes by guest OS: darwin, linux, or windows")
 	vm := fs.String("vm", "", "VM name; defaults -os from the VM platform when -os is omitted")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	filterOS := normalizeVZScriptGuestOS(*osFilter)
 	if *osFilter != "" && filterOS == "" {
-		return fmt.Errorf("invalid guest OS %q (use darwin or linux)", *osFilter)
+		return fmt.Errorf("invalid guest OS %q (use darwin, linux, or windows)", *osFilter)
 	}
 	if filterOS == "" {
 		vmForFilter := *vm
@@ -169,15 +179,12 @@ func vzscriptListWithGuestOS(filterOS string) error {
 	}
 	var entries []entry
 
-	files, err := fs.ReadDir(builtinScripts, "vzscripts")
+	files, err := builtinVZScriptFiles()
 	if err != nil {
 		return err
 	}
-	for _, f := range files {
-		if f.IsDir() || (!strings.HasSuffix(f.Name(), ".vzscript") && !strings.HasSuffix(f.Name(), ".vzscript.tmpl")) {
-			continue
-		}
-		data, err := builtinScripts.ReadFile("vzscripts/" + f.Name())
+	for _, file := range files {
+		data, err := builtinScripts.ReadFile(file)
 		if err != nil {
 			continue
 		}
@@ -185,13 +192,12 @@ func vzscriptListWithGuestOS(filterOS string) error {
 		meta := parseScriptMeta(ar.Comment)
 		name := meta.name
 		if name == "" {
-			name = strings.TrimSuffix(f.Name(), ".vzscript.tmpl")
-			name = strings.TrimSuffix(name, ".vzscript")
+			name = trimVZScriptExt(strings.TrimPrefix(file, "vzscripts/"))
 		}
 		if filterOS != "" && !vzscriptGuestOSMatches(meta.guestOS, filterOS) {
 			continue
 		}
-		entries = append(entries, entry{name, meta.desc, meta.guestOS, meta.requires, len(meta.mounts), strings.HasSuffix(f.Name(), ".tmpl")})
+		entries = append(entries, entry{name, meta.desc, meta.guestOS, meta.requires, len(meta.mounts), strings.HasSuffix(file, ".tmpl")})
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].name < entries[j].name })
 
@@ -253,6 +259,8 @@ func vzscriptRun(args []string) error {
 
 	rf := flag.NewFlagSet("vzscript run", flag.ExitOnError)
 	socketPath := rf.String("socket", "", "Control socket path")
+	qemuMonitor := rf.String("qemu-monitor", "", "QEMU HMP monitor socket path for Windows/QEMU automation")
+	qemuAgent := rf.String("qemu-agent", "", "QEMU Windows vz-agent TCP endpoint host:port")
 	timeout := rf.Duration("timeout", 10*time.Minute, "Timeout for guest-exec commands")
 	verbose := rf.Bool("v", false, "Verbose output")
 	terminal := rf.Bool("terminal", false, "Stream guest-shell output to this terminal")
@@ -274,27 +282,49 @@ func vzscriptRun(args []string) error {
 	}
 
 	// Resolve socket path without mutating global vmDir or creating VM dirs.
+	targetVMDir := ""
+	if *vm != "" {
+		targetVMDir = vmconfig.ResolveDir(*vm, vmDir)
+	} else {
+		targetVMDir = vmconfig.ResolveDir(vmName, vmDir)
+	}
 	sock := *socketPath
 	if sock == "" {
-		if *vm != "" {
-			sock = GetControlSocketPathForVM(vmconfig.ResolveDir(*vm, vmDir))
-		} else {
-			sock = GetControlSocketPathForVM(vmconfig.ResolveDir(vmName, vmDir))
+		sock = GetControlSocketPathForVM(targetVMDir)
+	}
+	qemuMonitorPath := strings.TrimSpace(*qemuMonitor)
+	if qemuMonitorPath == "" {
+		candidate := qemuMonitorPathForVMDir(targetVMDir)
+		if info, err := os.Stat(candidate); err == nil && info.Mode()&os.ModeSocket != 0 {
+			qemuMonitorPath = candidate
 		}
+	}
+	qemuAgentAddress := strings.TrimSpace(*qemuAgent)
+	if qemuAgentAddress == "" {
+		qemuAgentAddress = qemuAgentAddressForVMDir(targetVMDir)
+	}
+	qemuUserAgentAddress := qemuUserAgentAddressForVMDir(targetVMDir)
+	guestOS := vzscriptGuestOSForSocket(sock)
+	if qemuMonitorPath != "" || qemuAgentAddress != "" {
+		guestOS = "windows"
 	}
 
 	cfg := vzscriptConfig{
-		socketPath:   sock,
-		execTimeout:  *timeout,
-		verbose:      *verbose,
-		terminal:     *terminal,
-		terminalGUI:  *terminalGUI,
-		autoApprove:  *autoApprove,
-		daemon:       *daemon,
-		template:     *renderTemplate,
-		templateVars: templateVars,
-		env:          envVars,
-		guestOS:      vzscriptGuestOSForSocket(sock),
+		socketPath:           sock,
+		execTimeout:          *timeout,
+		verbose:              *verbose,
+		terminal:             *terminal,
+		terminalGUI:          *terminalGUI,
+		autoApprove:          *autoApprove,
+		daemon:               *daemon,
+		template:             *renderTemplate,
+		templateVars:         templateVars,
+		env:                  envVars,
+		guestOS:              guestOS,
+		qemuMonitorPath:      qemuMonitorPath,
+		qemuAgentAddress:     qemuAgentAddress,
+		qemuUserAgentAddress: qemuUserAgentAddress,
+		qemuArtifactDir:      filepath.Join(targetVMDir, "qemu", "vzscript"),
 	}
 
 	// Open a persistent log file in the VM directory.
@@ -400,16 +430,18 @@ func runVZScriptWithDeps(recipes []string, cfg vzscriptConfig) error {
 // uiCommands are vzscript commands that interact with the VM display.
 // Recipes using these must run sequentially to avoid input conflicts.
 var uiCommands = map[string]bool{
-	"ocr-click":     true,
-	"ocr-wait":      true,
-	"ocr-gone":      true,
-	"ocr":           true,
-	"screenshot":    true,
-	"type":          true,
-	"key":           true,
-	"click":         true,
-	"detect-page":   true,
-	"detect-screen": true,
+	"ocr-click":       true,
+	"ocr-wait":        true,
+	"ocr-gone":        true,
+	"ocr":             true,
+	"screenshot":      true,
+	"type":            true,
+	"key":             true,
+	"click":           true,
+	"detect-page":     true,
+	"detect-screen":   true,
+	"qemu-monitor":    true,
+	"windows-install": true,
 }
 
 // scriptUsesUI reports whether a vzscript's command section references
@@ -871,7 +903,59 @@ func loadVZScriptData(nameOrPath string) ([]byte, error) {
 			return data, nil
 		}
 	}
+	files, err := builtinVZScriptFiles()
+	if err == nil {
+		for _, file := range files {
+			rel := strings.TrimPrefix(file, "vzscripts/")
+			base := filepath.Base(rel)
+			if builtinVZScriptNameMatches(nameOrPath, rel) || builtinVZScriptNameMatches(nameOrPath, base) {
+				return builtinScripts.ReadFile(file)
+			}
+			data, err := builtinScripts.ReadFile(file)
+			if err != nil {
+				continue
+			}
+			if meta := parseScriptMeta(txtar.Parse(data).Comment); meta.name == strings.TrimSpace(nameOrPath) {
+				return data, nil
+			}
+		}
+	}
 	return nil, fmt.Errorf("recipe not found: %s (not a file and not a built-in)", nameOrPath)
+}
+
+func builtinVZScriptFiles() ([]string, error) {
+	var files []string
+	err := fs.WalkDir(builtinScripts, "vzscripts", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if strings.HasSuffix(path, ".vzscript") || strings.HasSuffix(path, ".vzscript.tmpl") {
+			files = append(files, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(files)
+	return files, nil
+}
+
+func builtinVZScriptNameMatches(want, got string) bool {
+	want = strings.TrimSpace(want)
+	if want == got {
+		return true
+	}
+	return want == trimVZScriptExt(got)
+}
+
+func trimVZScriptExt(name string) string {
+	name = strings.TrimSuffix(name, ".vzscript.tmpl")
+	name = strings.TrimSuffix(name, ".vzscript")
+	return name
 }
 
 func vzscriptBuiltinNames(name string) []string {
@@ -934,7 +1018,7 @@ type mountDirective struct {
 type scriptMeta struct {
 	name     string
 	desc     string
-	guestOS  string            // darwin, linux, or both
+	guestOS  string            // darwin, linux, windows, or both
 	requires []string          // recipe names this script depends on
 	runsOn   string            // daemon, terminal, or terminal-gui
 	inject   []injectDirective // files to inject into VM disk
@@ -945,7 +1029,7 @@ type scriptMeta struct {
 // Recognized headers:
 //
 //	# name — description   (first non-blank comment line)
-//	# guest-os: darwin|linux|both
+//	# guest-os: darwin|linux|windows|both
 //	# requires: a, b       (dependency list)
 //	# runs-on: daemon      (run as root via daemon agent)
 //	# runs-on: terminal    (stream guest-shell output to the host terminal)
@@ -1047,6 +1131,8 @@ func normalizeVZScriptGuestOS(osName string) string {
 		return "darwin"
 	case "linux":
 		return "linux"
+	case "windows", "win":
+		return "windows"
 	case "both", "all", "any":
 		return "both"
 	default:
@@ -1091,6 +1177,8 @@ func vzscriptGuestOSDisplay(osName string) string {
 	switch normalizeVZScriptGuestOS(osName) {
 	case "linux":
 		return "Linux"
+	case "windows":
+		return "Windows"
 	case "darwin":
 		return "Darwin"
 	default:

@@ -748,6 +748,20 @@ func keyNameToCode(name string) uint16 {
 		return 118
 	case "f5":
 		return 96
+	case "f6":
+		return 97
+	case "f7":
+		return 98
+	case "f8":
+		return 100
+	case "f9":
+		return 101
+	case "f10":
+		return 109
+	case "f11":
+		return 103
+	case "f12":
+		return 111
 	// Number row
 	case "0":
 		return 29

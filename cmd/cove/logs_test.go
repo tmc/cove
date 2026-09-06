@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tmc/cove/internal/vmconfig"
 )
@@ -102,6 +104,72 @@ func TestLogsGlobalMissingVMDoesNotCreateDir(t *testing.T) {
 	}
 	if _, statErr := os.Stat(filepath.Join(vmconfig.BaseDir(), "missing-logs-vm")); !os.IsNotExist(statErr) {
 		t.Fatalf("missing logs VM dir stat = %v, want not exist", statErr)
+	}
+}
+
+func TestLogsWindowsQEMUWritesSerialTail(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(vmconfig.BaseDir(), "qemu-win")
+	qemuDir := filepath.Join(dir, "qemu")
+	if err := os.MkdirAll(qemuDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	mustTouch(t, filepath.Join(dir, "windows.qcow2"))
+	logPath := filepath.Join(qemuDir, "serial.log")
+	if err := os.WriteFile(logPath, []byte("one\n\x1b[2Jtwo\nthree\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	if err := logsWindowsQEMU(logsOptions{VM: "qemu-win", Lines: 2}, dir, &out); err != nil {
+		t.Fatalf("logsWindowsQEMU: %v", err)
+	}
+	if got, want := out.String(), "two\nthree\n"; got != want {
+		t.Fatalf("logsWindowsQEMU output = %q, want %q", got, want)
+	}
+}
+
+func TestWindowsQEMULogPathUsesMetadata(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "qemu-serial.log")
+	if err := os.WriteFile(logPath, []byte("serial"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "qemu"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "qemu", "metadata.json"), []byte(fmt.Sprintf(`{"serialOutput":%q}`, logPath)), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if got := windowsQEMULogPath(dir); got != logPath {
+		t.Fatalf("windowsQEMULogPath = %q, want metadata path", got)
+	}
+}
+
+func TestWindowsQEMULogPathUsesNewestSerialLog(t *testing.T) {
+	dir := t.TempDir()
+	qemuDir := filepath.Join(dir, "qemu")
+	if err := os.MkdirAll(qemuDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	oldPath := filepath.Join(qemuDir, "serial.log")
+	newPath := filepath.Join(qemuDir, "serial-vnc.log")
+	if err := os.WriteFile(oldPath, []byte("old"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(newPath, []byte("new"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if err := os.Chtimes(oldPath, now.Add(-time.Hour), now.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(newPath, now, now); err != nil {
+		t.Fatal(err)
+	}
+	if got := windowsQEMULogPath(dir); got != newPath {
+		t.Fatalf("windowsQEMULogPath = %q, want newest serial log", got)
 	}
 }
 

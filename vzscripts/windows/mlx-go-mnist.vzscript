@@ -1,0 +1,80 @@
+# windows-mlx-go-mnist - Run the native Windows ARM64 mlx-go MNIST package
+# guest-os: windows
+
+guest-wait 10m
+guest-write C:/Users/Public/cove/run-mlx-go-mnist.ps1 run-mlx-go-mnist.ps1
+guest-exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:/Users/Public/cove/run-mlx-go-mnist.ps1
+
+-- run-mlx-go-mnist.ps1 --
+$ErrorActionPreference = 'Stop'
+$Root = Join-Path $env:PUBLIC 'cove'
+$PkgRoot = Join-Path $Root 'mnist-windows-arm64'
+$Zip = Join-Path $Root 'mnist-windows-arm64.zip'
+$Log = Join-Path $Root 'mlx-go-mnist.log'
+New-Item -ItemType Directory -Force $Root | Out-Null
+try { Start-Transcript -Path $Log -Force | Out-Null } catch {}
+
+$PackageURL = $env:COVE_MLX_GO_MNIST_ZIP
+if ([string]::IsNullOrWhiteSpace($PackageURL)) {
+  $PackageURL = 'http://10.0.2.2:58080/mnist-windows-arm64.zip'
+}
+
+function Invoke-Logged($File, [string[]]$Args, [int[]]$OkCodes) {
+  Write-Output ("> {0} {1}" -f $File, ($Args -join ' '))
+  $p = Start-Process -FilePath $File -ArgumentList $Args -Wait -PassThru -NoNewWindow
+  if ($OkCodes -notcontains $p.ExitCode) {
+    throw "$File exited with code $($p.ExitCode)"
+  }
+}
+
+function Download-IfMissing($Uri, $Path) {
+  if (Test-Path $Path) {
+    Write-Output "Using cached $Path"
+    return
+  }
+  Write-Output "Downloading $Uri"
+  Invoke-WebRequest -UseBasicParsing -Uri $Uri -OutFile $Path
+}
+
+function Ensure-Package {
+  Download-IfMissing $PackageURL $Zip
+  Remove-Item -Recurse -Force $PkgRoot -ErrorAction SilentlyContinue
+  Expand-Archive -Path $Zip -DestinationPath $Root -Force
+  if (-not (Test-Path (Join-Path $PkgRoot 'mnist.exe'))) {
+    throw "missing mnist.exe in $PkgRoot; package should contain mnist-windows-arm64/mnist.exe"
+  }
+  foreach ($dll in @('mlx.dll', 'mlxc.dll')) {
+    if (-not (Test-Path (Join-Path $PkgRoot $dll))) {
+      throw "missing $dll in $PkgRoot"
+    }
+  }
+  if (-not (Test-Path (Join-Path $PkgRoot 'run-mnist.ps1'))) {
+    @'
+$ErrorActionPreference = "Stop"
+$here = Split-Path -Parent $MyInvocation.MyCommand.Path
+$env:PATH = "$here;$env:PATH"
+& "$here\mnist.exe" @args
+'@ | Set-Content -Encoding ASCII (Join-Path $PkgRoot 'run-mnist.ps1')
+  }
+}
+
+Ensure-Package
+
+$DataDir = Join-Path $Root 'mnist-data'
+New-Item -ItemType Directory -Force $DataDir | Out-Null
+Push-Location $PkgRoot
+try {
+  Invoke-Logged powershell.exe @(
+    '-NoProfile',
+    '-ExecutionPolicy', 'Bypass',
+    '-File', (Join-Path $PkgRoot 'run-mnist.ps1'),
+    '--epochs', '1',
+    '--batch-size', '1024',
+    '--data-dir', $DataDir
+  ) @(0)
+} finally {
+  Pop-Location
+}
+
+Write-Output "mlx-go MNIST completed"
+Write-Output "log: $Log"

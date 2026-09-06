@@ -59,6 +59,7 @@ type runtimeOptions struct {
 	LinuxShell  bool
 	CPUExplicit bool
 
+	WindowsBackendMode  string
 	WindowsGraphicsMode string
 	WindowsSerialMode   string
 	WindowsEFIRomPath   string
@@ -156,6 +157,7 @@ func currentRuntimeOptions() runtimeOptions {
 		LinuxShell:  linuxShell,
 		CPUExplicit: cpuExplicit,
 
+		WindowsBackendMode:  windowsBackendMode,
 		WindowsGraphicsMode: windowsGraphicsMode,
 		WindowsSerialMode:   windowsSerialMode,
 		WindowsEFIRomPath:   windowsEFIRomPath,
@@ -257,6 +259,7 @@ func (opts runtimeOptions) vmrunRunConfig(os vmrun.GuestOS) vmrun.RunConfig {
 		LinuxNested:         opts.LinuxNested,
 		LinuxNVMe:           opts.LinuxNVMe,
 		LinuxShell:          opts.LinuxShell,
+		WindowsBackendMode:  opts.WindowsBackendMode,
 		WindowsGraphicsMode: opts.WindowsGraphicsMode,
 		WindowsSerialMode:   opts.WindowsSerialMode,
 		WindowsEFIRomPath:   opts.WindowsEFIRomPath,

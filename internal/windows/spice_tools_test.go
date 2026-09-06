@@ -1,0 +1,165 @@
+package windows
+
+import (
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"syscall"
+	"testing"
+)
+
+func TestDownloadWindowsSpiceGuestTools(t *testing.T) {
+	large := strings.Repeat("x", minSpiceGuestToolsSize)
+	tests := []struct {
+		name       string
+		body       string
+		status     int
+		dest       func(string) string
+		wantErr    string
+		wantIs     error
+		wantCached bool
+	}{
+		{
+			name:       "success",
+			body:       large,
+			status:     http.StatusOK,
+			dest:       func(dir string) string { return filepath.Join(dir, spiceGuestToolsExeName) },
+			wantCached: true,
+		},
+		{
+			name:    "too small removes partial",
+			body:    "small",
+			status:  http.StatusOK,
+			dest:    func(dir string) string { return filepath.Join(dir, spiceGuestToolsExeName) },
+			wantErr: "SPICE guest tools too small",
+		},
+		{
+			name:    "missing parent wraps",
+			body:    large,
+			status:  http.StatusOK,
+			dest:    func(dir string) string { return filepath.Join(dir, "missing", spiceGuestToolsExeName) },
+			wantErr: "create SPICE guest tools",
+			wantIs:  os.ErrNotExist,
+		},
+		{
+			name:    "http error",
+			status:  http.StatusTeapot,
+			dest:    func(dir string) string { return filepath.Join(dir, spiceGuestToolsExeName) },
+			wantErr: "418",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.status)
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer server.Close()
+
+			oldURL := spiceGuestToolsURL
+			spiceGuestToolsURL = server.URL
+			t.Cleanup(func() { spiceGuestToolsURL = oldURL })
+
+			dir := t.TempDir()
+			dest := tt.dest(dir)
+			err := downloadWindowsSpiceGuestTools(dest)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("downloadWindowsSpiceGuestTools() error = %v, want %q", err, tt.wantErr)
+				}
+				if tt.wantIs != nil && !errors.Is(err, tt.wantIs) {
+					t.Fatalf("downloadWindowsSpiceGuestTools() error = %v, want Is %v", err, tt.wantIs)
+				}
+				if _, statErr := os.Stat(dest + ".tmp"); !errors.Is(statErr, os.ErrNotExist) {
+					t.Fatalf("partial tmp exists after failure: %v", statErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("downloadWindowsSpiceGuestTools(): %v", err)
+			}
+			info, err := os.Stat(dest)
+			if err != nil {
+				t.Fatalf("stat cached tools: %v", err)
+			}
+			if tt.wantCached && info.Size() != int64(len(tt.body)) {
+				t.Fatalf("cached size = %d, want %d", info.Size(), len(tt.body))
+			}
+		})
+	}
+}
+
+func TestEnsureWindowsSpiceGuestToolsUsesDefaultCacheDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	cacheDir := filepath.Join(home, ".vz", "windows-guest-tools")
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	exePath := filepath.Join(cacheDir, spiceGuestToolsExeName)
+	if err := os.WriteFile(exePath, make([]byte, minSpiceGuestToolsSize), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := EnsureWindowsSpiceGuestTools("")
+	if err != nil {
+		t.Fatalf("EnsureWindowsSpiceGuestTools(): %v", err)
+	}
+	if got != exePath {
+		t.Fatalf("tools path = %q, want %q", got, exePath)
+	}
+}
+
+func TestEnsureWindowsSpiceGuestToolsFetchesWhenCacheMissing(t *testing.T) {
+	large := strings.Repeat("x", minSpiceGuestToolsSize)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(large))
+	}))
+	defer server.Close()
+
+	oldURL := spiceGuestToolsURL
+	spiceGuestToolsURL = server.URL
+	t.Cleanup(func() { spiceGuestToolsURL = oldURL })
+
+	for _, tt := range []struct {
+		name string
+		dir  func(t *testing.T) string
+		err  error
+	}{
+		{
+			name: "missing cache",
+			dir:  func(t *testing.T) string { return t.TempDir() },
+		},
+		{
+			name: "parent is file",
+			dir: func(t *testing.T) string {
+				root := t.TempDir()
+				blocker := filepath.Join(root, "file")
+				if err := os.WriteFile(blocker, nil, 0644); err != nil {
+					t.Fatal(err)
+				}
+				return filepath.Join(blocker, "cache")
+			},
+			err: syscall.ENOTDIR,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := EnsureWindowsSpiceGuestTools(tt.dir(t))
+			if tt.err != nil {
+				if !errors.Is(err, tt.err) {
+					t.Fatalf("EnsureWindowsSpiceGuestTools() error = %v, want %v", err, tt.err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("EnsureWindowsSpiceGuestTools(): %v", err)
+			}
+			if filepath.Base(got) != spiceGuestToolsExeName {
+				t.Fatalf("tools path = %q, want base %q", got, spiceGuestToolsExeName)
+			}
+		})
+	}
+}

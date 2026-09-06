@@ -119,6 +119,50 @@ func TestCpParseSpecForVMFlag(t *testing.T) {
 	}
 }
 
+func TestNormalizeWindowsQEMUCopyPath(t *testing.T) {
+	for _, tt := range []struct {
+		in   string
+		want string
+		err  bool
+	}{
+		{in: "/C:/Users/cove/file.txt", want: `C:\Users\cove\file.txt`},
+		{in: "/c/Users/cove/file.txt", want: `C:\Users\cove\file.txt`},
+		{in: "/tmp/file.txt", err: true},
+	} {
+		got, err := normalizeWindowsQEMUCopyPath(tt.in)
+		if tt.err {
+			if err == nil {
+				t.Fatalf("normalizeWindowsQEMUCopyPath(%q) succeeded", tt.in)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("normalizeWindowsQEMUCopyPath(%q): %v", tt.in, err)
+		}
+		if got != tt.want {
+			t.Fatalf("normalizeWindowsQEMUCopyPath(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestNewControlCpAgentUsesWindowsQEMU(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	name := "qemu-cp"
+	dir := filepath.Join(vmconfig.BaseDir(), name+".covevm")
+	if err := os.MkdirAll(filepath.Join(dir, "qemu"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "windows.qcow2"), []byte("disk"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "qemu", "metadata.json"), []byte(`{"agentHostAddress":"127.0.0.1","agentHostPort":32102}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := newControlCpAgent(name).(qemuWindowsCpAgent); !ok {
+		t.Fatalf("newControlCpAgent(%q) did not return qemuWindowsCpAgent", name)
+	}
+}
+
 func TestCpRoundTripWithFakeAgent(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "src.txt")

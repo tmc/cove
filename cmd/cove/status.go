@@ -38,6 +38,9 @@ func statusCommand(env commandEnv, args ...string) error {
 		return err
 	}
 	defer cleanup()
+	if windowsQEMUCTLVM(targetDir) {
+		return writeWindowsQEMUStatus(env.Stdout, targetDir, false)
+	}
 	if !isVMRunningAt(targetDir) {
 		state := detectVMState(targetDir)
 		if state == "starting" {

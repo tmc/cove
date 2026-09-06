@@ -18,9 +18,17 @@ const windowFrameAutosavePrefix = "com.tmc.cove.window."
 // configureWindowFramePersistence restores a previously saved window frame (if
 // present) and enables automatic frame persistence for subsequent moves/resizes.
 func configureWindowFramePersistence(window appkit.NSWindow) (restored bool, name appkit.NSWindowFrameAutosaveName) {
-	name = appkit.NSWindowFrameAutosaveName(windowFrameAutosaveNameForVM(vmName, vmDir, linuxMode))
+	osID := "macos"
+	if linuxMode {
+		osID = "linux"
+	}
+	return configureWindowFramePersistenceForVM(window, vmName, vmDir, osID)
+}
+
+func configureWindowFramePersistenceForVM(window appkit.NSWindow, vmName, vmDir, osID string) (restored bool, name appkit.NSWindowFrameAutosaveName) {
+	name = appkit.NSWindowFrameAutosaveName(windowFrameAutosaveNameForVMOS(vmName, vmDir, osID))
 	restored = window.SetFrameUsingName(name)
-	if restoreWindowDisplayPlacement(window, name) {
+	if restoreWindowDisplayPlacementForDir(window, name, vmDir) {
 		restored = true
 	}
 	objc.Send[struct{}](window.ID, objc.Sel("setFrameAutosaveName:"), objc.String(string(name)))
@@ -32,6 +40,14 @@ type windowDisplayPlacement struct {
 }
 
 func windowFrameAutosaveNameForVM(name, dir string, isLinux bool) string {
+	osID := "macos"
+	if isLinux {
+		osID = "linux"
+	}
+	return windowFrameAutosaveNameForVMOS(name, dir, osID)
+}
+
+func windowFrameAutosaveNameForVMOS(name, dir, osID string) string {
 	vmID := strings.TrimSpace(name)
 	if vmID == "" {
 		vmID = filepath.Base(strings.TrimSpace(dir))
@@ -39,9 +55,8 @@ func windowFrameAutosaveNameForVM(name, dir string, isLinux bool) string {
 	if vmID == "" || vmID == "." || vmID == string(filepath.Separator) {
 		vmID = "default"
 	}
-	osID := "macos"
-	if isLinux {
-		osID = "linux"
+	if strings.TrimSpace(osID) == "" {
+		osID = "macos"
 	}
 	return windowFrameAutosavePrefix + sanitizeAutosaveToken(osID) + "." + sanitizeAutosaveToken(vmID)
 }
@@ -74,7 +89,11 @@ func sanitizeAutosaveToken(s string) string {
 }
 
 func windowDisplayPlacementPath(name appkit.NSWindowFrameAutosaveName) string {
-	dir := strings.TrimSpace(vmDir)
+	return windowDisplayPlacementPathForDir(name, vmDir)
+}
+
+func windowDisplayPlacementPathForDir(name appkit.NSWindowFrameAutosaveName, dir string) string {
+	dir = strings.TrimSpace(dir)
 	if dir == "" {
 		dir = "."
 	}
@@ -83,11 +102,15 @@ func windowDisplayPlacementPath(name appkit.NSWindowFrameAutosaveName) string {
 }
 
 func saveWindowDisplayPlacement(window appkit.NSWindow, name appkit.NSWindowFrameAutosaveName) {
+	saveWindowDisplayPlacementForDir(window, name, vmDir)
+}
+
+func saveWindowDisplayPlacementForDir(window appkit.NSWindow, name appkit.NSWindowFrameAutosaveName, dir string) {
 	placement := windowDisplayPlacement{DisplayID: screenDisplayID(window.Screen())}
 	if placement.DisplayID == 0 {
 		return
 	}
-	path := windowDisplayPlacementPath(name)
+	path := windowDisplayPlacementPathForDir(name, dir)
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		if verbose {
 			fmt.Printf("warning: create window placement dir: %v\n", err)
@@ -107,7 +130,11 @@ func saveWindowDisplayPlacement(window appkit.NSWindow, name appkit.NSWindowFram
 }
 
 func restoreWindowDisplayPlacement(window appkit.NSWindow, name appkit.NSWindowFrameAutosaveName) bool {
-	placement, ok := loadWindowDisplayPlacement(name)
+	return restoreWindowDisplayPlacementForDir(window, name, vmDir)
+}
+
+func restoreWindowDisplayPlacementForDir(window appkit.NSWindow, name appkit.NSWindowFrameAutosaveName, dir string) bool {
+	placement, ok := loadWindowDisplayPlacementForDir(name, dir)
 	if !ok || placement.DisplayID == 0 {
 		return false
 	}
@@ -134,7 +161,11 @@ func restoreWindowDisplayPlacement(window appkit.NSWindow, name appkit.NSWindowF
 }
 
 func loadWindowDisplayPlacement(name appkit.NSWindowFrameAutosaveName) (windowDisplayPlacement, bool) {
-	path := windowDisplayPlacementPath(name)
+	return loadWindowDisplayPlacementForDir(name, vmDir)
+}
+
+func loadWindowDisplayPlacementForDir(name appkit.NSWindowFrameAutosaveName, dir string) (windowDisplayPlacement, bool) {
+	path := windowDisplayPlacementPathForDir(name, dir)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return windowDisplayPlacement{}, false

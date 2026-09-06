@@ -13,7 +13,10 @@ the script metadata and command body are parsed.
 
 ## Guest Commands
 
-Commands that interact with the guest VM via the agent over vsock.
+Commands that interact with the guest VM via the agent. VZ-backed VMs use the
+cove control socket to reach the vsock agent. QEMU Windows VMs can use
+`-qemu-agent host:port`, or `-vm <name>` with `qemu/metadata.json`, to reach the
+Windows agent through QEMU user-network host forwarding.
 
 ### guest-wait
 
@@ -132,7 +135,11 @@ append-path /opt/homebrew/bin
 
 ## UI Automation Commands
 
-Commands that drive the VM display via the control socket using screenshots and OCR.
+Commands that drive the VM display using screenshots and OCR. For VZ-backed
+VMs they use the cove control socket. For QEMU Windows VMs, pass
+`-qemu-monitor` or `-vm <name>` with a live `qemu/monitor.sock`; `ocr`,
+`ocr-wait`, `ocr-gone`, `screenshot`, `key`, `type`, and `windows-install`
+then use QEMU `screendump` and `sendkey`.
 
 ### ocr-click
 
@@ -188,7 +195,8 @@ stdout 'Continue'
 
 ### screenshot
 
-Capture VM screen to a JPEG file.
+Capture VM screen to a file. VZ control-socket captures are JPEG by default;
+QEMU monitor captures are PPM files produced by QEMU `screendump`.
 
 ```text
 screenshot [file]
@@ -389,6 +397,101 @@ Continue from Recovery setup screens, such as the language or continue prompt.
 
 ```text
 recovery-continue
+```
+
+## Windows (QEMU) Commands
+
+These commands and recipes apply to Windows guests running on the direct
+QEMU/HVF backend.
+
+### qemu-monitor
+
+Send a raw command to the QEMU HMP monitor selected by `-qemu-monitor` or the
+current QEMU Windows VM.
+
+```text
+qemu-monitor info status
+qemu-monitor sendkey spc
+```
+
+### windows-install
+
+Drive the Windows installer with QEMU monitor screenshots, OCR, and keyboard
+input. The command is intended for the direct QEMU/HVF Windows backend.
+The built-in `windows-install` recipe also waits for the QEMU-forwarded
+Windows `vz-agent`, verifies the provision marker, and checks that the
+`cove-vz-agent` scheduled task has started `vz-agent.exe`.
+
+```text
+windows-install [timeout]
+```
+
+```text
+cove vzscript run -vm windows-qemu-setup windows-install
+cove vzscript run -qemu-monitor ~/.vz/vms/windows-qemu-setup.covevm/qemu/monitor.sock windows-install
+```
+
+### windows-clipboard
+
+Verify the direct QEMU/HVF Windows clipboard transport prerequisites. The recipe checks the
+QEMU vdagent chardev, waits for the forwarded Windows `vz-agent`, and verifies
+that the guest sees the `com.redhat.spice.0` virtio-serial port plus a running
+SPICE guest tools service/process.
+
+```text
+cove vzscript run windows-clipboard
+```
+
+### windows-golang
+
+Install and verify the latest stable Go toolchain inside a Windows guest.
+The recipe downloads the Windows ARM64 or AMD64 MSI from `go.dev`, verifies
+the upstream SHA-256, installs it machine-wide, and prints `go version`.
+
+```text
+cove vzscript run windows-golang
+```
+
+### windows-wsl
+
+Enable and verify Windows Subsystem for Linux. The recipe enables the WSL and
+Virtual Machine Platform optional features, reports when a reboot is required,
+and verifies `wsl --status` on a later rerun.
+
+```text
+cove vzscript run windows-wsl
+```
+
+### windows-wsl1
+
+Enable only the `Microsoft-Windows-Subsystem-Linux` optional feature for WSL1
+workloads. The recipe runs through the daemon agent and exits with a reboot
+requirement instead of continuing when Windows needs to restart.
+
+```text
+cove vzscript run windows-wsl1
+```
+
+### windows-webdav-client
+
+Enable and start the Windows WebClient service so user-context recipes can mount
+host WebDAV shares with `net use`.
+
+```text
+cove vzscript run windows-webdav-client
+```
+
+### windows-mlx-go-mnist
+
+Download and run a native Windows ARM64 `mlx-go` MNIST package for one epoch.
+The package must contain `mnist.exe`, `mlx.dll`, `mlxc.dll`, and optionally
+`run-mnist.ps1` under a top-level `mnist-windows-arm64/` directory. By default
+the recipe downloads `http://10.0.2.2:58080/mnist-windows-arm64.zip`; override
+that with `-env COVE_MLX_GO_MNIST_ZIP=...`. This recipe runs in the logged-in
+Windows user context, so the QEMU user agent must be reachable.
+
+```text
+cove vzscript run -vm windows-qemu-agent4 windows-mlx-go-mnist
 ```
 
 ## Conditions

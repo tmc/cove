@@ -1,0 +1,32 @@
+# windows-install — Drive Windows setup under the QEMU backend
+# guest-os: windows
+
+# The QEMU Windows backend does not expose a cove guest control socket during
+# setup. These commands use qemu/monitor.sock for screendump screenshots,
+# OCR, and keyboard input.
+
+screenshot artifacts/windows-install-start.ppm
+ocr
+windows-install 90m
+screenshot artifacts/windows-install-final.ppm
+guest-wait 10m
+guest-ping
+guest-write C:/ProgramData/cove/verify-windows-agent.ps1 verify-windows-agent.ps1
+guest-exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:/ProgramData/cove/verify-windows-agent.ps1
+
+-- verify-windows-agent.ps1 --
+$ErrorActionPreference = 'Stop'
+if (-not (Test-Path 'C:\ProgramData\cove\provisioned')) {
+  throw 'missing cove provision marker'
+}
+$task = Get-ScheduledTask cove-vz-agent -ErrorAction Stop
+if ($task.State -eq 'Disabled') {
+  throw 'cove-vz-agent scheduled task is disabled'
+}
+$proc = Get-CimInstance Win32_Process -Filter "Name = 'vz-agent.exe'" | Where-Object { $_.CommandLine -like '*-tcp-listen*' } | Select-Object -First 1
+if (-not $proc) {
+  throw 'vz-agent.exe is not running'
+}
+whoami
+$task.State
+$proc.CommandLine

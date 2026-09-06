@@ -39,6 +39,11 @@ type controlCpAgent struct {
 	vm     string
 }
 
+type qemuWindowsCpAgent struct {
+	address string
+	vm      string
+}
+
 func handleCpCommand(args []string) error {
 	return runCp(context.Background(), args, newControlCpAgent)
 }
@@ -83,9 +88,11 @@ func printCpUsage(w io.Writer) {
 Copy files between the host and a running guest through the VM control socket.
 The VM selected by -vm must match the vm:/path endpoint when both are present.
 The -vm flag may appear before or after the copy operands.
+For Windows QEMU VMs, use vm:/C:/path or vm:/c/path for guest paths.
 
 Examples:
   cove cp ./app.log work-vm:/tmp/app.log
+  cove cp ./app.log windows-qemu:/C:/Users/cove/Desktop/app.log
   cove cp -vm work-vm work-vm:/tmp/app.log ./app.log
   cove cp work-vm:/tmp/app.log ./app.log -vm work-vm`)
 }
@@ -213,10 +220,60 @@ func cleanHostPath(path string) (string, error) {
 }
 
 func newControlCpAgent(vm string) cpAgent {
+	if dir, err := requireExistingVMForControl(vm); err == nil && windowsQEMUCTLVM(dir) {
+		return qemuWindowsCpAgent{address: qemuAgentAddressForVMDir(dir), vm: vm}
+	}
 	socketPath := filepath.Join(vmconfig.BaseDir(), vm, "control.sock")
 	client := NewControlClient(socketPath)
 	client.SetTimeout(10 * time.Minute)
 	return controlCpAgent{client: client, vm: vm}
+}
+
+func (a qemuWindowsCpAgent) CopyToGuest(ctx context.Context, hostPath, guestPath string) error {
+	if strings.TrimSpace(a.address) == "" {
+		return fmt.Errorf("cp: qemu windows agent endpoint is unavailable for %q", a.vm)
+	}
+	path, err := normalizeWindowsQEMUCopyPath(guestPath)
+	if err != nil {
+		return err
+	}
+	client, err := qemuAgentClient(a.address)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	return client.CopyToGuest(ctx, hostPath, path, 0644)
+}
+
+func (a qemuWindowsCpAgent) CopyFromGuest(ctx context.Context, guestPath, hostPath string) error {
+	if strings.TrimSpace(a.address) == "" {
+		return fmt.Errorf("cp: qemu windows agent endpoint is unavailable for %q", a.vm)
+	}
+	path, err := normalizeWindowsQEMUCopyPath(guestPath)
+	if err != nil {
+		return err
+	}
+	client, err := qemuAgentClient(a.address)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	return client.CopyFromGuest(ctx, path, hostPath)
+}
+
+func normalizeWindowsQEMUCopyPath(path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if len(path) >= 4 && path[0] == '/' && path[2] == ':' && path[3] == '/' && isASCIILetter(path[1]) {
+		return strings.ToUpper(path[1:2]) + `:\` + strings.ReplaceAll(path[4:], "/", `\`), nil
+	}
+	if len(path) >= 4 && path[0] == '/' && path[2] == '/' && isASCIILetter(path[1]) {
+		return strings.ToUpper(path[1:2]) + `:\` + strings.ReplaceAll(path[3:], "/", `\`), nil
+	}
+	return "", fmt.Errorf("cp: qemu windows guest path %q must use vm:/C:/path or vm:/c/path", path)
+}
+
+func isASCIILetter(b byte) bool {
+	return ('a' <= b && b <= 'z') || ('A' <= b && b <= 'Z')
 }
 
 func (a controlCpAgent) CopyToGuest(_ context.Context, hostPath, guestPath string) error {

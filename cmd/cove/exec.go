@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/tmc/cove/internal/metrics"
 )
@@ -19,15 +20,29 @@ type execOptions struct {
 	secretEnv   secretEnvFlag
 	workDir     string
 	user        string
+	vm          string
+	daemon      bool
 }
 
 func execCommand(args []string) error {
-	opts, vm, argv, err := parseExecArgs(args)
+	opts, vm, argv, err := parseExecArgsWithDefault(args, vmName)
 	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
 		}
 		return err
+	}
+	if dir, err := requireExistingVMForControl(vm); err == nil && windowsQEMUCTLVM(dir) {
+		if opts.interactive || opts.tty || len(opts.env) != 0 || len(opts.secretEnv) != 0 || opts.workDir != "" || opts.user != "" {
+			return fmt.Errorf("qemu windows exec currently supports non-interactive commands without -t, -i, -e, --secret-env, -w, or -u")
+		}
+		if opts.daemon {
+			return ctlWindowsQEMUAgentExec(dir, argv, 0, 30*time.Second, false)
+		}
+		return ctlWindowsQEMUUserAgentExec(dir, argv, 0, 30*time.Second, false)
+	}
+	if opts.daemon {
+		return fmt.Errorf("exec --daemon is only supported for qemu windows VMs")
 	}
 
 	sock, err := resolveShellSocket(vm)
@@ -69,6 +84,10 @@ func execCommand(args []string) error {
 }
 
 func parseExecArgs(args []string) (execOptions, string, []string, error) {
+	return parseExecArgsWithDefault(args, "")
+}
+
+func parseExecArgsWithDefault(args []string, defaultVM string) (execOptions, string, []string, error) {
 	args = normalizeExecShortFlags(args)
 
 	fs := flag.NewFlagSet("exec", flag.ContinueOnError)
@@ -87,6 +106,8 @@ func parseExecArgs(args []string) (execOptions, string, []string, error) {
 	fs.StringVar(&opts.workDir, "workdir", "", "working directory in the guest")
 	fs.StringVar(&opts.user, "u", "", "user to run as in the guest")
 	fs.StringVar(&opts.user, "user", "", "user to run as in the guest")
+	fs.StringVar(&opts.vm, "vm", "", "VM name")
+	fs.BoolVar(&opts.daemon, "daemon", false, "run through the daemon agent")
 
 	if err := fs.Parse(args); err != nil {
 		return execOptions{}, "", nil, err
@@ -94,10 +115,20 @@ func parseExecArgs(args []string) (execOptions, string, []string, error) {
 	tail := fs.Args()
 	if len(tail) == 0 {
 		fs.Usage()
+		if defaultVM != "" {
+			return execOptions{}, "", nil, fmt.Errorf("exec requires a command")
+		}
 		return execOptions{}, "", nil, fmt.Errorf("usage: cove exec [options] <vm> <cmd> [args...]")
 	}
-	vm := tail[0]
-	argv := append([]string{}, tail[1:]...)
+	vm := opts.vm
+	if vm == "" {
+		vm = defaultVM
+	}
+	argv := append([]string{}, tail...)
+	if vm == "" {
+		vm = tail[0]
+		argv = append([]string{}, tail[1:]...)
+	}
 	if len(argv) > 0 && argv[0] == "--" {
 		argv = argv[1:]
 	}
@@ -138,6 +169,7 @@ func normalizeExecShortFlags(args []string) []string {
 
 func printExecUsage(w io.Writer) {
 	fmt.Fprint(w, `Usage: cove exec [options] <vm> <cmd> [args...]
+       cove -vm <vm> exec [options] <cmd> [args...]
 
 Run a command in a running VM through the guest agent.
 
@@ -149,9 +181,13 @@ Options:
       --secret-env SPEC    set redacted guest environment variable
   -w, --workdir DIR        run in guest working directory
   -u, --user USER          run as guest user
+      --vm VM              VM name
+      --daemon             run through the daemon agent (QEMU Windows)
 
 Examples:
   cove exec ubuntu uname -a
+  cove exec -vm windows-qemu whoami
+  cove -vm windows-qemu exec whoami
   cove exec -it ubuntu bash
   cove exec -e CI=1 -w /work ubuntu go test ./...
   cove exec ubuntu -- sh -lc 'echo "$0"'

@@ -34,6 +34,34 @@ func TestInfoForWindows(t *testing.T) {
 	}
 }
 
+func TestInfoForWindowsQEMU(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "windows.qcow2"), []byte("qcow2"), 0644); err != nil {
+		t.Fatalf("WriteFile(windows.qcow2) error = %v", err)
+	}
+	got, err := InfoFor(dir, nil)
+	if err != nil {
+		t.Fatalf("InfoFor() error = %v", err)
+	}
+	if got.OSType != "Windows" || got.DiskSize != 5 {
+		t.Fatalf("InfoFor() = %#v", got)
+	}
+}
+
+func TestWindowsDiskPath(t *testing.T) {
+	dir := t.TempDir()
+	if got, want := WindowsDiskPath(dir), filepath.Join(dir, "windows-disk.img"); got != want {
+		t.Fatalf("WindowsDiskPath missing = %q, want %q", got, want)
+	}
+	qcow := filepath.Join(dir, "windows.qcow2")
+	if err := os.WriteFile(qcow, []byte("qcow2"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if got := WindowsDiskPath(dir); got != qcow {
+		t.Fatalf("WindowsDiskPath qemu = %q, want %q", got, qcow)
+	}
+}
+
 func TestInfoForDefaultState(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "disk.img"), []byte("disk"), 0644); err != nil {

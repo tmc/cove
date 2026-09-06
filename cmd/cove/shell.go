@@ -65,17 +65,33 @@ func shellCommand(args []string) error {
 		return err
 	}
 	tail := fs.Args()
+	vmArg := vmName
+	cmd := append([]string{}, tail...)
 	if len(tail) == 0 {
-		fs.Usage()
-		return fmt.Errorf("vm name required")
+		if vmArg == "" {
+			fs.Usage()
+			return fmt.Errorf("vm name required")
+		}
+	} else if vmArg == "" {
+		vmArg = tail[0]
+		cmd = append([]string{}, tail[1:]...)
 	}
-	vmArg := tail[0]
-	cmd := append([]string{}, tail[1:]...)
 	if len(cmd) > 0 && cmd[0] == "--" {
 		cmd = cmd[1:]
 	}
+	explicitCommand := len(cmd) != 0
 	if len(cmd) == 0 {
 		cmd = append([]string{}, shellDefaultCommand...)
+	}
+
+	if dir, err := requireExistingVMForControl(vmArg); err == nil && windowsQEMUCTLVM(dir) {
+		if !explicitCommand {
+			return fmt.Errorf("qemu windows shell does not support interactive sessions yet; use `cove -vm %s exec powershell.exe` or `cove gui -vm %s open`", vmArg, vmArg)
+		}
+		if len(envFlag) != 0 || len(secretEnvFlagVar) != 0 {
+			return fmt.Errorf("qemu windows shell one-shot commands do not support --env or --secret-env; use cove exec without environment flags")
+		}
+		return ctlWindowsQEMUUserAgentExec(dir, cmd, 0, 30*time.Second, false)
 	}
 
 	sock, err := resolveShellSocket(vmArg)
@@ -542,14 +558,18 @@ func mapAttachError(vmName, raw string) error {
 
 func printShellUsage(w io.Writer) {
 	fmt.Fprintln(w, `Usage: cove shell <vm> [-- cmd args...]
+       cove -vm <vm> shell -- cmd args...
 
 Open a Docker-shaped exec session against a running VM through its
 control socket. The VM-owning cove process brokers the session to the
 in-guest agent over vsock.
+For Windows QEMU VMs, one-shot commands are routed through the forwarded
+user-session agent; interactive shell sessions are not supported yet.
 
 Examples:
   cove shell my-vm                       # bash -l interactive (default)
   cove shell my-vm -- ls /tmp            # one-shot command, prints output
+  cove -vm windows-qemu shell -- whoami
   cove shell my-vm -- /bin/sh -c 'echo'
 
 The VM must be running with vz-agent reachable on its control socket.

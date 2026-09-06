@@ -234,6 +234,9 @@ func restoreVMGlobals(t *testing.T) {
 	saveInstall := installVM
 	saveLinux := linuxMode
 	saveLinuxDesktop := linuxDesktop
+	saveWindows := windowsMode
+	saveWindowsBackend := windowsBackendMode
+	saveISO := isoPath
 	t.Cleanup(func() {
 		vmName = saveVMName
 		vmDir = saveVMDir
@@ -253,6 +256,9 @@ func restoreVMGlobals(t *testing.T) {
 		installVM = saveInstall
 		linuxMode = saveLinux
 		linuxDesktop = saveLinuxDesktop
+		windowsMode = saveWindows
+		windowsBackendMode = saveWindowsBackend
+		isoPath = saveISO
 	})
 	vmName = ""
 	vmDir = ""
@@ -272,6 +278,9 @@ func restoreVMGlobals(t *testing.T) {
 	installVM = false
 	linuxMode = false
 	linuxDesktop = false
+	windowsMode = false
+	windowsBackendMode = "vz"
+	isoPath = ""
 }
 
 func canonPath(t *testing.T, p string) string {

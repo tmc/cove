@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -349,6 +350,11 @@ func applyPrivateVMConfigurationWithRunConfig(config vz.VZVirtualMachineConfigur
 			return fmt.Errorf("add block devices: %w", err)
 		}
 	}
+	if path := strings.TrimSpace(os.Getenv("COVE_PRIVATE_CPU_EMULATOR")); path != "" {
+		if err := attachPrivateCPUEmulator(config, path); err != nil {
+			return err
+		}
+	}
 	if strings.TrimSpace(rc.GDBAddress) != "" {
 		port, err := parsePortSpec(rc.GDBAddress)
 		if err != nil {
@@ -358,6 +364,31 @@ func applyPrivateVMConfigurationWithRunConfig(config vz.VZVirtualMachineConfigur
 		if err := debugstubx.AttachGDB(privConfig, port, rc.GDBListenAll); err != nil {
 			return fmt.Errorf("attach gdb debug stub: %w", err)
 		}
+	}
+	return nil
+}
+
+func attachPrivateCPUEmulator(config vz.VZVirtualMachineConfiguration, path string) error {
+	privConfig := pvz.VZVirtualMachineConfigurationFromID(config.ID)
+	if !privConfig.CanSetCPUEmulator() {
+		return fmt.Errorf("private cpu emulator selector unavailable")
+	}
+	emulator := pvz.NewVZCustomCPUEmulatorConfiguration()
+	if emulator.ID == 0 {
+		return fmt.Errorf("create private cpu emulator configuration")
+	}
+	url := foundation.NewURLFileURLWithPath(path)
+	if url.ID == 0 {
+		return fmt.Errorf("create private cpu emulator url for %s", path)
+	}
+	emulator.SetEmulatorURL(url)
+	emulator.SetMemorySize(foundation.NewNumberWithUnsignedLongLong(64 << 20))
+	emulator.SetOptions(strings.TrimSpace(os.Getenv("COVE_PRIVATE_CPU_EMULATOR_OPTIONS")))
+	if err := privConfig.SetCPUEmulator(emulator); err != nil {
+		return fmt.Errorf("attach private cpu emulator: %w", err)
+	}
+	if verbose {
+		fmt.Printf("  Private CPU emulator: %s\n", path)
 	}
 	return nil
 }

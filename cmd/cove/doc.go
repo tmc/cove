@@ -64,7 +64,7 @@
 // manually:
 //
 //	go build -o cove ./cmd/cove
-//	codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+//	codesign -s - -f --entitlements cmd/cove/vz.entitlements ./cove
 //
 // Manual signing is also useful for tests and launch paths that cannot re-exec
 // after autosigning.

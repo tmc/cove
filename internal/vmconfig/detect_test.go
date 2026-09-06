@@ -14,6 +14,7 @@ func TestDetectOSType(t *testing.T) {
 	}{
 		{name: "macos", file: "hw.model", want: "macOS"},
 		{name: "windows disk", file: "windows-disk.img", want: "Windows"},
+		{name: "windows qemu disk", file: "windows.qcow2", want: "Windows"},
 		{name: "linux disk", file: "linux-disk.img", want: "Linux"},
 		{name: "linux nvram", file: "efi.nvram", want: "Linux"},
 		{name: "linux vars", file: "efi-vars.img", want: "Linux"},

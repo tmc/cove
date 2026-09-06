@@ -297,7 +297,9 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		}
 	case "support-bundle":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			printSupportBundleUsage(os.Stderr, "cove support-bundle")
+			// support-bundle is an alias for `cove support bundle`; point users
+			// at the canonical command in its usage header.
+			printSupportBundleUsage(os.Stderr, "cove support bundle")
 			return true, 0
 		}
 	case "commands":
@@ -857,22 +859,30 @@ Examples:
 func printGUIUsage(w io.Writer) {
 	fmt.Fprintln(w, `Usage: cove gui
        cove run -gui [flags]
-       cove ctl -vm <name> gui status|open|close
+       cove gui -vm <name> [status|open|close|diagnose]
+       cove ctl -vm <name> gui status|open|close|diagnose
 
 Show or control the native VM display window.
+For Windows QEMU VMs launched with -vnc, gui open reopens the local VNC
+console and gui diagnose captures the current screen into the VM support
+directory. With no action, cove gui defaults to open.
 
 Examples:
   cove run -gui
-  cove ctl -vm work gui status
-  cove ctl -vm work gui open`)
+  cove gui -vm work status
+  cove gui -vm work diagnose
+  cove gui -vm work open`)
 }
 
 func printVNCUsage(w io.Writer) {
 	fmt.Fprintln(w, `Usage: cove vnc
        cove run -vnc :5901 -vnc-password <password> [flags]
        cove ctl -vm <name> vnc status
+       cove vnc -vm <name> [status|open]
 
 Expose a private VNC server for a running VM.
+For Windows QEMU VMs, cove records the local QEMU VNC endpoint and can reopen
+it with vnc open. With no action, cove vnc defaults to status.
 
 Common flags:
   -vnc-password <password>   require a VNC password
@@ -880,7 +890,9 @@ Common flags:
 
 Examples:
   cove run -vnc :5901 -vnc-password <password>
-  cove ctl -vm work vnc status`)
+  cove ctl -vm work vnc status
+  cove vnc -vm win
+  cove vnc -vm win open`)
 }
 
 func printRunUsage(w io.Writer) {

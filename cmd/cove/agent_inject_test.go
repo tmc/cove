@@ -87,6 +87,15 @@ func TestGuestAgentUpgradeInstallScriptUsesRename(t *testing.T) {
 	}
 }
 
+func TestAgentBuildLDFlagsForOSUsesWindowsGUI(t *testing.T) {
+	if got := agentBuildLDFlagsForOS("windows"); !strings.Contains(got, "-H=windowsgui") {
+		t.Fatalf("agentBuildLDFlagsForOS(windows) = %q, missing -H=windowsgui", got)
+	}
+	if got := agentBuildLDFlagsForOS("darwin"); strings.Contains(got, "-H=windowsgui") {
+		t.Fatalf("agentBuildLDFlagsForOS(darwin) = %q, should not contain -H=windowsgui", got)
+	}
+}
+
 func TestLinuxAgentRestartCommandSupportsOpenRC(t *testing.T) {
 	args := linuxAgentRestartCommand()
 	if len(args) != 3 || args[0] != "sh" || args[1] != "-lc" {
@@ -178,6 +187,17 @@ func TestIsLinuxGuestOS(t *testing.T) {
 	}
 }
 
+func TestIsWindowsGuestOS(t *testing.T) {
+	for _, osVersion := range []string{"windows", "Microsoft Windows 11", "win32"} {
+		if !isWindowsGuestOS(osVersion) {
+			t.Fatalf("isWindowsGuestOS(%q) = false, want true", osVersion)
+		}
+	}
+	if isWindowsGuestOS("Ubuntu 24.04") {
+		t.Fatal("isWindowsGuestOS(\"Ubuntu 24.04\") = true, want false")
+	}
+}
+
 func TestFindCoveModuleDirCoveSrc(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		dir := t.TempDir()
@@ -235,6 +255,8 @@ func TestAgentBuildTargetOS(t *testing.T) {
 	}{
 		{name: "ubuntu", os: "Ubuntu 24.04.3 LTS", want: "linux"},
 		{name: "linux", os: "Linux", want: "linux"},
+		{name: "windows", os: "windows", want: "windows"},
+		{name: "windows display", os: "Microsoft Windows 11", want: "windows"},
 		{name: "macos", os: "macOS 15.4", want: "darwin"},
 		{name: "unknown", want: "darwin"},
 	}
@@ -244,6 +266,25 @@ func TestAgentBuildTargetOS(t *testing.T) {
 				t.Fatalf("agentBuildTargetOS(%q) = %q, want %q", tt.os, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestWindowsAgentUpgradeScript(t *testing.T) {
+	script := windowsAgentUpgradeScript(`C:\ProgramData\cove\vz-agent-upgrade.exe`)
+	for _, want := range []string{
+		"Stop-ScheduledTask -TaskName 'cove-vz-agent-user'",
+		"Stop-ScheduledTask -TaskName 'cove-vz-agent'",
+		"Move-Item -Force $New $Agent",
+		"New-NetFirewallRule -DisplayName 'Cove vz-agent executable'",
+		"Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False",
+		"Start-ScheduledTask -TaskName 'cove-vz-agent' -ErrorAction Stop",
+		"Start-Process -FilePath $Agent -ArgumentList '-mode daemon -tcp-listen 0.0.0.0:1024'",
+		"Start-ScheduledTask -TaskName 'cove-vz-agent-user' -ErrorAction Stop",
+		"Start-Process -FilePath $Agent -ArgumentList '-mode agent -tcp-listen 0.0.0.0:1025'",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("script missing %q:\n%s", want, script)
+		}
 	}
 }
 

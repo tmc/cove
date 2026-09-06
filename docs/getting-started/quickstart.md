@@ -142,6 +142,9 @@ Attach the support bundle when filing an issue. It is redacted and includes
 host readiness, version/signing details, helper and daemon status, and optional
 VM diagnostics.
 
+Screenshots are omitted by default because they cannot be redacted; use
+`-include-screenshot` only when you intend to share the visible VM screen.
+
 ## Next steps
 
 - [Tutorial: provision and snapshot your first VM](first-vm.md) -- the same

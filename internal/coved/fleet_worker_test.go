@@ -502,18 +502,22 @@ func TestFleetWorkerStopsCanceledControlAssignment(t *testing.T) {
 
 func TestFleetWorkerRunsWarmPoolAssignment(t *testing.T) {
 	argsPath := filepath.Join(t.TempDir(), "args.txt")
+	release := filepath.Join(t.TempDir(), "release")
 	t.Setenv("COVE_TEST_ARGS", argsPath)
+	t.Setenv("COVE_TEST_RELEASE", release)
 	store := fleetcontrol.NewMemoryStore(time.Minute)
 	server := httptest.NewServer(fleetcontrol.Handler(store))
 	defer server.Close()
 	coveBin := writeExecutable(t, `#!/bin/sh
-if [ "$1" = "shell" ]; then
-  exit 0
-fi
-printf '%s\n' "$*" > "$COVE_TEST_ARGS"
-sleep 0.2
-exit 0
-`)
+	if [ "$1" = "shell" ]; then
+	  exit 0
+	fi
+	printf '%s\n' "$*" > "$COVE_TEST_ARGS"
+	while [ ! -f "$COVE_TEST_RELEASE" ]; do
+	  sleep 0.02
+	done
+	exit 0
+	`)
 
 	worker, err := NewFleetWorker(FleetWorkerConfig{
 		ControllerURL:      server.URL,
@@ -544,6 +548,9 @@ exit 0
 		assignment, ok := store.GetAssignment(assignmentID)
 		return ok && assignment.Status == "ready" && assignment.LastReport != nil && assignment.LastReport.Status == "ready"
 	})
+	if err := os.WriteFile(release, []byte("done\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	select {
 	case err := <-done:
 		if err != nil {

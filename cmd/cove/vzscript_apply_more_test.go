@@ -14,7 +14,7 @@ func TestVZScriptGuestOSDisplay(t *testing.T) {
 		{"macos", "Darwin"},
 		{"", "unknown"},
 		{"both", "unknown"},
-		{"windows", "unknown"},
+		{"windows", "Windows"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {
@@ -36,10 +36,12 @@ func TestCheckVZScriptGuestOS(t *testing.T) {
 		{"empty recipe defaults darwin matches darwin", "", "darwin", false, ""},
 		{"darwin recipe darwin target", "darwin", "darwin", false, ""},
 		{"linux recipe linux target", "linux", "linux", false, ""},
+		{"windows recipe windows target", "windows", "windows", false, ""},
 		{"both recipe linux target", "both", "linux", false, ""},
 		{"empty target accepted", "darwin", "", false, ""},
 		{"linux recipe darwin target", "linux", "darwin", true, "is for linux guests only; this VM is Darwin"},
 		{"darwin recipe linux target", "darwin", "linux", true, "is for darwin guests only; this VM is Linux"},
+		{"windows recipe darwin target", "windows", "darwin", true, "is for windows guests only; this VM is Darwin"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -1,0 +1,53 @@
+# windows-wsl - Enable and verify Windows Subsystem for Linux
+# guest-os: windows
+# runs-on: daemon
+
+guest-wait 10m
+guest-write C:/ProgramData/cove/install-wsl.ps1 install-wsl.ps1
+guest-exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:/ProgramData/cove/install-wsl.ps1
+
+-- install-wsl.ps1 --
+$ErrorActionPreference = 'Stop'
+$Root = 'C:\ProgramData\cove'
+New-Item -ItemType Directory -Force $Root | Out-Null
+try { Start-Transcript -Path (Join-Path $Root 'install-wsl.log') -Force | Out-Null } catch {}
+
+function Enable-Feature($Name) {
+  $feature = Get-WindowsOptionalFeature -Online -FeatureName $Name
+  if ($feature.State -eq 'Enabled') {
+    Write-Output "$Name already enabled"
+    return $false
+  }
+  Write-Output "Enabling $Name"
+  $result = Enable-WindowsOptionalFeature -Online -FeatureName $Name -All -NoRestart
+  return [bool]$result.RestartNeeded
+}
+
+$restart = $false
+$restart = (Enable-Feature 'Microsoft-Windows-Subsystem-Linux') -or $restart
+$restart = (Enable-Feature 'VirtualMachinePlatform') -or $restart
+
+try {
+  & wsl.exe --set-default-version 2
+} catch {
+  Write-Output "wsl default-version deferred: $($_.Exception.Message)"
+}
+
+if ($restart) {
+  'reboot-required' | Set-Content -Encoding ASCII (Join-Path $Root 'wsl-reboot-required')
+  Write-Output 'WSL features enabled; reboot Windows, then rerun windows-wsl to finish verification.'
+  exit 0
+}
+
+if (Test-Path (Join-Path $Root 'wsl-reboot-required')) {
+  Remove-Item -Force (Join-Path $Root 'wsl-reboot-required')
+}
+
+try {
+  & wsl.exe --update
+} catch {
+  Write-Output "wsl update skipped: $($_.Exception.Message)"
+}
+
+& wsl.exe --status
+Write-Output 'WSL ready.'

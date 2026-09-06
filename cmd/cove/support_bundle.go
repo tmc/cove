@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -22,17 +23,19 @@ import (
 )
 
 type supportBundleOptions struct {
-	VM  string
-	Out string
+	VM                string
+	Out               string
+	IncludeScreenshot bool
 }
 
 type supportBundleManifest struct {
-	CreatedAt string `json:"created_at"`
-	Version   string `json:"version"`
-	GOOS      string `json:"goos"`
-	GOARCH    string `json:"goarch"`
-	VM        string `json:"vm,omitempty"`
-	Redacted  bool   `json:"redacted"`
+	CreatedAt         string `json:"created_at"`
+	Version           string `json:"version"`
+	GOOS              string `json:"goos"`
+	GOARCH            string `json:"goarch"`
+	VM                string `json:"vm,omitempty"`
+	Redacted          bool   `json:"redacted"`
+	IncludeScreenshot bool   `json:"include_screenshot,omitempty"`
 }
 
 type supportCommandResult struct {
@@ -43,6 +46,7 @@ type supportCommandResult struct {
 }
 
 var supportRunCommand = runSupportCommand
+var supportCaptureWindowsQEMUImage = captureWindowsQEMUImage
 
 func runSupportCommand(ctx context.Context, args ...string) supportCommandResult {
 	exe, err := os.Executable()
@@ -99,6 +103,7 @@ func runSupportBundleWithUsage(env commandEnv, args []string, usageCommand strin
 	fs.Usage = func() { printSupportBundleUsage(fs.Output(), usageCommand) }
 	vm := fs.String("vm", "", "VM name to include VM-specific diagnostics")
 	out := fs.String("out", "", "output .tar.gz path")
+	includeScreenshot := fs.Bool("include-screenshot", false, "include an unredacted VM screenshot when available")
 	if err := parseFlagsOrHelp(fs, args); err != nil {
 		if errors.Is(err, errFlagHelp) {
 			return nil
@@ -108,13 +113,17 @@ func runSupportBundleWithUsage(env commandEnv, args []string, usageCommand strin
 	if fs.NArg() != 0 {
 		return fmt.Errorf("usage: cove support bundle [-vm NAME] [-out PATH]")
 	}
-	opts := supportBundleOptions{VM: *vm, Out: *out}
+	opts := supportBundleOptions{VM: *vm, Out: *out, IncludeScreenshot: *includeScreenshot}
 	path, err := createSupportBundle(opts)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(env.Stdout, "Support bundle written to %s\n", path)
-	fmt.Fprintln(env.Stdout, "Redacted diagnostics include host readiness, command inventory, trace/log discovery, and recent run metadata.")
+	if opts.IncludeScreenshot {
+		fmt.Fprintln(env.Stdout, "Diagnostics are redacted except for the explicitly requested VM screenshot.")
+	} else {
+		fmt.Fprintln(env.Stdout, "Redacted diagnostics include host readiness, command inventory, trace/log discovery, and recent run metadata.")
+	}
 	return nil
 }
 
@@ -127,9 +136,12 @@ The bundle includes host readiness, version/signing data, helper and daemon
 status, storage census, recent run and recording metadata, and optional
 VM-specific doctor/control diagnostics when -vm is set.
 
+Screenshots are not included by default because they cannot be redacted.
+
 Flags:
-  -vm NAME    include diagnostics for a VM
-  -out PATH   output .tar.gz path
+  -vm NAME              include diagnostics for a VM
+  -out PATH             output .tar.gz path
+  -include-screenshot   include an unredacted VM screenshot when available
 `, command)
 }
 
@@ -181,12 +193,13 @@ func createSupportBundle(opts supportBundleOptions) (string, error) {
 
 func writeSupportBundle(tw *tar.Writer, opts supportBundleOptions) error {
 	manifest := supportBundleManifest{
-		CreatedAt: time.Now().UTC().Format(time.RFC3339),
-		Version:   versionInfo(),
-		GOOS:      runtime.GOOS,
-		GOARCH:    runtime.GOARCH,
-		VM:        opts.VM,
-		Redacted:  true,
+		CreatedAt:         time.Now().UTC().Format(time.RFC3339),
+		Version:           versionInfo(),
+		GOOS:              runtime.GOOS,
+		GOARCH:            runtime.GOARCH,
+		VM:                opts.VM,
+		Redacted:          !opts.IncludeScreenshot,
+		IncludeScreenshot: opts.IncludeScreenshot,
 	}
 	manifestJSON, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
@@ -204,9 +217,12 @@ func writeSupportBundle(tw *tar.Writer, opts supportBundleOptions) error {
 	if err := supportWriteFile(tw, "host.txt", []byte(supportHostSummary())); err != nil {
 		return err
 	}
+	vmDir := ""
 	vmMissing := false
 	if opts.VM != "" {
-		if _, ok := vmconfig.ExistingPath(opts.VM); !ok {
+		if dir, ok := vmconfig.ExistingPath(opts.VM); ok {
+			vmDir = dir
+		} else {
 			vmMissing = true
 		}
 	}
@@ -222,6 +238,11 @@ func writeSupportBundle(tw *tar.Writer, opts supportBundleOptions) error {
 	if vmMissing {
 		body := fmt.Sprintf("no VM named %q under %s\n  list VMs: cove list\n  create a VM: cove up -user <name>\n", opts.VM, vmconfig.BaseDir())
 		if err := supportWriteFile(tw, "vm/not-found.txt", []byte(redactSupportText(body))); err != nil {
+			return err
+		}
+	}
+	if vmDir != "" && windowsQEMUCTLVM(vmDir) {
+		if err := supportWriteQEMUWindowsBundle(tw, vmDir, opts.IncludeScreenshot); err != nil {
 			return err
 		}
 	}
@@ -311,9 +332,180 @@ func supportWriteFile(tw *tar.Writer, name string, data []byte) error {
 	return nil
 }
 
+func supportWriteQEMUWindowsBundle(tw *tar.Writer, vmDir string, includeScreenshot bool) error {
+	qemuDir := filepath.Join(vmDir, "qemu")
+	for _, file := range []struct {
+		name string
+		path string
+		json bool
+	}{
+		{"vm/qemu-metadata.json", filepath.Join(qemuDir, "metadata.json"), true},
+		{"vm/qemu-process.json", filepath.Join(qemuDir, "process.json"), true},
+		{"vm/qemu-readme.txt", filepath.Join(qemuDir, "README"), false},
+	} {
+		data, ok, err := supportReadRedactedArtifact(file.path, file.json)
+		if err != nil {
+			return err
+		}
+		if ok {
+			if err := supportWriteFile(tw, file.name, data); err != nil {
+				return err
+			}
+		}
+	}
+	if data := supportQEMUWindowsSerialListing(vmDir); len(data) > 0 {
+		if err := supportWriteFile(tw, "vm/qemu-serial-files.txt", data); err != nil {
+			return err
+		}
+	}
+	if logPath := windowsQEMULogPath(vmDir); logPath != "" {
+		var buf bytes.Buffer
+		if err := writeLastLogLines(&buf, logPath, defaultLogLines); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		if buf.Len() > 0 {
+			if err := supportWriteFile(tw, "vm/qemu-serial-tail.txt", []byte(redactSupportText(buf.String()))); err != nil {
+				return err
+			}
+		}
+	}
+	if err := supportWriteQEMUWindowsStatus(tw, vmDir); err != nil {
+		return err
+	}
+	if err := supportWriteQEMUWindowsScreenshot(tw, vmDir, includeScreenshot); err != nil {
+		return err
+	}
+	return nil
+}
+
+func supportWriteQEMUWindowsStatus(tw *tar.Writer, vmDir string) error {
+	status := readWindowsQEMUCTLStatus(vmDir)
+	raw, err := json.Marshal(status)
+	if err != nil {
+		return fmt.Errorf("support bundle: marshal qemu status: %w", err)
+	}
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return fmt.Errorf("support bundle: decode qemu status: %w", err)
+	}
+	v = redactSupportJSONValue(v)
+	if m, ok := v.(map[string]any); ok && status.VNCAuth != "" {
+		m["vncAuth"] = status.VNCAuth
+	}
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return fmt.Errorf("support bundle: marshal qemu status: %w", err)
+	}
+	data = append(data, '\n')
+	return supportWriteFile(tw, "vm/qemu-status.json", []byte(redactSupportText(string(data))))
+}
+
+func supportWriteQEMUWindowsScreenshot(tw *tar.Writer, vmDir string, include bool) error {
+	if !include {
+		msg := "qemu screenshot not included because screenshots cannot be redacted; rerun support bundle with -include-screenshot to include one\n"
+		return supportWriteFile(tw, "vm/qemu-screenshot.txt", []byte(msg))
+	}
+	img, err := supportCaptureWindowsQEMUImage(vmDir)
+	if err != nil {
+		msg := fmt.Sprintf("qemu screenshot unavailable: %v\n", err)
+		return supportWriteFile(tw, "vm/qemu-screenshot-error.txt", []byte(redactSupportText(msg)))
+	}
+	data, err := encodeWindowsQEMUImage(img, "png")
+	if err != nil {
+		return fmt.Errorf("support bundle: encode qemu screenshot: %w", err)
+	}
+	return supportWriteFile(tw, "vm/qemu-screenshot.png", data)
+}
+
+func supportReadRedactedArtifact(path string, jsonFile bool) ([]byte, bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("support bundle: read %s: %w", path, err)
+	}
+	if !jsonFile {
+		return []byte(redactSupportText(string(data))), true, nil
+	}
+	var v any
+	if err := json.Unmarshal(data, &v); err != nil {
+		return []byte(redactSupportText(string(data))), true, nil
+	}
+	v = redactSupportJSONValue(v)
+	out, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return nil, false, fmt.Errorf("support bundle: marshal redacted %s: %w", path, err)
+	}
+	out = append(out, '\n')
+	return []byte(redactSupportText(string(out))), true, nil
+}
+
+func redactSupportJSONValue(v any) any {
+	switch x := v.(type) {
+	case map[string]any:
+		for k, v := range x {
+			if supportSecretKey(k) {
+				x[k] = "REDACTED"
+				continue
+			}
+			x[k] = redactSupportJSONValue(v)
+		}
+		return x
+	case []any:
+		for i, v := range x {
+			x[i] = redactSupportJSONValue(v)
+		}
+		return x
+	case string:
+		return redactSupportText(x)
+	default:
+		return x
+	}
+}
+
+func supportSecretKey(key string) bool {
+	key = strings.ToLower(key)
+	return strings.Contains(key, "password") ||
+		strings.Contains(key, "token") ||
+		strings.Contains(key, "secret") ||
+		strings.Contains(key, "auth")
+}
+
+func supportQEMUWindowsSerialListing(vmDir string) []byte {
+	qemuDir := filepath.Join(vmDir, "qemu")
+	seen := map[string]bool{}
+	var paths []string
+	if path := windowsQEMULogPath(vmDir); path != "" {
+		paths = append(paths, path)
+	}
+	if matches, err := filepath.Glob(filepath.Join(qemuDir, "serial*.log")); err == nil {
+		paths = append(paths, matches...)
+	}
+	sort.Strings(paths)
+
+	var b strings.Builder
+	for _, path := range paths {
+		if seen[path] {
+			continue
+		}
+		seen[path] = true
+		info, err := os.Stat(path)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		name := filepath.Base(path)
+		if filepath.Dir(path) != qemuDir {
+			name = redactSupportText(path)
+		}
+		fmt.Fprintf(&b, "%s\t%d\t%s\n", name, info.Size(), info.ModTime().UTC().Format(time.RFC3339))
+	}
+	return []byte(b.String())
+}
+
 var supportRedactors = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)bearer\s+[A-Za-z0-9._~+/=-]+`),
-	regexp.MustCompile(`(?i)(password|token|secret|auth_token)(["'=:\s]+)([^\s,"']+)`),
+	regexp.MustCompile(`(?i)\b(pass|password|token|secret|auth_token)(["'=:\s]+)([^\s,"']+)`),
 	regexp.MustCompile(`/Users/[^/\s"']+(?:/[^\s"']*)?`),
 }
 

@@ -43,6 +43,7 @@ var vmDirIndependentCommands = map[string]bool{
 	"ctl":             true,
 	"logs":            true,
 	"pins":            true,
+	"qemu-display":    true,
 	"recording":       true,
 	"recordings":      true,
 	"rm":              true,
