@@ -269,8 +269,15 @@ cove/
 | Maturity | Features |
 |----------|----------|
 | GA | install, run (auto-suspend on quit, resume on next run), provisioning (inject), vzscripts |
-| Beta | snapshots, guest agent, clipboard sharing, shared folders, Linux guests, OCI push/pull, VM fork/restore, `cove compact`, local content-addressed store, `cove build` for local VM-directory and registry bases (cache-aware execution, OCI cache import/export, `# secret:` tmpfs, compaction) |
-| Experimental | Third-party VM import, memory balloon, Windows stub |
+| Beta | snapshots, guest agent, clipboard sharing, shared folders, Linux guests, Windows 11 ARM64 guests (QEMU/HVF backend), OCI push/pull, VM fork/restore, `cove compact`, local content-addressed store, `cove build` for local VM-directory and registry bases (cache-aware execution, OCI cache import/export, `# secret:` tmpfs, compaction) |
+| Experimental | Third-party VM import, memory balloon |
+
+Windows 11 ARM64 runs on the QEMU/HVF backend: unattended install, guest agent
+exec and file copy, screenshots, OCR, clipboard, support bundles, and a
+Cove-owned display window. Suspend and resume, snapshots, clone, fork, and the
+image store do not cover Windows VMs, there is no audio device, and there is no
+TPM device — the install bypasses the TPM requirement instead. See the
+[Windows guide](docs/guides/windows.md).
 
 ## Security
 

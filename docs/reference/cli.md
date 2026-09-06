@@ -84,6 +84,10 @@ cove run [flags]
 | `-no-resume` / `-cold-boot` | false | Discard saved suspend state |
 | `-recovery` | false | Boot into macOS recovery mode |
 | `-linux` | false | Run a Linux VM |
+| `-windows` | false | Run a Windows ARM64 VM |
+| `-windows-backend <mode>` | qemu | Windows backend: qemu or vz (vz is experimental) |
+| `-windows-display-size <WxH>` | 1280x800 | Windows guest display size; persisted per VM |
+| `-windows-shared-dir <path>` | | Host directory shared with the Windows guest over SMB; persisted per VM |
 | `-nested` | false | Enable nested virtualization for Linux guests on supported hosts |
 | `-shell` | false | Attach the host terminal to a guest shell after boot (Linux only; mutually exclusive with `-headless`). For already-running VMs, prefer [`cove exec -it`](#exec) or `cove shell`. |
 | `-cpu <n>` | 2 | Number of CPUs |
@@ -142,7 +146,12 @@ cove run -fork-from macos-runner:14.5 -ephemeral -fork-name worker-1
 cove fork macos-base worker-1 && cove run -vm worker-1
 cove run -recovery -no-resume -gui -usb ~/recovery.img
 cove run -headless -vnc :5901 -vnc-password <password>
+cove run -windows -vnc :5901
 ```
+
+QEMU Windows VMs accept `-network nat` or `-network none` only, and their `-vnc`
+listener is always bound to `127.0.0.1` on port 5900 or higher without a
+password. See the [Windows guide](../guides/windows.md).
 
 Use `-vnc-password` whenever you enable `-vnc`. `-vnc-bonjour` requires a
 password because it advertises the service on the local network. Bind the VNC
@@ -273,12 +282,15 @@ cove doctor [options]
 `cove doctor host` checks whether the Mac is ready to create and run cove VMs:
 Apple Silicon, macOS version, virtualization entitlement, cove state
 writability, free disk, network, optional helper state, and Xcode Command Line
-Tools. `-json` emits a machine-readable report.
+Tools. It also runs the QEMU Windows readiness checks below when this host has a
+Windows VM, or when the invocation asks for Windows. `-json` emits a
+machine-readable report.
 
-`cove doctor qemu` checks the direct QEMU/HVF Windows backend prerequisites:
-`qemu-system-aarch64`, `qemu-img`, AArch64 EFI pflash assets, display-device
-configuration, QEMU screenshot/text backend override values, and the local
-VirtIO driver cache state.
+`cove doctor qemu` is the focused form of those checks: `qemu-system-aarch64`
+and its version, `qemu-img`, AArch64 EFI pflash assets, display-device
+configuration, QEMU screenshot/text backend override values, the SPICE vdagent
+chardev used for clipboard, the console session the Cove display window needs,
+and the local VirtIO driver cache state.
 
 Plain `cove doctor` remains VM-focused. It checks provisioning, guest agent, TCC
 paths, and file ownership for the active VM or `-vm <name>`.
@@ -322,7 +334,9 @@ cove up [flags]
 | `-vm <name>` | | VM name |
 | `-linux` | false | Install Linux instead of macOS |
 | `-windows` | false | Install Windows ARM64 instead of macOS |
-| `-windows-backend <mode>` | vz | Windows backend: vz or qemu |
+| `-windows-backend <mode>` | qemu | Windows backend: qemu or vz. `cove up -windows` supports `qemu` only |
+| `-windows-display-size <WxH>` | 1280x800 | Windows guest display size; persisted per VM |
+| `-windows-shared-dir <path>` | | Host directory shared with the Windows guest over SMB; persisted per VM |
 | `-iso <path>` | | Windows ISO path when using `-windows` |
 | `-distro <name>` | ubuntu | Linux distro: ubuntu, debian, fedora, alpine |
 | `-desktop` | false | Use Ubuntu Desktop (implies `-linux`) |
@@ -351,21 +365,25 @@ cove up -user me -vzscripts homebrew,golang
 cove up -user me -ipsw ~/restore.ipsw -cpu 4 -memory 8
 cove up -linux -user tmc
 cove up -linux -desktop -user me
-cove up -windows -windows-backend qemu -iso ~/Win11_ARM64.iso -user me
+cove up -windows -iso ~/Win11_ARM64.iso -user me
 ```
 
 For macOS, omit `-password` so cove prompts. For Linux, an omitted password
 defaults to the provisioned username; change it before enabling remote access or
 saving a reusable image.
 
-For Windows, use the QEMU backend. First install defaults to the built-in
-`windows-install` vzscript, which drives setup, waits for the QEMU-forwarded
-Windows `vz-agent`, and verifies the provision marker, scheduled task, and
-agent process. Clipboard sharing uses QEMU's SPICE vdagent channel and the
-Windows SPICE guest tools installer; verify it with `windows-clipboard`.
+Windows uses the QEMU/HVF backend, which is the `-windows-backend` default; `vz`
+is experimental and `cove up -windows` does not accept it. First install
+defaults to the built-in `windows-install` vzscript, which drives setup, waits
+for the QEMU-forwarded Windows `vz-agent`, and verifies the provision marker,
+scheduled task, and agent process. Clipboard sharing uses QEMU's SPICE vdagent
+channel and the Windows SPICE guest tools installer; verify it with
+`windows-clipboard`.
 Use `cove gui -vm <name> status` to see the local VNC URL and provisioned
-Windows credentials. Headed QEMU runs with `-vnc` open the VNC console
-automatically after QEMU starts; use `cove gui -vm <name>` to reopen it later.
+Windows credentials, and `cove gui -vm <name> open` to open the Cove display
+window over that endpoint. `-vnc` is a global flag: `cove run` accepts it after
+the subcommand, while `cove up` needs it before (`cove -vnc :5901 up -windows
+...`).
 The local QEMU Windows VNC endpoint itself does not prompt for a username; the
 shown credentials are for Windows guest login if Windows is locked or signed
 out.
@@ -381,9 +399,12 @@ one path.
 Windows-specific built-in recipes live under `vzscripts/windows/` in the source
 tree but keep stable public names such as `windows-install`,
 `windows-clipboard`, `windows-golang`, and `windows-wsl`.
-Set `COVE_QEMU_SMB_DIR=/path/to/share` before launching the VM to expose a host
-directory through QEMU user-mode SMB as `\\10.0.2.4\qemu` in Windows. This
-requires a Samba `smbd` binary where QEMU expects it.
+Pass `-windows-shared-dir /path/to/share` to expose a host directory through
+QEMU user-mode SMB as `\\10.0.2.4\qemu` in Windows. The directory is persisted
+per VM; `COVE_QEMU_SMB_DIR` remains as a lower-precedence diagnostic override.
+This requires a Samba `smbd` binary where QEMU expects it. Guest display
+geometry works the same way through `-windows-display-size WxH` and
+`COVE_QEMU_DISPLAY_SIZE`. See the [Windows guide](../guides/windows.md).
 
 ---
 
@@ -1769,3 +1790,4 @@ agent-aware free-space compactor.
 | Variable | Effect |
 |----------|--------|
 | `COVE_CAPTURE_BACKEND` | Set to `sckit` to opt into the ScreenCaptureKit capture path for `cove run -gui` and `cove ctl screenshot` (design 041). Unset or any other value uses CGWindow. The per-VM `<vmDir>/capture-backend` file overrides this for a single VM. |
+| `COVE_QEMU_*` | Diagnostic overrides for the QEMU/HVF Windows backend: tool and firmware paths, display device and size, pointer device, boot keypresses, agent port forwards, SMB shared directory, screenshot and text backends, and viewer selection. They sit below the corresponding flags in precedence and are listed in the [Windows guide](../guides/windows.md#diagnostic-environment-variables). |

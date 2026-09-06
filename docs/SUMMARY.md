@@ -21,6 +21,7 @@ icon: list
 * [Suspend and resume a VM](features/suspend-resume.md)
 * [Snapshot and roll back a VM](features/snapshots.md)
 * [Run Linux VMs](features/linux.md)
+* [Run Windows VMs](guides/windows.md)
 * [Configure networking](features/networking.md)
 * [Configure the GUI and displays](features/gui-display.md)
 * [Share folders with the guest](features/shared-folders.md)
