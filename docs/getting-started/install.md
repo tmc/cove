@@ -32,9 +32,12 @@ Check that cove finds all of it before creating a Windows VM:
 cove doctor qemu
 ```
 
-The check reports each tool and firmware file it resolved. `COVE_QEMU_SYSTEM_AARCH64`,
-`COVE_QEMU_IMG`, `COVE_QEMU_EFI_CODE`, and `COVE_QEMU_EFI_VARS_TEMPLATE` override
-the lookup when QEMU is installed somewhere off `PATH`.
+The check reports each tool and firmware file it resolved. The two binaries are
+looked up on `PATH`; the firmware is not, and is instead searched for under the
+UTM and Homebrew data directories. Set `COVE_QEMU_SYSTEM_AARCH64`,
+`COVE_QEMU_IMG`, `COVE_QEMU_EFI_CODE`, or `COVE_QEMU_EFI_VARS_TEMPLATE` to name
+the file directly when QEMU is installed anywhere else — the Nix flake and the
+nix-darwin module set the two firmware variables for you.
 
 ## Build from a checkout
 

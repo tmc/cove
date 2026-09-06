@@ -39,14 +39,26 @@
             # vendorHash will be computed on first nix build; replace lib.fakeHash with the suggested hash.
             vendorHash = lib.fakeHash;
             subPackages = [ "." ];
-            # The Windows backend shells out to qemu-system-aarch64 and
-            # qemu-img and reads the EDK2 AArch64 pflash images from the same
-            # package, so put qemu on the wrapped command's PATH. Suffixed so
-            # a qemu the user already has installed still wins.
+            # The Windows backend runs qemu-system-aarch64 and qemu-img, which
+            # it resolves through PATH, so suffix qemu onto the wrapped
+            # command's PATH; suffixed so a qemu the user installed themselves
+            # still wins. It also needs the EDK2 AArch64 pflash images, and
+            # that lookup does not consult PATH: it reads COVE_QEMU_EFI_CODE
+            # and COVE_QEMU_EFI_VARS_TEMPLATE and otherwise searches a fixed
+            # list of UTM and Homebrew directories, none of which exist under
+            # Nix. Point both variables at this qemu's firmware, as defaults so
+            # an explicit setting still wins.
             nativeBuildInputs = [ pkgs.makeWrapper ];
             postInstall = ''
+              efiCode=${pkgs.qemu}/share/qemu/edk2-aarch64-code.fd
+              efiVars=${pkgs.qemu}/share/qemu/edk2-arm-vars.fd
+              for f in "$efiCode" "$efiVars"; do
+                test -f "$f" || { echo "cove: $f missing; update the firmware paths for this qemu" >&2; exit 1; }
+              done
               wrapProgram $out/bin/cove \
-                --suffix PATH : ${lib.makeBinPath [ pkgs.qemu ]}
+                --suffix PATH : ${lib.makeBinPath [ pkgs.qemu ]} \
+                --set-default COVE_QEMU_EFI_CODE "$efiCode" \
+                --set-default COVE_QEMU_EFI_VARS_TEMPLATE "$efiVars"
             '';
             inherit meta;
           };

@@ -14,10 +14,13 @@ let cfg = config.services.cove; in
       type = lib.types.bool;
       default = true;
       description = ''
-        Install qemu system-wide. Windows guests run on the direct QEMU/HVF
-        backend, which shells out to qemu-system-aarch64 and qemu-img and
-        reads the EDK2 AArch64 pflash images from the same package. Set to
-        false if only macOS and Linux guests are used.
+        Install qemu system-wide and point cove at its EDK2 AArch64 pflash
+        images. Windows guests run on the direct QEMU/HVF backend, which runs
+        qemu-system-aarch64 and qemu-img off PATH and loads the firmware from
+        COVE_QEMU_EFI_CODE and COVE_QEMU_EFI_VARS_TEMPLATE; cove's built-in
+        firmware search only covers UTM and Homebrew directories, so the
+        variables are exported here. Set to false if only macOS and Linux
+        guests are used.
       '';
     };
 
@@ -42,6 +45,13 @@ let cfg = config.services.cove; in
 
   config = lib.mkIf cfg.enable {
     environment.systemPackages = [ cfg.package ] ++ lib.optional cfg.qemu pkgs.qemu;
+
+    # cove finds qemu-system-aarch64 and qemu-img on PATH, but its firmware
+    # search never consults PATH, so name the pflash images explicitly.
+    environment.variables = lib.mkIf cfg.qemu {
+      COVE_QEMU_EFI_CODE = "${pkgs.qemu}/share/qemu/edk2-aarch64-code.fd";
+      COVE_QEMU_EFI_VARS_TEMPLATE = "${pkgs.qemu}/share/qemu/edk2-arm-vars.fd";
+    };
 
     launchd.daemons.cove-helper = {
       serviceConfig = {
