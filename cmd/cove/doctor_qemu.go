@@ -509,23 +509,11 @@ func countQEMUWindowsVMs(root string) int {
 		if !entry.IsDir() {
 			continue
 		}
-		if isQEMUWindowsVMDir(filepath.Join(root, entry.Name())) {
+		if backend, ok := windowsBackendForVMDir(filepath.Join(root, entry.Name())); ok && backend == windowsBackendQEMU {
 			n++
 		}
 	}
 	return n
-}
-
-// isQEMUWindowsVMDir reports whether dir holds a QEMU-backed Windows VM.
-//
-// TODO: windows_qemu.go is growing a backend-detection helper; fold this into
-// it once both have landed.
-func isQEMUWindowsVMDir(dir string) bool {
-	if _, err := os.Stat(filepath.Join(dir, "windows.qcow2")); err == nil {
-		return true
-	}
-	info, err := os.Stat(filepath.Join(dir, "qemu"))
-	return err == nil && info.IsDir()
 }
 
 // hostDoctorQEMUChecks returns the QEMU Windows readiness checks in the host
