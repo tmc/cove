@@ -103,7 +103,7 @@ func TestUpMissingUserDoesNotCreateVMDir(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			home := t.TempDir()
 			cmd := exec.Command(bin, tt.args...)
-			cmd.Env = append(os.Environ(), "HOME="+home)
+			cmd.Env = doctorE2EEnv(home)
 			var stdout, stderr strings.Builder
 			cmd.Stdout = &stdout
 			cmd.Stderr = &stderr
@@ -163,7 +163,7 @@ func TestGUIVNCAliasesWithMissingVMDoNotCreateVMDir(t *testing.T) {
 				args = append([]string{"-vm", tt.vm}, args...)
 			}
 			cmd := exec.Command(bin, args...)
-			cmd.Env = append(os.Environ(), "HOME="+home)
+			cmd.Env = doctorE2EEnv(home)
 			var stdout, stderr strings.Builder
 			cmd.Stdout = &stdout
 			cmd.Stderr = &stderr
@@ -198,7 +198,7 @@ func TestStorageWithGlobalVMDoesNotCreateVMDir(t *testing.T) {
 	home := t.TempDir()
 	vm := "missing-storage-vm"
 	cmd := exec.Command(bin, "-vm", vm, "storage", "census")
-	cmd.Env = append(os.Environ(), "HOME="+home)
+	cmd.Env = doctorE2EEnv(home)
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -218,7 +218,7 @@ func TestGCDryRunDoesNotCreateVMDir(t *testing.T) {
 	bin := doctorE2EBinary(t)
 	home := t.TempDir()
 	cmd := exec.Command(bin, "gc", "-dry-run")
-	cmd.Env = append(os.Environ(), "HOME="+home)
+	cmd.Env = doctorE2EEnv(home)
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -237,7 +237,7 @@ func TestUnknownVMSubcommandDoesNotCreateVMDir(t *testing.T) {
 	bin := doctorE2EBinary(t)
 	home := t.TempDir()
 	cmd := exec.Command(bin, "vm", "delet", "missing-vm")
-	cmd.Env = append(os.Environ(), "HOME="+home)
+	cmd.Env = doctorE2EEnv(home)
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -279,7 +279,7 @@ func TestSafeDiscoveryWithGlobalVMDoesNotCreateVMDir(t *testing.T) {
 			home := t.TempDir()
 			vm := "missing-" + tt.name + "-vm"
 			cmd := exec.Command(bin, append([]string{"-vm", vm}, tt.args...)...)
-			cmd.Env = append(os.Environ(), "HOME="+home)
+			cmd.Env = doctorE2EEnv(home)
 			var stdout, stderr strings.Builder
 			cmd.Stdout = &stdout
 			cmd.Stderr = &stderr
@@ -312,7 +312,7 @@ func TestVMDeleteMissingDoesNotCreateVMDir(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			home := t.TempDir()
 			cmd := exec.Command(bin, tt.args...)
-			cmd.Env = append(os.Environ(), "HOME="+home)
+			cmd.Env = doctorE2EEnv(home)
 			var stdout, stderr strings.Builder
 			cmd.Stdout = &stdout
 			cmd.Stderr = &stderr
@@ -367,7 +367,7 @@ func TestAgentProvisionVerifyWithMissingVMDoesNotCreateVMDir(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			home := t.TempDir()
 			cmd := exec.Command(bin, tt.args...)
-			cmd.Env = append(os.Environ(), "HOME="+home)
+			cmd.Env = doctorE2EEnv(home)
 			var stdout, stderr strings.Builder
 			cmd.Stdout = &stdout
 			cmd.Stderr = &stderr
@@ -406,7 +406,7 @@ func TestSharedFolderWithMissingVMDoesNotCreateVMDir(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			home := t.TempDir()
 			cmd := exec.Command(bin, tt.args...)
-			cmd.Env = append(os.Environ(), "HOME="+home)
+			cmd.Env = doctorE2EEnv(home)
 			var stdout, stderr strings.Builder
 			cmd.Stdout = &stdout
 			cmd.Stderr = &stderr
@@ -435,7 +435,7 @@ func TestReadOnlyDiscoveryCommandsLeaveOnlyVMRoot(t *testing.T) {
 	}
 	for _, args := range commands {
 		cmd := exec.Command(bin, args...)
-		cmd.Env = append(os.Environ(), "HOME="+home)
+		cmd.Env = doctorE2EEnv(home)
 		var stdout, stderr strings.Builder
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
@@ -467,7 +467,7 @@ func TestListWithGlobalVMDoesNotCreateVMDir(t *testing.T) {
 	home := t.TempDir()
 	vm := "missing-list-vm"
 	cmd := exec.Command(bin, "-vm", vm, "list")
-	cmd.Env = append(os.Environ(), "HOME="+home)
+	cmd.Env = doctorE2EEnv(home)
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -488,7 +488,7 @@ func TestRunWithMissingVMDoesNotCreateVMDir(t *testing.T) {
 	home := t.TempDir()
 	vm := "missing-run-vm"
 	cmd := exec.Command(bin, "run", "-vm", vm, "-headless", "-start-timeout", "1s")
-	cmd.Env = append(os.Environ(), "HOME="+home)
+	cmd.Env = doctorE2EEnv(home)
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

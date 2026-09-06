@@ -68,6 +68,7 @@ func TestResolvedVersionKeepsInjectedValues(t *testing.T) {
 }
 
 func saveVersionState() func() {
+	clearVersionCache()
 	oldVersion, oldCommit, oldDate := version, commit, date
 	oldExecutable := versionExecutable
 	oldStat := versionStat
@@ -79,6 +80,7 @@ func saveVersionState() func() {
 		versionStat = oldStat
 		versionGetwd = oldGetwd
 		versionGitOutput = oldGitOutput
+		clearVersionCache()
 	}
 }
 

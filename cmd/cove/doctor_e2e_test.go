@@ -22,10 +22,17 @@ import (
 )
 
 var (
-	doctorE2EBinaryOnce sync.Once
-	doctorE2EBinaryPath string
-	doctorE2EBinaryErr  error
+	doctorE2EBinaryOnce   sync.Once
+	doctorE2EBinaryPath   string
+	doctorE2EBinaryErr    error
+	doctorE2EProcessSlots = make(chan struct{}, 8)
 )
+
+func runDoctorE2ECommand(cmd *exec.Cmd) error {
+	doctorE2EProcessSlots <- struct{}{}
+	defer func() { <-doctorE2EProcessSlots }()
+	return cmd.Run()
+}
 
 func doctorE2EBinary(t *testing.T) string {
 	t.Helper()
@@ -64,6 +71,10 @@ func signDoctorE2EBinary(path string) error {
 		return wrapBuildErr(err, out)
 	}
 	return nil
+}
+
+func doctorE2EEnv(home string) []string {
+	return append(os.Environ(), "HOME="+home, "_VZ_SIGNED=1")
 }
 
 func wrapBuildErr(err error, out []byte) error {
@@ -147,7 +158,7 @@ func TestDoctorE2E(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			cmd := exec.Command(bin, tc.args...)
-			cmd.Env = append(os.Environ(), "HOME="+home)
+			cmd.Env = doctorE2EEnv(home)
 			cmd.Stdin = strings.NewReader("")
 			var stdout, stderr strings.Builder
 			cmd.Stdout = &stdout

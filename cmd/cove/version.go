@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	buildversion "github.com/tmc/cove/internal/version"
@@ -25,11 +27,28 @@ var (
 	versionGetwd      = os.Getwd
 	versionGitOutput  = func(dir string, args ...string) ([]byte, error) {
 		all := append([]string{"-C", dir}, args...)
-		return exec.Command("git", all...).Output()
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		return exec.CommandContext(ctx, "git", all...).Output()
 	}
 )
 
+var versionCache struct {
+	sync.Mutex
+	version string
+	commit  string
+	date    string
+	info    buildversion.Info
+	valid   bool
+}
+
 func resolvedVersion() buildversion.Info {
+	versionCache.Lock()
+	defer versionCache.Unlock()
+	if versionCache.valid && versionCache.version == version && versionCache.commit == commit && versionCache.date == date {
+		return versionCache.info
+	}
+
 	info := buildversion.Resolve(version, commit, date)
 	if info.Commit == "unknown" {
 		if c := gitCommitNearExecutable(); c != "" {
@@ -41,7 +60,18 @@ func resolvedVersion() buildversion.Info {
 			info.Date = d
 		}
 	}
+	versionCache.version = version
+	versionCache.commit = commit
+	versionCache.date = date
+	versionCache.info = info
+	versionCache.valid = true
 	return info
+}
+
+func clearVersionCache() {
+	versionCache.Lock()
+	versionCache.valid = false
+	versionCache.Unlock()
 }
 
 // versionInfo returns a formatted version string.

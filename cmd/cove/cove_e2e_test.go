@@ -11,7 +11,6 @@ package main
 
 import (
 	"encoding/json"
-	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -81,7 +80,7 @@ func TestCoveSubcommandsE2E(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			cmd := exec.Command(bin, tc.args...)
-			cmd.Env = append(os.Environ(), "HOME="+home)
+			cmd.Env = doctorE2EEnv(home)
 			cmd.Stdin = strings.NewReader("")
 			var stdout, stderr strings.Builder
 			cmd.Stdout = &stdout
@@ -179,7 +178,7 @@ func TestNestedHelpDoesNotTreatHelpAsOperand(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := exec.Command(bin, tt.args...)
-			cmd.Env = append(os.Environ(), "HOME="+home)
+			cmd.Env = doctorE2EEnv(home)
 			var stdout, stderr strings.Builder
 			cmd.Stdout = &stdout
 			cmd.Stderr = &stderr
@@ -243,7 +242,7 @@ func TestExpandedNestedHelpSurfaces(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := exec.Command(bin, tt.args...)
-			cmd.Env = append(os.Environ(), "HOME="+home)
+			cmd.Env = doctorE2EEnv(home)
 			var stdout, stderr strings.Builder
 			cmd.Stdout = &stdout
 			cmd.Stderr = &stderr

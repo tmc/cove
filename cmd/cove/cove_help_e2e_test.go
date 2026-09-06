@@ -14,7 +14,6 @@ package main
 
 import (
 	"context"
-	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -114,12 +113,12 @@ func TestCoveSubcommandHelp(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, bin, name, "-h")
-			cmd.Env = append(os.Environ(), "HOME="+home)
+			cmd.Env = doctorE2EEnv(home)
 			cmd.Stdin = strings.NewReader("")
 			var stdout, stderr strings.Builder
 			cmd.Stdout = &stdout
 			cmd.Stderr = &stderr
-			err := cmd.Run()
+			err := runDoctorE2ECommand(cmd)
 			if ctx.Err() == context.DeadlineExceeded {
 				t.Fatalf("%s -h timed out\nstdout:\n%s\nstderr:\n%s", name, stdout.String(), stderr.String())
 			}

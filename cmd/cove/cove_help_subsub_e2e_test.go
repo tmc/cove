@@ -17,7 +17,6 @@
 package main
 
 import (
-	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -100,13 +99,14 @@ func TestCoveSubSubcommandHelp(t *testing.T) {
 	for _, tc := range subSubHelp {
 		name := tc.parent + "_" + tc.action
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			cmd := exec.Command(bin, tc.parent, tc.action, "-h")
-			cmd.Env = append(os.Environ(), "HOME="+home)
+			cmd.Env = doctorE2EEnv(home)
 			cmd.Stdin = strings.NewReader("")
 			var stdout, stderr strings.Builder
 			cmd.Stdout = &stdout
 			cmd.Stderr = &stderr
-			err := cmd.Run()
+			err := runDoctorE2ECommand(cmd)
 			exit := 0
 			if err != nil {
 				ee, ok := err.(*exec.ExitError)

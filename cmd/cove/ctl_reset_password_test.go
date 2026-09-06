@@ -51,7 +51,7 @@ func TestCtlResetPasswordResolvesVMRelativeDisk(t *testing.T) {
 
 	cmd := exec.Command(bin, "-vm", "pwreset-vm", "ctl", "reset-password", "user", "pass")
 	cmd.Dir = t.TempDir() // unrelated working directory
-	cmd.Env = append(os.Environ(), "HOME="+home)
+	cmd.Env = doctorE2EEnv(home)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("reset-password on empty disk succeeded unexpectedly\noutput:\n%s", out)
