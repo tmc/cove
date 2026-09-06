@@ -37,6 +37,43 @@ func parseWindowsBackend(s string) (windowsBackend, error) {
 	}
 }
 
+// windowsBackendForVMDir infers which backend installed the VM in dir: the
+// qemu backend writes windows.qcow2 and a qemu subdirectory, the vz backend
+// writes windows-disk.img. It reports false when dir holds neither, so a fresh
+// install follows the requested backend.
+func windowsBackendForVMDir(dir string) (windowsBackend, bool) {
+	if dir == "" {
+		return "", false
+	}
+	if info, err := os.Stat(filepath.Join(dir, "windows.qcow2")); err == nil && !info.IsDir() {
+		return windowsBackendQEMU, true
+	}
+	if info, err := os.Stat(filepath.Join(dir, "qemu")); err == nil && info.IsDir() {
+		return windowsBackendQEMU, true
+	}
+	if info, err := os.Stat(filepath.Join(dir, "windows-disk.img")); err == nil && !info.IsDir() {
+		return windowsBackendVZ, true
+	}
+	return "", false
+}
+
+// resolveWindowsBackend picks the backend for a VM directory. An explicitly
+// requested backend always wins; otherwise an existing VM keeps the backend it
+// was installed with, so a change of default does not strand it.
+func resolveWindowsBackend(mode, vmDir string, explicit bool) (windowsBackend, error) {
+	backend, err := parseWindowsBackend(mode)
+	if err != nil {
+		return "", err
+	}
+	if explicit {
+		return backend, nil
+	}
+	if inferred, ok := windowsBackendForVMDir(vmDir); ok {
+		return inferred, nil
+	}
+	return backend, nil
+}
+
 type windowsQEMUConfig struct {
 	QEMUPath            string
 	QEMUImgPath         string
@@ -285,7 +322,7 @@ func windowsQEMUConfigFromRun(rc vmrun.RunConfig, hc vmrun.HostConfig, install b
 	// Values recorded by an earlier install or run of this VM outrank the
 	// environment and the built-in defaults, so a later `cove run` reuses them.
 	persisted := qemuMetadataForVMDir(hc.VMDir)
-	smbSharedDirectory, err := windowsQEMUSharedDirectory(windowsSharedDirFlag, persisted.SMBSharedDirectory)
+	smbSharedDirectory, err := windowsQEMUSharedDirectory(os.Stderr, windowsSharedDirFlag, persisted.SMBSharedDirectory)
 	if err != nil {
 		return windowsQEMUConfig{}, err
 	}
@@ -308,7 +345,7 @@ func windowsQEMUConfigFromRun(rc vmrun.RunConfig, hc vmrun.HostConfig, install b
 		InputDevice:         windowsQEMUInputDeviceFromEnv(),
 		Nodefaults:          windowsQEMUNodefaultsFromEnv(),
 		EnableClipboard:     rc.EnableClipboard,
-		DisplaySize:         windowsQEMUDisplaySize(windowsDisplaySizeFlag, persisted.DisplaySize),
+		DisplaySize:         windowsQEMUChosenDisplaySize(windowsDisplaySizeFlag, persisted.DisplaySize),
 		SMBSharedDirectory:  smbSharedDirectory,
 		SerialOutput:        serialOutput,
 		SerialLogPath:       serialLogPath,
@@ -888,8 +925,15 @@ func windowsQEMUDisplayDeviceArgsSize(device, sizeArg string) ([]string, error) 
 }
 
 // windowsQEMUDefaultDisplaySize is the guest display geometry used when
-// neither -display-size, the VM metadata, nor COVE_QEMU_DISPLAY_SIZE applies.
+// neither -windows-display-size, the VM metadata, nor COVE_QEMU_DISPLAY_SIZE applies.
 const windowsQEMUDefaultDisplaySize = "1280x800"
+
+// The virtio-gpu device rejects geometries below VGA, so sizes smaller than
+// this are refused when they are parsed rather than silently replaced.
+const (
+	windowsQEMUMinDisplayWidth  = 640
+	windowsQEMUMinDisplayHeight = 480
+)
 
 // parseDisplaySize parses a WxH display geometry such as "1440x900".
 func parseDisplaySize(s string) (width, height int, err error) {
@@ -906,14 +950,19 @@ func parseDisplaySize(s string) (width, height int, err error) {
 	if err != nil || height <= 0 {
 		return 0, 0, fmt.Errorf("invalid display size %q (height must be a positive integer)", s)
 	}
+	if width < windowsQEMUMinDisplayWidth || height < windowsQEMUMinDisplayHeight {
+		return 0, 0, fmt.Errorf("display size %q is smaller than the minimum %dx%d", s, windowsQEMUMinDisplayWidth, windowsQEMUMinDisplayHeight)
+	}
 	return width, height, nil
 }
 
-// windowsQEMUDisplaySize resolves the guest display geometry from, in order of
-// precedence, the -display-size flag, the size persisted in the VM metadata,
-// COVE_QEMU_DISPLAY_SIZE, and the built-in default. Unparseable values are
+// windowsQEMUChosenDisplaySize resolves the guest display geometry the user
+// asked for from, in order of precedence, the -windows-display-size flag, the
+// size persisted in the VM metadata, and COVE_QEMU_DISPLAY_SIZE. It returns ""
+// when none of them applies, so the built-in default is never persisted and a
+// later COVE_QEMU_DISPLAY_SIZE still takes effect. Unparseable values are
 // skipped; the flag is validated when it is parsed.
-func windowsQEMUDisplaySize(flagValue, persisted string) string {
+func windowsQEMUChosenDisplaySize(flagValue, persisted string) string {
 	for _, s := range []string{flagValue, persisted, os.Getenv("COVE_QEMU_DISPLAY_SIZE")} {
 		width, height, err := parseDisplaySize(s)
 		if err != nil {
@@ -921,13 +970,22 @@ func windowsQEMUDisplaySize(flagValue, persisted string) string {
 		}
 		return fmt.Sprintf("%dx%d", width, height)
 	}
+	return ""
+}
+
+// windowsQEMUDisplaySize is windowsQEMUChosenDisplaySize with the built-in
+// default filled in.
+func windowsQEMUDisplaySize(flagValue, persisted string) string {
+	if size := windowsQEMUChosenDisplaySize(flagValue, persisted); size != "" {
+		return size
+	}
 	return windowsQEMUDefaultDisplaySize
 }
 
 // windowsQEMUDisplaySizeArgFor renders a WxH size as virtio-gpu device options.
 func windowsQEMUDisplaySizeArgFor(size string) string {
 	width, height, err := parseDisplaySize(size)
-	if err != nil || width < 640 || height < 480 {
+	if err != nil {
 		width, height, _ = parseDisplaySize(windowsQEMUDefaultDisplaySize)
 	}
 	return fmt.Sprintf("xres=%d,yres=%d", width, height)
@@ -1043,20 +1101,36 @@ func pickFreeLocalTCPPort() (int, error) {
 }
 
 // windowsQEMUSharedDirectory resolves the host directory shared with the guest
-// over SMB from, in order of precedence, the -shared-dir flag, the directory
-// persisted in the VM metadata, and COVE_QEMU_SMB_DIR. It returns "" when none
-// is set.
-func windowsQEMUSharedDirectory(flagValue, persisted string) (string, error) {
-	for _, src := range []struct{ name, path string }{
-		{"-shared-dir", flagValue},
-		{"qemu/metadata.json smbSharedDirectory", persisted},
-		{"COVE_QEMU_SMB_DIR", os.Getenv("COVE_QEMU_SMB_DIR")},
+// over SMB from, in order of precedence, the -windows-shared-dir flag, the
+// directory persisted in the VM metadata, and COVE_QEMU_SMB_DIR. It returns ""
+// when none is set. A directory named for this run must exist, but a persisted
+// one that has since been deleted or renamed is reported on warn and skipped
+// rather than failing the boot.
+func windowsQEMUSharedDirectory(warn io.Writer, flagValue, persisted string) (string, error) {
+	for _, src := range []struct {
+		name     string
+		path     string
+		optional bool
+	}{
+		{name: "-windows-shared-dir", path: flagValue},
+		{name: "qemu/metadata.json smbSharedDirectory", path: persisted, optional: true},
+		{name: "COVE_QEMU_SMB_DIR", path: os.Getenv("COVE_QEMU_SMB_DIR")},
 	} {
 		path := strings.TrimSpace(src.path)
 		if path == "" {
 			continue
 		}
-		return validateWindowsQEMUSharedDirectory(src.name, path)
+		dir, err := validateWindowsQEMUSharedDirectory(src.name, path)
+		if err != nil {
+			if src.optional {
+				if warn != nil {
+					fmt.Fprintf(warn, "warning: ignoring shared directory: %v\n", err)
+				}
+				continue
+			}
+			return "", err
+		}
+		return dir, nil
 	}
 	return "", nil
 }

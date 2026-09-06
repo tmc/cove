@@ -45,8 +45,9 @@ type upConfig struct {
 	linux                    bool
 	windows                  bool
 	windowsBackend           string
-	displaySize              string
-	sharedDir                string
+	windowsBackendSet        bool
+	windowsDisplaySize       string
+	windowsSharedDir         string
 	isoPath                  string
 	desktop                  bool
 	desktopInstaller         string
@@ -97,8 +98,11 @@ func parseUpFlags(env commandEnv, args []string) (upConfig, error) {
 		return upConfig{}, err
 	}
 	fs.Visit(func(f *flag.Flag) {
-		if f.Name == "cpu" {
+		switch f.Name {
+		case "cpu":
 			cfg.cpuExplicit = true
+		case "windows-backend":
+			cfg.windowsBackendSet = true
 		}
 	})
 	// -desktop, -nested, and -nvme imply -linux.
@@ -129,9 +133,9 @@ func parseUpFlags(env commandEnv, args []string) (upConfig, error) {
 		if cfg.setupScriptPath != "" {
 			return upConfig{}, fmt.Errorf("cove up -windows does not support -setup-script; use -vzscripts <recipe> instead")
 		}
-		if s := strings.TrimSpace(cfg.displaySize); s != "" {
+		if s := strings.TrimSpace(cfg.windowsDisplaySize); s != "" {
 			if _, _, err := parseDisplaySize(s); err != nil {
-				return upConfig{}, fmt.Errorf("-display-size: %w", err)
+				return upConfig{}, fmt.Errorf("-windows-display-size: %w", err)
 			}
 		}
 	}
@@ -202,13 +206,13 @@ func newUpFlagSet(errOut io.Writer) (*flag.FlagSet, *upConfig, *bool) {
 	fs := flag.NewFlagSet("up", flag.ContinueOnError)
 	fs.SetOutput(errOut)
 	cfg := &upConfig{
-		linux:          linuxMode,
-		windows:        windowsMode,
-		windowsBackend: windowsBackendMode,
-		displaySize:    windowsDisplaySizeFlag,
-		sharedDir:      windowsSharedDirFlag,
-		isoPath:        isoPath,
-		distro:         linuxDistro,
+		linux:              linuxMode,
+		windows:            windowsMode,
+		windowsBackend:     windowsBackendMode,
+		windowsDisplaySize: windowsDisplaySizeFlag,
+		windowsSharedDir:   windowsSharedDirFlag,
+		isoPath:            isoPath,
+		distro:             linuxDistro,
 	}
 	headless := new(bool)
 
@@ -234,8 +238,8 @@ func newUpFlagSet(errOut io.Writer) (*flag.FlagSet, *upConfig, *bool) {
 	fs.BoolVar(&cfg.linux, "linux", cfg.linux, "Install a Linux VM instead of macOS")
 	fs.BoolVar(&cfg.windows, "windows", cfg.windows, "Install a Windows ARM64 VM instead of macOS")
 	fs.StringVar(&cfg.windowsBackend, "windows-backend", cfg.windowsBackend, "Windows VM backend: qemu or vz")
-	fs.StringVar(&cfg.displaySize, "display-size", cfg.displaySize, "Windows guest display size WxH (default 1280x800; overrides COVE_QEMU_DISPLAY_SIZE)")
-	fs.StringVar(&cfg.sharedDir, "shared-dir", cfg.sharedDir, "host directory shared with the Windows guest over SMB (overrides COVE_QEMU_SMB_DIR)")
+	fs.StringVar(&cfg.windowsDisplaySize, "windows-display-size", cfg.windowsDisplaySize, "Windows guest display size WxH (default 1280x800; overrides COVE_QEMU_DISPLAY_SIZE)")
+	fs.StringVar(&cfg.windowsSharedDir, "windows-shared-dir", cfg.windowsSharedDir, "host directory shared with the Windows guest over SMB (overrides COVE_QEMU_SMB_DIR)")
 	fs.StringVar(&cfg.isoPath, "iso", cfg.isoPath, "Path to Windows ISO when using -windows")
 	fs.BoolVar(&cfg.desktop, "desktop", false, "Use Ubuntu Desktop ISO (implies -linux)")
 	fs.StringVar(&cfg.desktopInstaller, "desktop-installer", "oem", "ubuntu desktop install path: 'oem' (default Desktop ISO autoinstall) or 'server' (boot Server ISO + apt install ubuntu-desktop)")
@@ -333,8 +337,9 @@ func runtimeOptionsForUp(cfg upConfig) runtimeOptions {
 	opts.Linux = cfg.linux
 	opts.Windows = cfg.windows
 	opts.WindowsBackendMode = cfg.windowsBackend
-	opts.WindowsDisplaySize = cfg.displaySize
-	opts.WindowsSharedDir = cfg.sharedDir
+	opts.WindowsBackendSet = cfg.windowsBackendSet
+	opts.WindowsDisplaySize = cfg.windowsDisplaySize
+	opts.WindowsSharedDir = cfg.windowsSharedDir
 	opts.ProvisionUser = cfg.user
 	opts.ProvisionPassword = cfg.password
 	opts.ProvisionAdmin = true
@@ -373,6 +378,7 @@ func withUpRuntimeOptions(opts runtimeOptions, fn func() error) error {
 	linuxMode = opts.Linux
 	windowsMode = opts.Windows
 	windowsBackendMode = opts.WindowsBackendMode
+	windowsBackendExplicit = opts.WindowsBackendSet
 	windowsDisplaySizeFlag = opts.WindowsDisplaySize
 	windowsSharedDirFlag = opts.WindowsSharedDir
 	provisionUser = opts.ProvisionUser
@@ -408,6 +414,7 @@ func withUpRuntimeOptions(opts runtimeOptions, fn func() error) error {
 		linuxMode = prev.Linux
 		windowsMode = prev.Windows
 		windowsBackendMode = prev.WindowsBackendMode
+		windowsBackendExplicit = prev.WindowsBackendSet
 		windowsDisplaySizeFlag = prev.WindowsDisplaySize
 		windowsSharedDirFlag = prev.WindowsSharedDir
 		provisionUser = prev.ProvisionUser

@@ -371,7 +371,7 @@ func warnWindowsVZBackend(w io.Writer) {
 var windowsVZBackendWarning sync.Once
 
 func runWindowsVMWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig, bundle *RunBundle, metrics runMetricRecorder) error {
-	if backend, err := parseWindowsBackend(rc.WindowsBackendMode); err != nil {
+	if backend, err := resolveWindowsBackend(rc.WindowsBackendMode, hc.VMDir, windowsBackendExplicit); err != nil {
 		return err
 	} else if backend == windowsBackendQEMU {
 		return runWindowsQEMUVMWithConfigLocked(rc, hc)
@@ -429,7 +429,7 @@ func installWindowsVM(quotaWarnings io.Writer) error {
 		quotaWarnings = io.Discard
 	}
 	rc, hc := currentWindowsRunAndHostConfig()
-	if backend, err := parseWindowsBackend(rc.WindowsBackendMode); err != nil {
+	if backend, err := resolveWindowsBackend(rc.WindowsBackendMode, hc.VMDir, windowsBackendExplicit); err != nil {
 		return err
 	} else if backend == windowsBackendQEMU {
 		return installWindowsQEMUVMWithConfig(rc, hc, quotaWarnings)

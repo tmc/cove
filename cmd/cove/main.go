@@ -128,6 +128,9 @@ var (
 	windowsGraphicsMode string
 	// Windows VM backend.
 	windowsBackendMode string
+	// windowsBackendExplicit records whether -windows-backend was given, so an
+	// existing VM directory can pick the backend when it was not.
+	windowsBackendExplicit bool
 	// Windows QEMU guest display geometry, WxH.
 	windowsDisplaySizeFlag string
 	// Host directory shared with the Windows guest over SMB.
@@ -279,8 +282,8 @@ func init() {
 	// Clipboard sharing
 	flag.BoolVar(&enableClipboard, "clipboard", true, "enable host↔guest clipboard sharing via SPICE agent (requires spice-vdagent in guest; macOS 15+ for macOS guests)")
 	flag.StringVar(&windowsBackendMode, "windows-backend", "qemu", "Windows VM backend: qemu or vz")
-	flag.StringVar(&windowsDisplaySizeFlag, "display-size", "", "Windows guest display size WxH (default 1280x800; overrides COVE_QEMU_DISPLAY_SIZE)")
-	flag.StringVar(&windowsSharedDirFlag, "shared-dir", "", "host directory shared with the Windows guest over SMB (overrides COVE_QEMU_SMB_DIR)")
+	flag.StringVar(&windowsDisplaySizeFlag, "windows-display-size", "", "Windows guest display size WxH (default 1280x800; overrides COVE_QEMU_DISPLAY_SIZE)")
+	flag.StringVar(&windowsSharedDirFlag, "windows-shared-dir", "", "host directory shared with the Windows guest over SMB (overrides COVE_QEMU_SMB_DIR)")
 	flag.StringVar(&windowsGraphicsMode, "windows-graphics", "virtio", "Windows graphics mode: virtio or linear-framebuffer")
 	flag.StringVar(&windowsSerialMode, "windows-serial", "virtio", "Windows serial port: virtio, pl011, or 16550")
 	flag.StringVar(&windowsEFIRomPath, "windows-efi-rom", "", "Windows EFI ROM image for private VZEFIBootLoader experiment")
@@ -359,6 +362,7 @@ func main() {
 		os.Exit(1)
 	}
 	cpuExplicit = flagWasProvided(flag.CommandLine, "cpu")
+	windowsBackendExplicit = flagWasProvided(flag.CommandLine, "windows-backend")
 	applyNestedLinuxDefaults()
 
 	// Validate mutually exclusive flags.
@@ -525,6 +529,7 @@ func main() {
 			}
 		}
 		cpuExplicit = flagWasProvided(flag.CommandLine, "cpu")
+		windowsBackendExplicit = flagWasProvided(flag.CommandLine, "windows-backend")
 		applyNestedLinuxDefaults()
 
 		// --headless overrides --gui after subcommand re-parse
@@ -1003,7 +1008,7 @@ Windows VM (QEMU/HVF backend by default):
   cove doctor qemu                                      # check QEMU/HVF prerequisites
   cove install -windows -iso /path/to/Win11_ARM64.iso
   cove run -windows
-  cove run -windows -display-size 1920x1200 -shared-dir ~/share
+  cove run -windows -windows-display-size 1920x1200 -windows-shared-dir ~/share
   cove run -windows -windows-backend vz                 # experimental Virtualization.framework backend
 
 Volume Mounting (-vol flag):
@@ -1126,7 +1131,7 @@ func validateLaunchOptions() error {
 	}
 	if s := strings.TrimSpace(windowsDisplaySizeFlag); s != "" {
 		if _, _, err := parseDisplaySize(s); err != nil {
-			return fmt.Errorf("-display-size: %w", err)
+			return fmt.Errorf("-windows-display-size: %w", err)
 		}
 	}
 	if _, err := parseWindowsGraphicsMode(windowsGraphicsMode); err != nil {

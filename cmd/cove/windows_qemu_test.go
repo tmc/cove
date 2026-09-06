@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -708,6 +709,8 @@ func TestParseDisplaySize(t *testing.T) {
 		{name: "zero width", in: "0x800", wantErr: true},
 		{name: "negative height", in: "1280x-800", wantErr: true},
 		{name: "trailing junk", in: "1280x800p", wantErr: true},
+		{name: "below minimum width", in: "320x480", wantErr: true},
+		{name: "below minimum height", in: "640x240", wantErr: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			w, h, err := parseDisplaySize(tt.in)
@@ -771,7 +774,7 @@ func TestWindowsQEMUSharedDirectoryPrecedence(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("COVE_QEMU_SMB_DIR", tt.env)
-			got, err := windowsQEMUSharedDirectory(tt.flag, tt.persisted)
+			got, err := windowsQEMUSharedDirectory(io.Discard, tt.flag, tt.persisted)
 			if err != nil {
 				t.Fatalf("windowsQEMUSharedDirectory: %v", err)
 			}
@@ -793,12 +796,12 @@ func TestWindowsQEMUSharedDirectoryRejectsBadPaths(t *testing.T) {
 		flag string
 		want string
 	}{
-		{name: "missing", flag: filepath.Join(dir, "absent"), want: "-shared-dir"},
+		{name: "missing", flag: filepath.Join(dir, "absent"), want: "-windows-shared-dir"},
 		{name: "not a directory", flag: file, want: "is not a directory"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("COVE_QEMU_SMB_DIR", "")
-			_, err := windowsQEMUSharedDirectory(tt.flag, "")
+			_, err := windowsQEMUSharedDirectory(io.Discard, tt.flag, "")
 			if err == nil {
 				t.Fatalf("windowsQEMUSharedDirectory(%q) succeeded", tt.flag)
 			}
@@ -840,7 +843,7 @@ func TestWindowsQEMUMetadataDisplaySizeRoundTrip(t *testing.T) {
 	if size := windowsQEMUDisplaySize("", got.DisplaySize); size != cfg.DisplaySize {
 		t.Fatalf("resolved display size = %q, want %q", size, cfg.DisplaySize)
 	}
-	resolved, err := windowsQEMUSharedDirectory("", got.SMBSharedDirectory)
+	resolved, err := windowsQEMUSharedDirectory(io.Discard, "", got.SMBSharedDirectory)
 	if err != nil {
 		t.Fatalf("windowsQEMUSharedDirectory: %v", err)
 	}
@@ -850,14 +853,17 @@ func TestWindowsQEMUMetadataDisplaySizeRoundTrip(t *testing.T) {
 }
 
 func TestWindowsQEMUDisplaySizeArgFor(t *testing.T) {
+	// Sizes below the minimum are rejected when they are parsed, so the only
+	// values that reach this helper are valid ones and the empty default.
 	for _, tt := range []struct {
 		name string
 		in   string
 		want string
 	}{
+		{name: "unset", in: "", want: "xres=1280,yres=800"},
 		{name: "valid", in: "1920x1200", want: "xres=1920,yres=1200"},
 		{name: "default", in: "1280x800", want: "xres=1280,yres=800"},
-		{name: "too small", in: "320x240", want: "xres=1280,yres=800"},
+		{name: "below minimum", in: "320x240", want: "xres=1280,yres=800"},
 		{name: "unparseable", in: "wide", want: "xres=1280,yres=800"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -865,5 +871,161 @@ func TestWindowsQEMUDisplaySizeArgFor(t *testing.T) {
 				t.Fatalf("windowsQEMUDisplaySizeArgFor(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
+	}
+}
+
+// A persisted shared directory that the user has since deleted must not stop
+// the VM from booting; one named for this run still must.
+func TestWindowsQEMUSharedDirectoryStalePersisted(t *testing.T) {
+	envDir := t.TempDir()
+	missing := filepath.Join(t.TempDir(), "gone")
+
+	t.Setenv("COVE_QEMU_SMB_DIR", "")
+	var warn strings.Builder
+	got, err := windowsQEMUSharedDirectory(&warn, "", missing)
+	if err != nil {
+		t.Fatalf("windowsQEMUSharedDirectory: %v", err)
+	}
+	if got != "" {
+		t.Fatalf("shared dir = %q, want empty", got)
+	}
+	if !strings.Contains(warn.String(), missing) {
+		t.Fatalf("warning = %q, want mention of %q", warn.String(), missing)
+	}
+
+	// The environment still applies once the stale value is skipped.
+	t.Setenv("COVE_QEMU_SMB_DIR", envDir)
+	got, err = windowsQEMUSharedDirectory(io.Discard, "", missing)
+	if err != nil {
+		t.Fatalf("windowsQEMUSharedDirectory: %v", err)
+	}
+	if got != envDir {
+		t.Fatalf("shared dir = %q, want %q", got, envDir)
+	}
+
+	// A directory named this run is still a hard error.
+	t.Setenv("COVE_QEMU_SMB_DIR", missing)
+	if _, err := windowsQEMUSharedDirectory(io.Discard, "", ""); err == nil {
+		t.Fatal("missing COVE_QEMU_SMB_DIR accepted")
+	}
+	if _, err := windowsQEMUSharedDirectory(io.Discard, missing, ""); err == nil {
+		t.Fatal("missing -windows-shared-dir accepted")
+	}
+}
+
+// The built-in default must not be persisted, or a later
+// COVE_QEMU_DISPLAY_SIZE would be outranked by it forever.
+func TestWindowsQEMUChosenDisplaySize(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		flag      string
+		persisted string
+		env       string
+		want      string
+	}{
+		{name: "nothing chosen"},
+		{name: "flag", flag: "1920x1200", want: "1920x1200"},
+		{name: "persisted", persisted: "1440x900", want: "1440x900"},
+		{name: "env", env: "1600x1000", want: "1600x1000"},
+		{name: "bad values ignored", flag: "wide", persisted: "320x240"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("COVE_QEMU_DISPLAY_SIZE", tt.env)
+			if got := windowsQEMUChosenDisplaySize(tt.flag, tt.persisted); got != tt.want {
+				t.Fatalf("windowsQEMUChosenDisplaySize(%q, %q) = %q, want %q", tt.flag, tt.persisted, got, tt.want)
+			}
+		})
+	}
+
+	// Regression: a first run with no knobs persists nothing, so exporting
+	// COVE_QEMU_DISPLAY_SIZE afterwards takes effect.
+	t.Setenv("COVE_QEMU_DISPLAY_SIZE", "")
+	persisted := windowsQEMUChosenDisplaySize("", "")
+	if persisted != "" {
+		t.Fatalf("persisted size = %q, want empty", persisted)
+	}
+	t.Setenv("COVE_QEMU_DISPLAY_SIZE", "1920x1200")
+	if got := windowsQEMUDisplaySize("", persisted); got != "1920x1200" {
+		t.Fatalf("display size = %q, want 1920x1200", got)
+	}
+}
+
+func TestWindowsBackendForVMDir(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		files  []string
+		dirs   []string
+		want   windowsBackend
+		wantOK bool
+	}{
+		{name: "qcow2 disk", files: []string{"windows.qcow2"}, want: windowsBackendQEMU, wantOK: true},
+		{name: "qemu dir", dirs: []string{"qemu"}, want: windowsBackendQEMU, wantOK: true},
+		{name: "vz disk", files: []string{"windows-disk.img"}, want: windowsBackendVZ, wantOK: true},
+		{name: "qemu wins over vz disk", files: []string{"windows.qcow2", "windows-disk.img"}, want: windowsBackendQEMU, wantOK: true},
+		{name: "empty dir"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for _, name := range tt.files {
+				if err := os.WriteFile(filepath.Join(dir, name), nil, 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, name := range tt.dirs {
+				if err := os.MkdirAll(filepath.Join(dir, name), 0755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got, ok := windowsBackendForVMDir(dir)
+			if ok != tt.wantOK || got != tt.want {
+				t.Fatalf("windowsBackendForVMDir = %q, %v, want %q, %v", got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+
+	if got, ok := windowsBackendForVMDir(""); ok {
+		t.Fatalf("windowsBackendForVMDir(\"\") = %q, true, want no result", got)
+	}
+}
+
+// A VM installed under the previous vz default must keep booting on vz when
+// -windows-backend is not given, and an explicit flag must always win.
+func TestResolveWindowsBackend(t *testing.T) {
+	vzDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(vzDir, "windows-disk.img"), nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+	qemuDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(qemuDir, "windows.qcow2"), nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+	empty := t.TempDir()
+
+	for _, tt := range []struct {
+		name     string
+		mode     string
+		dir      string
+		explicit bool
+		want     windowsBackend
+	}{
+		{name: "vz vm keeps vz", mode: "qemu", dir: vzDir, want: windowsBackendVZ},
+		{name: "explicit qemu wins", mode: "qemu", dir: vzDir, explicit: true, want: windowsBackendQEMU},
+		{name: "explicit vz wins", mode: "vz", dir: qemuDir, explicit: true, want: windowsBackendVZ},
+		{name: "qemu vm stays qemu", mode: "qemu", dir: qemuDir, want: windowsBackendQEMU},
+		{name: "fresh dir uses default", mode: "", dir: empty, want: windowsBackendQEMU},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveWindowsBackend(tt.mode, tt.dir, tt.explicit)
+			if err != nil {
+				t.Fatalf("resolveWindowsBackend: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("resolveWindowsBackend = %q, want %q", got, tt.want)
+			}
+		})
+	}
+
+	if _, err := resolveWindowsBackend("bogus", empty, false); err == nil {
+		t.Fatal("resolveWindowsBackend accepted bogus backend")
 	}
 }

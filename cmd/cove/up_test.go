@@ -268,8 +268,8 @@ func TestParseUpFlagsWindowsDefaultsAndDisplayFlags(t *testing.T) {
 		"-user", "cove",
 		"-password", "secret",
 		"-headless",
-		"-display-size", "1920x1200",
-		"-shared-dir", shared,
+		"-windows-display-size", "1920x1200",
+		"-windows-shared-dir", shared,
 	})
 	if err != nil {
 		t.Fatalf("parseUpFlags: %v", err)
@@ -281,11 +281,11 @@ func TestParseUpFlagsWindowsDefaultsAndDisplayFlags(t *testing.T) {
 	if backend != windowsBackendQEMU {
 		t.Fatalf("backend = %q, want %q", backend, windowsBackendQEMU)
 	}
-	if cfg.displaySize != "1920x1200" {
-		t.Fatalf("displaySize = %q, want 1920x1200", cfg.displaySize)
+	if cfg.windowsDisplaySize != "1920x1200" {
+		t.Fatalf("displaySize = %q, want 1920x1200", cfg.windowsDisplaySize)
 	}
-	if cfg.sharedDir != shared {
-		t.Fatalf("sharedDir = %q, want %q", cfg.sharedDir, shared)
+	if cfg.windowsSharedDir != shared {
+		t.Fatalf("sharedDir = %q, want %q", cfg.windowsSharedDir, shared)
 	}
 }
 
@@ -298,12 +298,12 @@ func TestParseUpFlagsWindowsRejectsBadDisplaySize(t *testing.T) {
 		"-windows",
 		"-user", "cove",
 		"-password", "secret",
-		"-display-size", "1920by1200",
+		"-windows-display-size", "1920by1200",
 	})
 	if err == nil {
 		t.Fatal("parseUpFlags succeeded, want error")
 	}
-	if !strings.Contains(err.Error(), "-display-size") {
+	if !strings.Contains(err.Error(), "-windows-display-size") {
 		t.Fatalf("error = %v, want display-size rejection", err)
 	}
 }
