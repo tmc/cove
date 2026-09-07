@@ -29,8 +29,16 @@ func TestMacOSRunnerRejectsIOSBeforeMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 || entries[0].Name() != "config.json" {
-		t.Fatalf("runner created guest state: %v", entries)
+	var names []string
+	for _, entry := range entries {
+		// vmconfig.Save leaves its lock file behind; it is not guest state.
+		if strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		names = append(names, entry.Name())
+	}
+	if len(names) != 1 || names[0] != "config.json" {
+		t.Fatalf("runner created guest state: %v", names)
 	}
 	after, err := os.ReadFile(filepath.Join(dir, "config.json"))
 	if err != nil {
