@@ -64,6 +64,10 @@ func SignLocalPolicy(ctx context.Context, client *http.Client, identity map[stri
 	if err != nil {
 		return nil, err
 	}
+	return signPolicyRequest(ctx, client, request, device.SEPNonce)
+}
+
+func signPolicyRequest(ctx context.Context, client *http.Client, request map[string]any, sepNonce []byte) (map[string]any, error) {
 	response, err := iosrestore.Tickets(ctx, apSigningClient(client), "", request)
 	if err != nil {
 		return nil, err
@@ -72,7 +76,7 @@ func SignLocalPolicy(ctx context.Context, client *http.Client, identity map[stri
 	if !ok || len(ticket) == 0 {
 		return nil, fmt.Errorf("local-policy response has no ApImg4Ticket data")
 	}
-	if err := matchLocalPolicy(ticket, request, device.SEPNonce); err != nil {
+	if err := matchLocalPolicy(ticket, request, sepNonce); err != nil {
 		return nil, fmt.Errorf("match local-policy response: %w", err)
 	}
 	return response, nil
@@ -100,10 +104,21 @@ func matchLocalPolicy(ticket []byte, request map[string]any, sepNonce []byte) er
 	if !ok || !bytes.Equal(digest, want) {
 		return fmt.Errorf("local-policy digest does not match empty policy")
 	}
+	for _, field := range []struct{ tag, key string }{
+		{"ronh", "Ap,RecoveryOSPolicyNonceHash"}, {"vuid", "Ap,VolumeUUID"},
+	} {
+		if want, present := request[field.key]; present {
+			value, ok := manifest.Properties[field.tag].([]byte)
+			if !ok || !bytes.Equal(value, want.([]byte)) {
+				return fmt.Errorf("local-policy %s does not match request", field.tag)
+			}
+		}
+	}
+	apNonce, _ := request["ApNonce"].([]byte)
 	for _, field := range []struct {
 		tag   string
 		nonce []byte
-	}{{"BNCH", request["ApNonce"].([]byte)}, {"snon", sepNonce}} {
+	}{{"BNCH", apNonce}, {"snon", sepNonce}} {
 		if value, present := manifest.Properties[field.tag]; present {
 			nonce, ok := value.([]byte)
 			if !ok || len(field.nonce) == 0 || !bytes.Equal(nonce, field.nonce) {

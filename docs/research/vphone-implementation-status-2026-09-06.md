@@ -671,3 +671,13 @@ stale-ticket rejection before device writes. See the
 [local-policy boundary](ios-device-packages-2026-09-07.md#recovery-stage-local-policy).
 Volume-bound restored policy and the full restore controller remain unfinished;
 no live signing, restore or boot is claimed.
+
+## Increment 27: restored volume-bound policy
+
+Cove now constructs the `LocalBoot=true` signing request from restored's supplied
+hashes and volume UUID, checks the returned policy bindings, and produces the
+personalized service response. Input, assertion, HTTP and framed-service tests
+pass under the race detector. See the
+[volume-policy boundary](ios-device-packages-2026-09-07.md#restored-volume-bound-policy).
+Build-identity selection, service routing and the complete restore controller
+remain required. This does not establish live restore or F01–F39 completion.

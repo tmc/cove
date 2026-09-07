@@ -400,3 +400,29 @@ mismatched assertions, HTTP response checking, retained-response isolation, and
 failure before upload when tickets or observations change. No live device writes
 were made. The restored volume-bound `LocalBoot=true` policy flow and complete
 restore sequencing, persistence and reconciliation remain required.
+
+## Restored volume-bound policy
+
+`VolumePolicySigningRequest` implements the `LocalBoot=true` request using
+restored's `Arguments`: 48-byte `Ap,NextStageIM4MHash` and
+`Ap,RecoveryOSPolicyNonceHash`, plus `Ap,VolumeUUID`. It copies the hashes without
+rehashing and converts a canonical or compact hexadecimal UUID into 16 bytes.
+It validates the selected identity's board/chip against independent device
+observations, preserves observed security flags, and sends no AP/SEP nonces or
+`UniqueBuildID`. It does not call the nonexistent BuildIdentity method referenced
+by pinned `get_recovery_os_local_policy_tss_response`.
+
+`VolumePolicyResponse` requests the ticket, checks device/security assertions,
+`lobo=true`, `nsih`, `ronh`, `vuid` and the empty policy digest, then returns the
+personalized `Ap,LocalPolicy` dictionary. Unexpected AP/SEP nonce assertions are
+rejected because this request supplies no corresponding nonce observations.
+Tests cover input validation, exact wire keys, UUID byte order, hash isolation,
+rejected volume/nonce-hash assertions, and the final IMG4 inside a length-prefixed
+restored service plist.
+
+The caller must bind arguments to the current selected device's restore request
+and choose the recovery OS build for erase or update build for update, following
+[`send_restore_local_policy`](https://github.com/doronz88/pymobiledevice3/blob/a16ffc51dcfe2c36fc659fbb2e7b7dedb31d77d5/pymobiledevice3/restore/restore.py).
+The dispatcher must route this result to that request's service; these helpers do
+not choose identities, open services or manage the full restore lifecycle. No
+live TSS, restored exchange or guest boot has qualified this path.

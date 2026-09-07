@@ -28,7 +28,12 @@ func nextPolicyTicket(device SigningDevice) []byte {
 func policyTicket(request map[string]any, change func(map[string]any, map[string][]byte)) []byte {
 	props := map[string]any{"ECID": request["ApECID"], "BORD": request["ApBoardID"], "CHIP": request["ApChipID"],
 		"SDOM": request["ApSecurityDomain"], "CPRO": request["ApProductionMode"], "CSEC": request["ApSecurityMode"],
-		"lobo": false, "nsih": request["Ap,NextStageIM4MHash"]}
+		"lobo": request["Ap,LocalBoot"], "nsih": request["Ap,NextStageIM4MHash"]}
+	for tag, key := range map[string]string{"ronh": "Ap,RecoveryOSPolicyNonceHash", "vuid": "Ap,VolumeUUID"} {
+		if value, ok := request[key]; ok {
+			props[tag] = value
+		}
+	}
 	digests := map[string][]byte{"lpol": request["Ap,LocalPolicy"].(map[string]any)["Digest"].([]byte)}
 	if change != nil {
 		change(props, digests)
