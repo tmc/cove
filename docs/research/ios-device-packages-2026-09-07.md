@@ -101,3 +101,17 @@ it never silently retries an upload.
 
 Cove's build, full test suite and signed public build pass with this published
 upload revision pinned. Validation sent no image bytes to a live USB endpoint.
+
+## DFU finalization and reconnect
+
+Apple commit `3e8ad6225` adds `Conn.FinalizeDFU` after a successful upload and
+`WaitOpen` for exact ECID/mode reconnection. Raw control or bulk operations
+invalidate the upload recorded for finalization. Finalization polls manifestation
+states and retires the old connection after reset. A canceled caller stops
+waiting, but native resources remain owned until the blocking reset and cleanup
+return. `Close` waits for completion before reconnecting.
+
+Reset accepts libusb success or NOT_FOUND (requiring rediscovery), propagating
+other errors. Reconnect retries absence and rejects duplicate identities before
+claiming an interface. Package race tests pass; no live DFU, restore or boot is
+qualified. These primitives still require integration into Cove's restore flow.

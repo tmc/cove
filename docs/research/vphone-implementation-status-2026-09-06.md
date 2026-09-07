@@ -411,7 +411,21 @@ for source discrepancies, tests and exact limits. This is a partial F09 building
 block: Cove has no complete restore command, and manifestation/reset/reconnect,
 personalization, ASR and live qualification remain outstanding.
 
+## Increment 13: DFU finalization and reconnect primitives
+
+Apple commit `3e8ad6225` adds `FinalizeDFU` and `WaitOpen`. Finalization sends the
+next zero-length block, polls manifestation status, resets USB and retires the
+connection. Cancellation returns control to the caller while retaining native
+resources until reset and cleanup finish. Reconnect rejects ambiguous ECIDs and
+waits for the requested mode. Race tests exercise ordering, lifetime, polling,
+errors and endpoint selection. No live firmware writes were performed.
+
+This remains partial F09 support. Cove still needs restore sequencing,
+personalization, ASR, durable stage tracking and live qualification. Native reset
+has no timeout; `Close` waits for any outstanding reset before releasing resources.
+
 ## Remaining ledger
+
 
 F01 (toolchain sources), F03 (configuration), F09 (restore transports), F12 (dispatch), F17 (device planning), F18 (signing), and
 F39 (serial/debug configuration) have partial foundations.
