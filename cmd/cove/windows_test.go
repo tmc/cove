@@ -136,6 +136,21 @@ func TestWindowsLinearFramebufferGraphicsDevice(t *testing.T) {
 	}
 }
 
+func TestWindowsVolumeMountConfig(t *testing.T) {
+	hostDir := t.TempDir()
+	oldVolumes := volumes
+	t.Cleanup(func() { volumes = oldVolumes })
+	volumes = volumeSlice{{HostPath: hostDir, Tag: "tmc"}}
+
+	config, err := buildWindowsBaseConfigurationForTest(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(config.DirectorySharingDevices()); got != 1 {
+		t.Fatalf("DirectorySharingDevices count = %d, want 1", got)
+	}
+}
+
 func buildWindowsBaseConfigurationForTest(t *testing.T) (vz.VZVirtualMachineConfiguration, error) {
 	t.Helper()
 
@@ -148,6 +163,8 @@ func buildWindowsBaseConfigurationForTest(t *testing.T) (vz.VZVirtualMachineConf
 	oldGDB := gdbAddress
 	oldVNC := vncAddress
 	oldVNCBonjour := vncBonjourService
+	oldVolumes := volumes
+	oldShareDir := shareDir
 	t.Cleanup(func() {
 		vmDir = oldVMDir
 		cpuCount = oldCPU
@@ -158,6 +175,8 @@ func buildWindowsBaseConfigurationForTest(t *testing.T) (vz.VZVirtualMachineConf
 		gdbAddress = oldGDB
 		vncAddress = oldVNC
 		vncBonjourService = oldVNCBonjour
+		volumes = oldVolumes
+		shareDir = oldShareDir
 	})
 
 	vmDir = t.TempDir()
@@ -169,6 +188,7 @@ func buildWindowsBaseConfigurationForTest(t *testing.T) (vz.VZVirtualMachineConf
 	gdbAddress = ""
 	vncAddress = ""
 	vncBonjourService = ""
+	shareDir = ""
 
 	disk := filepath.Join(vmDir, "windows-disk.img")
 	if err := createDiskImage(disk, 1); err != nil {

@@ -214,6 +214,12 @@ func buildWindowsBaseConfigurationWithConfig(rc vmrun.RunConfig, hc vmrun.HostCo
 		configx.SetNetworkDevices(config, networkDeviceConfig)
 	}
 
+	if volumeConfigs, err := createVolumeConfigs(getEffectiveVolumes()); err != nil {
+		fmt.Printf("warning: volume config: %v\n", err)
+	} else if len(volumeConfigs) > 0 {
+		setDirectorySharingDevicesMulti(config, volumeConfigs)
+	}
+
 	serialConfig, err := createWindowsSerialConsoleConfigWithConfig(rc)
 	if err != nil {
 		return config, err
