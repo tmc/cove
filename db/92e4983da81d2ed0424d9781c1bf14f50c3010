@@ -1,0 +1,9 @@
+commit: db92e4983da81d2ed0424d9781c1bf14f50c3010
+date: 2026-05-16T04:08:23Z
+agent: codex
+version: GPT-5
+model: unknown
+tty: not a tty
+pid: 58093
+ITERM_SESSION_ID: w0t0p5:8DDE1177-B78F-409A-98C8-3C7CA9FAFDA7
+summary: use vzkit VNC VM startup helper; validated with cove-nix VNC runtime check

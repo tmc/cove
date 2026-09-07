@@ -1,0 +1,14 @@
+commit: f909fe5218b338434431799e3846dcebc23f04c6
+date: 2026-06-26T23:02:14Z
+agent: codex
+model: GPT-5
+tty: not a tty
+pid: 39912
+ITERM_SESSION_ID: w13t3p1:B41EF40B-7D12-4B3B-AD47-3CDF7DC54114
+verification: go build -o cove ./cmd/cove && codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+verification: ./cove 9p serve -h; ./cove ctl iterm2-proxy -h; ./cove ctl ocr -h; ./cove sip disable-auto -h; ./cove sip enable-auto -h
+verification: go test ./cmd/cove -run TestNestedHelpDoesNotTreatHelpAsOperand -count=1
+verification: go build ./...
+verification: go test ./...
+verification: go vet ./...
+commit-helper: ~/bin/git-auto-commit-message --auto failed: Anthropic credit balance too low

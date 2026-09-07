@@ -1,0 +1,2 @@
+gate: build/vet/internal-rfb/cmd-cove tests PASS via local apple x-shared-extraction go.work overlay (a52b1deb, v0.6.14-6); only TestGoListModuleDirRejectsNonModuleDir fails, proven a go.work-only artifact (GOWORK=off => go list -m exits 1 as expected). No go.mod/go.sum edits. claude-code=2.1.197 (Claude Code) model=claude-opus-4-8[1m] tty=not a tty
+n/a pid=70083 ITERM_SESSION_ID=w3t4p3:2310FD59-AE04-4664-9DA4-7C078CEC0C42 date=2026-07-03T01:25:36Z

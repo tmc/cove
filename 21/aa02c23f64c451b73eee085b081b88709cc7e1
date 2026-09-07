@@ -1,0 +1,9 @@
+commit 21aa02c23f64c451b73eee085b081b88709cc7e1
+committed-at 2026-05-11T17:38:35Z
+agent codex
+model GPT-5 Codex
+tty not a tty
+not a tty
+pid 9941
+ITERM_SESSION_ID w1t12p1:8C97ADC8-B843-4C35-8185-5FCFC6EA9CAA
+validation GOWORK=off GOCACHE=/tmp/cove-gocache-ci-fix2 go test ./...; GOWORK=off GOCACHE=/tmp/cove-gocache-ci-fix2 go vet ./...

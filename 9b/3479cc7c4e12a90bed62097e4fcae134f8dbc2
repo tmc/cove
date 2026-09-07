@@ -1,0 +1,9 @@
+commit: 9b3479cc7c4e12a90bed62097e4fcae134f8dbc2
+date: 2026-05-24T02:40:52Z
+agent: codex
+model: GPT-5
+tty: not a tty
+pid: 37770
+ITERM_SESSION_ID: w2t3p1:FCAB28BB-2475-4CB9-9569-B9B7E70C1031
+review: /Users/tmc/tmp/cove-package-extract-current/go-team-staged-rf-final-deadcode-cleanup-review.md
+rf-report: /tmp/rf-usage-report-003.md

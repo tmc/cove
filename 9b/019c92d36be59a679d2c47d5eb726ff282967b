@@ -1,0 +1,2 @@
+claude-code session ff1a5025 model=claude-opus-4-8[1m] date=2026-05-29 tty=not a tty
+n/a pid=42026 iterm=w5t0p1:80CB79B6-6051-4DFA-BCBB-79F4E4DDFFBF | design 046 fleet control plane Slices 4-9; workflow w8almdvbc (15 agents, ~1.25M tok); rebased onto main 48a72de6 after cmd/cove package move

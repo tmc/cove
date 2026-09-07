@@ -1,0 +1,11 @@
+commit: 3d8ac2d7250f5f9884757194473a1109941da980
+date: 2026-05-24T21:21:03Z
+agent: codex
+model: GPT-5
+tty: not a tty
+pid: 73806
+ITERM_SESSION_ID: w2t3p1:FCAB28BB-2475-4CB9-9569-B9B7E70C1031
+review: /Users/tmc/tmp/cove-package-extract-current/go-team-go-doc-root-after-detach-v2.md
+artifact: /Users/tmc/tmp/cove-package-extract-current/go-doc-root-package-after-detach-v2.txt
+gates: root package-comment attachment check; git diff --check; go test ./...
+no-push: true

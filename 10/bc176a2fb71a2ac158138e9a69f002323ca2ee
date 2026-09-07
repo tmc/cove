@@ -1,0 +1,3 @@
+committed 2026-06-28 by claude-code (model=claude-opus-4-8[1m], tty=not a tty
+n/a, pid=40035, iterm_session=w4t3p5:2310FD59-AE04-4664-9DA4-7C078CEC0C42)
+build/test note: full cmd/cove build BLOCKED by in-flight apple/x/codesign + apple/x/guest/portfwd extraction (repo-wide, not this change). Verified: gofmt clean, internal/rfb tests pass, all apple API signatures match pinned apple@v0.6.11, zero compile errors attributable to this change. Re-run GOWORK-based build + cmd/cove tests + live design-044 verification once apple/x lands.

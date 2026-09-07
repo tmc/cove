@@ -1,0 +1,10 @@
+commit: 014b6a9fe4caba495db7ce3be1c5f4ec3bb405ad
+date: 2026-05-24T11:28:19Z
+agent: codex
+model: GPT-5
+tty: not a tty
+pid: 11711
+ITERM_SESSION_ID: w2t3p1:FCAB28BB-2475-4CB9-9569-B9B7E70C1031
+review: /Users/tmc/tmp/cove-package-extract-current/go-team-staged-image-lock-v2-review.md
+gates: go test ./internal/imagestore; go test . -run "TestGCImages_R1_SkipsLockedImage|TestGCImages_R2_ConcurrentFork|TestTagImage|TestMaterializeImage|TestImageLock"; go build ./...; go vet ./...; go test ./...
+no-push: true

@@ -1,0 +1,16 @@
+codex note
+commit: f595b3773aa61e81a42d8fd698d5bb48254d5a7d
+date: 2026-05-16T20:20:02Z
+agent: codex
+model: GPT-5
+tty: not a tty
+pid: 34375
+ITERM_SESSION_ID: w0t0p5:8DDE1177-B78F-409A-98C8-3C7CA9FAFDA7
+
+Validation:
+- go test ./... passed.
+- rebuilt and signed ./cove with internal/autosign/vz.entitlements before runtime validation.
+- fresh Alpine baseline codex-prodready-freshalpine-130920 showed Ubuntu/Subiquity wording and Linux no-agent hint with macOS provisioning flags; VM cleaned.
+- direct-boot Alpine attempt codex-prodready-freshalpine2-131437 reached VZ startup error, so Alpine is pinned away from direct-kernel install; VM cleaned.
+- patched Alpine attempt codex-prodready-freshalpine3-131646 showed Alpine-specific EFI wording and Linux provision-agent-only remediation; install still failed partition-table verification and remains tracked separately; VM cleaned.
+- report uploaded to NotebookLM source 42500725-e2f5-47c3-afc3-0bb75daf66e1; NotebookLM said no blockers to landing.

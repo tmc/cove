@@ -1,0 +1,19 @@
+commit: 11c52f9662fe6c1c421352b12d3f3f1798ec2008
+date: 2026-05-25T03:00:47Z
+agent: codex
+model: GPT-5
+tty: not a tty
+pid: 86887
+iterm_session_id: w2t4p0:FCAB28BB-2475-4CB9-9569-B9B7E70C1031
+notebook: 78667ebc-6cde-4a87-b7d2-334b6627c94f
+chat_instructions: /Users/tmc/tmp/cove-package-extract-current/nlm-chat-instructions-power-go-team-2026-05-24T195154-0700.txt
+review_artifact: /Users/tmc/tmp/cove-package-extract-current/go-team-staged-fleet-env-threading-review-v2-2026-05-24T195757-0700.md
+plan_artifact: /Users/tmc/tmp/cove-package-extract-current/go-team-next-iteration-power-instructions-2026-05-24T195217-0700.md
+gates:
+  go test . -run 'Test.*Fleet': pass
+  go test ./internal/fleet: pass
+  git diff --cached --check: pass
+  go build ./...: pass
+  go vet ./...: pass
+  go test ./...: pass
+push: not run

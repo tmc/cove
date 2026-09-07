@@ -1,0 +1,30 @@
+commit: c682ad4b39aa807f8f9be727fb6b0cf5e14abcd0
+date: 2026-05-25T03:37:13Z
+agent: Codex
+model: GPT-5
+tty: not a tty
+pid: 79463
+ITERM_SESSION_ID: w2t4p0:FCAB28BB-2475-4CB9-9569-B9B7E70C1031
+
+slice: daemon commandEnv threading
+chat_instructions: /Users/tmc/tmp/cove-package-extract-current/nlm-chat-instructions-power-go-team-2026-05-24T195154-0700.txt
+next_slice_review: /Users/tmc/tmp/cove-package-extract-current/go-team-next-iteration-after-quota-install-warnings-2026-05-24T202559-0700.md
+staged_diff_v1: /Users/tmc/tmp/cove-package-extract-current/staged-daemon-env-threading-2026-05-24T202931-0700.diff
+precommit_review_v1: /Users/tmc/tmp/cove-package-extract-current/go-team-staged-daemon-env-threading-review-2026-05-24T202947-0700.md
+false_blocker_verification: /Users/tmc/tmp/cove-package-extract-current/staged-daemon-review-verification-2026-05-24T203225-0700.md
+staged_diff_v2: /Users/tmc/tmp/cove-package-extract-current/staged-daemon-env-threading-v2-2026-05-24T203244-0700.diff
+precommit_review_v2: /Users/tmc/tmp/cove-package-extract-current/go-team-staged-daemon-env-threading-review-v2-2026-05-24T203256-0700.md
+notebook_verdict: IN after verified false-blocker review
+
+gates:
+- go test . -run 'Test.*Daemon': pass
+- go test ./internal/covecli: pass
+- rg 'os\.Std(out|err)' daemon_cli.go: zero matches
+- rg 'fmt\.Print' daemon_cli.go: zero matches
+- git diff --cached --check: pass
+- go build ./...: pass
+- go build -o cove . && codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove: pass
+- go vet ./...: pass
+- go test ./...: pass
+
+push: not run

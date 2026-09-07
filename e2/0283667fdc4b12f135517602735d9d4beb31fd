@@ -1,0 +1,9 @@
+claude-code: fix(volumes): cache=none default for Linux VirtioFS — addresses ROADMAP #27
+date: 2026-04-25
+model: claude-opus-4-7[1m]
+tty: not a tty
+pid: 36947
+iterm: w0t7p10:EDDC36F6-8C46-4A3F-A55B-7D3211BF0C9C
+acceptance: cannot smoke against a live Linux guest here (no Linux VM running on hermes). Static-verify via tests covers the mount-args path.
+followups not in scope: agent_control.go:931 handleAgentMountVolumes hardcodes 'mount_virtiofs' on linuxMode (separate bug); shared_folders_cli.go is macOS-only by design.
+worktree: /Volumes/tmc/go/src/github.com/tmc/vz-macos-virtiofs-cache (isolated)

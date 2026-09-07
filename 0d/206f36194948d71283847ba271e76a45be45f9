@@ -1,0 +1,10 @@
+commit: 0d206f36194948d71283847ba271e76a45be45f9
+date: 2026-05-24T19:56:07Z
+agent: codex
+model: GPT-5
+tty: not a tty
+pid: 18717
+ITERM_SESSION_ID: w2t3p1:FCAB28BB-2475-4CB9-9569-B9B7E70C1031
+review: /Users/tmc/tmp/cove-package-extract-current/go-team-staged-imagestore-tar-v2-review.md
+gates: go test ./internal/imagestore; go test ./internal/fleet; go test . -run "TestPushImage|TestLoadImage|TestWriteImageTar|TestRunImagePush|TestRunImageLoad|TestIsRegistry|TestPushImageToTarget|TestPullImageFromTarget|TestImageHistory|TestRunLocalCoveCommand"; go build ./...; go vet ./...; go test ./...
+no-push: true

@@ -1,0 +1,2 @@
+docs-only reconciliation of design 044 + audit to the state shipped by 10bc176a; adds live verification runbook. Live design-044 checklist still pending a running Windows guest (see runbook). claude-code=2.1.197 (Claude Code) model=claude-opus-4-8[1m] tty=not a tty
+n/a pid=70083 ITERM_SESSION_ID=w3t4p3:2310FD59-AE04-4664-9DA4-7C078CEC0C42 date=2026-07-03T01:25:36Z

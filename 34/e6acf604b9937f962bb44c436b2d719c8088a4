@@ -1,0 +1,1 @@
+claude-code session ff1a5025 model=claude-opus-4-8[1m] date=2026-05-29 pid=79042 iterm=w5t0p1:80CB79B6-6051-4DFA-BCBB-79F4E4DDFFBF | design 046 fleet Slices 4-9; workflow w8almdvbc (15 agents); rebased onto origin/main 6c107f85 (deps: apple v0.6.10) after earlier cmd/cove package move

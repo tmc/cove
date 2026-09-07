@@ -1,0 +1,9 @@
+claude-code: chore(serve): unify gateway async snapshot save onto per-VM LRO; add /v1/vms/{name}/operations proxy
+date: 2026-04-25
+model: claude-opus-4-7[1m]
+tty: not a tty
+pid: 54014
+iterm: w0t7p10:EDDC36F6-8C46-4A3F-A55B-7D3211BF0C9C
+note: g.ops registry retained for handleCreateVM (v0.2-deferred stub). Two LRO codepaths collapsed onto one source of truth (per-VM file-backed registry from 847e09a). Gateway is now a thin proxy for snapshot async + operations get/list.
+verify: 4 gateway async/ops tests pass; full go test ./... green
+worktree: /Volumes/tmc/go/src/github.com/tmc/vz-macos-snapshot-async (isolated)

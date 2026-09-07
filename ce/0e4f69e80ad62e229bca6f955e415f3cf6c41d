@@ -1,0 +1,9 @@
+commit: ce0e4f69e80ad62e229bca6f955e415f3cf6c41d
+date: 2026-05-24T06:18:58Z
+agent: codex-cli
+model: GPT-5
+tty: not a tty
+pid: 87190
+iterm_session_id: w2t3p1:FCAB28BB-2475-4CB9-9569-B9B7E70C1031
+notebook-review: /Users/tmc/tmp/cove-package-extract-current/go-team-staged-commandenv-logs-status-policy-review-v2.md
+gates: go build ./...; go test ./...

@@ -1,0 +1,8 @@
+claude-code: fix(agent): handleAgentMountVolumes dispatches per guest OS via virtioFSMountArgs
+date: 2026-04-25
+model: claude-opus-4-7[1m]
+tty: not a tty
+pid: 80091
+iterm: w0t7p10:EDDC36F6-8C46-4A3F-A55B-7D3211BF0C9C
+note: my own followup from e202836's commit body. Reuses virtioFSMountArgs from volumes.go — same helper that gets cache=none injection on the host-side install path (when e202836 lands on next, the agent gets cache=none for free). Static-verify only — no Linux VM running here.
+worktree: /Volumes/tmc/go/src/github.com/tmc/vz-macos-agent-virtiofs-linux (isolated)

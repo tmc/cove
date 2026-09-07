@@ -1,0 +1,13 @@
+commit: 51c2763559257472cd445f047d85746dd17c67bb
+date: 2026-05-24T14:49:10-07:00
+agent: codex
+model: GPT-5
+shell: bash
+tty: not a tty
+pid: 52004
+iterm_session_id: w2t3p1:FCAB28BB-2475-4CB9-9569-B9B7E70C1031
+review: /Users/tmc/tmp/cove-package-extract-current/go-team-staged-controlclient-format-only-review.md
+artifact: /Users/tmc/tmp/cove-package-extract-current/staged-controlclient-format-only.diff
+gates: go test ./internal/controlclient; go test .; go build ./...; go test ./...; go vet ./...; git diff --cached --check
+notebook_verdict: IN, no blockers after dropping parser extraction
+no-push: true

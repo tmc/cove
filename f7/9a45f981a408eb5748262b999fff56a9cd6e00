@@ -1,0 +1,8 @@
+commit: f79a45f981a408eb5748262b999fff56a9cd6e00
+date: 2026-05-12T10:52:53Z
+agent: codex
+model: gpt-5
+worktree: /Volumes/tmc/go/src/github.com/tmc/vz-macos-nix-support
+iterm_session_id: w1t5p1:8C97ADC8-B843-4C35-8185-5FCFC6EA9CAA
+validation: git diff --check; go test ./internal/nixos -count=1; go test ./...; go build -o cove .; codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+live: installed and booted local cove-nixos NixOS 25.11 aarch64 VM; verified uname, nix --version, /etc/NIXOS

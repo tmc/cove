@@ -1,0 +1,8 @@
+claude-code: fix(linux): autoinstall prompt suppression via cmdline + interactive-sections — ROADMAP #26
+date: 2026-04-25
+model: claude-opus-4-7[1m]
+tty: not a tty
+pid: 65528
+iterm: w0t7p10:EDDC36F6-8C46-4A3F-A55B-7D3211BF0C9C
+acceptance: cannot smoke against a live Ubuntu install on this host (would require ~10min install). Static-verify via tests covers the cmdline ordering + YAML field. Two complementary defensive measures: even if newer Subiquity changes its kernel-arg heuristic, the YAML interactive-sections:[] still keeps it quiet.
+worktree: /Volumes/tmc/go/src/github.com/tmc/vz-macos-cloud-init-unattended (isolated)
