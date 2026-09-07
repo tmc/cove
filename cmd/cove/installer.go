@@ -1419,7 +1419,7 @@ func createBlockDeviceConfiguration(ctx context.Context, diskPath string, diskSi
 
 	diskURL := foundation.NewURLFileURLWithPath(diskPath)
 	diskURL.Retain() // Create disk attachment
-	diskAttachment, err := newDiskAttachment(diskURL, false, storagex.CacheEphemeral)
+	diskAttachment, err := newDiskAttachment(diskURL, false, storagex.CacheDurable)
 	if err != nil {
 		return vz.VZVirtioBlockDeviceConfiguration{}, fmt.Errorf("failed to create disk attachment: %w", err)
 	}
