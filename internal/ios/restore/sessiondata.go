@@ -18,21 +18,28 @@ type RestoreImage struct {
 }
 
 // SessionData provides native handlers for root tickets, build identities,
-// volume-bound local policy and ASR images. Ticket requirements must be retained
+// volume-bound local policy, boot objects and ASR images. Ticket requirements must be retained
 // from the corresponding signing request. Identity selects the appropriate build
 // for the request and restore behavior. Inputs must remain immutable throughout
 // the session. Other data types return an error and require additional handlers.
 type SessionData struct {
-	APTicket, RecoveryTicket             []byte
+	APResponse, RecoveryResponse         map[string]any
 	APRequirements, RecoveryRequirements TicketRequirements
 	SystemImage, RecoveryImage           RestoreImage
-	Identity                             func(context.Context, map[string]any) (map[string]any, error)
-	Device                               SigningDevice
-	Client                               *http.Client
+	// Object resolves a component or special metadata name within the selected\n\t// bundle. It must use validated manifest paths rather than raw request paths.
+	// The handler owns and closes the returned reader; it must unblock on Close.
+	Object func(context.Context, map[string]any, string) (io.ReadCloser, error)
+	// Asset serves a nested AEA URLAsset request, including its service routing.
+	Asset    func(context.Context, map[string]any) error
+	Identity func(context.Context, map[string]any) (map[string]any, error)
+	// Parameters contains observed AP personalization parameters for APResponse.
+	Parameters map[string]any
+	Device     SigningDevice
+	Client     *http.Client
 }
 
 // Handle serves one request on the connection selected by RunRestored. It does
-// not close the connection or images. It checks ticket assertions before sending
+// not close the connection or ASR images. It closes each opened boot object. It checks ticket assertions before sending
 // them and delegates ASR to iosrestore.SendImage, without retrying writes.
 func (d *SessionData) Handle(ctx context.Context, conn net.Conn, message map[string]any) error {
 	if err := ctx.Err(); err != nil {
@@ -44,9 +51,13 @@ func (d *SessionData) Handle(ctx context.Context, conn net.Conn, message map[str
 	dataType, _ := message["DataType"].(string)
 	switch dataType {
 	case "RootTicket", "RecoveryOSRootTicketData":
-		ticket, want := d.APTicket, d.APRequirements
+		response, want := d.APResponse, d.APRequirements
 		if dataType == "RecoveryOSRootTicketData" {
-			ticket, want = d.RecoveryTicket, d.RecoveryRequirements
+			response, want = d.RecoveryResponse, d.RecoveryRequirements
+		}
+		ticket, ok := response["ApImg4Ticket"].([]byte)
+		if !ok {
+			return fmt.Errorf("%s has no ticket data", dataType)
 		}
 		if err := MatchTicket(ticket, want); err != nil {
 			return fmt.Errorf("match %s: %w", dataType, err)
@@ -87,6 +98,8 @@ func (d *SessionData) Handle(ctx context.Context, conn net.Conn, message map[str
 			return err
 		}
 		return iosrestore.Send(conn, response)
+	case "PersonalizedBootObjectV3", "SourceBootObjectV4", "KernelCache", "DeviceTree", "SystemImageRootHash", "SystemImageCanonicalMetadata":
+		return d.sendBootObject(ctx, conn, message, dataType)
 	case "SystemImageData", "RecoveryOSASRImage":
 		image := d.SystemImage
 		if dataType == "RecoveryOSASRImage" {

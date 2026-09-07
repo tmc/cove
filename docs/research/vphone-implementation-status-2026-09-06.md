@@ -692,3 +692,13 @@ and failed sessions, concurrent completion, cancellation and service responses.
 See the [session boundary](ios-device-packages-2026-09-07.md#restored-session-dispatch).
 The full controller still needs durable lifecycle, FDR, remaining handlers and
 live qualification. No live restore or boot is claimed.
+
+## Increment 29: restored boot-object transfer
+
+Cove now serves V3/V4 boot objects and legacy kernel/device-tree/system-volume
+responses through `SessionData`. It validates tickets before personalization,
+streams 8 KiB plist chunks, and handles the optional AEA asset-request handshake
+without accepting partial frames as absent requests. Focused race tests pass.
+See the [boot-object boundary](ios-device-packages-2026-09-07.md#restored-boot-objects).
+Concrete bundle resolution and URLAsset/key handling remain to be connected,
+along with the full restore lifecycle. No live restore or boot is claimed.

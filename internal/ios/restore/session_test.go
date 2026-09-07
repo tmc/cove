@@ -52,7 +52,7 @@ func TestRestoredSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data := &SessionData{APTicket: nextPolicyTicket(device), APRequirements: want}
+	data := &SessionData{APResponse: map[string]any{"ApImg4Ticket": nextPolicyTicket(device)}, APRequirements: want}
 	host, peer := net.Pipe()
 	defer peer.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -269,7 +269,7 @@ func TestRestoredAsyncCompletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data := &SessionData{RecoveryTicket: nextPolicyTicket(device), RecoveryRequirements: want}
+	data := &SessionData{RecoveryResponse: map[string]any{"ApImg4Ticket": nextPolicyTicket(device)}, RecoveryRequirements: want}
 	host, peer := net.Pipe()
 	defer peer.Close()
 	service, remote := net.Pipe()

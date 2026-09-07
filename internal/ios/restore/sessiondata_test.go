@@ -23,7 +23,7 @@ func TestSessionDataResponses(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			data := &SessionData{APTicket: nextPolicyTicket(device), RecoveryTicket: nextPolicyTicket(device), APRequirements: want, RecoveryRequirements: want, Device: device, Client: localPolicyServer(t, false), Identity: func(context.Context, map[string]any) (map[string]any, error) { return build, nil }}
+			data := &SessionData{APResponse: map[string]any{"ApImg4Ticket": nextPolicyTicket(device)}, RecoveryResponse: map[string]any{"ApImg4Ticket": nextPolicyTicket(device)}, APRequirements: want, RecoveryRequirements: want, Device: device, Client: localPolicyServer(t, false), Identity: func(context.Context, map[string]any) (map[string]any, error) { return build, nil }}
 			message := map[string]any{"DataType": kind, "Arguments": volumePolicyArguments()}
 			message["Arguments"].(map[string]any)["Variant"] = "Upgrade"
 			host, peer := net.Pipe()

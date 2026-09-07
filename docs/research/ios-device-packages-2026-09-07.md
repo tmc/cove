@@ -458,3 +458,35 @@ The complete controller must still provide durable attempt ownership, options,
 FDR setup, build selection, device-bound usbmux dialing, remaining data/message
 handlers, and recovery across all DFU/restored stages. This session engine is not
 full restore or F01–F39 acceptance.
+
+## Restored boot objects
+
+`SessionData.Handle` now serves `PersonalizedBootObjectV3`, `SourceBootObjectV4`,
+`KernelCache`, `DeviceTree`, `SystemImageRootHash` and
+`SystemImageCanonicalMetadata`. The latter two resolve `SystemVolume` and
+`Ap,SystemVolumeCanonicalMetadata`. V3/V4 read `Arguments.ImageName` and send
+8 KiB `FileData` plist chunks followed by `FileDataDone=true`. The three special
+names `__GlobalManifest__`, `__RestoreVersion__` and `__SystemVersion__` bypass
+personalization. Legacy components return `<DataType>File` data dictionaries.
+
+Ordinary personalized objects validate the retained AP ticket against the selected
+identity and component digest, then preserve TSS/TBM data and supplied AP nonce-slot
+parameters during IMG4 assembly. `SessionData` retains complete AP/recovery signing
+responses rather than bare ticket bytes. Personalized inputs are limited to
+512 MiB because the IMG4 API assembles them in memory; raw V4 objects stream with
+bounded memory. Opened object readers close on return or cancellation. The object
+provider must resolve names through validated paths in the selected bundle.
+
+For a V4 source starting `AEA1`, the handler waits up to three seconds after the
+first chunk for a framed `URLAsset` request. Only a timeout before any frame byte
+arrives counts as no request. Partial frames, disconnects and unexpected messages
+fail. A configured asset callback handles the nested request and its service
+routing before streaming resumes. The handler does not decrypt AEA source bytes.
+This follows pinned
+[`send_personalized_boot_object_v3` / `send_source_boot_object_v4`](https://github.com/doronz88/pymobiledevice3/blob/a16ffc51dcfe2c36fc659fbb2e7b7dedb31d77d5/pymobiledevice3/restore/restore.py).
+
+Tests cover chunk sizes and contents, metadata passthrough, retained-ticket
+personalization, legacy aliases, AEA callback ordering, partial-frame timeout,
+source closure and rejected stale tickets. Bundle object resolution, concrete
+URLAsset/key HTTP handling and the complete restore controller remain required.
+No live device, TSS or AEA key service was contacted for these tests.
