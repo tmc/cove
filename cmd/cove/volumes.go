@@ -54,6 +54,11 @@ func (v *volumeSlice) Set(value string) error {
 // createVolumeConfigs creates VirtioFS configurations for all volume mounts
 // and prints mount instructions for each volume.
 func createVolumeConfigs(mounts []vmconfig.VolumeMount) ([]vz.VZVirtioFileSystemDeviceConfiguration, error) {
+	mounts, skipped := validateVolumes(mounts)
+	for _, s := range skipped {
+		fmt.Printf("warning: skipping volume %s: %s (invalid directory share would abort VM start)\n",
+			volumeIssueLabel(s.Mount), s.Reason)
+	}
 	if len(mounts) == 0 {
 		return nil, nil
 	}
@@ -213,6 +218,10 @@ func taggedVolumes(mounts []vmconfig.VolumeMount) []vmconfig.VolumeMount {
 // ctx is cancelled. This is intended to be run in a background goroutine
 // after VM start.
 func autoMountTaggedVolumes(ctx context.Context, cs *ControlServer, mounts []vmconfig.VolumeMount) {
+	// Only volumes with valid host paths get directory-sharing devices, so
+	// only they can be mounted in the guest. Skip the rest to avoid
+	// confusing guest-side mount failures for tags that were never attached.
+	mounts, _ = validateVolumes(mounts)
 	tagged := taggedVolumes(mounts)
 	if len(tagged) == 0 && len(effectiveSharedFolders(vmDir)) == 0 && (!linuxMode || !rosettaRuntimeSetup) {
 		return
