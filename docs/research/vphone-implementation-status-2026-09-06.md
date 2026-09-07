@@ -650,3 +650,12 @@ observation, with transfer errors preserved.
 This controller handles explicit component operations, not the complete restore
 graph. Restored/ASR dispatch, separate tickets, whole-bundle lifecycle and live
 qualification remain required. See the [controller contract](ios-device-packages-2026-09-07.md#recovery-commands-and-component-controller).
+
+## Increment 25: recovery OS root signing
+
+Cove now builds a distinct recovery-root request and validates its returned IMG4
+ticket through `restore.SignRecovery`. Its manifest selection follows the pinned
+recovery path rather than the ordinary AP component filter. Focused race and HTTP
+integration tests pass. Local-policy signing and full restore orchestration
+remain unfinished; no live signing or restore run is claimed. See the
+[request boundary](ios-device-packages-2026-09-07.md#recovery-os-root-signing).

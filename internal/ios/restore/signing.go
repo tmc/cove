@@ -39,6 +39,10 @@ func SignAP(ctx context.Context, client *http.Client, identity map[string]any, d
 	if err != nil {
 		return nil, err
 	}
+	return signRequest(ctx, client, request, want)
+}
+
+func signRequest(ctx context.Context, client *http.Client, request map[string]any, want TicketRequirements) (map[string]any, error) {
 	response, err := iosrestore.Tickets(ctx, apSigningClient(client), "", request)
 	if err != nil {
 		return nil, err
@@ -80,6 +84,10 @@ func apSigningClient(client *http.Client) *http.Client {
 // each must have a known ticket tag and a nonempty signing digest. The request
 // includes all eligible AP entries. Inputs and returned values are independent.
 func APSigningRequest(identity map[string]any, device SigningDevice, components []string) (map[string]any, TicketRequirements, error) {
+	return apSigningRequest(identity, device, components, false)
+}
+
+func apSigningRequest(identity map[string]any, device SigningDevice, components []string, recovery bool) (map[string]any, TicketRequirements, error) {
 	var want TicketRequirements
 	if device.ECID == 0 || device.ChipID == 0 || len(device.APNonce) == 0 || len(components) == 0 {
 		return nil, want, fmt.Errorf("signing requires observed ECID, chip ID, AP nonce and components")
@@ -168,12 +176,18 @@ func APSigningRequest(identity map[string]any, device SigningDevice, components 
 		parameters["ApDemotionPolicyOverride"] = *device.DemotionPolicy
 	}
 	for name, value := range manifest {
-		switch name {
-		case "BasebandFirmware", "SE,UpdatePayload", "BaseSystem", "Diags", "Ap,ExclaveOS":
-			continue
-		}
-		if strings.HasPrefix(name, "Cryptex1,") {
-			continue
+		if recovery {
+			if skipRecoveryComponent(name) {
+				continue
+			}
+		} else {
+			switch name {
+			case "BasebandFirmware", "SE,UpdatePayload", "BaseSystem", "Diags", "Ap,ExclaveOS":
+				continue
+			}
+			if strings.HasPrefix(name, "Cryptex1,") {
+				continue
+			}
 		}
 		entry, ok := value.(map[string]any)
 		if !ok {
@@ -187,6 +201,9 @@ func APSigningRequest(identity map[string]any, device SigningDevice, components 
 		if !ok {
 			return nil, want, fmt.Errorf("component %s Info is not a dictionary", name)
 		}
+		if recovery && len(componentInfo) == 0 {
+			continue
+		}
 		trusted := false
 		if value, present := entry["Trusted"]; present {
 			var valid bool
@@ -196,10 +213,10 @@ func APSigningRequest(identity map[string]any, device SigningDevice, components 
 			}
 		}
 		rules, present := componentInfo["RestoreRequestRules"]
-		if !present && !trusted {
+		if !recovery && !present && !trusted {
 			continue
 		}
-		if v, ok := componentInfo["IsFTAB"]; ok {
+		if v, ok := componentInfo["IsFTAB"]; !recovery && ok {
 			isFTAB, ok := v.(bool)
 			if !ok {
 				return nil, want, fmt.Errorf("component %s IsFTAB is not a boolean", name)
@@ -215,14 +232,14 @@ func APSigningRequest(identity map[string]any, device SigningDevice, components 
 			if err := applySigningRules(entry, parameters, rules); err != nil {
 				return nil, want, fmt.Errorf("component %s: %w", name, err)
 			}
-		} else {
+		} else if !recovery {
 			entry["EPRO"] = device.ProductionMode
 			entry["ESEC"] = device.SecurityMode
 		}
 		if trusted && !hasDigest {
 			entry["Digest"] = []byte{}
 		}
-		if len(entry) == 0 {
+		if !recovery && len(entry) == 0 {
 			continue
 		}
 		if _, exists := request[name]; exists || strings.HasPrefix(name, "@") {

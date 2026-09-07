@@ -348,3 +348,22 @@ rediscovery retire the handle; the controller still requires a matching reconnec
 These cases follow [libusb error and reset semantics](https://libusb.sourceforge.io/api-1.0/group__libusb__dev.html).
 Nonce changes after reset are allowed and tested. Each later component obtains
 fresh observations and a new matching ticket; the old ticket is not reused.
+
+## Recovery OS root signing
+
+`restore.RecoverySigningRequest` and `SignRecovery` build and check a separate
+recovery OS root ticket request. They share AP identity validation, typed restore
+rules, HTTPS transport and returned-ticket matching, but use the pinned recovery
+component selection. Boot-chain and restore-ramdisk entries are excluded;
+recovery entries are not filtered by AP's trusted-only fallback, FTAB flag or
+Cryptex prefix. Missing trusted digests become empty data, while every requested
+image requirement still needs a nonempty signing digest. Rules do not receive
+AP's no-rule EPRO/ESEC defaults in this path.
+
+The selection follows
+[`add_ap_recovery_tags`](https://github.com/doronz88/pymobiledevice3/blob/a16ffc51dcfe2c36fc659fbb2e7b7dedb31d77d5/pymobiledevice3/restore/tss.py).
+Tests cover the complete exclusion set, recovery-only inclusions, false-valued
+rules, input isolation, high-bit ECID transport and rejected response assertions.
+No live TSS request has qualified this path. Local-policy signing, selection of
+the recovery build identity, persisted ticket lifecycle and the restored request
+dispatcher remain required; this API does not perform those steps.
