@@ -6,12 +6,15 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"unsafe"
 
+	"github.com/tmc/apple/corefoundation"
 	"github.com/tmc/apple/dispatch"
 	"github.com/tmc/apple/foundation"
 	"github.com/tmc/apple/objc"
 	"github.com/tmc/apple/objectivec"
 	privvz "github.com/tmc/apple/private/virtualization"
+	"github.com/tmc/apple/security"
 	vz "github.com/tmc/apple/virtualization"
 )
 
@@ -142,10 +145,10 @@ func createMinimalMacVM(t *testing.T) (vz.VZVirtualMachine, privvz.VZVirtualMach
 	if vmInstance == 0 {
 		t.Fatal("failed to create VZVirtualMachine")
 	}
-	objc.Send[objc.ID](vmInstance, objc.Sel("retain"))
 
 	pubVM := vz.VZVirtualMachine{Object: objectivec.Object{ID: vmInstance}}
 	privVM := privvz.VZVirtualMachineFromID(vmInstance)
+	t.Cleanup(func() { queue.Sync(func() { pubVM.Release() }) })
 
 	return pubVM, privVM, queue
 }
@@ -155,52 +158,43 @@ func TestPrivateAPI_StateDescription(t *testing.T) {
 }
 
 func TestPrivateAPI_NameGetSet(t *testing.T) {
-	_, privVM, _ := createMinimalMacVM(t)
-
+	requirePrivateVirtualization(t)
+	_, privVM, queue := createMinimalMacVM(t)
 	if !objc.RespondsToSelector(privVM.ID, objc.Sel("_name")) || !objc.RespondsToSelector(privVM.ID, objc.Sel("_setName:")) {
 		t.Skip("_name accessors unavailable")
 	}
-
-	// Get initial name
-	nameID := objc.Send[objc.ID](privVM.ID, objc.Sel("_name"))
-	initialName := foundation.NSStringFromID(nameID).String()
-	t.Logf("_name (initial): %q", initialName)
-
-	// Set a name (use objc.Send directly — binding generates wrong selector "set_name:" instead of "_setName:")
-	testName := "diagnostics-test-vm"
-	objc.Send[objc.ID](privVM.ID, objc.Sel("_setName:"), objc.String(testName))
-
-	nameID = objc.Send[objc.ID](privVM.ID, objc.Sel("_name"))
-	newName := foundation.NSStringFromID(nameID).String()
-	t.Logf("_name (after set): %q", newName)
-
+	const testName = "diagnostics-test-vm"
+	var initialName, newName string
+	queue.Sync(func() {
+		nameID := objc.Send[objc.ID](privVM.ID, objc.Sel("_name"))
+		initialName = foundation.NSStringFromID(nameID).String()
+		objc.Send[struct{}](privVM.ID, objc.Sel("_setName:"), objc.String(testName))
+		nameID = objc.Send[objc.ID](privVM.ID, objc.Sel("_name"))
+		newName = foundation.NSStringFromID(nameID).String()
+	})
+	t.Logf("_name: %q -> %q", initialName, newName)
 	if newName != testName {
-		t.Errorf("_name after Set_name(%q) = %q", testName, newName)
+		t.Errorf("_name = %q, want %q", newName, testName)
 	}
 }
 
 func TestPrivateAPI_CrashContextMessage(t *testing.T) {
-	_, privVM, _ := createMinimalMacVM(t)
-
+	_, privVM, queue := createMinimalMacVM(t)
 	if !objc.RespondsToSelector(privVM.ID, objc.Sel("_crashContextMessage")) || !objc.RespondsToSelector(privVM.ID, objc.Sel("_setCrashContextMessage:")) {
 		t.Skip("_crashContextMessage accessors unavailable")
 	}
-
-	// Get initial crash context
-	msgID := objc.Send[objc.ID](privVM.ID, objc.Sel("_crashContextMessage"))
-	initialMsg := foundation.NSStringFromID(msgID).String()
-	t.Logf("_crashContextMessage (initial): %q", initialMsg)
-
-	// Set crash context (use objc.Send directly — binding generates wrong selector)
-	testMsg := "test-crash-context-diagnostics"
-	objc.Send[objc.ID](privVM.ID, objc.Sel("_setCrashContextMessage:"), objc.String(testMsg))
-
-	msgID = objc.Send[objc.ID](privVM.ID, objc.Sel("_crashContextMessage"))
-	newMsg := foundation.NSStringFromID(msgID).String()
-	t.Logf("_crashContextMessage (after set): %q", newMsg)
-
-	if newMsg != testMsg {
-		t.Errorf("_crashContextMessage after Set = %q, want %q", newMsg, testMsg)
+	const testMessage = "test-crash-context-diagnostics"
+	var initialMessage, newMessage string
+	queue.Sync(func() {
+		messageID := objc.Send[objc.ID](privVM.ID, objc.Sel("_crashContextMessage"))
+		initialMessage = foundation.NSStringFromID(messageID).String()
+		objc.Send[struct{}](privVM.ID, objc.Sel("_setCrashContextMessage:"), objc.String(testMessage))
+		messageID = objc.Send[objc.ID](privVM.ID, objc.Sel("_crashContextMessage"))
+		newMessage = foundation.NSStringFromID(messageID).String()
+	})
+	t.Logf("_crashContextMessage: %q -> %q", initialMessage, newMessage)
+	if newMessage != testMessage {
+		t.Errorf("_crashContextMessage = %q, want %q", newMessage, testMessage)
 	}
 }
 
@@ -221,9 +215,41 @@ func TestPrivateAPI_DeviceArrays(t *testing.T) {
 }
 
 func TestPrivateAPI_PublicState(t *testing.T) {
-	t.Skip("State() causes SIGTRAP on stopped VMs; use -integration for live VM tests")
+	pubVM, _, queue := createMinimalMacVM(t)
+	var state vz.VZVirtualMachineState
+	queue.Sync(func() { state = pubVM.State() })
+	if state != vz.VZVirtualMachineStateStopped {
+		t.Errorf("state = %v, want stopped", state)
+	}
 }
 
 func TestPrivateAPI_DiagnosticsSummary(t *testing.T) {
 	t.Skip("_stateDescription causes SIGTRAP on stopped VMs; use -integration for live VM tests")
+}
+
+func requirePrivateVirtualization(t *testing.T) {
+	t.Helper()
+	task := security.SecTaskCreateFromSelf(0)
+	if task == 0 {
+		t.Fatal("create security task")
+	}
+	defer corefoundation.CFRelease(unsafe.Pointer(task))
+	key := corefoundation.CFStringCreateWithCString(0, "com.apple.private.virtualization", corefoundation.CFStringEncoding(corefoundation.KCFStringEncodingUTF8))
+	if key == 0 {
+		t.Fatal("create entitlement key")
+	}
+	defer corefoundation.CFRelease(unsafe.Pointer(key))
+	var taskErr corefoundation.CFErrorRef
+	value := security.SecTaskCopyValueForEntitlement(task, key, &taskErr)
+	if taskErr != 0 {
+		defer corefoundation.CFRelease(unsafe.Pointer(taskErr))
+		t.Fatalf("read private virtualization entitlement: code %d", corefoundation.CFErrorGetCode(taskErr))
+	}
+	if value == nil {
+		t.Skip("requires effective com.apple.private.virtualization entitlement")
+	}
+	defer corefoundation.CFRelease(value)
+	if corefoundation.CFGetTypeID(value) != corefoundation.CFBooleanGetTypeID() || !corefoundation.CFBooleanGetValue(corefoundation.CFBooleanRef(uintptr(value))) {
+		t.Skip("requires effective com.apple.private.virtualization entitlement")
+	}
 }
