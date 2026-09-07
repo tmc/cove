@@ -267,3 +267,41 @@ recovery-root, local-policy, baseband and coprocessor flows remain required.
 Final validation for this path: focused race tests, `go test ./...`,
 `go build ./...`, and re-signed standard/research CLI builds pass after the
 trusted-component correction. Notebook review approved this checkpoint only.
+
+## Recovery signing observations
+
+Apple `irecovery.Conn.ReadInfo` reads the selected handle's serial and nonce
+string descriptors using deadline-bounded USB control transfers. It rereads ECID
+and CPID, rejecting changes from the open connection's identity. NONC and SNON
+are read together from string descriptor 1. Board ID, CPFM and IBFL retain
+explicit absence; malformed and duplicate fields are errors. The connection lock
+covers the observation, and reads preserve a pending DFU upload's finalization
+state. Returned data does not alias the connection.
+
+Cove `restore.ObserveRecovery` requires the target ECID, board/security fields,
+Image4 support and an AP nonce, then produces `SigningDevice`. CPFM bits 0/1 map
+to security/production mode; IBFL bit 2 establishes Image4 support. These mappings
+follow the pinned pymobiledevice3 `irecv.py` and libirecovery reference. USB
+identity is reported data, not cryptographic attestation. Observations must be
+refreshed across boot transitions and reenumeration.
+
+`cove ios restore recovery-probe -ecid N -libusb PATH [-timeout 15s]` exposes this
+read-only path and closes the connection before producing JSON. It sends no
+recovery command, upload, signing request or restore request. Unknown demotion
+policy remains nil in signing inputs; a rule requiring that absent parameter
+does not match, while an explicitly observed false value can match.
+
+Synthetic USB control and adapter tests cover identity changes, optional zero vs
+missing fields, malformed descriptors/nonces, cancellation, input isolation and
+DFU upload-state preservation. Real USB nonce observation and full controller
+integration remain unqualified. Recovery commands, automatic nonce reacquisition
+and stage-bound restore dispatch are still required.
+
+The observation API is published in Apple commit
+`71a05b5575eacdbab38d8ed6547433b66dea4892`, pinned as
+`v0.6.19-0.20260907181819-71a05b5575ea`. The signed CLI loaded the installed libusb
+and returned `recovery endpoint not found` for a bounded ECID 1 probe. This checks
+the no-match path, not the absence of other devices or real nonce readability.
+Full Cove `go test ./...` (including new CLI script cases), `go build ./...`, and
+both signed CLI builds pass against the published dependency. Focused Apple
+transport/parser and Cove observation race tests also pass.

@@ -628,3 +628,12 @@ Request, rule and HTTP integration tests pass. The work remains internal restore
 controller code: it does not launch DFU, observe nonces automatically, dispatch a
 complete restore or prove boot. Separate ticket flows and offline persistence
 remain required. See the [signing boundary](ios-device-packages-2026-09-07.md#native-ap-signing-request-path).
+
+## Increment 23: recovery signing observations
+
+Apple adds fresh serial/nonce observations on an already-selected recovery
+connection. Cove converts complete observations into signing inputs and exposes
+`ios restore recovery-probe -ecid N -libusb PATH`. Missing board/security values
+remain distinct from zero, and unknown demotion policy cannot match a false-valued
+rule. The path is read-only and does not qualify a complete restore or guest boot.
+See the [observation boundary](ios-device-packages-2026-09-07.md#recovery-signing-observations).

@@ -17,9 +17,11 @@ import (
 // SigningDevice contains observations from the current device connection.
 // Nonces must be refreshed after a reconnect or boot stage that changes them.
 type SigningDevice struct {
-	ECID, BoardID, ChipID                                  uint64
-	APNonce, SEPNonce                                      []byte
-	ProductionMode, SecurityMode, InRomDFU, DemotionPolicy bool
+	ECID, BoardID, ChipID                  uint64
+	APNonce, SEPNonce                      []byte
+	ProductionMode, SecurityMode, InRomDFU bool
+	// Nil means the device has not reported a demotion policy.
+	DemotionPolicy *bool
 }
 
 // SignAP requests an AP IMG4 ticket for identity and checks its assertions for
@@ -161,7 +163,10 @@ func APSigningRequest(identity map[string]any, device SigningDevice, components 
 			request["Ap,SikaFuse"] = uint64(0)
 		}
 	}
-	parameters := map[string]bool{"ApRawProductionMode": device.ProductionMode, "ApCurrentProductionMode": device.ProductionMode, "ApRawSecurityMode": device.SecurityMode, "ApRequiresImage4": true, "ApDemotionPolicyOverride": device.DemotionPolicy, "ApInRomDFU": device.InRomDFU}
+	parameters := map[string]bool{"ApRawProductionMode": device.ProductionMode, "ApCurrentProductionMode": device.ProductionMode, "ApRawSecurityMode": device.SecurityMode, "ApRequiresImage4": true, "ApInRomDFU": device.InRomDFU}
+	if device.DemotionPolicy != nil {
+		parameters["ApDemotionPolicyOverride"] = *device.DemotionPolicy
+	}
 	for name, value := range manifest {
 		switch name {
 		case "BasebandFirmware", "SE,UpdatePayload", "BaseSystem", "Diags", "Ap,ExclaveOS":
@@ -316,11 +321,13 @@ func applySigningRules(entry map[string]any, parameters map[string]bool, value a
 			if !ok {
 				return fmt.Errorf("restore condition %s is not a boolean", key)
 			}
-			actual, present := parameters[key]
-			if !present {
+			switch key {
+			case "ApRawProductionMode", "ApCurrentProductionMode", "ApRawSecurityMode", "ApRequiresImage4", "ApDemotionPolicyOverride", "ApInRomDFU":
+			default:
 				return fmt.Errorf("unsupported restore condition %s", key)
 			}
-			if actual != expected {
+			actual, present := parameters[key]
+			if !present || actual != expected {
 				matches = false
 			}
 		}

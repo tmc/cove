@@ -46,6 +46,10 @@ func TestIOSNewScript(t *testing.T) {
 stderr 'nonzero ECID and positive timeout are required'
 ! ios restore probe -ecid 1 -timeout 0s
 stderr 'nonzero ECID and positive timeout are required'
+! ios restore recovery-probe
+stderr 'nonzero ECID, libusb path and positive timeout are required'
+! ios restore recovery-probe -ecid 1 -libusb unused -timeout 0s
+stderr 'nonzero ECID, libusb path and positive timeout are required'
 ! ios restore unknown
 stderr 'usage: cove ios restore probe'
 ! ios firmware _mount
