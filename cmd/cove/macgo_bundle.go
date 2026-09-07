@@ -52,11 +52,7 @@ func initMacgo() {
 	cfg := macgo.NewConfig()
 	cfg.AppName = "cove"
 	cfg.BundleID = "com.tmc.cove"
-	cfg.WithCustom(
-		"com.apple.security.virtualization",
-		"com.apple.security.network.client",
-		"com.apple.security.network.server",
-	)
+	cfg.WithCustom(vzEntitlementKeys...)
 	if appSandboxMacgoEnabled() {
 		cfg.WithPermissions(macgo.Sandbox)
 		cfg.WithCustom(

@@ -1,6 +1,6 @@
 # Spec: full vphone feature coverage in cove
 
-Status: implementation proposal, revision 2. Authored 2026-09-06. No iOS runtime
+Status: implementation proposal, revision 4. Authored 2026-09-06. No iOS runtime
 feature is declared implemented by this document.
 
 ## Scope and completion rule
@@ -62,19 +62,35 @@ Existing cove foundations are reuse candidates, not proof of iOS support:
 
 ## Implementation boundaries
 
+Keep cove's existing VM lifecycle, locking, control API and host UI as the host
+integration. Firmware patching, restore recipes and guest binaries form a
+separately versioned toolchain with a pinned manifest and process contracts.
+Cove packages adapt that toolchain; they do not absorb its patch algorithms or
+release cadence. Reusable VZ bindings belong in apple/vzkit. Start host adapters
+as internal packages; extract a module when another consumer establishes its API.
+Replace implicit macOS fallback and OS booleans at runtime dispatch with explicit
+guest selection as iOS is wired in. Do not create a second VM application.
+
+Keep nearly all iOS-specific code and assets beneath `internal/ios`, with
+`bundle`, `firmware`, `guest`, `control`, `media` and `host` subpackages added as
+implemented. Packages in this tree must not import `cmd/cove`; command handlers
+and shared lifecycle hooks remain thin adapters. Do not create empty packages
+for future work. Firmware toolchain artifacts retain their separate versioning.
+
 Use Go for the cove host and retain the upstream iOS guest daemon initially.
 Do not create a second Swift VM owner. One cove runtime owns the VZ instance,
 serial pipes, guest/control/camera connections, capture queue, and bundle lock.
 
 | Owner (proposed unless listed above) | Responsibility |
 | --- | --- |
-| `cmd/cove/ios.go`, `ios_commands.go`, `ios_gui.go` | Thin CLI/GUI dispatch and VZ object construction; all controls call the same services. |
-| `internal/iosbundle` | Versioned iOS config, adapter workspace, durable stages, clone/import/export and identity/state checks. |
-| `internal/iosfirmware` | Toolchain resolution, catalogs, prepare/patch/restore/CFW process execution and artifact manifests. |
-| `internal/iosguest` | Typed vphoned client over `io.ReadWriteCloser`, framing, requests, transfers, capabilities and reconnect. No AppKit dependency. |
-| `internal/ioscontrol` | Map guest/host operations to cove control responses, host-socket compatibility and ordered action/capture execution. |
-| `internal/iosmedia` | Capture/video encoding, frame producers and the separate camera stream; bounded queues and cleanup. |
-| `internal/ioshost` | Host location/power/Touch ID subscriptions with explicit enable/disable and main-thread delivery. |
+| `internal/ios` | iOS runtime construction, shared backend entry points and research signing assets; use cove lifecycle hooks without importing `cmd/cove`. |
+| `cmd/cove/ios_commands.go`, `ios_gui.go` | Thin CLI/GUI dispatch to the backend and shared cove services. |
+| `internal/ios/bundle` | Versioned iOS config, adapter workspace, durable stages, clone/import/export and identity/state checks. |
+| `internal/ios/firmware` | Toolchain resolution, catalogs, prepare/patch/restore/CFW process execution and artifact manifests. |
+| `internal/ios/guest` | Typed vphoned client over `io.ReadWriteCloser`, framing, requests, transfers, capabilities and reconnect. No AppKit dependency. |
+| `internal/ios/control` | Map guest/host operations to cove control responses, host-socket compatibility and ordered action/capture execution. |
+| `internal/ios/media` | Capture/video encoding, frame producers and the separate camera stream; bounded queues and cleanup. |
+| `internal/ios/host` | Host location/power/Touch ID subscriptions with explicit enable/disable and main-thread delivery. |
 | `scripts/build-ios-tools.sh` and toolchain manifest | Build pinned vphoned and required guest helpers; stage signed, checksummed artifacts outside the cove executable. |
 | apple binding generator / vzkit | Add missing typed private wrappers and runtime probes, with errors instead of ad-hoc selectors scattered through cove. |
 
@@ -170,7 +186,7 @@ Resolve TSS/nonce requirements at restore time; offline mode requires compatible
 tickets, keys, resources and every payload locally.
 
 Use a pinned executable plus explicit argv/env/cwd, not shell interpolation.
-`internal/iosfirmware` defines operations `Catalog`, `Prepare`, `Patch`,
+`internal/ios/firmware` defines operations `Catalog`, `Prepare`, `Patch`,
 `PatchComponent`, `GetTicket`, `Restore`, `Customize`, `FirstBoot`, and `Inspect`.
 Each operation accepts a context, typed input and output/log writers, returns
 artifact metadata and a structured stage error, and has a default/configurable

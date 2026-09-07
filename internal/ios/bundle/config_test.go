@@ -1,4 +1,4 @@
-package iosbundle
+package bundle
 
 import (
 	"encoding/json"

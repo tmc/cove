@@ -31,6 +31,7 @@ var vmDirIndependentCommands = map[string]bool{
 	"gui":             true,
 	"helper":          true,
 	"image":           true,
+	"ios":             true,
 	"inject-agent":    true,
 	"provision-agent": true,
 	"shared-folder":   true,

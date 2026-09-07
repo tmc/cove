@@ -1,12 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/tmc/cove/internal/iosbundle"
+	iosbundle "github.com/tmc/cove/internal/ios/bundle"
 	"github.com/tmc/cove/internal/vmconfig"
 	"github.com/tmc/cove/internal/vmrun"
 )
@@ -38,5 +39,33 @@ func TestMacOSRunnerRejectsIOSBeforeMutation(t *testing.T) {
 	}
 	if string(before) != string(after) {
 		t.Fatal("runner rewrote ios configuration")
+	}
+}
+
+func TestIOSCommandUsage(t *testing.T) {
+	spec, ok := lookupCommand("ios")
+	if !ok {
+		t.Fatal("ios command not registered")
+	}
+	for _, tt := range []struct {
+		name string
+		args []string
+		want int
+	}{
+		{"missing", nil, 2},
+		{"unknown", []string{"unknown"}, 2},
+		{"extra", []string{"preflight", "extra"}, 2},
+		{"help", []string{"--help"}, 0},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var out, stderr bytes.Buffer
+			env := commandEnv{Stdout: &out, Stderr: &stderr}
+			if got := runRegisteredCommand(env, spec, "ios", tt.args); got != tt.want {
+				t.Fatalf("exit = %d, want %d", got, tt.want)
+			}
+			if !strings.Contains(out.String()+stderr.String(), "usage: cove ios preflight") {
+				t.Fatal("missing usage")
+			}
+		})
 	}
 }

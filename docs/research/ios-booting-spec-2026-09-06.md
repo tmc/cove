@@ -154,6 +154,16 @@ Keep three checks separate:
   alone permits the entire device graph. `IsSupported`, configuration validation,
   VM start, and DFU enumeration are separate results. [Hardware helper][vp-hardware].
 
+A local diagnostic on 2026-09-07 (Mac16,8, macOS 27.0 build 26A5425a)
+confirmed another distinct gate: `VZVirtualMachine._name` asserts when the
+current process lacks `com.apple.private.virtualization`, even when the selector
+exists and the call runs on the VM queue. LLDB identified the entitlement check;
+`SecTaskCopyValueForEntitlement` now gates that test. Public `State()` and the
+crash-context accessor pass on the VM queue without that private entitlement.
+These results establish neither PV=3 permission nor a cause for the separately
+observed research-binary launch SIGKILL. See the
+[implementation evidence](vphone-implementation-status-2026-09-06.md#increment-9-native-diagnostic-test-prerequisites).
+
 Upstream declares macOS 15.0 as its deployment target and reports that PV=3 boot
 cannot nest. Use a physical Apple silicon Mac for the initial test matrix, record
 its exact model and OS build, and determine the minimum supported cove host from

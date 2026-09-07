@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/tmc/cove/internal/iosbundle"
+	iosbundle "github.com/tmc/cove/internal/ios/bundle"
 )
 
 func TestIOSConfigPersistence(t *testing.T) {
@@ -69,5 +69,24 @@ func TestRejectInvalidIOSSave(t *testing.T) {
 	}
 	if string(before) != string(after) {
 		t.Fatal("failed save changed authoritative configuration")
+	}
+}
+
+func TestRecipesPreserveInvalidConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	before := []byte(`{"ios":{"schemaVersion":99},"cpu":8}`)
+	if err := os.WriteFile(path, before, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetPostInstallRecipes(dir, "test"); err == nil {
+		t.Fatal("invalid config overwritten")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("failed mutation changed config")
 	}
 }

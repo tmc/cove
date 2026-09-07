@@ -46,6 +46,7 @@ var commandRegistry = []covecli.Spec{
 	{Name: "inject", Summary: "Deprecated alias for provision", Dispatch: covecli.DispatchEarly, Run: runProvisionCommand},
 	{Name: "inject-agent", Summary: "Deprecated alias for provision-agent", Dispatch: covecli.DispatchEarly, Run: runProvisionAgentCommand},
 	{Name: "install", Summary: "Install OS", Dispatch: covecli.DispatchLate, Run: runInstallCommand},
+	{Name: "ios", Summary: "Experimental iOS guest tools", Dispatch: covecli.DispatchEarly, Run: runIOSCommand},
 	{Name: "list", Aliases: []string{"ls"}, Summary: "List available VMs and templates", Dispatch: covecli.DispatchLate, Run: runListCommand},
 	{Name: "logs", Summary: "Show guest logs from a running VM", Dispatch: covecli.DispatchEarly, Run: runLogsCommand},
 	{Name: "network", Summary: "Network configuration", Dispatch: covecli.DispatchLate, Run: runNetworkCommandSpec},

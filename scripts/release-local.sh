@@ -61,7 +61,7 @@ fi
 REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$REPO_ROOT"
 
-ENTITLEMENTS="internal/autosign/vz.entitlements"
+ENTITLEMENTS="cmd/cove/vz.entitlements"
 if [[ ! -f "$ENTITLEMENTS" ]]; then
     echo "error: entitlements file not found at $ENTITLEMENTS" >&2
     exit 1

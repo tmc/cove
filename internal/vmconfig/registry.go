@@ -23,6 +23,20 @@ var RequiredFiles = []string{
 
 // Validate checks whether dir contains a valid VM.
 func Validate(dir string) bool {
+	cfg, err := Load(dir)
+	if err != nil {
+		return false
+	}
+	if cfg.IOS != nil {
+		for _, name := range []string{"disk.img", "sep.img"} {
+			info, err := os.Stat(filepath.Join(dir, name))
+			if err != nil || !info.Mode().IsRegular() || info.Size() <= 0 {
+				return false
+			}
+		}
+		return true
+	}
+
 	macOSValid := true
 	for _, name := range RequiredFiles {
 		if _, err := os.Stat(filepath.Join(dir, name)); os.IsNotExist(err) {

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	virtiofsx "github.com/tmc/apple/x/vzkit/virtiofs"
-	"github.com/tmc/cove/internal/iosbundle"
+	iosbundle "github.com/tmc/cove/internal/ios/bundle"
 )
 
 // VolumeMount represents a host-to-guest volume mount configuration.
@@ -158,7 +158,7 @@ func SetGuestUser(dir string, uid, gid uint32) error {
 func SetPostInstallRecipes(dir, recipes string) error {
 	cfg, err := Load(dir)
 	if err != nil {
-		cfg = &Config{}
+		return err
 	}
 	cfg.PostInstallRecipes = recipes
 	return Save(dir, cfg)

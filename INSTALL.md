@@ -23,7 +23,7 @@ On first launch, cove signs the local binary with the Virtualization.framework
 entitlements it needs. If autosigning fails, sign the binary manually:
 
 ```bash
-codesign -s - -f --entitlements internal/autosign/vz.entitlements "$(command -v cove)"
+codesign -s - -f --entitlements cmd/cove/vz.entitlements "$(command -v cove)"
 ```
 
 The Homebrew formula is not the recommended first-run path yet. Packaged
@@ -155,3 +155,73 @@ rm -rf ~/.vz                 # remove VMs, images, runs, cache, and store data
 ```
 
 Do not remove `~/.vz` unless you are intentionally deleting local VM data.
+
+### Research build
+
+For the experimental iOS backend, build and sign a separate binary:
+
+```sh
+make build RESEARCH=1 BINARY=cove-research
+```
+
+This selects the `cove_research` Go build tag and
+`internal/ios/research.entitlements`. Autosigning and optional macgo bundling
+preserve that profile. `make build` uses the public profile. An attached research
+signature does not establish that host policy permits PV=3 guests; runtime
+preflight and firmware qualification remain required.
+
+Inspect static iOS prerequisites with `cove ios preflight`. Its JSON separates
+signature validity, missing research entitlements, and descriptor ABI checks.
+A zero exit status covers those checks only; model construction, VM validation,
+and DFU discovery still require runtime qualification.
+
+Prepare the pinned firmware toolchain sources:
+
+```sh
+cove ios setup source
+cove ios setup source -check
+```
+
+This checks out the pinned vphone revision and recursive submodules in cove's
+state directory, then records their commits and the requirements file digest.
+Use `-repository /path/to/vphone-cli` to seed Git objects from a local checkout
+without modifying it, or `-dir /path/to/cache` to select a cache. Existing caches
+must match their source manifest; incomplete directories are rejected.
+This step does not install Python dependencies, compile tools, or prepare firmware.
+
+Create a blank iOS bundle and configure its inputs while stopped:
+
+```sh
+cove ios new phone
+cove ios config phone -rom /absolute/path/to/avpbooter.rom -sep-rom /absolute/path/to/sep.rom
+cove ios config phone -network none -scale 3
+cove ios config phone
+```
+
+ROM paths may also be relative to the bundle. Configuration copies ROM bytes
+into `roms/<sha256>.rom` and records bundle-relative references. These hashes
+check file integrity; they do not establish firmware compatibility. Editing is
+rejected while cove holds the bundle run lock. The command prints config JSON.
+
+The experimental headless entry point is:
+
+```sh
+./cove-research ios run -initialize -force-dfu -timeout 2m phone
+```
+
+`-initialize` permits first identity creation. Ordinary runs preserve identity
+and NVRAM. Serial output goes to stdout and diagnostics to stderr. Interactive
+serial input, Finder routing, firmware preparation/restore and live DFU
+qualification remain incomplete; this command is not a demonstrated boot recipe.
+
+Inspect device endpoints without starting a VM:
+
+```sh
+cove ios devices
+cove ios devices -libusb /opt/homebrew/lib/libusb-1.0.dylib
+```
+
+The optional library enables raw USB DFU/recovery discovery. The JSON keeps these
+endpoints separate from normal/restored `usbmuxd` attachments. An empty list does
+not qualify DFU boot or firmware restore. The required Apple packages are pinned
+in `go.mod`; see [the package boundaries](docs/research/ios-device-packages-2026-09-07.md).

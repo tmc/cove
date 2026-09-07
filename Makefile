@@ -2,18 +2,27 @@ BINARY  ?= cove
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
 DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+RESEARCH ?= 0
+ifeq ($(RESEARCH),1)
+BUILD_TAGS = -tags cove_research
+ENTITLEMENTS = internal/ios/research.entitlements
+else
+ENTITLEMENTS = cmd/cove/vz.entitlements
+endif
+
 LDFLAGS  = -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 
 .PHONY: build sign agent test clean lint proto proto-go proto-swift release-tools release-check release-local
 
 build:
-	go build -buildvcs=true -ldflags "$(LDFLAGS)" -o $(BINARY) ./cmd/cove
+	go build $(BUILD_TAGS) -buildvcs=true -ldflags "$(LDFLAGS)" -o "$(BINARY)" ./cmd/cove
+	$(MAKE) sign
 
 agent:
 	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o cmd/vz-agent/vz-agent ./cmd/vz-agent
 
 sign:
-	codesign -s - -f --entitlements internal/autosign/vz.entitlements ./$(BINARY)
+	codesign -s - -f --entitlements "$(ENTITLEMENTS)" "$(BINARY)"
 
 test:
 	go test -v ./...
