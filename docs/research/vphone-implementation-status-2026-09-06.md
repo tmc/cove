@@ -538,3 +538,39 @@ completed successfully; no host framework or security settings were changed.
 The overlay also drains the vendor's general subprocess output before waiting.
 The live Swift integration verifies a 128 KiB child output before performing the
 APFS mount sequence, covering output larger than a pipe buffer. Both checks pass.
+
+## Increment 18: firmware patch runner
+
+`cove ios firmware patch -prepared DIR -rom AVPBooter.bin [flags] OUTPUT`
+now invokes the pinned Swift pipeline for less, regular, dev, jb and exp. It
+validates variant-only options and the tool's source, overlay and binary receipt.
+`-quiet` suppresses terminal progress while retaining verbose diagnostic output;
+`-records-out` exports validated records. Less requires explicit `-python` and
+`-seal-dir`; the Python dependency probe and versioned sealing executable check
+run before patching. Frida requires a cloudOS version of at least 26.4.
+
+Each attempt copies the prepared tree and ROM, records input/tool/options hashes,
+and holds an exclusive output lock. The Swift child inherits that lock so an
+abrupt Cove exit cannot permit a concurrent retry. Temporary image files and
+mount journals live on the attempt filesystem. After child exit, a separate
+recovery timeout detaches journal-owned images. Retry recovers prior attempts
+under the same workflow lock. Failed attempts retain their logs and state.
+
+Publication requires valid records for the selected component/variant families,
+records for explicitly requested Frida/EXC_GUARD patches, no `[-]` or failed-copy
+diagnostics, changed firmware bytes, readable hybrid manifests and clean mount
+recovery. `patched.json` records all output hashes and the log/record digests;
+reuse verifies them. This is structural validation, not a firmware-profile
+conformance result. Optional upstream `[~]` skips remain visible in the log.
+
+Fixture tests cover all variants, input isolation, result reuse/tampering,
+concurrent retry, inherited process locks, child/cancellation/cleanup failures,
+missing records, diagnostics and unchanged output. A real pinned-patcher test
+reached AVPBooter and rejected intentionally invalid fixture firmware without
+publishing a result. The compiler overlay also passes the resize path as a shell
+argument, removing upstream path interpolation into shell code.
+
+Real firmware output comparison for every supported profile, less filesystem
+patching with privileged remounts, complete checksummed host-resource provisioning,
+and integration with bundle create/restore stages remain unqualified or
+unimplemented. The runner does not establish F07 acceptance or full F01–F39 parity.

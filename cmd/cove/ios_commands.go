@@ -38,11 +38,11 @@ func runIOSCommand(env commandEnv, _ string, args []string) int {
 		return runIOSNew(env, args[1:])
 	}
 	if len(args) == 1 && (args[0] == "help" || args[0] == "-h" || args[0] == "--help") {
-		fmt.Fprintln(env.Stdout, "usage: cove ios preflight | devices [-libusb PATH] | new [-cpu N] [-memory GB] [-disk GB] NAME | setup source|patcher [flags] | firmware prepare [flags] OUTPUT | config [flags] NAME | run [flags] NAME")
+		fmt.Fprintln(env.Stdout, "usage: cove ios preflight | devices [-libusb PATH] | new [-cpu N] [-memory GB] [-disk GB] NAME | setup source|patcher [flags] | firmware prepare|patch [flags] OUTPUT | config [flags] NAME | run [flags] NAME")
 		return 0
 	}
 	if len(args) != 1 || args[0] != "preflight" {
-		return commandUsageError(env, fmt.Errorf("usage: cove ios preflight | devices [-libusb PATH] | new [-cpu N] [-memory GB] [-disk GB] NAME | setup source|patcher [flags] | firmware prepare [flags] OUTPUT | config [flags] NAME | run [flags] NAME"))
+		return commandUsageError(env, fmt.Errorf("usage: cove ios preflight | devices [-libusb PATH] | new [-cpu N] [-memory GB] [-disk GB] NAME | setup source|patcher [flags] | firmware prepare|patch [flags] OUTPUT | config [flags] NAME | run [flags] NAME"))
 	}
 	executable, err := os.Executable()
 	if err != nil {
@@ -345,11 +345,14 @@ func runIOSDevices(env commandEnv, args []string) int {
 }
 
 func runIOSFirmware(env commandEnv, args []string) int {
+	if len(args) > 0 && args[0] == "patch" {
+		return runIOSFirmwarePatch(env, args[1:])
+	}
 	if len(args) > 0 && args[0] == "_mount" {
 		return runIOSMountBridge(env, args[1:])
 	}
 	if len(args) == 0 || args[0] != "prepare" {
-		return commandUsageError(env, fmt.Errorf("usage: cove ios firmware prepare -source PATH -iphone IPSW -cloudos IPSW OUTPUT"))
+		return commandUsageError(env, fmt.Errorf("usage: cove ios firmware prepare -source PATH -iphone IPSW -cloudos IPSW OUTPUT | patch -prepared DIR -rom FILE [flags] OUTPUT"))
 	}
 	flags := flag.NewFlagSet("ios firmware prepare", flag.ContinueOnError)
 	flags.SetOutput(env.Stderr)

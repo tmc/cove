@@ -48,6 +48,12 @@ stderr 'mount journal and operation are required'
 stderr 'mount point is not owned by this journal'
 ! ios firmware prepare
 stderr 'source, iphone, cloudos and output paths are required'
+! ios firmware patch
+stderr 'usage: cove ios firmware patch'
+! ios firmware patch -variant dev -frida $JOURNAL
+stderr 'frida requires jb or exp'
+! ios firmware patch -variant regular -no-binpack $JOURNAL
+stderr 'no-binpack and no-vphoned require less'
 ! ios firmware unknown
 stderr 'usage: cove ios firmware prepare'
 

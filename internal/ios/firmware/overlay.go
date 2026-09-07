@@ -28,6 +28,7 @@ func patchMountSource(original string) (string, error) {
 	}
 	patched := original[:begin] + "        let data = try CoveMountBridge.run([\"attach\"] + (readonly ? [\"-readonly\"] : []) + [path.path])\n\n" + original[begin+tail:]
 	for _, r := range []struct{ old, new string }{
+		{`"-c", "diskutil image resize --plist \"\(output.path)\" | plutil -extract max raw -o - -"`, `"-c", "/usr/sbin/diskutil image resize --plist \"$1\" | /usr/bin/plutil -extract max raw -o - -", "cove-resize", output.path`},
 		{`try runProcess("/usr/bin/hdiutil", ["detach", deviceNode])`, `try CoveMountBridge.run(["detach", deviceNode])`},
 		{`try runProcess("/usr/sbin/diskutil", ["unmount", mount])`, `try CoveMountBridge.run(["unmount", mount])`},
 		{`try runProcess("/sbin/mount", ["-u", "-w", device, mountPoint])`, `try CoveMountBridge.run(["remount", device, mountPoint])`},
