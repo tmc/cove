@@ -496,7 +496,14 @@ if [ -n "$STALE_NODE" ]; then
 fi
 
 echo "==> Attaching disk: $DISK"
-ATTACH_OUT=$(hdiutil attach "$DISK" -nobrowse -noverify -noautoopen -plist 2>&1) || {
+if diskutil image attach --help >/dev/null 2>&1; then
+  ATTACH=(diskutil image attach --noMount --plist)
+  DETACH=(diskutil eject)
+else
+  ATTACH=(hdiutil attach -nomount -plist)
+  DETACH=(hdiutil detach)
+fi
+ATTACH_OUT=$("${ATTACH[@]}" "$DISK") || {
   echo "attach VM disk for offline agent injection failed ($DISK):" >&2
   echo "$ATTACH_OUT" >&2
   # Re-scan for a stale attach that appeared between pre-flight and attach.
@@ -519,22 +526,33 @@ if [ -z "${DEVICE:-}" ]; then
   echo "$ATTACH_OUT" >&2
   exit 1
 fi
+DEVICE="/dev/${DEVICE#/dev/}"
+case "$DEVICE" in
+  /dev/disk[0-9]*) ;;
+  *) echo "invalid device: $DEVICE" >&2; exit 1 ;;
+esac
+cleanup() {
+  echo "==> Detaching $DEVICE"
+  "${DETACH[@]}" "$DEVICE"
+}
+trap cleanup EXIT
+
 echo "==> Container device: $DEVICE"
 
+# Limit discovery to synthesized containers backed by this image.
+CONTAINERS=$(diskutil list | awk -v disk="${DEVICE#/dev/}" '
+  /^\/dev\/disk/ { container=$1 }
+  $1 == "Physical" && $2 == "Store" && $3 ~ ("^" disk "s[0-9]+$") { print container }
+')
 DATA_PART=""
-for p in $(diskutil list "$DEVICE" | awk '/Data/ && /APFS Volume/ {print $NF}'); do
-  if diskutil info "$p" 2>/dev/null | grep -q "Volume Name:.*Data"; then
-    DATA_PART="$p"
+for container in $CONTAINERS; do
+  DATA_PART=$(diskutil list "$container" | awk '/APFS Volume.*Data/ {print $NF; exit}')
+  if [ -n "$DATA_PART" ]; then
     break
   fi
 done
 if [ -z "$DATA_PART" ]; then
-  DATA_PART=$(diskutil list "$DEVICE" | awk '/APFS Volume.*Data/ {print $NF; exit}')
-fi
-if [ -z "$DATA_PART" ]; then
   echo "could not find Data volume in $DEVICE" >&2
-  diskutil list "$DEVICE" >&2
-  hdiutil detach "$DEVICE" || true
   exit 1
 fi
 echo "==> Data partition: /dev/$DATA_PART"
@@ -543,16 +561,9 @@ diskutil mount /dev/"$DATA_PART" >/dev/null
 MOUNT=$(diskutil info /dev/"$DATA_PART" | awk -F: '/Mount Point/ {gsub(/^ +/,"",$2); print $2; exit}')
 if [ -z "$MOUNT" ]; then
   echo "could not determine mount point for /dev/$DATA_PART" >&2
-  hdiutil detach "$DEVICE" || true
   exit 1
 fi
 echo "==> Mount point: $MOUNT"
-
-cleanup() {
-  echo "==> Detaching $DEVICE"
-  hdiutil detach "$DEVICE" || diskutil unmountDisk force "$DEVICE" || true
-}
-trap cleanup EXIT
 
 diskutil enableOwnership /dev/"$DATA_PART"
 mount -uo owners /dev/"$DATA_PART"
