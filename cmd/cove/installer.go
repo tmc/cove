@@ -172,12 +172,12 @@ type macOSInstallProvision struct {
 
 // stopVMAndInject stops a running VM, waits for the disk to be released, and
 // optionally injects provisioning files if provision credentials are set.
-func stopVMAndInject(vm *virtualMachine, provision macOSInstallProvision) {
+func stopVMAndInject(ctx context.Context, vm *virtualMachine, provision macOSInstallProvision) error {
 	target := currentVMSelection()
 	vzlog("stopVMAndInject: enter target.Directory=%q target.Name=%q (globals: vmDir=%q vmName=%q)", target.Directory, target.Name, vmDir, vmName)
 	fmt.Println("Stopping VM...")
 	if err := stopInstallerVM(vm); err != nil {
-		fmt.Printf("warning: %v\n", err)
+		return err
 	}
 
 	// Wait for the disk to be released instead of a fixed sleep. The VZ
@@ -206,16 +206,19 @@ func stopVMAndInject(vm *virtualMachine, provision macOSInstallProvision) {
 		}
 	}
 	if err := disk.WaitForAvailable(diskFile, 15*time.Second); err != nil {
-		fmt.Printf("warning: %v\n", err)
+		return err
+	}
+	if err := validateInstalledDisk(ctx, diskFile); err != nil {
+		return fmt.Errorf("post-install disk readability: %w", err)
 	}
 
 	if provision.Config.Username == "" || provision.Config.Password == "" {
-		return
+		return nil
 	}
 
 	if provision.Strategy == "gui" {
 		fmt.Println("Skipping disk provisioning (strategy=gui).")
-		return
+		return nil
 	}
 
 	fmt.Println()
@@ -254,12 +257,13 @@ func stopVMAndInject(vm *virtualMachine, provision macOSInstallProvision) {
 	}
 	if _, err := stageProvisioningFilesForVM(target, injectOpts); err != nil {
 		provisionFailed(err)
-		return
+		return nil
 	}
 	if err := applyProvisioningFilesForVM(target); err != nil {
 		provisionFailed(err)
 	}
 	fmt.Println()
+	return nil
 }
 
 type installerVMStopStatus struct {
@@ -644,7 +648,6 @@ func runFullInstallWithGUI(ctx context.Context, provision macOSInstallProvision,
 						vzlog("runFullInstallWithGUI: post-install vmDir mode=%v", info.Mode())
 					}
 				}
-				fmt.Println("=== Installation Complete ===")
 				title, subtitle, _ := installOverlayMessage(installOverlayFirstBoot, 100)
 				ui.setOverlaySubtitle(title, subtitle)
 				ui.requestSetVMWindowTitle("macOS VM Installation - Stopping VM...")
@@ -656,7 +659,13 @@ func runFullInstallWithGUI(ctx context.Context, provision macOSInstallProvision,
 					fmt.Fprintln(os.Stderr, "warning: timed out closing install window before stop")
 				}
 
-				stopVMAndInject(installer.vm, provision)
+				if err := stopVMAndInject(ctx, installer.vm, provision); err != nil {
+					lifecycleErrMu.Lock()
+					lifecycleErr = err
+					lifecycleErrMu.Unlock()
+					return
+				}
+				fmt.Println("=== Installation Complete ===")
 
 				ui.requestSetVMWindowTitle("macOS VM Installation - Restarting...")
 				fmt.Println("Restarting VM for first boot...")
@@ -1773,10 +1782,11 @@ func runInstallation(ctx context.Context, installer *macOSInstaller, provision m
 					vzlog("runInstallation: post-install vmDir mode=%v", info.Mode())
 				}
 			}
+			if err := stopVMAndInject(ctx, installer.vm, provision); err != nil {
+				return err
+			}
 			fmt.Println("=== Installation Complete ===")
 			fmt.Println()
-
-			stopVMAndInject(installer.vm, provision)
 
 			fmt.Println("You can now run the VM with: ./cove run")
 			if provision.Config.Username == "" {
