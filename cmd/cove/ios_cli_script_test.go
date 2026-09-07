@@ -39,6 +39,11 @@ func TestIOSNewScript(t *testing.T) {
 	engine := &script.Engine{Cmds: cmds, Conds: script.DefaultConds()}
 	var log bytes.Buffer
 	source := `
+! ios firmware prepare
+stderr 'source, iphone, cloudos and output paths are required'
+! ios firmware unknown
+stderr 'usage: cove ios firmware prepare'
+
 ios new -cpu 2 -memory 2 -disk 1 phone
 stdout 'phone.covevm'
 exists state/vms/phone.covevm/disk.img

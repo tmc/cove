@@ -19,6 +19,9 @@ import (
 )
 
 func runIOSCommand(env commandEnv, _ string, args []string) int {
+	if len(args) > 0 && args[0] == "firmware" {
+		return runIOSFirmware(env, args[1:])
+	}
 	if len(args) > 0 && args[0] == "devices" {
 		return runIOSDevices(env, args[1:])
 	}
@@ -35,11 +38,11 @@ func runIOSCommand(env commandEnv, _ string, args []string) int {
 		return runIOSNew(env, args[1:])
 	}
 	if len(args) == 1 && (args[0] == "help" || args[0] == "-h" || args[0] == "--help") {
-		fmt.Fprintln(env.Stdout, "usage: cove ios preflight | devices [-libusb PATH] | new [-cpu N] [-memory GB] [-disk GB] NAME | setup source [flags] | config [flags] NAME | run [flags] NAME")
+		fmt.Fprintln(env.Stdout, "usage: cove ios preflight | devices [-libusb PATH] | new [-cpu N] [-memory GB] [-disk GB] NAME | setup source [flags] | firmware prepare [flags] OUTPUT | config [flags] NAME | run [flags] NAME")
 		return 0
 	}
 	if len(args) != 1 || args[0] != "preflight" {
-		return commandUsageError(env, fmt.Errorf("usage: cove ios preflight | devices [-libusb PATH] | new [-cpu N] [-memory GB] [-disk GB] NAME | setup source [flags] | config [flags] NAME | run [flags] NAME"))
+		return commandUsageError(env, fmt.Errorf("usage: cove ios preflight | devices [-libusb PATH] | new [-cpu N] [-memory GB] [-disk GB] NAME | setup source [flags] | firmware prepare [flags] OUTPUT | config [flags] NAME | run [flags] NAME"))
 	}
 	executable, err := os.Executable()
 	if err != nil {
@@ -335,5 +338,29 @@ func runIOSDevices(env commandEnv, args []string) int {
 	if len(report.Errors) != 0 {
 		return 1
 	}
+	return 0
+}
+
+func runIOSFirmware(env commandEnv, args []string) int {
+	if len(args) == 0 || args[0] != "prepare" {
+		return commandUsageError(env, fmt.Errorf("usage: cove ios firmware prepare -source PATH -iphone IPSW -cloudos IPSW OUTPUT"))
+	}
+	flags := flag.NewFlagSet("ios firmware prepare", flag.ContinueOnError)
+	flags.SetOutput(env.Stderr)
+	source := flags.String("source", "", "pinned toolchain source directory")
+	iphone := flags.String("iphone", "", "local iPhone IPSW")
+	cloudos := flags.String("cloudos", "", "local cloudOS IPSW")
+	if err := flags.Parse(args[1:]); err != nil {
+		return 2
+	}
+	if flags.NArg() != 1 || *source == "" || *iphone == "" || *cloudos == "" {
+		return commandUsageError(env, fmt.Errorf("source, iphone, cloudos and output paths are required"))
+	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	if err := firmware.Prepare(ctx, *source, *iphone, *cloudos, flags.Arg(0), env.Stderr); err != nil {
+		return commandError(env, err)
+	}
+	fmt.Fprintln(env.Stdout, filepath.Join(flags.Arg(0), "firmware.json"))
 	return 0
 }

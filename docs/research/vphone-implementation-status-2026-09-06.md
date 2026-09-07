@@ -440,3 +440,26 @@ CLI/Finder dispatch, and prove signed DFU enumeration before restore.
 The planned durable stage manifests and all guest/desktop/media requirements
 remain required. Notebook review must assess actual implementation against every
 ledger row, never treat the previous plan approval as implementation completion.
+
+## Increment 14: isolated firmware preparation
+
+`cove ios firmware prepare -source PATH -iphone IPSW -cloudos IPSW OUTPUT`
+now runs the pinned prepare/manifest recipe for explicit local archives. Each
+attempt owns its cache, extraction directory and log. Success publishes
+`firmware.json` after checking the hybrid identity, required component paths,
+plist readability and hashes of every output file. Input archives are retained.
+A repeated invocation checks the input and output hashes before reuse; changed
+inputs require a new output directory. Failed attempts remain separate and never
+publish prepared state. Output locking prevents concurrent prepare writers.
+
+The real pinned recipe passes a synthetic IPSW integration test. That test found
+that upstream's stale-tree cleanup deletes a cloudOS directory containing
+`Restore` in its name; Cove stages cloudOS under a fixed name without that token.
+ZIP traversal, links and case-colliding entries are rejected before extraction.
+
+F05/F06 are partial: URL/catalog resolution, firmware-pair compatibility,
+real-image qualification, ROM outputs and bundle stage integration remain
+unfinished. This command prepares the common firmware tree; less-variant sealing
+tool acquisition remains separate and unimplemented with mount journaling.
+Python is still required by the delegated manifest generator. No restore or boot
+completion follows from preparing synthetic archives.
