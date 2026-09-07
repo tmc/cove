@@ -1178,6 +1178,12 @@ func startConfiguredVM(vm vz.VZVirtualMachine, queue dispatch.Queue, pumpRunLoop
 			fmt.Println()
 			fmt.Println("Hint: the disk image is still mounted from a previous inject/verify.")
 			fmt.Println("  Run: ./cove disk-detach")
+		} else if isVZStorageAttachmentError(err) {
+			if lease := staleDiskLeaseForStart(hc.VMDir); lease != nil {
+				fmt.Println()
+				fmt.Printf("Hint: a stale Virtualization process (%s) is holding this VM's disk open.\n", lease.pidList())
+				fmt.Printf("  Recover with: cove doctor clear-stale-locks %s\n", lease.Name)
+			}
 		}
 		return fmt.Errorf("vm start failed: %w", err)
 	}

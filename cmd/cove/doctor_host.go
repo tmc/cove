@@ -69,6 +69,7 @@ Checks:
   state          writable cove state directory
   network        active non-loopback network interface
   helper         privileged helper install/socket state
+  stale-disk     stopped VM disks held open by orphaned VZ processes
   xcode          Xcode Command Line Tools availability
 
 Flags:
@@ -85,6 +86,7 @@ func collectHostDoctorReport() hostDoctorReport {
 	checks = append(checks, hostDoctorStateWritableCheck())
 	checks = append(checks, hostDoctorNetworkCheck())
 	checks = append(checks, hostDoctorHelperCheck())
+	checks = append(checks, hostDoctorStaleDiskCheck())
 	checks = append(checks, hostDoctorXcodeCheck())
 
 	status := "pass"

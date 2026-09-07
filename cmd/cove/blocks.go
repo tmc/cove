@@ -70,6 +70,23 @@ func isVZAlreadyStoppedStopError(err error) bool {
 	return strings.Contains(msg, "stopped") && strings.Contains(msg, "stopping")
 }
 
+// isVZStorageAttachmentError reports whether err is the VZErrorDomain
+// code=2 configuration failure raised when the disk image is already open
+// by another process ("the storage device attachment is invalid", or the
+// sibling "directory sharing device configuration is invalid").
+func isVZStorageAttachmentError(err error) bool {
+	var snap nsErrorSnapshot
+	if !errors.As(err, &snap) {
+		return false
+	}
+	if !strings.EqualFold(snap.domain, "VZErrorDomain") || snap.code != 2 {
+		return false
+	}
+	msg := strings.ToLower(snap.Error())
+	return strings.Contains(msg, "storage device attachment") ||
+		strings.Contains(msg, "directory sharing device")
+}
+
 func printNSErrorSummary(prefix string, err error) bool {
 	switch e := err.(type) {
 	case nsErrorSnapshot:
