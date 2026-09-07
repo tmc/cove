@@ -26,8 +26,8 @@ not proof that its tickets match a particular VM or firmware.
 
 Apple changes are isolated in `../apple-wt-ios`, branch `ios-device-packages`.
 The packages and plist correction are published on the Apple
-`ios-device-packages` branch at `3d33fff2e278`. Cove now pins
-`v0.6.19-0.20260907142414-3d33fff2e278`; its temporary `go.work` has been removed.
+`ios-device-packages` branch at `f656c7e780de`. Cove now pins
+`v0.6.19-0.20260907144313-f656c7e780de`; its temporary `go.work` has been removed.
 The configured GitHub remote is reachable using a command-local URL rewrite
 override; no global Git configuration was changed.
 
@@ -39,7 +39,7 @@ and preflight tests exercise the extracted VZ helpers through their callers.
 ## Remaining work
 
 These are working primitives, not a completed replacement for pymobiledevice3.
-Still required: raw DFU transfer sequencing and recovery transitions, pairing and
+Still required: DFU manifestation/reset and recovery transitions, pairing and
 lockdown where used, complete restore orchestration and personalization, ASR
 image transfer, matching-device reconnect handling, firmware fixtures, and a
 qualified end-to-end restore. Discovery, control and bulk primitives alone do
@@ -76,3 +76,28 @@ module pin, `go build ./...` and `go test ./...` pass. `make build` also builds 
 signs the public executable. Its device-discovery command again successfully
 queries both transports and finds no endpoints. These checks establish ordinary
 buildability and discovery transport access, not research VM or restore success.
+
+## Native image upload
+
+Apple commit `f656c7e780de` adds `irecovery.Conn.Upload`: recovery bulk/ZLP and
+DFU logical blocks, footer and download-idle polling. It checks complete transfer
+counts and device status, respects 24-bit poll delays and supports cancellation
+while waiting for connection ownership. It does not execute or finalize the
+image; manifestation notification, reset and matching-device reconnect remain
+required. Cove pins the implementation, but does not yet expose a firmware upload
+or complete restore command.
+
+Packet fixtures follow pinned libirecovery commit `29592eb6` and document its CRC
+difference from pymobiledevice3 revision `a16ffc51`. Tests cover the footer bytes,
+block boundaries, split footers, recovery ZLP, short transfers, status failures,
+initial-state CLRSTATUS/ABORT and explicit retry, cancellation and large recovery
+images bypassing the DFU-only block-count limit. Race tests pass. No live image
+upload, manifestation, restore or boot has been demonstrated.
+
+The self-prompting anchor confirmed this slice serves F09 and remains on mission.
+Its recovery-size-limit finding was accepted and fixed. Initial non-idle DFU
+handling now matches the reference's clear/abort followed by a returned error;
+it never silently retries an upload.
+
+Cove's build, full test suite and signed public build pass with this published
+upload revision pinned. Validation sent no image bytes to a live USB endpoint.

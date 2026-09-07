@@ -396,15 +396,26 @@ provide usbmux device listing/connections, libusb recovery endpoint access,
 restored plist framing and TSS request transport. `cove ios devices` successfully
 queried both host transports with no attached endpoints. This does not demonstrate
 DFU, restore or boot. See [package boundaries](ios-device-packages-2026-09-07.md)
-for the development workspace dependency, validation and missing restore stages.
+for the published dependency, validation and missing restore stages.
 F01–F39 acceptance remains incomplete; new transport primitives do not complete
 F09 restore or qualify the current host.
 
+## Increment 12: native DFU/recovery image transfer
+
+The published Apple dependency now includes `irecovery.Conn.Upload`, with
+fixture-tested DFU block/footer transfer and recovery bulk/ZLP handling. Polling
+checks bStatus and the full 24-bit timeout. The notebook's overbroad recovery
+size-limit finding was fixed; initial DFU error recovery sends clear/abort and
+returns an error requiring explicit retry. See the package-boundaries document
+for source discrepancies, tests and exact limits. This is a partial F09 building
+block: Cove has no complete restore command, and manifestation/reset/reconnect,
+personalization, ASR and live qualification remain outstanding.
+
 ## Remaining ledger
 
-F01 (toolchain sources), F03 (configuration), F12 (dispatch), F17 (device planning), F18 (signing), and
+F01 (toolchain sources), F03 (configuration), F09 (restore transports), F12 (dispatch), F17 (device planning), F18 (signing), and
 F39 (serial/debug configuration) have partial foundations.
-None is accepted as complete. F02, F04–F11, F13–F16 and F19–F38 remain
+None is accepted as complete. F02, F04–F08, F10–F11, F13–F16 and F19–F38 remain
 unimplemented for iOS. In particular, the CLI exposes preflight, blank-bundle creation, stopped configuration and the experimental headless
 `ios run` entry point. The graph builder is not runtime-qualified; DFU observation, firmware adapter,
 guest transport and GUI integration remain absent.
