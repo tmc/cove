@@ -72,6 +72,8 @@ github.com/tmc/apple v0.6.19-0.20260907150059-3e8ad6225f3d h1:RUBayb0E/pPl26rfiD
 github.com/tmc/apple v0.6.19-0.20260907150059-3e8ad6225f3d/go.mod h1:2JgTfzQdQhX0loSpiOmxFxEMFm3BYDW6Bw9RvrSYgIg=
 github.com/tmc/apple v0.6.19-0.20260907170253-e80f461d4830 h1:+P2whvi8ij8ZpBF8JFnAQiMpfnHRdqAjh50B9F+0en8=
 github.com/tmc/apple v0.6.19-0.20260907170253-e80f461d4830/go.mod h1:2JgTfzQdQhX0loSpiOmxFxEMFm3BYDW6Bw9RvrSYgIg=
+github.com/tmc/apple v0.6.19-0.20260907171849-63f5d90dbc46 h1:95iVnDv28v5H7OgVkAkvxkqC/OKeHneQ+jnfeaTDX/I=
+github.com/tmc/apple v0.6.19-0.20260907171849-63f5d90dbc46/go.mod h1:2JgTfzQdQhX0loSpiOmxFxEMFm3BYDW6Bw9RvrSYgIg=
 github.com/tmc/macgo v0.1.4-0.20260527192223-4bb97879961e h1:Ib37Bb54jGY7iKYPgcMnzaGLtwBs+3WAyK/4qwO13f0=
 github.com/tmc/macgo v0.1.4-0.20260527192223-4bb97879961e/go.mod h1:X6P77neg6ent0JsJDbnhC64pks1izaAANCU5J21PH34=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=

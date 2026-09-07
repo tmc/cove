@@ -588,3 +588,13 @@ no restore/reboot command. Protocol and discovery tests pass; see the
 [package evidence](ios-device-packages-2026-09-07.md#native-asr-and-restored-identity).
 No live ASR transfer, complete restore dispatcher, image personalization, AEA
 staging, offline ticket binding or guest boot is claimed. F09 remains incomplete.
+
+## Increment 20: native IMG4 assembly
+
+Apple `x/img4` now assembles IMG4 from supplied IM4P/IM4M with optional FourCC
+retagging and typed IM4R properties. Payload compression/encryption bytes, PAYP
+fields and ticket bytes remain intact. It does not authenticate tickets or choose
+restore policy. Synthetic wire vectors and OpenSSL checks support the encoding;
+no real firmware/ticket pair or device restore is qualified. See the
+[package boundary](ios-device-packages-2026-09-07.md#img4-container-assembly).
+Cove's identity-bound ticket and personalization policy adapter remains required.

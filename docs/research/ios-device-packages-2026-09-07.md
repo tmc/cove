@@ -149,3 +149,30 @@ as `v0.6.19-0.20260907170253-e80f461d4830`. The signed Cove CLI ran
 `ios restore probe -ecid 1 -timeout 10s` and returned the expected no-match error.
 This exercises the host discovery path; it does not qualify a connected restored
 device or an ASR transfer.
+
+## IMG4 container assembly
+
+Apple `x/img4.Personalize` combines complete IM4P and IM4M DER objects, optionally
+retags the payload FourCC, and encodes IM4R restore properties. It preserves
+payload encoding, optional IM4P fields such as PAYP, and the supplied ticket
+bytes. Restore properties support integer, boolean and octet values; octets are
+already in wire order and are never reversed by this API. In particular, Cove's
+future TSS adapter must apply the pinned BNCN convention explicitly.
+
+The format was checked against
+[PyIMG4's encoder](https://github.com/m1stadev/PyIMG4/blob/80491329a41ff90f1df1a2bcaa122d190db94bf3/pyimg4/parser.py)
+and the pinned [pymobiledevice3 component adapter](https://github.com/doronz88/pymobiledevice3/blob/a16ffc51dcfe2c36fc659fbb2e7b7dedb31d77d5/pymobiledevice3/restore/img4.py).
+Synthetic DER vectors cover the IMG4 envelope, high-number private tags, nonce
+slots, large unsigned values, payload-field preservation and length boundaries.
+OpenSSL independently parses the `anid=2` IM4R vector.
+
+This API checks outer container structure, not ticket authenticity or hardware
+eligibility. Build/ECID/nonce binding, component-name mappings, TSS `-TBM` handling,
+nonce-slot policy, complete restore dispatch and real-device qualification still
+belong to the pending Cove restore controller. Container assembly alone does not
+complete image personalization acceptance or F09.
+
+Published IMG4 implementation: Apple
+`63f5d90dbc4661a5258a7d58b66bd6b297cbe71f`, pinned by Cove as
+`v0.6.19-0.20260907171849-63f5d90dbc46`. The 20-second fuzz run completed
+2,694,163 executions with no failure, alongside passing golden and race tests.
