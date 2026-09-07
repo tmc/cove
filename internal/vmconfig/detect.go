@@ -13,6 +13,14 @@ func HasSuspendState(dir string) bool {
 
 // DetectOSType determines the OS type of a VM from layout marker files.
 func DetectOSType(dir string) string {
+	cfg, err := Load(dir)
+	if err != nil {
+		return "unknown"
+	}
+	if cfg.IOS != nil {
+		return "iOS"
+	}
+
 	if _, err := os.Stat(filepath.Join(dir, "hw.model")); err == nil {
 		return "macOS"
 	}

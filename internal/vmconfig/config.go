@@ -9,6 +9,7 @@ import (
 	"time"
 
 	virtiofsx "github.com/tmc/apple/x/vzkit/virtiofs"
+	"github.com/tmc/cove/internal/iosbundle"
 )
 
 // VolumeMount represents a host-to-guest volume mount configuration.
@@ -28,17 +29,18 @@ type AgentConfig struct {
 
 // Config holds persistent configuration for a VM.
 type Config struct {
-	CPU                uint          `json:"cpu,omitempty"`
-	MemoryGB           uint64        `json:"memoryGB,omitempty"`
-	GuestUserUID       uint32        `json:"guestUserUID,omitempty"`
-	GuestUserGID       uint32        `json:"guestUserGID,omitempty"`
-	Volumes            []VolumeMount `json:"volumes,omitempty"`
-	PostInstallRecipes string        `json:"postInstallRecipes,omitempty"`
-	Agent              *AgentConfig  `json:"agent,omitempty"`
-	ParentVM           string        `json:"parentVM,omitempty"`
-	ParentSnapshot     string        `json:"parentSnapshot,omitempty"`
-	ParentImage        string        `json:"parentImage,omitempty"`
-	ForkedAt           time.Time     `json:"forkedAt,omitempty"`
+	IOS                *iosbundle.Config `json:"ios,omitempty"`
+	CPU                uint              `json:"cpu,omitempty"`
+	MemoryGB           uint64            `json:"memoryGB,omitempty"`
+	GuestUserUID       uint32            `json:"guestUserUID,omitempty"`
+	GuestUserGID       uint32            `json:"guestUserGID,omitempty"`
+	Volumes            []VolumeMount     `json:"volumes,omitempty"`
+	PostInstallRecipes string            `json:"postInstallRecipes,omitempty"`
+	Agent              *AgentConfig      `json:"agent,omitempty"`
+	ParentVM           string            `json:"parentVM,omitempty"`
+	ParentSnapshot     string            `json:"parentSnapshot,omitempty"`
+	ParentImage        string            `json:"parentImage,omitempty"`
+	ForkedAt           time.Time         `json:"forkedAt,omitempty"`
 }
 
 // Hardware holds CPU and memory settings for a VM.
@@ -67,11 +69,24 @@ func Load(dir string) (*Config, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse vm config: %w", err)
 	}
+	if cfg.IOS != nil {
+		if err := cfg.IOS.Validate(); err != nil {
+			return nil, fmt.Errorf("parse vm config: %w", err)
+		}
+	}
 	return &cfg, nil
 }
 
 // Save writes cfg to dir/config.json.
 func Save(dir string, cfg *Config) error {
+	if cfg == nil {
+		return fmt.Errorf("save vm config: nil config")
+	}
+	if cfg.IOS != nil {
+		if err := cfg.IOS.Validate(); err != nil {
+			return fmt.Errorf("save vm config: %w", err)
+		}
+	}
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal vm config: %w", err)

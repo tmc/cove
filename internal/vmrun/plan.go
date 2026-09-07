@@ -57,10 +57,10 @@ type USBPlan struct {
 type StorageKind int
 
 const (
-	StorageRoot StorageKind = iota // primary boot/root disk
-	StorageISO                     // boot/install media (read-only)
-	StorageUSB                     // user-attached USB mass storage
-	StorageBlock                   // raw block device
+	StorageRoot  StorageKind = iota // primary boot/root disk
+	StorageISO                      // boot/install media (read-only)
+	StorageUSB                      // user-attached USB mass storage
+	StorageBlock                    // raw block device
 )
 
 // String returns a short label for the storage kind, suitable for logs.
@@ -112,6 +112,19 @@ func (c *RunConfig) Validate() error {
 		return errors.New("vmrun: -gui and -headless are mutually exclusive")
 	}
 	switch c.OS {
+	case GuestIOS:
+		if c.IPSWPath != "" || c.ISOPath != "" || c.ForceInstall || c.InstallVM {
+			return errors.New("vmrun: ios provisioning requires the ios firmware pipeline")
+		}
+		if c.KernelPath != "" || c.InitrdPath != "" || c.CmdLine != "" || c.LinuxNested || c.LinuxNVMe || c.LinuxShell {
+			return errors.New("vmrun: linux boot options cannot be used with ios")
+		}
+		if c.RecoveryMode && c.ForceDFU {
+			return errors.New("vmrun: ios recovery and dfu are mutually exclusive")
+		}
+		if c.EnableRosetta || c.EnableClipboard || len(c.Volumes) != 0 {
+			return errors.New("vmrun: ios requires its own guest services, not rosetta, virtio clipboard or shared folders")
+		}
 	case GuestLinux:
 		if c.LinuxShell && c.Headless {
 			return errors.New("vmrun: -shell requires a host terminal and is incompatible with -headless")
@@ -205,7 +218,7 @@ func Plan(rc RunConfig, hc HostConfig) (DevicePlan, error) {
 	}
 
 	switch rc.OS {
-	case GuestMacOS:
+	case GuestMacOS, GuestIOS:
 		// macOS installation requires both host audio streams; without them
 		// the MobileRestore service fails with DFU 3004/4014. See CLAUDE.md.
 		plan.Audio = AudioPlan{

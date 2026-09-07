@@ -32,6 +32,7 @@ import (
 	"github.com/tmc/cove/internal/assets"
 	"github.com/tmc/cove/internal/bytefmt"
 	"github.com/tmc/cove/internal/guestplan"
+	"github.com/tmc/cove/internal/vmconfig"
 	"github.com/tmc/cove/internal/vmrun"
 	"github.com/tmc/cove/internal/vmstate"
 )
@@ -370,6 +371,13 @@ func runMacOSVMWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig, bundle *RunBu
 		fmt.Println("=== macOS VM Runner ===")
 	}
 	target := vmSelectionFromHostConfig(hc)
+	cfg, err := vmconfig.Load(target.Directory)
+	if err != nil {
+		return err
+	}
+	if cfg.IOS != nil {
+		return fmt.Errorf("ios bundle requires the ios runtime")
+	}
 
 	stopAppleLogStream := maybeStartAppleLogStream()
 	defer stopAppleLogStream()

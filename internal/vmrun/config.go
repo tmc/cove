@@ -10,10 +10,13 @@ const (
 	GuestMacOS
 	GuestLinux
 	GuestWindows
+	GuestIOS
 )
 
 func (g GuestOS) String() string {
 	switch g {
+	case GuestIOS:
+		return "ios"
 	case GuestMacOS:
 		return "macos"
 	case GuestLinux:
