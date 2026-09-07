@@ -93,7 +93,7 @@ func (d *SessionData) sendBootObject(ctx context.Context, conn net.Conn, message
 		}
 		reader = bytes.NewReader(image)
 	}
-	return streamBootObject(ctx, conn, reader, dataType == "SourceBootObjectV4", d.Asset)
+	return streamBootObject(ctx, conn, reader, dataType == "SourceBootObjectV4", d.NestedAsset)
 }
 
 func streamBootObject(ctx context.Context, conn net.Conn, reader io.Reader, source bool, asset func(context.Context, map[string]any) error) error {

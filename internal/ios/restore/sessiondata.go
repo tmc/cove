@@ -18,7 +18,7 @@ type RestoreImage struct {
 }
 
 // SessionData provides native handlers for root tickets, build identities,
-// volume-bound local policy, boot objects and ASR images. Ticket requirements must be retained
+// volume-bound local policy, boot objects, HTTP assets and ASR images. Ticket requirements must be retained
 // from the corresponding signing request. Identity selects the appropriate build
 // for the request and restore behavior. Inputs must remain immutable throughout
 // the session. Other data types return an error and require additional handlers.
@@ -30,8 +30,10 @@ type SessionData struct {
 	// bundle. It must use validated manifest paths rather than raw request paths.
 	// The handler owns and closes the returned reader; it must unblock on Close.
 	Object func(context.Context, map[string]any, string) (io.ReadCloser, error)
-	// Asset serves a nested AEA URLAsset request, including its service routing.
-	Asset    func(context.Context, map[string]any) error
+	// NestedAsset serves an AEA URLAsset request, including its service routing.
+	NestedAsset func(context.Context, map[string]any) error
+	// Assets handles HTTP asset and key requests on the selected service.
+	Assets   *Assets
 	Identity func(context.Context, map[string]any) (map[string]any, error)
 	// Parameters contains observed AP personalization parameters for APResponse.
 	Parameters map[string]any
@@ -51,6 +53,8 @@ func (d *SessionData) Handle(ctx context.Context, conn net.Conn, message map[str
 	}
 	dataType, _ := message["DataType"].(string)
 	switch dataType {
+	case "URLAsset", "StreamedImageDecryptionKey":
+		return d.Assets.Handle(ctx, conn, message)
 	case "RootTicket", "RecoveryOSRootTicketData":
 		response, want := d.APResponse, d.APRequirements
 		if dataType == "RecoveryOSRootTicketData" {

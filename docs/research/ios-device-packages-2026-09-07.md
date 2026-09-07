@@ -554,3 +554,41 @@ objects, metadata and personalized V3 bytes. The controller still must bind the
 model and signing response to the observed device, hold the bundle for the entire
 attempt, provide ASR images and implement asset handling and remaining lifecycle
 stages. This provider does not establish live restore or boot.
+
+## Restored HTTP assets
+
+`restore.Assets` implements `URLAsset` GET and `StreamedImageDecryptionKey` POST
+requests. `SessionData.Assets` handles ordinary requests on the service selected
+by `RunRestored`. The renamed `SessionData.NestedAsset` callback handles AEA's
+nested request; `Assets.Serve` supplies concrete port routing for that callback.
+
+GET replies use the shared `iosrestore.SendBinary` framing helper. Key replies
+use XML. Both return `ResponseBody`, `ResponseBodyDone`, `ResponseHeaders` and
+`ResponseStatus`, including non-200 HTTP responses. Key POSTs forward the supplied
+body and additional headers. Successfully delivered HTTP 200 GET responses are
+cached by URL for the attempt; key POSTs are not cached. Wire behavior follows pinned
+[`restore.py` asset handlers](https://github.com/doronz88/pymobiledevice3/blob/a16ffc51dcfe2c36fc659fbb2e7b7dedb31d77d5/pymobiledevice3/restore/restore.py).
+Cove deliberately leaves HTTP error statuses uncached so a later device request
+can fetch again after a transient server failure. Failed deliveries are not
+cached either; neither case causes an automatic retry.
+
+One `Assets` instance supports concurrent handlers. Its cache is bounded to
+32 MiB and 64 entries, clearing when a new entry would exceed either limit.
+Bodies are limited to 8 MiB and headers to 64 KiB, so XML replies fit the shared
+16 MiB frame bound. HTTP requests use a two-minute timeout bounded by the session
+context. HTTP(S) URLs cannot contain embedded credentials or fragments. The
+handler does not log key bodies or include signed URLs in its HTTP diagnostics;
+there are no application-level retries. Custom clients must honor contexts.
+
+`Assets.Serve` dials an explicit nested `DataPort` on the same selected device,
+watches cancellation and closes that connection. Without a port it borrows an
+explicitly supplied control connection. The caller must hold exclusive use of
+that connection and configure its context deadlines; passing nil rejects this
+fallback. The complete controller must enforce that ownership while processing
+concurrent requests.
+
+Tests cover GET caching, key POSTs, forwarded error statuses, binary/XML wire
+formats, size limits, cancellation, concurrent cache access and connection
+ownership. An integrated simulated AEA exchange fetches its nested HTTP asset
+and resumes object streaming. These checks use local HTTP servers and simulated
+device streams; no live key service or research restore was exercised.

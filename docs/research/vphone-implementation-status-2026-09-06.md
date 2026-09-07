@@ -1,9 +1,9 @@
 # vphone parity implementation status
 
-Status at increment 31: incomplete. The approved plan remains full F01–F39
+Status at increment 32: incomplete. The approved plan remains full F01–F39
 parity. Native restore transports, component transfer, restored session dispatch
-and verified bundle object resolution are implemented. The complete restore
-controller, asset handlers, remaining guest features and live qualification
+and verified bundle object resolution and HTTP assets are implemented. The complete restore
+controller, remaining guest features and live qualification
 remain required. No successful live iOS restore or boot is claimed.
 
 The increments below are historical checkpoints. Their observations, failures
@@ -732,3 +732,13 @@ simulated service responses with actual bundle reads and IMG4 personalization.
 See the [provider contract](ios-device-packages-2026-09-07.md#restore-bundle-object-resolution).
 Whole-attempt ownership, options, assets and the remaining restore lifecycle
 still require implementation and live qualification. Full F01–F39 remains open.
+
+## Increment 32: native HTTP assets
+
+Restored URL assets and streamed-image key requests now have native HTTP handlers,
+including binary-plist GET responses, XML POST responses, bounded GET caching and
+context cancellation. Nested AEA requests can use a dedicated device port or an
+explicitly borrowed control connection. Simulated tests cover the complete AEA
+pause/request/reply/resume sequence. See the [asset contract](ios-device-packages-2026-09-07.md#restored-http-assets).
+Complete restore sequencing, control-connection coordination and live
+qualification remain required. This is not full F01–F39 completion.

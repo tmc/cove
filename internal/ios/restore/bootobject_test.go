@@ -53,7 +53,7 @@ func TestBootObjectStreaming(t *testing.T) {
 					}
 					return source, nil
 				},
-				Asset: func(_ context.Context, m map[string]any) error {
+				NestedAsset: func(_ context.Context, m map[string]any) error {
 					if m["MsgType"] != "URLAsset" || m["DataPort"] != int64(62002) {
 						return fmt.Errorf("incorrect asset request")
 					}
@@ -140,7 +140,7 @@ func TestBootObjectReject(t *testing.T) {
 			case "asset failure":
 				message["DataType"] = "SourceBootObjectV4"
 				reader.Reader = bytes.NewReader([]byte("AEA1source"))
-				data.Asset = func(context.Context, map[string]any) error { return fmt.Errorf("injected asset failure") }
+				data.NestedAsset = func(context.Context, map[string]any) error { return fmt.Errorf("injected asset failure") }
 			}
 			host, peer := net.Pipe()
 			defer host.Close()
