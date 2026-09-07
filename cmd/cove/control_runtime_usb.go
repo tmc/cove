@@ -529,6 +529,6 @@ func releaseRuntimeUSBDevice(obj objectivec.IObject) {
 	className := runtimeUSBClassName(obj)
 	switch className {
 	case "VZIOUSBHostPassthroughDevice", "_VZIOUSBHostPassthroughDevice":
-		pvz.VZIOUSBHostPassthroughDeviceFromID(obj.GetID()).ReleaseDevice()
+		objc.SendIfResponds[objc.ID](obj.GetID(), objc.Sel("_releaseDevice"))
 	}
 }

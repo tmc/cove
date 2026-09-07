@@ -455,10 +455,10 @@ func TestPrivateAPI_ValidateDisplayForHotPlug(t *testing.T) {
 	}
 
 	// Create a VZMacGraphicsDisplay from the config
-	macDisp, err := privvz.NewMacGraphicsDisplayWithConfigurationError(
+	macDisp, err := newMacGraphicsDisplay(
 		privvz.VZMacGraphicsDisplayConfigurationFromID(newDisplayConfig),
 	)
-	t.Logf("NewMacGraphicsDisplayWithConfigurationError: ID=%#x err=%v", macDisp.ID, err)
+	t.Logf("newMacGraphicsDisplay: ID=%#x err=%v", macDisp.ID, err)
 
 	for i, dev := range devices {
 		privDev := privvz.VZGraphicsDeviceFromID(dev.ID)

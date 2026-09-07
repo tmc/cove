@@ -368,9 +368,9 @@ func createSerialPortAttachment() (vz.VZFileHandleSerialPortAttachment, bool) {
 		fmt.Printf("  Serial output will be written to: %s\n", serialOutput)
 	}
 
-	readHandle := foundation.NewFileHandleWithFileDescriptor(readFd)
+	readHandle := foundation.NewFileHandleWithFileDescriptor(int32(readFd))
 	readHandle.Retain()
-	writeHandle := foundation.NewFileHandleWithFileDescriptor(writeFd)
+	writeHandle := foundation.NewFileHandleWithFileDescriptor(int32(writeFd))
 	writeHandle.Retain()
 
 	attachment := vz.NewFileHandleSerialPortAttachmentWithFileHandleForReadingFileHandleForWriting(readHandle, writeHandle)

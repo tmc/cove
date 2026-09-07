@@ -652,7 +652,7 @@ func TestLiveAPI_CreateViewEndpoint(t *testing.T) {
 					}
 				}()
 
-				endpoint, err := privVM.CreateViewEndpointWithOptions(opt)
+				endpoint, err := createViewEndpointWithOptions(privVM, opt)
 				if err != nil {
 					t.Logf("options=%d: unavailable: %v", opt, err)
 					return

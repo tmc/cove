@@ -189,7 +189,7 @@ func TestPrivateControlAPICreateViewEndpoint(t *testing.T) {
 
 	for _, opt := range []uint64{0, 1, 2} {
 		t.Run(fmt.Sprintf("options=%d", opt), func(t *testing.T) {
-			endpoint, err := vm.CreateViewEndpointWithOptions(opt)
+			endpoint, err := createViewEndpointWithOptions(vm, opt)
 			if err != nil {
 				t.Skipf("private create view endpoint unavailable: %v", err)
 			}

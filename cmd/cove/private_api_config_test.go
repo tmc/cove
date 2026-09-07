@@ -359,7 +359,7 @@ func TestPrivateConfigIsDuplicateUSB(t *testing.T) {
 	config := newConfig(t)
 
 	safeCall(t, "isDuplicateUSB(0,0)", func() {
-		v, err := config.IsDuplicateUSBDeviceConfigurationAtUsbDeviceIndex(0, 0)
+		v, err := isDuplicateUSBDeviceConfiguration(config, 0, 0)
 		if unavailablePrivateSelector(err) {
 			t.Skipf("private selector unavailable: %v", err)
 		}

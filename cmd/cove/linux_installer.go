@@ -616,8 +616,8 @@ func buildLinuxInstallConfiguration(diskPath, installISO, cloudInitISO, installK
 		serialLogPath := filepath.Join(vmDir, "install-serial.log")
 		serialFile, serialErr := os.OpenFile(serialLogPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 		if serialErr == nil {
-			readHandle := foundation.NewFileHandleWithFileDescriptor(int(os.Stdin.Fd()))
-			writeHandle := foundation.NewFileHandleWithFileDescriptor(int(serialFile.Fd()))
+			readHandle := foundation.NewFileHandleWithFileDescriptor(int32(os.Stdin.Fd()))
+			writeHandle := foundation.NewFileHandleWithFileDescriptor(int32(serialFile.Fd()))
 			serialAttachment := vz.NewFileHandleSerialPortAttachmentWithFileHandleForReadingFileHandleForWriting(readHandle, writeHandle)
 			if serialAttachment.ID != 0 {
 				serialPort := vz.NewVZVirtioConsoleDeviceSerialPortConfiguration()

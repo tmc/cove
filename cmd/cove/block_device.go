@@ -175,7 +175,7 @@ func openBlockDeviceViaHelper(spec blockDeviceSpec) (foundation.NSFileHandle, er
 		if len(fds) == 0 {
 			continue
 		}
-		handle := foundation.NewFileHandleWithFileDescriptorCloseOnDealloc(fds[0], true)
+		handle := foundation.NewFileHandleWithFileDescriptorCloseOnDealloc(int32(fds[0]), true)
 		if handle.ID == 0 {
 			_ = unix.Close(fds[0])
 			return foundation.NSFileHandle{}, fmt.Errorf("create file handle for block device")
