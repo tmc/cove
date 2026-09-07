@@ -487,3 +487,26 @@ process-local defers for detachment. Cove still needs durable mount ownership an
 crash reconciliation before exposing that pipeline. Non-less patch execution,
 patch-record/skip validation, ROM staging and all real firmware qualification
 also remain required. No disk image was mounted or guest firmware patched here.
+
+## Increment 16: mount ownership and crash recovery
+
+`firmware.MountJournal` records durable intent before attaching through a private
+hard link in the attempt directory. It rejects an already-attached source inode.
+Cleanup checks the private link's filesystem identity, live image path, owner,
+complete device set and helper PID when available before detaching the backing
+device. A reused device number alone never authorizes detachment. Recovery must
+observe the owned image absent before recording completed cleanup. An unresolved
+attach with no observable image remains pending, since a killed command might
+still complete; callers must not start another writer in that state.
+
+An opt-in integration test created temporary 32 MiB HFS+ and 64 MiB APFS images and killed a
+helper after successful `hdiutil attach` but before recording returned device
+nodes. A fresh journal recovered the orphaned attachment and confirmed its
+absence. The baseline's unrelated Metal toolchain attachments remained intact,
+and no test attachment remained. Fake-backend/race tests cover changed ownership,
+reused nodes, pre-existing attachments, busy detachment and malformed inventory.
+
+This is a prerequisite for F07/F10, not completed patch integration. The pinned
+Swift filesystem patcher still calls hdiutil directly; the controlled bridge,
+privileged remount routing, bundle operation locking and stage gating remain to
+be wired. No firmware image was patched, and no guest restore or boot occurred.
