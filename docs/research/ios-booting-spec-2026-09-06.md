@@ -3,6 +3,10 @@
 Reviewed 2026-09-06 (America/Los_Angeles). Proposal; iOS boot support is not
 implemented or runtime-validated by this review.
 
+The [full feature parity plan](vphone-feature-parity-spec-2026-09-06.md) extends
+this boot milestone to all upstream CLI, guest-service, GUI and media features.
+Its final scope supersedes the deferrals below.
+
 ## Recommendation
 
 Add an experimental iOS guest type that uses `VZMacOSBootLoader` and a PV=3
