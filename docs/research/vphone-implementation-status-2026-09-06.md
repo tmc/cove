@@ -637,3 +637,16 @@ connection. Cove converts complete observations into signing inputs and exposes
 remain distinct from zero, and unknown demotion policy cannot match a false-valued
 rule. The path is read-only and does not qualify a complete restore or guest boot.
 See the [observation boundary](ios-device-packages-2026-09-07.md#recovery-signing-observations).
+
+## Increment 24: recovery commands and component controller
+
+Cove connects observation, AP signing, personalization and native USB transfer in
+`restore.TransferComponent`. It records durable intent, rechecks nonces before
+writing, verifies device identity across DFU reset or recovery `go`, and blocks
+replay of recorded attempts. Per-device locking covers separate attempt
+directories. Apple adds recovery commands, getenv and old-handle disconnect
+observation, with transfer errors preserved.
+
+This controller handles explicit component operations, not the complete restore
+graph. Restored/ASR dispatch, separate tickets, whole-bundle lifecycle and live
+qualification remain required. See the [controller contract](ios-device-packages-2026-09-07.md#recovery-commands-and-component-controller).

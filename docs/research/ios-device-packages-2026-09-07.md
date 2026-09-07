@@ -305,3 +305,46 @@ the no-match path, not the absence of other devices or real nonce readability.
 Full Cove `go test ./...` (including new CLI script cases), `go build ./...`, and
 both signed CLI builds pass against the published dependency. Focused Apple
 transport/parser and Cove observation race tests also pass.
+
+## Recovery commands and component controller
+
+Apple `irecovery.Conn.SendCommand` sends bounded NUL-terminated recovery commands
+using USB OUT 0x40, with request 0 normally or 1 for `go`. Short writes and USB
+errors propagate without retries. `Getenv` holds the connection lock across the
+command and bounded IN 0xC0 response; the response is raw bytes with optional NUL
+padding, not length-prefixed plist or JSON. DFU command calls are rejected.
+`WaitDisconnected` reads the old handle's device descriptor until USB reports
+removal. Timeouts and other errors do not count as removal; callers close the
+old handle before selecting a replacement.
+
+Cove `restore.TransferComponent` now joins the native primitives for an explicit
+component operation: acquire the per-ECID lock, observe, request/match a ticket,
+personalize, recheck observations, upload, and perform the requested transition.
+DFU operations finalize/reset before reconnecting to the exact ECID and mode.
+Recovery `go` uses request 1, requires observed removal on the old handle, then
+reconnects and checks hardware identity. An iBSS reconnect still advertising SRTG
+is rejected. Non-transitioning component-load commands are also supported.
+
+A private attempt directory holds `transfer.json`. Payload, selected-identity and
+personalized-image hashes are recorded; each device mutation has a synced intent
+before execution. File and directory syncs protect receipt publication. Failure
+records the pending action and error. Any existing receipt blocks automatic
+replay, including successful receipts. A separate per-user, per-ECID lock under
+the OS cache directory prevents concurrent controllers using different attempt
+directories. The caller must reconcile failed attempts before creating another;
+this is not automatic crash recovery or a complete bundle restore graph.
+
+Tests inject nonce drift, upload/finalize/command/disconnect failures, wrong
+reconnect identity and an iBSS device remaining in ROM. They check wire framing,
+write-before-mutation receipts, connection order/closure, target locking and
+replay refusal. Full restore dispatch into restored/ASR, local-policy ticket
+acquisition, bundle lifecycle integration and real firmware qualification remain
+required. No USB command, firmware upload or boot was performed on live hardware.
+
+Disconnect observation retries read-only USB timeout/pipe errors until explicit
+removal or the context deadline; neither error is treated as removal. After a
+successful manifestation status, reset results indicating removal or required
+rediscovery retire the handle; the controller still requires a matching reconnect.
+These cases follow [libusb error and reset semantics](https://libusb.sourceforge.io/api-1.0/group__libusb__dev.html).
+Nonce changes after reset are allowed and tested. Each later component obtains
+fresh observations and a new matching ticket; the old ticket is not reused.
