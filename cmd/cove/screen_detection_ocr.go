@@ -22,7 +22,7 @@ var setupAssistantPageMarkers = map[string][]string{
 	"wifi":               {"Wi-Fi", "Select a Wi-Fi Network"},
 	"location_services":  {"Location Services", "Enable Location Services"},
 	"migration":          {"Migration Assistant", "Transfer Information"},
-	"apple_id":           {"Apple ID", "Sign In with Your Apple"},
+	"apple_id":           {"Apple ID", "Sign In with Your Apple", "Sign In to Your Apple Account"},
 	"terms":              {"Terms and Conditions"},
 	"user_account":       {"Create a Computer Account", "Create a Mac Account", "Full Name"},
 	"express_setup":      {"Express Set Up"},
@@ -100,18 +100,19 @@ var ocrPageDetectionOrder = []struct {
 	markers []string
 }{
 	{"user_account", []string{"create a computer account", "create a mac account", "full name", "account name"}},
+	{"age_range", []string{"age range"}},
 	{"terms", []string{"terms and conditions"}},
 	{"migration", []string{"migration assistant", "transfer information", "transfer your data", "data to this mac"}},
-	{"apple_id", []string{"apple id", "sign in with your apple"}},
+	{"apple_id", []string{"apple id", "sign in with your apple", "sign in to your apple account", "other sign-in options"}},
 	{"country_region", []string{"select your country", "country or region"}},
 	{"voiceover_tutorial", []string{"voiceover tutorial", "voiceover modifier"}},
 	{"location_services", []string{"enable location services", "location services"}},
 	{"time_zone", []string{"select your time zone"}},
 	{"express_setup", []string{"express set up"}},
+	{"siri_dictation", []string{"improve siri & dictation", "improve siri"}},
 	{"analytics", []string{"help apple improve", "share mac analytics"}},
 	{"screen_time", []string{"screen time"}},
 	{"siri_voice", []string{"select a siri voice"}},
-	{"siri_dictation", []string{"improve siri & dictation", "improve siri"}},
 	{"siri", []string{"enable siri", "ask siri"}},
 	{"appearance", []string{"choose your look"}},
 	{"touch_id", []string{"touch id"}},
@@ -122,6 +123,7 @@ var ocrPageDetectionOrder = []struct {
 	{"wifi", []string{"select a wi-fi network"}},
 	{"privacy", []string{"data & privacy", "data and privacy"}},
 	{"welcome", []string{"get started"}},
+	{"written_spoken_languages", []string{"written and spoken languages", "written & spoken languages"}},
 	{"language", []string{"select your language", "choose your language", "language"}},
 	{"hello", []string{"hello", "hollo"}},
 }
@@ -139,7 +141,31 @@ func OCRDetectSetupAssistantPage(img image.Image, ocr *ocrx.Service) string {
 		return "unknown"
 	}
 
-	return detectSetupAssistantPageFromOCRText(text)
+	page := detectSetupAssistantPageFromOCRText(text)
+	if page != "unknown" {
+		return page
+	}
+	// The fast recognizer misses small menu text at native resolution.
+	bounds := img.Bounds()
+	menu := image.NewRGBA(image.Rect(0, 0, bounds.Dx()*3, bounds.Dy()/5*3))
+	for y := 0; y < menu.Bounds().Dy(); y++ {
+		for x := 0; x < menu.Bounds().Dx(); x++ {
+			menu.Set(x, y, img.At(bounds.Min.X+x/3, bounds.Min.Y+y/3))
+		}
+	}
+	if hasDesktopMenuText(ocr.AllText(menu)) {
+		return "desktop"
+	}
+	return "unknown"
+}
+
+func hasDesktopMenuText(text string) bool {
+	words := strings.Fields(strings.ToLower(text))
+	found := make(map[string]bool)
+	for _, word := range words {
+		found[word] = true
+	}
+	return found["file"] && found["edit"] && found["view"] && found["window"]
 }
 
 func containsAny(s string, markers []string) bool {

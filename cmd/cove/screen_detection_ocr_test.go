@@ -172,6 +172,26 @@ func TestDetectSetupAssistantPageFromOCRText(t *testing.T) {
 			text: "Select Your Country or Region\nUnited States\nContinue",
 			want: "country_region",
 		},
+		{
+			name: "Siri dictation wins over analytics body",
+			text: "Improve Siri & Dictation\nHelp Apple improve Siri and Dictation\nShare Audio Recordings\nNot Now",
+			want: "siri_dictation",
+		},
+		{
+			name: "age range",
+			text: "Age Range\nChild\nTeen\nAdult\n18 or older",
+			want: "age_range",
+		},
+		{
+			name: "apple account sign in",
+			text: "Sign In to Your Apple Account\nEmail or Phone Number\nOther Sign-In Options",
+			want: "apple_id",
+		},
+		{
+			name: "language preferences are not the language chooser",
+			text: "Written and Spoken Languages\nPreferred Languages\nEnglish (US)\nInput Sources\nCustomize Settings\nContinue",
+			want: "written_spoken_languages",
+		},
 	}
 
 	for _, tt := range tests {
@@ -290,5 +310,23 @@ func testOCRObservation(text string, x, y int) ocrx.TextObservation {
 			Origin: corefoundation.CGPoint{X: float64(x) / 1200, Y: float64(y) / 900},
 			Size:   corefoundation.CGSize{Width: 0.05, Height: 0.03},
 		},
+	}
+}
+
+func TestHasDesktopMenuText(t *testing.T) {
+	for _, tt := range []struct {
+		name, text string
+		want       bool
+	}{
+		{"Finder OCR substitution", "Flnder File Edit View Go Window Help", true},
+		{"Terminal", "Terminal Shell Edit View Window Help", false},
+		{"setup body", "View your files in a new window", false},
+		{"empty", "", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := hasDesktopMenuText(tt.text); got != tt.want {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+		})
 	}
 }

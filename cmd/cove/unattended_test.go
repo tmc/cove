@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestForceBootCommandAutomationBackends(t *testing.T) {
+func TestForceSetupAutomationBackends(t *testing.T) {
 	tests := []struct {
 		name         string
 		startCapture automationBackendMode
@@ -48,7 +48,7 @@ func TestForceBootCommandAutomationBackends(t *testing.T) {
 			cs.setCaptureBackend(tt.startCapture)
 			cs.setInputBackend(tt.startInput)
 
-			restore := forceBootCommandAutomationBackends(cs)
+			restore := forceSetupAutomationBackends(cs)
 			if got := cs.captureBackend(); got != tt.during {
 				t.Fatalf("capture backend during boot commands = %v, want %v", got, tt.during)
 			}
@@ -67,9 +67,9 @@ func TestForceBootCommandAutomationBackends(t *testing.T) {
 	}
 }
 
-func TestForceBootCommandAutomationBackendsNil(t *testing.T) {
+func TestForceSetupAutomationBackendsNil(t *testing.T) {
 	// nil ControlServer must yield a no-op restore func, not panic.
-	restore := forceBootCommandAutomationBackends(nil)
+	restore := forceSetupAutomationBackends(nil)
 	if restore == nil {
 		t.Fatal("restore func is nil")
 	}

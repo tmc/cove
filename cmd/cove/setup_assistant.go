@@ -108,7 +108,7 @@ func (s *SetupAssistant) Run() error {
 		return nil
 	case "login":
 		s.log("At login screen - attempting login")
-		return s.loginWithCredentials()
+
 	case "unknown":
 		// Fall back to pixel heuristics when OCR finds no known page
 		state := s.detectCurrentScreenOCR()
@@ -124,7 +124,7 @@ func (s *SetupAssistant) Run() error {
 			return nil
 		case ScreenStateLoginScreen:
 			s.log("At login screen")
-			return s.loginWithCredentials()
+
 		}
 	}
 
@@ -152,7 +152,10 @@ func (s *SetupAssistant) navigateSetupAssistant() error {
 		}
 		if page == "login" {
 			s.log("Reached login screen - attempting login")
-			return s.loginWithCredentials()
+			if err := s.loginWithCredentials(); err != nil {
+				return err
+			}
+			continue
 		}
 
 		// Check if we're stuck
@@ -205,71 +208,24 @@ func (s *SetupAssistant) handlePage(page string) bool {
 		return true
 
 	case "language":
-		s.log("Handling language screen - accepting default (English)")
-		// DO NOT click language names — it changes the UI language.
-		// English is selected by default. Prefer keyboard activation here: the
-		// dedicated setup-assistant.vzscript uses Return for this page, and
-		// pointer activation has been less reliable across first-boot variants.
-		s.pressKey(KeyCodeReturn)
-		time.Sleep(1500 * time.Millisecond)
-		if s.detectPage() != "language" {
-			return true
+		s.log("Selecting English")
+		if err := s.tryOCRClick("English", 3*time.Second); err != nil {
+			return false
 		}
-		s.log("Return did not advance language page; trying Tab + Return")
-		s.pressKey(KeyCodeTab)
-		time.Sleep(200 * time.Millisecond)
-		s.pressKey(KeyCodeReturn)
-		time.Sleep(1500 * time.Millisecond)
-		if s.detectPage() != "language" {
-			return true
-		}
-		// Fall back to OCR/clicks if keyboard focus was lost.
-		// Fall back to OCR if the button text is rendered instead of the arrow.
 		if s.tryOCRClick("→", 3*time.Second) == nil {
-			time.Sleep(1500 * time.Millisecond)
-			if s.detectPage() != "language" {
-				return true
-			}
-		}
-		if s.tryOCRClick("Continue", 3*time.Second) == nil {
-			time.Sleep(1500 * time.Millisecond)
-			if s.detectPage() != "language" {
-				return true
-			}
-		}
-		s.log("OCR did not advance language page; trying direct continue-button clicks")
-		if s.clickUntilPageChanges("language", 1500*time.Millisecond,
-			[2]float64{0.86, 0.88},
-			[2]float64{0.82, 0.88},
-			[2]float64{0.90, 0.88},
-		) {
 			return true
 		}
-		s.log("Language page did not advance after keyboard and click fallbacks")
-		return false
+		return s.tryOCRClick("Continue", 3*time.Second) == nil
+
+	case "written_spoken_languages":
+		return s.tryOCRClick("Continue", 3*time.Second) == nil
 
 	case "country_region":
-		s.log("Handling country/region screen")
-		s.pressKey(KeyCodeReturn)
-		time.Sleep(1500 * time.Millisecond)
-		if s.detectPage() != "country_region" {
-			return true
+		s.log("Selecting United States")
+		if err := s.tryOCRClick("United States", 3*time.Second); err != nil {
+			return false
 		}
-		s.log("Return did not advance country/region page; trying Tab + Return")
-		s.pressKey(KeyCodeTab)
-		time.Sleep(200 * time.Millisecond)
-		s.pressKey(KeyCodeReturn)
-		time.Sleep(1500 * time.Millisecond)
-		if s.detectPage() != "country_region" {
-			return true
-		}
-		if s.tryOCRClickRegion("Continue", 2*time.Second, "0.72,0.77,0.96,0.92") == nil {
-			return true
-		}
-		if s.tryOCRClick("Continue", 2*time.Second) == nil {
-			return true
-		}
-		return true
+		return s.tryOCRClick("Continue", 3*time.Second) == nil
 
 	case "voiceover_tutorial":
 		s.log("Handling VoiceOver Tutorial window - closing it")
@@ -307,6 +263,9 @@ func (s *SetupAssistant) handlePage(page string) bool {
 
 	case "migration":
 		s.log("Handling migration/data transfer screen")
+		if s.tryOCRClick("Not Now", 3*time.Second) == nil {
+			return true
+		}
 		// macOS 15+ shows "Transfer Your Data" with radio options.
 		// The radio label text is not a reliable click target; move the
 		// selection from the default first option down to "Set up as new".
@@ -317,10 +276,6 @@ func (s *SetupAssistant) handlePage(page string) bool {
 		time.Sleep(300 * time.Millisecond)
 		if s.tryOCRClick("Continue", 3*time.Second) == nil {
 			time.Sleep(1500 * time.Millisecond)
-			return true
-		}
-		// Older macOS or different variant with "Not Now"
-		if s.tryOCRClick("Not Now", 3*time.Second) == nil {
 			return true
 		}
 		// Fallback: tab to Not Now / Continue
@@ -334,22 +289,22 @@ func (s *SetupAssistant) handlePage(page string) bool {
 
 	case "apple_id", "signin":
 		s.log("Handling Apple ID screen - selecting 'Set Up Later'")
-		if s.tryOCRClick("Set Up Later", 3*time.Second) == nil {
+		if s.tryOCRClick("Sign in Later in Settings", time.Second) == nil || s.tryOCRClick("Set Up Later", time.Second) == nil {
 			time.Sleep(time.Second)
 			// Confirm skip dialog
 			s.tryOCRClick("Skip", 3*time.Second)
 			return true
 		}
-		// Fallback
-		for i := 0; i < 4; i++ {
-			s.pressKey(KeyCodeTab)
-			time.Sleep(100 * time.Millisecond)
+		if s.tryOCRClick("Other Sign-In Options", time.Second) == nil {
+			time.Sleep(500 * time.Millisecond)
+			s.tryOCRClick("Sign in Later in Settings", 2*time.Second)
+			time.Sleep(500 * time.Millisecond)
+			s.tryOCRClick("Skip", time.Second)
 		}
-		s.pressKey(KeyCodeReturn)
-		time.Sleep(500 * time.Millisecond)
-		s.pressKey(KeyCodeReturn)
-		time.Sleep(time.Second)
 		return true
+
+	case "age_range":
+		return s.tryOCRClick("Adult", 3*time.Second) == nil
 
 	case "terms":
 		s.log("Handling terms screen - clicking Agree")
@@ -740,76 +695,69 @@ func (s *SetupAssistant) attemptRecovery(step int, currentPage string) bool {
 	return page != currentPage
 }
 
-// fillUserAccountForm fills in the user account creation form.
-//
-// The "Continue -> error -> Go Back" trick is required to focus the Full Name
-// field. Clicking "Continue" with empty fields triggers a validation error
-// dialog. Clicking "Go Back" dismisses it and focuses the Full Name field
-// with a blue border, making keyboard input work reliably.
+// fillUserAccountForm fills the account fields in keyboard traversal order.
 func (s *SetupAssistant) fillUserAccountForm() error {
-	backend := "unknown"
-	if s.transport != nil {
-		backend = s.transport.InputBackendName()
+	if s.transport == nil || s.ocr == nil {
+		return fmt.Errorf("account setup requires OCR and an input transport")
 	}
-	s.log("Filling user account form... (backend=%s)", backend)
-
-	if s.pageContainsText("Creating account...") {
-		s.log("Account creation already in progress; waiting")
-		time.Sleep(10 * time.Second)
+	if s.pageContainsText("Creating account") {
+		time.Sleep(2 * time.Second)
 		return nil
 	}
-
-	// Use the "Continue -> error -> Go Back" trick to focus Full Name field.
-	// Clicking Continue with empty fields triggers a validation error dialog.
-	// Clicking Go Back dismisses it and focuses the Full Name field.
-	s.log("Triggering field focus via Continue -> error -> Go Back trick")
-	if s.tryOCRClick("Continue", 2*time.Second) == nil {
-		time.Sleep(time.Second)
-		// Wait for validation error dialog, then click Go Back
-		if s.tryOCRClick("Go Back", 3*time.Second) == nil {
-			s.log("Go Back clicked, Full Name field should be focused")
-			time.Sleep(time.Second)
+	if s.pageContainsText("Go Back") {
+		if err := s.tryOCRClick("Go Back", 3*time.Second); err != nil {
+			return err
 		}
+		time.Sleep(500 * time.Millisecond)
 	}
-
-	// Click the fields directly instead of relying on tab order. Setup
-	// Assistant does not consistently return focus to Full Name after Go Back.
-	s.log("Entering full name: %s", s.config.Fullname)
-	s.clickNormalized(0.50, 0.535)
-	time.Sleep(300 * time.Millisecond)
-	s.clearFocusedField()
-	s.typeText(s.config.Fullname)
-	time.Sleep(400 * time.Millisecond)
-
-	s.log("Entering password")
-	s.clickNormalized(0.39, 0.670)
-	time.Sleep(300 * time.Millisecond)
-	s.clearFocusedField()
-	s.typeText(s.config.Password)
-	time.Sleep(400 * time.Millisecond)
-
-	s.clickNormalized(0.61, 0.670)
-	time.Sleep(300 * time.Millisecond)
-	s.clearFocusedField()
-	s.typeText(s.config.Password)
-	time.Sleep(400 * time.Millisecond)
-
-	// Take a screenshot to verify form was filled
+	img, err := s.transport.Screenshot()
+	if err != nil {
+		return fmt.Errorf("capture account form: %w", err)
+	}
+	observations, err := s.ocr.RecognizeText(img)
+	if err != nil {
+		return fmt.Errorf("recognize account form: %w", err)
+	}
+	x, y, err := accountNameFieldPoint(observations, img.Bounds())
+	if err != nil {
+		return err
+	}
+	if err := s.transport.MouseClick(x, y); err != nil {
+		return fmt.Errorf("focus full name: %w", err)
+	}
+	fields := []string{s.config.Fullname, s.config.Username, s.config.Password, s.config.Password}
+	for i, value := range fields {
+		if i > 0 {
+			if err := s.transport.KeyPress(KeyCodeTab); err != nil {
+				return fmt.Errorf("focus account field %d: %w", i+1, err)
+			}
+			time.Sleep(150 * time.Millisecond)
+		}
+		s.clearFocusedField()
+		if err := s.transport.TypeText(value); err != nil {
+			return fmt.Errorf("fill account field %d: %w", i+1, err)
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
 	s.saveDebugScreenshot("user_form_filled")
-
-	// Click Continue to submit the form
-	if s.tryOCRClick("Continue", 2*time.Second) != nil {
-		// Fallback: tab past hint field to Continue button
-		s.pressKey(KeyCodeTab)
-		time.Sleep(300 * time.Millisecond)
-		s.pressKey(KeyCodeTab)
-		time.Sleep(200 * time.Millisecond)
-		s.pressKey(KeyCodeReturn)
+	if err := s.tryOCRClick("Continue", 3*time.Second); err != nil {
+		return err
 	}
 	time.Sleep(2 * time.Second)
-
-	s.log("User account form submitted")
 	return nil
+}
+
+func accountNameFieldPoint(observations []ocrx.TextObservation, bounds image.Rectangle) (float64, float64, error) {
+	label, ok := ocrx.BestMatch(observations, "Full Name", ocrx.SearchOptions{}, bounds)
+	if !ok || bounds.Empty() {
+		return 0, 0, fmt.Errorf("full name field not found")
+	}
+	// Labels can sit beside a field or inside it as placeholder text.
+	x := max(0.5, label.BoundingBox.Origin.X+label.BoundingBox.Size.Width+0.03)
+	if x >= 1 {
+		return 0, 0, fmt.Errorf("full name field is outside the screen")
+	}
+	return x, float64(label.Center.Y-bounds.Min.Y) / float64(bounds.Dy()), nil
 }
 
 func (s *SetupAssistant) pageContainsText(text string) bool {
@@ -857,7 +805,7 @@ func (s *SetupAssistant) loginWithCredentials() error {
 		}
 	}
 
-	s.log("Login may have failed, current page: %s", page)
+	s.log("After login, current page: %s", page)
 	return nil
 }
 
@@ -997,7 +945,7 @@ func (s *SetupAssistant) clearFocusedField() {
 // For in-process mode, it follows the configured automation backend.
 func (s *SetupAssistant) typeText(text string) {
 	if s.transport != nil {
-		s.log("typeText(%s): %q", s.transport.InputBackendName(), text)
+		s.log("typing %d characters via %s", len(text), s.transport.InputBackendName())
 		if err := s.transport.TypeText(text); err != nil {
 			s.log("warning: type text failed: %v", err)
 		}

@@ -56,9 +56,6 @@ func NeedsWindowCapturePointMapping(mode BackendMode, captureW, captureH int, bo
 	if mode == BackendWindow {
 		return true
 	}
-	if mode != BackendAuto {
-		return false
-	}
 	return float64(captureW) != boundsW || float64(captureH) != contentH
 }
 

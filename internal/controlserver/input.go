@@ -189,10 +189,8 @@ func (b *InputBridge) SendMouse(cmd *controlpb.MouseCommand) *controlpb.ControlR
 	return b.sendMouseCGEvent(cmd)
 }
 
-// sendMouseVMDirect creates an NSEvent and sends it directly to the
-// VZVirtualMachine via the private sendPointerNSEvent:pointingDeviceIndex:.
-// If that selector is unavailable, it falls back to routing through
-// VZVirtualMachineView's mouse event handlers.
+// sendMouseVMDirect routes an NSEvent through VZVirtualMachineView's
+// mouse event handlers, which translate coordinates for the guest.
 //
 // Y mapping uses the cached ViewContentHeight (the VM content area)
 // rather than the NSView bounds height, which includes the title bar.

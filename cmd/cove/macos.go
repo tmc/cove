@@ -2065,20 +2065,23 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 		})
 	}
 
-	// Start unattended or provisioning automation if requested.
-	// Unattended mode uses OCR for reliable detection; the older
-	// provisioning path uses pixel heuristics.
-	if rc.Unattended {
+	var automationDone <-chan struct{}
+	startAutomation := func(run func()) {
+		done := make(chan struct{})
+		automationDone = done
 		go func() {
-			handleUnattendedError(runUnattendedSetup(controlServer, rc))
+			defer close(done)
+			run()
 		}()
+	}
+	if rc.Unattended {
+		startAutomation(func() {
+			handleUnattendedError(runUnattendedSetup(controlServer, rc))
+		})
 	} else if rc.ProvisionUser != "" && shouldRunGUIAutomationForRun(target, rc) {
-		go runProvisioningAutomation(controlServer, rc)
+		startAutomation(func() { runProvisioningAutomation(controlServer, rc) })
 	} else if creds := resolveLoginScreenWatchdogCredentialsForRun(rc, target); creds.Valid() {
-		// Disk inject already provisioned the user, but kcpassword auto-login
-		// can still fail in headed boots. Watch for a login screen in the
-		// background; if one appears, type the cached password.
-		go runLoginScreenWatchdog(controlServer, creds)
+		startAutomation(func() { runLoginScreenWatchdog(controlServer, creds) })
 	}
 
 	// Shared state for background → main thread communication.
@@ -2317,6 +2320,16 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 				if title := controlServer.WindowTitle(); title != "" && title != lastWindowTitle {
 					lastWindowTitle = title
 					window.SetTitle(title)
+				}
+
+				select {
+				case <-automationDone:
+					automationDone = nil
+					if holdBootOverlay && bootOverlay.ID != 0 && overlayFadeStep == -1 {
+						holdBootOverlay = false
+						overlayFadeStep = 15
+					}
+				default:
 				}
 
 				// Animate boot overlay fade-out.

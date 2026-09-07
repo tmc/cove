@@ -50,7 +50,7 @@ func runAutomationScript(cs *ControlServer, debugDir, bootCommandsFile string) e
 	}
 	fmt.Printf("Executing vzscript automation from %s\n", bootCommandsFile)
 
-	restoreBackends := forceBootCommandAutomationBackends(cs)
+	restoreBackends := forceSetupAutomationBackends(cs)
 	defer restoreBackends()
 
 	cfg := vzscriptConfig{
@@ -62,7 +62,7 @@ func runAutomationScript(cs *ControlServer, debugDir, bootCommandsFile string) e
 	return runVZScript(data, filepath.Base(bootCommandsFile), cfg)
 }
 
-func forceBootCommandAutomationBackends(cs *ControlServer) func() {
+func forceSetupAutomationBackends(cs *ControlServer) func() {
 	if cs == nil {
 		return func() {}
 	}
@@ -71,13 +71,13 @@ func forceBootCommandAutomationBackends(cs *ControlServer) func() {
 	prevInput := cs.inputBackend()
 	if prevCapture != automationBackendFramebuffer {
 		if verbose {
-			fmt.Printf("[unattended] forcing boot command capture backend: %s -> %s\n", prevCapture, automationBackendFramebuffer)
+			fmt.Printf("[unattended] forcing automation capture backend: %s -> %s\n", prevCapture, automationBackendFramebuffer)
 		}
 		cs.setCaptureBackend(automationBackendFramebuffer)
 	}
 	if prevInput != automationBackendFramebuffer {
 		if verbose {
-			fmt.Printf("[unattended] forcing boot command input backend: %s -> %s\n", prevInput.inputString(), automationBackendFramebuffer.inputString())
+			fmt.Printf("[unattended] forcing automation input backend: %s -> %s\n", prevInput.inputString(), automationBackendFramebuffer.inputString())
 		}
 		cs.setInputBackend(automationBackendFramebuffer)
 	}
@@ -85,13 +85,13 @@ func forceBootCommandAutomationBackends(cs *ControlServer) func() {
 	return func() {
 		if cs.captureBackend() != prevCapture {
 			if verbose {
-				fmt.Printf("[unattended] restoring boot command capture backend: %s\n", prevCapture)
+				fmt.Printf("[unattended] restoring automation capture backend: %s\n", prevCapture)
 			}
 			cs.setCaptureBackend(prevCapture)
 		}
 		if cs.inputBackend() != prevInput {
 			if verbose {
-				fmt.Printf("[unattended] restoring boot command input backend: %s\n", prevInput.inputString())
+				fmt.Printf("[unattended] restoring automation input backend: %s\n", prevInput.inputString())
 			}
 			cs.setInputBackend(prevInput)
 		}
@@ -106,6 +106,9 @@ func forceBootCommandAutomationBackends(cs *ControlServer) func() {
 //  3. Check if we're at login screen — type password, done
 //  4. Check if we're at Setup Assistant — run OCR-guided navigation
 func runDefaultUnattendedFlow(cs *ControlServer, ocr *ocrx.Service, debugDir string, rc vmrun.RunConfig) error {
+	restoreBackends := forceSetupAutomationBackends(cs)
+	defer restoreBackends()
+
 	fmt.Println("Waiting for VM to boot...")
 
 	// Wait up to 5 minutes for the screen to leave black/Apple logo

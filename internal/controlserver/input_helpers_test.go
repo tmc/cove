@@ -61,11 +61,18 @@ func TestNeedsWindowCapturePointMapping(t *testing.T) {
 			want: true,
 		},
 		{
-			name:     "framebuffer backend never maps",
+			name:     "framebuffer with matching dimensions skips mapping",
 			mode:     BackendFramebuffer,
 			captureW: 1024, captureH: 768,
 			boundsW: 1024, contentH: 768,
 			want: false,
+		},
+		{
+			name:     "framebuffer cache includes top inset",
+			mode:     BackendFramebuffer,
+			captureW: 1024, captureH: 852,
+			boundsW: 1024, contentH: 800,
+			want: true,
 		},
 		{
 			name:     "auto with matching dims skips mapping",
@@ -111,6 +118,7 @@ func TestMapWindowCapturePointToViewPoint(t *testing.T) {
 	}{
 		// Degenerate inputs fall back to a plain top-origin flip.
 		{"invalid capture", 10, 20, 0, 100, 200, 80, 10, 60},
+		{"setup full name below cached top inset", 512, 409, 1024, 852, 1024, 800, 512, 443},
 		{"invalid view", 10, 20, 100, 100, 0, 80, 10, 60},
 
 		// 1x capture, no title bar: capture and view coincide, so the

@@ -30,17 +30,8 @@ func runProvisioningAutomation(cs *ControlServer, rc vmrun.RunConfig) {
 	fmt.Println()
 	vmDirectory := cs.effectiveVMDir()
 
-	prevInputBackend := cs.inputBackend()
-	targetInputBackend := prevInputBackend
-	if targetInputBackend == automationBackendAuto {
-		if cs.window.ID != 0 {
-			targetInputBackend = automationBackendWindow
-		} else {
-			targetInputBackend = automationBackendFramebuffer
-		}
-	}
-	cs.setInputBackend(targetInputBackend)
-	defer cs.setInputBackend(prevInputBackend)
+	restoreBackends := forceSetupAutomationBackends(cs)
+	defer restoreBackends()
 
 	// Wait for the VM window to be ready for screenshots.
 	// The ControlServer is already initialized with SetVMViewWithWindow,
@@ -119,6 +110,9 @@ func waitForVMScreenReady(cs *ControlServer, timeout time.Duration) error {
 // The watchdog exits silently if it never sees a login screen — that means
 // kcpassword worked and the desktop appeared directly.
 func runLoginScreenWatchdog(cs *ControlServer, creds loginScreenCredentials) {
+	restoreBackends := forceSetupAutomationBackends(cs)
+	defer restoreBackends()
+
 	if err := waitForVMScreenReady(cs, 120*time.Second); err != nil {
 		if verbose {
 			fmt.Printf("[login-watchdog] VM screen not ready: %v\n", err)
@@ -126,43 +120,22 @@ func runLoginScreenWatchdog(cs *ControlServer, creds loginScreenCredentials) {
 		return
 	}
 
-	socketPath := GetControlSocketPathForVM(cs.effectiveVMDir())
-	client := NewControlClient(socketPath)
-
+	ocr := ocrx.NewService(verbose)
+	assistant := NewSetupAssistantInProcess(cs, ocr, ProvisionConfig{
+		Username: creds.Username,
+		Password: creds.Password,
+	}, verbose, "")
 	deadline := time.Now().Add(3 * time.Minute)
-	loggedAtLogin := false
 	for time.Now().Before(deadline) {
-		_, state, err := client.DetectScreen()
-		if err != nil {
-			time.Sleep(3 * time.Second)
-			continue
-		}
-		if state == ScreenStateDesktop {
-			if _, _, err := cs.consoleUser(); err != nil {
-				if verbose {
-					fmt.Printf("[login-watchdog] desktop classification but no console user: %v\n", err)
-				}
-				state = ScreenStateLoginScreen
-			} else {
-				if verbose {
-					fmt.Println("[login-watchdog] desktop reached, exiting")
-				}
-				return
-			}
-		}
-		if state == ScreenStateLoginScreen {
-			if !loggedAtLogin {
-				fmt.Println("\n=== Login screen detected — typing cached password ===")
-				loggedAtLogin = true
-			}
-			if err := tryLoginFallback(socketPath, creds, true); err != nil {
-				if verbose {
-					fmt.Printf("[login-watchdog] login attempt: %v\n", err)
-				}
-				time.Sleep(5 * time.Second)
-				continue
-			}
+		switch cs.OCRDetectPage(ocr) {
+		case "desktop":
+			fmt.Println("Login complete — reached desktop")
 			return
+		case "login":
+			fmt.Println("Login screen detected — typing cached password")
+			if err := assistant.loginWithCredentials(); err != nil && verbose {
+				fmt.Printf("[login-watchdog] login attempt: %v\n", err)
+			}
 		}
 		time.Sleep(3 * time.Second)
 	}
