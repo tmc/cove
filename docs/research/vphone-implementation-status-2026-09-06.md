@@ -1,7 +1,16 @@
 # vphone parity implementation status
 
-Status: incomplete. The approved plan remains the full scope. This first
-increment is configuration and planning infrastructure, not a bootable runtime.
+Status at increment 31: incomplete. The approved plan remains full F01–F39
+parity. Native restore transports, component transfer, restored session dispatch
+and verified bundle object resolution are implemented. The complete restore
+controller, asset handlers, remaining guest features and live qualification
+remain required. No successful live iOS restore or boot is claimed.
+
+The increments below are historical checkpoints. Their observations, failures
+and then-outstanding work describe that checkpoint; later increments supersede
+them. In particular, an earlier host launch failure does not establish the
+current host's capabilities or its cause. The latest full test suite, restore
+race tests and both signed builds pass.
 
 Baseline: `a367dca86e9ffb070dc0e898e1c2bd1f9e1f5fcd`.
 
@@ -712,3 +721,14 @@ Focused race tests cover changed outputs, nonregular files, path rejection and
 lease ownership. See the [bundle contract](ios-device-packages-2026-09-07.md#published-patched-bundles).
 Build-identity/object resolution and the complete restore lifecycle still need
 integration. This does not establish live restore or F01–F39 completion.
+
+## Increment 31: restore bundle object resolution
+
+`BundleObjects` connects verified bundle files to `SessionData.Identity` and
+`Object`, preserving primary/recovery selection rules and manifest signing
+digests. It rejects missing/ambiguous identities and invalid paths, honors TSS
+path overrides, and resolves special metadata names. Restore race tests include
+simulated service responses with actual bundle reads and IMG4 personalization.
+See the [provider contract](ios-device-packages-2026-09-07.md#restore-bundle-object-resolution).
+Whole-attempt ownership, options, assets and the remaining restore lifecycle
+still require implementation and live qualification. Full F01–F39 remains open.

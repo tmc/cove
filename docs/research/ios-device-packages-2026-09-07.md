@@ -510,3 +510,47 @@ input removal and changes between bundle verification and file opening.
 This supplies verified file access for the restore controller. Selecting build
 identities, resolving service object names and retaining the bundle through the
 whole restore attempt still need integration. No live restore is claimed.
+
+## Restore bundle object resolution
+
+`restore.NewBundleObjects` reads the verified bundle's build manifest and selects
+the exact device class and `Erase` or `Update` behavior. Variant matching uses
+the upstream substring rules, including Update's behavior-only fallback, but
+rejects ambiguous matches. Returned identities are deep copies; signing digests
+remain those recorded in the manifest, independent of patched payload bytes.
+The Update fallback applies to the primary identity; service-selected update
+objects and policy still require an `Upgrade Install (IPSW)` variant.
+
+Connect the provider to restored's native handlers while retaining the bundle:
+
+```go
+objects, err := restore.NewBundleObjects(ctx, bundle, model, "Erase", apResponse)
+if err != nil {
+    return err
+}
+data.Identity = objects.Identity
+data.Object = objects.Object
+```
+
+V3 and legacy personalized objects use the primary identity. V4 component and
+build-identity requests honor `IsRecoveryOS`; erase volume policy selects recovery
+OS, and update policy selects the primary update identity. An absent recovery
+identity returns an error when requested. The single hybrid erase identity does
+not imply an available recovery or update identity.
+
+TSS component `Path` overrides take precedence over manifest `Info.Path`.
+Malformed overrides fail rather than falling back. All paths must be canonical,
+relative to `iphone_Restore`, and present in the verified catalog. Special version
+files use their fixed names. The global manifest path uses the primary identity's
+`MacOSVariant` and `DeviceClass`, even for a recovery V4 request. Missing metadata
+files fail; the resolver does not manufacture them. These choices follow pinned
+[`restore.py`](https://github.com/doronz88/pymobiledevice3/blob/a16ffc51dcfe2c36fc659fbb2e7b7dedb31d77d5/pymobiledevice3/restore/restore.py),
+[`build_manifest.py`](https://github.com/doronz88/ipsw_parser/blob/06957d9d95e7064ed2e7ae592fba92ebebf7806a/ipsw_parser/build_manifest.py)
+and [`component.py`](https://github.com/doronz88/ipsw_parser/blob/06957d9d95e7064ed2e7ae592fba92ebebf7806a/ipsw_parser/component.py).
+
+Tests cover selection, missing/ambiguous builds, copied signing inputs, path
+rejection, TSS overrides and simulated service exchanges for identities, raw
+objects, metadata and personalized V3 bytes. The controller still must bind the
+model and signing response to the observed device, hold the bundle for the entire
+attempt, provide ASR images and implement asset handling and remaining lifecycle
+stages. This provider does not establish live restore or boot.

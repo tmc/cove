@@ -26,7 +26,8 @@ type SessionData struct {
 	APResponse, RecoveryResponse         map[string]any
 	APRequirements, RecoveryRequirements TicketRequirements
 	SystemImage, RecoveryImage           RestoreImage
-	// Object resolves a component or special metadata name within the selected\n\t// bundle. It must use validated manifest paths rather than raw request paths.
+	// Object resolves a component or special metadata name within the selected
+	// bundle. It must use validated manifest paths rather than raw request paths.
 	// The handler owns and closes the returned reader; it must unblock on Close.
 	Object func(context.Context, map[string]any, string) (io.ReadCloser, error)
 	// Asset serves a nested AEA URLAsset request, including its service routing.
