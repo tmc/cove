@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/tmc/apple/x/plist"
+	"golang.org/x/sys/unix"
 )
 
 type mountEntity struct {
@@ -51,6 +52,7 @@ type MountJournal struct {
 	lock      *os.File
 	state     mountState
 	run       func(context.Context, ...string) ([]byte, error)
+	system    func(context.Context, string, ...string) error
 }
 
 // OpenMountJournal opens an attempt's journal with exclusive ownership. Images
@@ -79,7 +81,7 @@ func OpenMountJournal(directory string) (*MountJournal, error) {
 		f.Close()
 		return nil, fmt.Errorf("lock mount journal: %w", err)
 	}
-	j := &MountJournal{directory: directory, lock: f, state: mountState{SchemaVersion: 1}, run: diskImageCommand}
+	j := &MountJournal{directory: directory, lock: f, state: mountState{SchemaVersion: 1}, run: diskImageCommand, system: mountSystemCommand}
 	data, err := os.ReadFile(filepath.Join(directory, "mounts.json"))
 	if err == nil {
 		err = json.Unmarshal(data, &j.state)
@@ -387,4 +389,115 @@ func diskImageCommand(ctx context.Context, args ...string) ([]byte, error) {
 		return nil, fmt.Errorf("disk image plist exceeds limit")
 	}
 	return out.data, nil
+}
+
+// Remount makes an owned, currently mounted volume writable. It validates the
+// device and mount point before invoking mount and verifies the resulting mode.
+// Privilege errors are returned without attempting elevation.
+func (j *MountJournal) Remount(ctx context.Context, device, mountPoint string) error {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	index, err := j.ownedMount(ctx, device, mountPoint)
+	if err != nil {
+		return err
+	}
+	if err := j.system(ctx, "/sbin/mount", "-u", "-w", device, mountPoint); err != nil {
+		return err
+	}
+	if _, err := j.ownedMount(ctx, device, mountPoint); err != nil {
+		return err
+	}
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(mountPoint, &stat); err != nil {
+		return err
+	}
+	if stat.Flags&unix.MNT_RDONLY != 0 {
+		return fmt.Errorf("owned volume remains read-only")
+	}
+	// The image remains attached; normal detach still requires live identity checks.
+	return j.refresh(ctx, index)
+}
+
+// Unmount unmounts one owned volume without detaching its backing image. The
+// backing attachment stays journaled until Detach or Recover completes.
+func (j *MountJournal) Unmount(ctx context.Context, mountPoint string) error {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	index, err := j.ownedMount(ctx, "", mountPoint)
+	if err != nil {
+		return err
+	}
+	if err := j.system(ctx, "/usr/sbin/diskutil", "unmount", mountPoint); err != nil {
+		return err
+	}
+	live, err := j.find(ctx, j.state.Records[index])
+	if err != nil {
+		return err
+	}
+	if live != nil {
+		for _, e := range live.Entities {
+			if e.MountPoint == mountPoint {
+				return fmt.Errorf("owned volume remains mounted")
+			}
+		}
+	}
+	return j.refresh(ctx, index)
+}
+
+func (j *MountJournal) ownedMount(ctx context.Context, device, mountPoint string) (int, error) {
+	if j.lock == nil {
+		return 0, fmt.Errorf("mount journal is closed")
+	}
+	if mountPoint == "" || !filepath.IsAbs(mountPoint) {
+		return 0, fmt.Errorf("absolute owned mount point is required")
+	}
+	for i, r := range j.state.Records {
+		if r.State != "attached" {
+			continue
+		}
+		for _, recorded := range r.Entities {
+			if recorded.MountPoint != mountPoint || (device != "" && recorded.Device != device) {
+				continue
+			}
+			live, err := j.find(ctx, r)
+			if err != nil {
+				return 0, err
+			}
+			if live == nil {
+				return 0, fmt.Errorf("owned image is no longer attached")
+			}
+			for _, e := range live.Entities {
+				if e.Device == recorded.Device && e.MountPoint == mountPoint {
+					return i, nil
+				}
+			}
+			return 0, fmt.Errorf("owned volume mount point changed")
+		}
+	}
+	return 0, fmt.Errorf("mount point is not owned by this journal")
+}
+
+func (j *MountJournal) refresh(ctx context.Context, index int) error {
+	live, err := j.find(ctx, j.state.Records[index])
+	if err != nil {
+		return err
+	}
+	if live == nil {
+		j.state.Records[index].State = "detached"
+	} else {
+		j.state.Records[index].Entities = live.Entities
+	}
+	return j.save()
+}
+
+func mountSystemCommand(ctx context.Context, name string, args ...string) error {
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...)
+	output := &boundedOutput{limit: 1 << 20}
+	cmd.Stdout, cmd.Stderr = output, output
+	if err := runPatcherCommand(ctx, cmd); err != nil {
+		return fmt.Errorf("%s: %w: %s", filepath.Base(name), err, output.data)
+	}
+	return nil
 }

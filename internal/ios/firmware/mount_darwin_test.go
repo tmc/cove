@@ -328,3 +328,42 @@ func TestMountJournalCancellationCleansOwnedImage(t *testing.T) {
 		t.Fatal("cancellation left owned image attached")
 	}
 }
+
+func TestMountJournalRefusesUnownedRemount(t *testing.T) {
+	j, _, _ := testMountJournal(t)
+	called := false
+	j.system = func(context.Context, string, ...string) error { called = true; return nil }
+	if err := j.Remount(context.Background(), "/dev/disk1", "/Volumes/Other"); err == nil {
+		t.Fatal("accepted unowned remount")
+	}
+	if err := j.Unmount(context.Background(), "/Volumes/Other"); err == nil {
+		t.Fatal("accepted unowned unmount")
+	}
+	if called {
+		t.Fatal("invoked system command for unowned volume")
+	}
+}
+func TestMountJournalRemountPrivilegeError(t *testing.T) {
+	j, _, image := testMountJournal(t)
+	if _, err := j.Attach(context.Background(), image, true); err != nil {
+		t.Fatal(err)
+	}
+	denied := errors.New("permission denied")
+	j.system = func(context.Context, string, ...string) error { return denied }
+	if err := j.Remount(context.Background(), "/dev/disk91s1", "/private/mount"); !errors.Is(err, denied) {
+		t.Fatal(err)
+	}
+	if j.state.Records[0].State != "attached" {
+		t.Fatal("lost mount ownership after denied remount")
+	}
+}
+func ExampleMountJournal_Remount() {
+	var j MountJournal
+	fmt.Println(j.Remount(context.Background(), "/dev/disk1", "/Volumes/Test"))
+	// Output: mount journal is closed
+}
+func ExampleMountJournal_Unmount() {
+	var j MountJournal
+	fmt.Println(j.Unmount(context.Background(), "/Volumes/Test"))
+	// Output: mount journal is closed
+}

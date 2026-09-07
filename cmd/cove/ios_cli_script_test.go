@@ -24,6 +24,9 @@ func TestIOSNewScript(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := state.Setenv("JOURNAL", filepath.Join(root, "mounts")); err != nil {
+		t.Fatal(err)
+	}
 	cmds := script.DefaultCmds()
 	cmds["ios"] = script.Command(script.CmdUsage{Summary: "run ios command"}, func(s *script.State, args ...string) (script.WaitFunc, error) {
 		return func(s *script.State) (string, string, error) {
@@ -39,6 +42,10 @@ func TestIOSNewScript(t *testing.T) {
 	engine := &script.Engine{Cmds: cmds, Conds: script.DefaultConds()}
 	var log bytes.Buffer
 	source := `
+! ios firmware _mount
+stderr 'mount journal and operation are required'
+! ios firmware _mount -journal $JOURNAL remount /dev/disk1 /Volumes/Other
+stderr 'mount point is not owned by this journal'
 ! ios firmware prepare
 stderr 'source, iphone, cloudos and output paths are required'
 ! ios firmware unknown

@@ -18,16 +18,18 @@ import (
 // Patcher describes a built host tool. It does not establish firmware or boot
 // compatibility. Binary is a content-addressed executable in the tool cache.
 type Patcher struct {
-	SourceCommit string `json:"sourceCommit"`
-	DeveloperDir string `json:"developerDir"`
-	SwiftVersion string `json:"swiftVersion"`
-	SDKPath      string `json:"sdkPath"`
-	SDKVersion   string `json:"sdkVersion"`
-	Binary       string `json:"binary"`
-	SHA256       string `json:"sha256"`
+	SourceCommit  string `json:"sourceCommit"`
+	OverlaySHA256 string `json:"overlaySHA256"`
+	DeveloperDir  string `json:"developerDir"`
+	SwiftVersion  string `json:"swiftVersion"`
+	SDKPath       string `json:"sdkPath"`
+	SDKVersion    string `json:"sdkVersion"`
+	Binary        string `json:"binary"`
+	SHA256        string `json:"sha256"`
 }
 
-// BuildPatcher builds the pinned Swift patcher from directory/source and writes
+// BuildPatcher builds the pinned Swift patcher with Cove's compiler overlay
+// for journaled mount operations. It uses directory/source and writes
 // directory/patcher.json after checking the executable's command interface.
 // Developer selects an Xcode developer directory for this operation only; an
 // empty value uses the current selection. Swift's incremental build cache is
@@ -114,7 +116,12 @@ func BuildPatcher(ctx context.Context, directory, developer string, log io.Write
 	if err := writeBuildInfo(infoPath, generated); err != nil {
 		return report, err
 	}
-	cmd := command("/usr/bin/xcrun", "swift", "build", "--product", "vphone-cli")
+	overlay, digest, err := preparePatcherOverlay(ctx, directory, source)
+	if err != nil {
+		return report, err
+	}
+	report.OverlaySHA256 = digest
+	cmd := command("/usr/bin/xcrun", "swift", "build", "--product", "vphone-cli", "-Xswiftc", "-vfsoverlay", "-Xswiftc", overlay)
 	cmd.Stdout, cmd.Stderr = log, log
 	if err := runPatcherCommand(ctx, cmd); err != nil {
 		return report, fmt.Errorf("build Swift patcher (developer directory %s): %w", report.DeveloperDir, err)

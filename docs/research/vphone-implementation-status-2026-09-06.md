@@ -510,3 +510,31 @@ This is a prerequisite for F07/F10, not completed patch integration. The pinned
 Swift filesystem patcher still calls hdiutil directly; the controlled bridge,
 privileged remount routing, bundle operation locking and stage gating remain to
 be wired. No firmware image was patched, and no guest restore or boot occurred.
+
+## Increment 17: Swift mount bridge
+
+The patcher build now applies a compiler file overlay to the pinned
+`CryptexFilesystemPatcher`. Tracked upstream files stay unchanged. `patcher.json`
+records the patched source digest as `overlaySHA256`. Exact call-site checks
+reject source drift. The overlay routes attach/detach, volume unmount and writable
+remount operations through Cove's internal mount helper. There is no direct-mount
+fallback if the helper or journal environment is absent.
+
+The helper validates live journal ownership for unmount/remount, propagates
+privilege failures without trying to elevate, and verifies operation results.
+Swift drains helper stdout before waiting and keeps stderr separate from plist
+output. The high-level patch runner must provide `COVE_MOUNT_HELPER` and
+`COVE_MOUNT_JOURNAL` while holding the workflow lock, then recover mounts after
+child exit. That runner and its stage gates remain unimplemented.
+
+An opt-in integration test compiled the actual overlaid Swift class and exercised
+its attach, unmount and detach methods against a temporary 64 MiB APFS image
+through the signed Cove CLI. It checked the resulting journal, confirmed live
+absence and removed the fixture. This qualifies the bridge path, not privileged
+writable remounts, full filesystem patching, restore or boot. The test runner
+emitted duplicate Objective-C class warnings from host developer frameworks but
+completed successfully; no host framework or security settings were changed.
+
+The overlay also drains the vendor's general subprocess output before waiting.
+The live Swift integration verifies a 128 KiB child output before performing the
+APFS mount sequence, covering output larger than a pipe buffer. Both checks pass.

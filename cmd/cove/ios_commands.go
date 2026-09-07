@@ -345,6 +345,9 @@ func runIOSDevices(env commandEnv, args []string) int {
 }
 
 func runIOSFirmware(env commandEnv, args []string) int {
+	if len(args) > 0 && args[0] == "_mount" {
+		return runIOSMountBridge(env, args[1:])
+	}
 	if len(args) == 0 || args[0] != "prepare" {
 		return commandUsageError(env, fmt.Errorf("usage: cove ios firmware prepare -source PATH -iphone IPSW -cloudos IPSW OUTPUT"))
 	}

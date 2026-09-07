@@ -26,6 +26,11 @@ the *why* is non-obvious.
 - Example tests with `// Output:` comments for exported APIs.
 - Script-based integration tests via `rsc.io/script` for CLI flows.
 
+- In-process `rsc.io/script` adapters retain the test process working directory.
+  Pass fixture paths with `State.Setenv` and expand `$VAR` directly. The script
+  parser supports single quotes; shell-style double quotes become literal path
+  characters. Keep test-created files under `t.TempDir`.
+
 ## Landing Work
 
 1. Run quality gates: `go build ./...`, `go test ./...`.
