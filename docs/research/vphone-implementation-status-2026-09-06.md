@@ -681,3 +681,14 @@ pass under the race detector. See the
 [volume-policy boundary](ios-device-packages-2026-09-07.md#restored-volume-bound-policy).
 Build-identity selection, service routing and the complete restore controller
 remain required. This does not establish live restore or F01–F39 completion.
+
+## Increment 28: restored session dispatch
+
+Cove now verifies a connected restored control service, sends explicit restore
+options, routes data ports, and joins asynchronous requests before acknowledging
+final success. Native handlers connect root tickets, build identities,
+volume-bound policy and ASR to the session. Simulated protocol tests cover normal
+and failed sessions, concurrent completion, cancellation and service responses.
+See the [session boundary](ios-device-packages-2026-09-07.md#restored-session-dispatch).
+The full controller still needs durable lifecycle, FDR, remaining handlers and
+live qualification. No live restore or boot is claimed.

@@ -426,3 +426,35 @@ and choose the recovery OS build for erase or update build for update, following
 The dispatcher must route this result to that request's service; these helpers do
 not choose identities, open services or manage the full restore lifecycle. No
 live TSS, restored exchange or guest boot has qualified this path.
+
+## Restored session dispatch
+
+`RunRestored` owns an already-connected control stream, queries restored's ECID
+and protocol version, checks the target, and sends `StartRestore` with copied,
+explicit options. It routes synchronous requests to control or their `DataPort`;
+ASR requests without a port use 12345. Asynchronous requests require separate
+ports, run with a limit of 16, and propagate failures into session cancellation.
+Connections inherit context deadlines and close when their work finishes.
+Handlers must honor cancellation and must not close the supplied connections.
+
+A successful return requires `StatusMsg` with integer status zero, completion of
+all asynchronous handlers, and a successful `ReceivedFinalStatusMsg` write.
+Nonzero status, premature EOF, crashes, rejected baseband status, malformed ports,
+unknown messages and handler failures return errors. Progress/log/checkpoint
+notifications have a serial event callback. Writes are not retried.
+
+`SessionData.Handle` integrates retained and checked AP/recovery root tickets,
+selected build identities (including the request's `Variant`, default `Erase`),
+volume-bound policy responses, and system/recovery filesystem ASR streams. Other
+data types fail explicitly and still need handlers. Filesystem readers remain
+owned by the caller until all session handlers finish. Service routing follows
+pinned [`restore.py`](https://github.com/doronz88/pymobiledevice3/blob/a16ffc51dcfe2c36fc659fbb2e7b7dedb31d77d5/pymobiledevice3/restore/restore.py)
+and [`RestoredClient.start_restore`](https://github.com/doronz88/pymobiledevice3/blob/a16ffc51dcfe2c36fc659fbb2e7b7dedb31d77d5/pymobiledevice3/restore/restored_client.py).
+
+Simulated peers test the handshake, ticket responses, asynchronous progress and
+completion ordering, cancellation, status failures, connection closure, volume
+policy response, build variant and ASR wire bytes. No live restore was started.
+The complete controller must still provide durable attempt ownership, options,
+FDR setup, build selection, device-bound usbmux dialing, remaining data/message
+handlers, and recovery across all DFU/restored stages. This session engine is not
+full restore or F01–F39 acceptance.
