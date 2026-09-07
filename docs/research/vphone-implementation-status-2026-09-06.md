@@ -702,3 +702,13 @@ without accepting partial frames as absent requests. Focused race tests pass.
 See the [boot-object boundary](ios-device-packages-2026-09-07.md#restored-boot-objects).
 Concrete bundle resolution and URLAsset/key handling remain to be connected,
 along with the full restore lifecycle. No live restore or boot is claimed.
+
+## Increment 30: verified patched-bundle access
+
+Cove can open a published patched tree without its original inputs or toolchain,
+verify the receipt and complete output catalog, and hold a shared workflow lease
+while consumers use its files. Each opened file is checked again and rewound.
+Focused race tests cover changed outputs, nonregular files, path rejection and
+lease ownership. See the [bundle contract](ios-device-packages-2026-09-07.md#published-patched-bundles).
+Build-identity/object resolution and the complete restore lifecycle still need
+integration. This does not establish live restore or F01–F39 completion.

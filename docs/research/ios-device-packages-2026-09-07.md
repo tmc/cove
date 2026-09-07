@@ -490,3 +490,23 @@ personalization, legacy aliases, AEA callback ordering, partial-frame timeout,
 source closure and rejected stale tickets. Bundle object resolution, concrete
 URLAsset/key HTTP handling and the complete restore controller remain required.
 No live device, TSS or AEA key service was contacted for these tests.
+
+## Published patched bundles
+
+`firmware.OpenPatched` opens a completed patch receipt and holds a shared lease
+on the patch workflow lock until `Bundle.Close`. It checks the pinned patcher
+source marker, records and log hashes, and the complete regular-file output
+catalog. The original firmware inputs and toolchain need not remain available.
+`Bundle.Open` confines paths to that work tree, checks the recorded SHA-256
+through the returned file handle, and rewinds it for the caller.
+
+Callers must finish using all returned files before closing the bundle. The
+advisory lease excludes Cove's patch workflow; it does not prevent unrelated
+writers from modifying files. Hash checks establish receipt consistency, not
+authenticity or boot eligibility. Nonregular files, unrecorded paths, changed
+outputs and invalid receipts fail. Tests cover these failures, lease exclusion,
+input removal and changes between bundle verification and file opening.
+
+This supplies verified file access for the restore controller. Selecting build
+identities, resolving service object names and retaining the bundle through the
+whole restore attempt still need integration. No live restore is claimed.
