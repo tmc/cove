@@ -1,5 +1,13 @@
 # Default VM — next goals (prioritized)
 
+Completed in priority order on 2026-09-06. Reports:
+[P0](default-vm-p0-validation-2026-09-06.md),
+[P1](default-vm-p1-validation-2026-09-06.md),
+[P2](default-vm-p2-durability-2026-09-06.md), and
+[P3](default-vm-p3-downloads-2026-09-06.md).
+P0 uses the documented exception for the pre-existing native diagnostic trap.
+The original task descriptions below are retained for context.
+
 Follow-up to the boot resolution
 ([default-vm-boot-resolution-2026-09-06.md](default-vm-boot-resolution-2026-09-06.md))
 and setup validation ([default-vm-setup-validation-2026-09-06.md](default-vm-setup-validation-2026-09-06.md)).

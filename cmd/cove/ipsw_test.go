@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -83,7 +84,7 @@ func TestVerifyIPSWFileSentinels(t *testing.T) {
 	}
 }
 
-func TestDownloadIPSWCurlTooSmallFromHTTP(t *testing.T) {
+func TestDownloadIPSWTooSmallFromHTTP(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodHead {
 			w.Header().Set("Content-Length", "4")
@@ -93,7 +94,7 @@ func TestDownloadIPSWCurlTooSmallFromHTTP(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	err := downloadIPSWCurl(srv.URL+"/Restore.ipsw", filepath.Join(t.TempDir(), "Restore.ipsw"))
+	err := downloadIPSW(context.Background(), srv.URL+"/Restore.ipsw", filepath.Join(t.TempDir(), "Restore.ipsw"), nil)
 	if !errors.Is(err, ErrIPSWTooSmall) {
 		t.Fatalf("err = %v, want ErrIPSWTooSmall", err)
 	}
