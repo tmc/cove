@@ -176,3 +176,47 @@ Published IMG4 implementation: Apple
 `63f5d90dbc4661a5258a7d58b66bd6b297cbe71f`, pinned by Cove as
 `v0.6.19-0.20260907171849-63f5d90dbc46`. The 20-second fuzz run completed
 2,694,163 executions with no failure, alongside passing golden and race tests.
+
+## Ticket assertions and component policy
+
+Apple `x/img4.ParseManifest` reads MANB/MANP and image properties from signed-shape
+IM4M containers. It rejects duplicate names, mismatched private tags, unsupported
+scalar types and integers outside `uint64`. Byte values are copied. Parsing does
+not verify a signature or certificate chain; synthetic tickets with empty
+signature/certificate fields are deliberately used in tests.
+
+Cove's `internal/ios/restore` owns the pinned component policy:
+
+- `Personalize` uses the pymobiledevice3 component tags, including `OS\0\0`;
+  unknown names retain their IM4P type.
+- `RequiresNonceSlot` applies to SEP, SepStage1 and LLB. Observed AP parameters
+  override manifest Info, including an observed zero. Defaults are SEP slot 2
+  and AP slot 0. Duplicate nonce-slot properties in component TBM are errors.
+- BNCN must be eight bytes and is reversed into IM4R wire order on a copy.
+- `MatchTicket` compares asserted ECID, board/chip IDs, current AP/SEP nonces and
+  explicitly supplied signing-build image digests. High-bit ECIDs remain intact.
+  A ticket SEP nonce without an observed counterpart is rejected. A missing SEP
+  nonce is allowed only when both the requirements and ticket omit it.
+
+These rules follow the pinned
+[pymobiledevice3 adapter](https://github.com/doronz88/pymobiledevice3/blob/a16ffc51dcfe2c36fc659fbb2e7b7dedb31d77d5/pymobiledevice3/restore/img4.py)
+and [PyIMG4 property parser](https://github.com/m1stadev/PyIMG4/blob/80491329a41ff90f1df1a2bcaa122d190db94bf3/pyimg4/parser.py).
+`MatchTicket` compares BNCH directly with the observed AP nonce; it does not hash
+that nonce again. The caller must derive requirements independently from current
+device observations and the selected signing manifest. Supplied digest equality
+is not a check of patched payload bytes or proof of build provenance.
+
+Tests cover the wire output, slot precedence, duplicate/malformed properties,
+input immutability and mismatched hardware/nonces/digests. Parser race tests and a
+20-second fuzz run (2,772,220 executions) pass. No real signed ticket is qualified.
+The adapter is not yet connected to an end-to-end restore controller. TSS request
+construction, authenticated ticket provenance, security-policy eligibility,
+selected-build extraction, patched-payload policy and nonce-change reacquisition
+remain required. F09 remains incomplete.
+
+The parser is published in Apple commit
+`868ca1d5aa1c745aa56406b8a1bdca2801647bf1`, pinned by Cove as
+`v0.6.19-0.20260907174357-868ca1d5aa1c`.
+Cove's full `go test ./...` and `go build ./...` gates pass against this published
+pin. Standard and research CLI binaries build and are re-signed with their
+respective entitlements. These host checks do not qualify guest restore or boot.

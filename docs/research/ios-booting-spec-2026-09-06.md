@@ -1,11 +1,19 @@
 # Spec: vphone-style iOS guest booting in cove
 
-Reviewed 2026-09-06 (America/Los_Angeles). Proposal; iOS boot support is not
-implemented or runtime-validated by this review.
+Initial review: 2026-09-06 (America/Los_Angeles). Implementation update:
+2026-09-07. End-to-end iOS restore and boot remain unqualified.
 
 The [full feature parity plan](vphone-feature-parity-spec-2026-09-06.md) extends
 this boot milestone to all upstream CLI, guest-service, GUI and media features.
 Its final scope supersedes the deferrals below.
+
+The current implementation keeps Cove policy under `internal/ios` and reusable
+transports under `tmc/apple/x/`. Native ASR, restored identity probes, IMG4 assembly
+and ticket-assertion checks now exist. Component personalization follows the
+pinned upstream tags and nonce-slot rules. These pieces are not yet connected to
+a complete restore controller, and ticket matching does not authenticate a
+signature. See the [implementation ledger](vphone-implementation-status-2026-09-06.md)
+and [package boundaries](ios-device-packages-2026-09-07.md#ticket-assertions-and-component-policy).
 
 ## Recommendation
 
@@ -26,7 +34,9 @@ API. [Apple installer documentation][apple-installer], [vphone restore CLI][vp-r
 
 ## Evidence and scope
 
-This review inspected these exact revisions:
+The initial review inspected these exact revisions. Findings in this table and
+the binding audit below describe that baseline; the implementation ledger tracks
+subsequent changes and validation.
 
 | Source | Revision | Scope |
 | --- | --- | --- |
@@ -267,8 +277,11 @@ reset behavior explicitly. [VM implementation][vp-vm].
 
 ### Firmware and restore adapter
 
-Start with one exec-backed adapter for the pinned vphone pipeline. Do not claim
-that stock `idevicerestore` or an arbitrary pymobiledevice3 version is interchangeable.
+The initial review proposed an exec-backed restore adapter. The implementation
+now builds native restore transports and component policy in the packages linked
+above; a complete native controller remains required. The bridge behavior below
+is the compatibility reference. Do not claim that stock `idevicerestore` or an
+arbitrary pymobiledevice3 version is interchangeable.
 Upstream's dependencies include `pymobiledevice3>=9.5.0`; that lower bound is not a
 reproducible environment lock. Record the actual Python and package versions used.
 [Resource requirements][vp-resources], [bridge implementation][vp-bridge].
@@ -363,7 +376,7 @@ installed merely because a vsock device exists.
 | 0: host and bindings | Fix public signing references; define research signing through the existing plist and relaunch paths. Probe private constructors/selectors and ECID in the pinned dependency. | Record host model/build, executable hash/effective entitlements, model support, configuration validation, and errors separately. Save/reload identity and confirm identical ECID. No PV=3 success claim based only on a selector responding. |
 | 1: prepared input and guest routing | Add `GuestIOS`, config schema/validation, detection precedence, CLI/Finder routing, and a prepared-artifact adapter. Keep hardware construction in a small vzkit helper if reusable. | Table-driven tests reject corrupt identity, mismatched profiles, invalid manifests, and OS/start-option conflicts. Existing macOS/Linux/Windows detection still passes. |
 | 2: VM definition and DFU | Add `cmd/cove/ios.go`; build the audited graph, extend `startVMWithRunConfig`, and propagate errors. | On a prepared host, start with `-force-dfu` and enumerate the expected ECID in **DFU mode**. Attach machine-readable discovery results and logs. Serial output is supplementary; DFU may be quiet. |
-| 3: restore and customization | Add the exec adapter, attempt state, ticket handling, cancellation, and stopped-VM CFW orchestration. Integrate progress UI only after the headless lifecycle works. | A pinned firmware pair restores, customizes, and boots normally. Stop/reopen and verify identity/state persistence. Inject failures at discovery, restore, and customization; verify cleanup and safe retry behavior. |
+| 3: restore and customization | Integrate the native restore controller, attempt state, ticket handling, cancellation, and stopped-VM CFW orchestration. Integrate progress UI only after the headless lifecycle works. | A pinned firmware pair restores, customizes, and boots normally. Stop/reopen and verify identity/state persistence. Inject failures at discovery, restore, and customization; verify cleanup and safe retry behavior. |
 | 4: usability and broader support | Validate viewer input, networking, guest services, save/resume if offered, and additional host/firmware profiles. Consider image acquisition convenience. | Publish a tested compatibility matrix and explicit unavailable features. Native patching remains a separately scoped project. |
 
 Use `rsc.io/script` fixtures for CLI behavior and fake restore executables to

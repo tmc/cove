@@ -598,3 +598,19 @@ restore policy. Synthetic wire vectors and OpenSSL checks support the encoding;
 no real firmware/ticket pair or device restore is qualified. See the
 [package boundary](ios-device-packages-2026-09-07.md#img4-container-assembly).
 Cove's identity-bound ticket and personalization policy adapter remains required.
+
+## Increment 21: ticket assertions and component policy
+
+Cove now implements pinned component FourCC selection, nonce-slot precedence and
+TBM property assembly atop Apple `x/img4`. BNCN reversal occurs only in the Cove
+adapter, on copied bytes. Unknown components preserve their existing IM4P type.
+Apple adds structural MANP/image property inspection with duplicate and private
+tag checks. Cove compares ticket assertions with supplied observed identity,
+current nonces and signing-build digests, preserving high-bit ECIDs.
+
+Golden wire, malformed-input, mismatch, race and parser fuzz tests pass. These
+checks do not authenticate tickets or establish patched-payload eligibility.
+The adapter is not wired into a complete restore controller; automatic signing
+request construction and reacquisition after nonce changes remain required.
+See [the policy boundary](ios-device-packages-2026-09-07.md#ticket-assertions-and-component-policy).
+Full F09 and F01–F39 acceptance remain incomplete.

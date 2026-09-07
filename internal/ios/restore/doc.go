@@ -1,3 +1,5 @@
-// Package restore coordinates Cove's iOS restore transport selection. Discovery
-// binds a USB attachment to hardware identity; it does not start a restore.
+// Package restore coordinates Cove's iOS restore transport and component policy.
+// Discovery matches USB attachments to reported hardware identity. Personalize
+// assembles components; MatchTicket separately compares ticket assertions with
+// supplied requirements. Neither authenticates tickets or starts a restore.
 package restore
