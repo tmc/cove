@@ -659,3 +659,15 @@ recovery path rather than the ordinary AP component filter. Focused race and HTT
 integration tests pass. Local-policy signing and full restore orchestration
 remain unfinished; no live signing or restore run is claimed. See the
 [request boundary](ios-device-packages-2026-09-07.md#recovery-os-root-signing).
+
+## Increment 26: recovery-stage local-policy signing
+
+Cove now requests and checks the empty recovery local policy, binding it to an
+AP ticket validated against current observations. Component transfer selects this
+flow for `Ap,LocalPolicy`, records the ticket hashes, and runs `lpolrestore`.
+Retained AP responses can be revalidated and reused for the next-stage component
+so its ticket matches the policy binding. HTTP and transfer tests pass, including
+stale-ticket rejection before device writes. See the
+[local-policy boundary](ios-device-packages-2026-09-07.md#recovery-stage-local-policy).
+Volume-bound restored policy and the full restore controller remain unfinished;
+no live signing, restore or boot is claimed.

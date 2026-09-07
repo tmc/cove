@@ -129,20 +129,16 @@ func apSigningRequest(identity map[string]any, device SigningDevice, components 
 	if !ok {
 		return nil, want, fmt.Errorf("build Info is not a dictionary")
 	}
-	var uuid [16]byte
-	if _, err := rand.Read(uuid[:]); err != nil {
+	request, err := newSigningRequest()
+	if err != nil {
 		return nil, want, err
 	}
-	uuid[6] = uuid[6]&15 | 64
-	uuid[8] = uuid[8]&63 | 128
-	request := map[string]any{
-		"@HostPlatformInfo": "mac", "@VersionInfo": "libauthinstall-1104.0.9",
-		"@UUID":         fmt.Sprintf("%X-%X-%X-%X-%X", uuid[:4], uuid[4:6], uuid[6:8], uuid[8:10], uuid[10:]),
+	maps.Copy(request, map[string]any{
 		"@ApImg4Ticket": true, "@BBTicket": true,
 		"ApECID": device.ECID, "ApBoardID": device.BoardID, "ApChipID": device.ChipID,
 		"ApSecurityDomain": numbers["ApSecurityDomain"], "UniqueBuildID": buildID,
 		"ApNonce": slices.Clone(device.APNonce), "ApProductionMode": device.ProductionMode, "ApSecurityMode": device.SecurityMode,
-	}
+	})
 	if len(device.SEPNonce) > 0 {
 		request["SepNonce"] = slices.Clone(device.SEPNonce)
 	}
@@ -372,4 +368,17 @@ func applySigningRules(entry map[string]any, parameters map[string]bool, value a
 		}
 	}
 	return nil
+}
+
+func newSigningRequest() (map[string]any, error) {
+	var uuid [16]byte
+	if _, err := rand.Read(uuid[:]); err != nil {
+		return nil, err
+	}
+	uuid[6] = uuid[6]&15 | 64
+	uuid[8] = uuid[8]&63 | 128
+	return map[string]any{
+		"@HostPlatformInfo": "mac", "@VersionInfo": "libauthinstall-1104.0.9",
+		"@UUID": fmt.Sprintf("%X-%X-%X-%X-%X", uuid[:4], uuid[4:6], uuid[6:8], uuid[8:10], uuid[10:]),
+	}, nil
 }

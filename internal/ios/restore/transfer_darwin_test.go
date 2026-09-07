@@ -181,3 +181,75 @@ func TestTransferDeviceLock(t *testing.T) {
 	}
 	again.Close()
 }
+
+func TestTransferLocalPolicy(t *testing.T) {
+	for _, name := range []string{"match", "rejected binding", "stale AP ticket", "changed nonce"} {
+		t.Run(name, func(t *testing.T) {
+			directory := t.TempDir()
+			build, _ := signingFixture()
+			info := transferInfo("recovery")
+			device, err := signingObservation(info, info.Device.ECID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			plan := ComponentTransfer{Library: "test", ECID: device.ECID, Identity: build,
+				Component: "Ap,LocalPolicy", Mode: "recovery", Command: "lpolrestore",
+				NextStageTicket: nextPolicyTicket(device), NextStageComponents: []string{"iBSS"}}
+			if name == "stale AP ticket" {
+				info.APNonce = []byte{99}
+			}
+			events := []string{}
+			conn := &fakeComponentConn{t: t, directory: directory, info: info, events: &events}
+			if name == "changed nonce" {
+				conn.fail = "nonce"
+			}
+			client := localPolicyServer(t, name == "rejected binding")
+			err = transferComponent(context.Background(), directory, plan,
+				func(context.Context, string) (componentConnection, error) { return conn, nil },
+				func(ctx context.Context, identity map[string]any, device SigningDevice) (map[string]any, error) {
+					return signComponent(ctx, client, plan, identity, device)
+				}, filepath.Join(directory, "device-locks"))
+			state := readTransfer(t, directory)
+			if state.NextStageSHA256 != transferHash(plan.NextStageTicket) || state.PayloadSHA256 != transferHash(EmptyLocalPolicy()) {
+				t.Fatal("missing durable local-policy provenance")
+			}
+			if name == "match" {
+				if err != nil || state.Status != "complete" || !reflect.DeepEqual(events, []string{"observe:recovery", "observe:recovery", "upload", "command", "close:recovery"}) {
+					t.Fatalf("got %v, %#v, %v", err, state, events)
+				}
+			} else {
+				if err == nil || state.Status != "failed" {
+					t.Fatalf("got %v, %#v", err, state)
+				}
+				for _, event := range events {
+					if event == "upload" || event == "command" {
+						t.Fatal("mutated device after signing mismatch")
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestRetainedAPResponse(t *testing.T) {
+	build, device := signingFixture()
+	ticket := nextPolicyTicket(device)
+	plan := ComponentTransfer{Component: "iBSS", SigningResponse: map[string]any{
+		"ApImg4Ticket": ticket, "iBSS-TBM": map[string]any{"BNCN": make([]byte, 8)},
+	}}
+	response, err := signComponent(context.Background(), nil, plan, build, device)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(response, plan.SigningResponse) {
+		t.Fatal("retained response changed")
+	}
+	response["ApImg4Ticket"].([]byte)[0] = 0
+	if ticket[0] == 0 {
+		t.Fatal("retained response aliased input")
+	}
+	device.APNonce = []byte{99}
+	if _, err := signComponent(context.Background(), nil, plan, build, device); err == nil {
+		t.Fatal("reused AP response with stale nonce")
+	}
+}

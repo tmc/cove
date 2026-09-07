@@ -35,6 +35,15 @@ type ComponentTransfer struct {
 	Mode      string
 	NextMode  string
 	Command   string
+
+	// SigningResponse reuses an AP response after checking current observations.
+	// Use it to preserve the exact ticket bound by a preceding local policy.
+	SigningResponse map[string]any
+
+	// Local-policy transfers require the AP ticket and its next-stage components.
+	// They use EmptyLocalPolicy when Payload is nil and require lpolrestore.
+	NextStageTicket     []byte
+	NextStageComponents []string
 }
 
 type transferRecord struct {
@@ -45,6 +54,8 @@ type transferRecord struct {
 	Command            string    `json:"command,omitempty"`
 	PayloadSHA256      string    `json:"payloadSHA256"`
 	IdentitySHA256     string    `json:"identitySHA256"`
+	TicketSHA256       string    `json:"ticketSHA256,omitempty"`
+	NextStageSHA256    string    `json:"nextStageSHA256,omitempty"`
 	PersonalizedSHA256 string    `json:"personalizedSHA256,omitempty"`
 	Action             string    `json:"action"`
 	Status             string    `json:"status"`
@@ -69,6 +80,8 @@ type componentConnection interface {
 // not guest boot, command execution or complete restore. No retry is automatic.
 // The operation has a ten-minute ceiling or the caller's earlier deadline.
 func TransferComponent(ctx context.Context, directory string, plan ComponentTransfer, client *http.Client) error {
+	plan.NextStageTicket = slices.Clone(plan.NextStageTicket)
+	plan.NextStageComponents = slices.Clone(plan.NextStageComponents)
 	cache, err := os.UserCacheDir()
 	if err != nil {
 		return err
@@ -76,7 +89,7 @@ func TransferComponent(ctx context.Context, directory string, plan ComponentTran
 	return transferComponent(ctx, directory, plan, func(ctx context.Context, mode string) (componentConnection, error) {
 		return irecovery.WaitOpen(ctx, plan.Library, plan.ECID, mode)
 	}, func(ctx context.Context, identity map[string]any, device SigningDevice) (map[string]any, error) {
-		return SignAP(ctx, client, identity, device, []string{plan.Component})
+		return signComponent(ctx, client, plan, identity, device)
 	}, filepath.Join(cache, "cove", "ios", "restore-locks"))
 }
 
@@ -85,6 +98,22 @@ func transferComponent(ctx context.Context, directory string, plan ComponentTran
 	defer cancel()
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if plan.Component == "Ap,LocalPolicy" {
+		if plan.SigningResponse != nil {
+			return fmt.Errorf("local-policy transfer requires a fresh policy signing response")
+		}
+		if plan.Mode != "recovery" || plan.Command != "lpolrestore" || plan.NextMode != "" || len(plan.NextStageTicket) == 0 || len(plan.NextStageComponents) == 0 {
+			return fmt.Errorf("local-policy transfer requires recovery lpolrestore and next-stage ticket components")
+		}
+		if plan.Payload == nil {
+			plan.Payload = EmptyLocalPolicy()
+		}
+		if !bytes.Equal(plan.Payload, []byte(emptyLocalPolicy)) {
+			return fmt.Errorf("local-policy transfer requires the empty recovery policy")
+		}
+	} else if len(plan.NextStageTicket) != 0 || len(plan.NextStageComponents) != 0 || plan.Command == "lpolrestore" {
+		return fmt.Errorf("local-policy inputs require Ap,LocalPolicy component")
 	}
 	if directory == "" || plan.Library == "" || plan.ECID == 0 || plan.Component == "" || len(plan.Payload) == 0 {
 		return fmt.Errorf("component transfer requires directory, library, ECID, component and payload")
@@ -132,6 +161,9 @@ func transferComponent(ctx context.Context, directory string, plan ComponentTran
 	}
 	payload := slices.Clone(plan.Payload)
 	state := transferRecord{ECID: plan.ECID, Component: plan.Component, Mode: plan.Mode, NextMode: plan.NextMode, Command: plan.Command, PayloadSHA256: transferHash(payload), IdentitySHA256: transferHash(encoded), Status: "active", Action: "observe"}
+	if len(plan.NextStageTicket) != 0 {
+		state.NextStageSHA256 = transferHash(plan.NextStageTicket)
+	}
 	deviceLock, err := lockTransferDevice(lockRoot, plan.ECID)
 	if err != nil {
 		return err
@@ -204,6 +236,7 @@ func transferComponent(ctx context.Context, directory string, plan ComponentTran
 	if err != nil {
 		return err
 	}
+	state.TicketSHA256 = transferHash(response["ApImg4Ticket"].([]byte))
 	state.PersonalizedSHA256 = transferHash(image)
 	observed, err = conn.ReadInfo(ctx)
 	if err != nil {
@@ -337,4 +370,37 @@ func lockTransferDevice(root string, ecid uint64) (*os.File, error) {
 		return nil, fmt.Errorf("recovery ECID %x is in use: %w", ecid, err)
 	}
 	return f, nil
+}
+
+func signComponent(ctx context.Context, client *http.Client, plan ComponentTransfer, identity map[string]any, device SigningDevice) (map[string]any, error) {
+	if plan.Component == "Ap,LocalPolicy" {
+		return SignLocalPolicy(ctx, client, identity, device, plan.NextStageTicket, plan.NextStageComponents)
+	}
+	if plan.SigningResponse != nil {
+		encoded, err := plist.Marshal(plan.SigningResponse, plist.FormatXML)
+		if err != nil {
+			return nil, err
+		}
+		value, err := plist.ParseBytes(encoded)
+		if err != nil {
+			return nil, err
+		}
+		response, ok := value.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("AP signing response is not a dictionary")
+		}
+		_, want, err := APSigningRequest(identity, device, []string{plan.Component})
+		if err != nil {
+			return nil, err
+		}
+		ticket, ok := response["ApImg4Ticket"].([]byte)
+		if !ok {
+			return nil, fmt.Errorf("AP signing response has no ticket data")
+		}
+		if err := MatchTicket(ticket, want); err != nil {
+			return nil, fmt.Errorf("match retained AP ticket: %w", err)
+		}
+		return response, nil
+	}
+	return SignAP(ctx, client, identity, device, []string{plan.Component})
 }

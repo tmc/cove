@@ -367,3 +367,36 @@ rules, input isolation, high-bit ECID transport and rejected response assertions
 No live TSS request has qualified this path. Local-policy signing, selection of
 the recovery build identity, persisted ticket lifecycle and the restored request
 dispatcher remain required; this API does not perform those steps.
+
+## Recovery-stage local policy
+
+`LocalPolicySigningRequest` validates the preceding AP ticket against the current
+observations and next-stage components. It hashes that exact ticket and the pinned
+empty policy IM4P with SHA-384. The request sends `Ap,LocalBoot=false` and the
+observed security flags, without SEP nonce or `UniqueBuildID`, following pinned
+[`add_local_policy_tags`](https://github.com/doronz88/pymobiledevice3/blob/a16ffc51dcfe2c36fc659fbb2e7b7dedb31d77d5/pymobiledevice3/restore/tss.py)
+and `recovery.get_local_policy_tss_response`.
+
+`SignLocalPolicy` checks the returned device/security assertions, `lobo=false`,
+`MANP.nsih` and `lpol.DGST`. Read-only inspection of two host LocalPolicy files
+confirmed those property locations and found neither `BNCH` nor `snon` in the
+samples. This is not a capture of the research guest's TSS response. Consequently,
+local-policy matching does not require those optional nonce assertions, but
+compares them with current observations when present. The mandatory next-stage
+binding is checked against the AP ticket already matched to current nonces.
+Apple documents [`nsih` as the SHA-384 next-stage manifest hash](https://support.apple.com/en-ca/guide/security/secc745a0845/web).
+Signature authentication and live TSS qualification remain separate.
+
+`TransferComponent` now accepts `Ap,LocalPolicy` with the preceding ticket and
+its next-stage component requirements. It supplies the empty policy, signs it,
+rechecks observations, records ticket provenance, uploads, and sends `lpolrestore`.
+An ordinary AP component may take a retained `SigningResponse`, including TBM
+properties, which is copied and revalidated before use. The restore sequence must
+retain that response so the next-stage component uses the exact ticket bound by
+the local policy; obtaining a different AP ticket would break that binding.
+
+Tests cover request field membership, hash inputs, optional nonces, malformed or
+mismatched assertions, HTTP response checking, retained-response isolation, and
+failure before upload when tickets or observations change. No live device writes
+were made. The restored volume-bound `LocalBoot=true` policy flow and complete
+restore sequencing, persistence and reconciliation remain required.
