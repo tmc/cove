@@ -8,7 +8,7 @@ After every Go build, re-sign the binary with the virtualization entitlement:
 
 ```bash
 go build -o cove ./cmd/cove
-codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+codesign -s - -f --entitlements cmd/cove/vz.entitlements ./cove
 ```
 
 Without re-signing, the binary will fail with sandbox/entitlement errors at runtime.
@@ -31,3 +31,9 @@ the *why* is non-obvious.
 1. Run quality gates: `go build ./...`, `go test ./...`.
 2. Atomic commits — stage related changes together, never `git add -A`.
 3. `git push` before handing off. Work is not complete until it lands on the remote.
+
+## Commit helper
+
+If `git-auto-commit-message` fails with a retired Claude model, set
+`CGPT_MODEL=claude-haiku-4-5` for the helper. Verify HEAD changed: the helper can
+return success even when model generation fails.
