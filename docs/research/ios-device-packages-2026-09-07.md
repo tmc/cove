@@ -115,3 +115,37 @@ Reset accepts libusb success or NOT_FOUND (requiring rediscovery), propagating
 other errors. Reconnect retries absence and rejects duplicate identities before
 claiming an interface. Package race tests pass; no live DFU, restore or boot is
 qualified. These primitives still require integration into Cove's restore flow.
+
+## Native ASR and restored identity
+
+`x/iosrestore.SendImage` implements ASR validation and image transfer without
+Python. It reads bounded, newline-terminated XML plists without restored's length
+prefix, answers checked `OOBData` ranges through `io.ReaderAt`, and sends 128 KiB
+payload chunks with optional SHA-1 suffixes. Repeated `Initiate` messages can
+renegotiate checksums. Short writes are completed; a write error ends the stream
+without retrying a possibly consumed chunk. Context cancellation interrupts
+network I/O, and caller ownership of the connection is preserved.
+
+Protocol references are the pinned
+[pymobiledevice3 ASR client](https://github.com/doronz88/pymobiledevice3/blob/a16ffc51dcfe2c36fc659fbb2e7b7dedb31d77d5/pymobiledevice3/restore/asr.py)
+and [idevicerestore ASR implementation](https://github.com/libimobiledevice/idevicerestore/blob/60192e97f87d1bbab5c493684e0a245b0966363f/src/asr.c).
+The latter handles repeated checksum negotiation. Neither payload completion nor
+connection EOF proves that the device completed a restore.
+
+`x/iosrestore.QueryInfo` queries `com.apple.mobile.restored` and its hardware
+`UniqueChipID`. It preserves all 64 ECID bits, including signed plist producers.
+Cove's `ios restore probe -ecid N [-udid SERIAL]` checks USB candidates against
+that hardware value, rejects duplicate matches and incomplete probes, and closes
+all probe connections. Serial filtering never substitutes for an ECID match.
+
+Tests exercise fragmented/coalesced control messages, random OOB ranges, checksum
+renegotiation, a known SHA-1 vector, short I/O, malformed inputs, cancellation,
+high-bit ECIDs and ambiguous discovery. Live ASR transfer, personalization,
+StartRestore dispatch and device completion/status handling remain unqualified
+or unimplemented. This does not complete the F09 restore requirement.
+
+Published dependency: Apple `e80f461d48303e88911e95feff15ba820b8a5507`, pinned
+as `v0.6.19-0.20260907170253-e80f461d4830`. The signed Cove CLI ran
+`ios restore probe -ecid 1 -timeout 10s` and returned the expected no-match error.
+This exercises the host discovery path; it does not qualify a connected restored
+device or an ASR transfer.

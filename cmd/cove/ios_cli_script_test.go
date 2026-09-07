@@ -42,6 +42,12 @@ func TestIOSNewScript(t *testing.T) {
 	engine := &script.Engine{Cmds: cmds, Conds: script.DefaultConds()}
 	var log bytes.Buffer
 	source := `
+! ios restore probe
+stderr 'nonzero ECID and positive timeout are required'
+! ios restore probe -ecid 1 -timeout 0s
+stderr 'nonzero ECID and positive timeout are required'
+! ios restore unknown
+stderr 'usage: cove ios restore probe'
 ! ios firmware _mount
 stderr 'mount journal and operation are required'
 ! ios firmware _mount -journal $JOURNAL remount /dev/disk1 /Volumes/Other

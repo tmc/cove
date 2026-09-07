@@ -574,3 +574,17 @@ Real firmware output comparison for every supported profile, less filesystem
 patching with privileged remounts, complete checksummed host-resource provisioning,
 and integration with bundle create/restore stages remain unqualified or
 unimplemented. The runner does not establish F07 acceptance or full F01–F39 parity.
+
+## Increment 19: native ASR and restore identity probes
+
+Apple `x/iosrestore` now provides native ASR `SendImage` and restored `QueryInfo`.
+The ASR protocol has dedicated bounded XML framing, random-access OOB validation,
+128 KiB payload chunks, optional SHA-1 checksums, renegotiation and cancellation.
+Payload completion is explicitly distinct from restore completion.
+
+Cove adds `ios restore probe -ecid N [-udid SERIAL]`. It queries hardware identity
+on USB restored services, rejects ambiguity and incomplete discovery, and sends
+no restore/reboot command. Protocol and discovery tests pass; see the
+[package evidence](ios-device-packages-2026-09-07.md#native-asr-and-restored-identity).
+No live ASR transfer, complete restore dispatcher, image personalization, AEA
+staging, offline ticket binding or guest boot is claimed. F09 remains incomplete.

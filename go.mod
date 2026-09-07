@@ -15,7 +15,7 @@ require (
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/pierrec/lz4/v4 v4.1.26
 	github.com/russellhaering/goxmldsig v1.6.0
-	github.com/tmc/apple v0.6.19-0.20260907150059-3e8ad6225f3d
+	github.com/tmc/apple v0.6.19-0.20260907170253-e80f461d4830
 	github.com/tmc/macgo v0.1.4-0.20260527192223-4bb97879961e
 	golang.org/x/crypto v0.49.0
 	golang.org/x/net v0.52.0
