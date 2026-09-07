@@ -463,3 +463,27 @@ unfinished. This command prepares the common firmware tree; less-variant sealing
 tool acquisition remains separate and unimplemented with mount journaling.
 Python is still required by the delegated manifest generator. No restore or boot
 completion follows from preparing synthetic archives.
+
+## Increment 15: built patcher toolchain
+
+`cove ios setup patcher [-dir TOOLCHAIN] [-developer-dir XCODE_DEVELOPER_DIR]`
+builds the pinned Swift executable and verifies its `patch-firmware` interface.
+It publishes a content-addressed executable and `patcher.json` containing the
+source revision, selected developer directory, Swift version, SDK path/version,
+and executable SHA-256. The build has exclusive cache ownership, supports
+cancellation, preserves incremental compilation, and rejects changed generated
+build info or a corrupt published executable.
+
+The selected Command Line Tools failed to compile `.macOS(.v15)` in the pinned
+package manifest. Its arm64 PackageDescription interface lacks that member.
+A command-local `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer`
+resolved the failure; no system-wide developer selection was changed. The full
+pinned executable built and its patch command ran. The Go setup integration also
+passed under race testing with the real source cache and Xcode installation.
+
+This completes another part of F01, not F07 patch acceptance. The `less` Swift
+pipeline mounts filesystem images through absolute `hdiutil` calls and uses
+process-local defers for detachment. Cove still needs durable mount ownership and
+crash reconciliation before exposing that pipeline. Non-less patch execution,
+patch-record/skip validation, ROM staging and all real firmware qualification
+also remain required. No disk image was mounted or guest firmware patched here.

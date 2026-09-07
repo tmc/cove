@@ -290,7 +290,7 @@ func equalHashes(a, b map[string]string) bool {
 	return true
 }
 
-func writeState(name string, v preparedState) error {
+func writeState(name string, v any) error {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return err

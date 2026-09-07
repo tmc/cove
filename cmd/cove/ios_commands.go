@@ -38,11 +38,11 @@ func runIOSCommand(env commandEnv, _ string, args []string) int {
 		return runIOSNew(env, args[1:])
 	}
 	if len(args) == 1 && (args[0] == "help" || args[0] == "-h" || args[0] == "--help") {
-		fmt.Fprintln(env.Stdout, "usage: cove ios preflight | devices [-libusb PATH] | new [-cpu N] [-memory GB] [-disk GB] NAME | setup source [flags] | firmware prepare [flags] OUTPUT | config [flags] NAME | run [flags] NAME")
+		fmt.Fprintln(env.Stdout, "usage: cove ios preflight | devices [-libusb PATH] | new [-cpu N] [-memory GB] [-disk GB] NAME | setup source|patcher [flags] | firmware prepare [flags] OUTPUT | config [flags] NAME | run [flags] NAME")
 		return 0
 	}
 	if len(args) != 1 || args[0] != "preflight" {
-		return commandUsageError(env, fmt.Errorf("usage: cove ios preflight | devices [-libusb PATH] | new [-cpu N] [-memory GB] [-disk GB] NAME | setup source [flags] | firmware prepare [flags] OUTPUT | config [flags] NAME | run [flags] NAME"))
+		return commandUsageError(env, fmt.Errorf("usage: cove ios preflight | devices [-libusb PATH] | new [-cpu N] [-memory GB] [-disk GB] NAME | setup source|patcher [flags] | firmware prepare [flags] OUTPUT | config [flags] NAME | run [flags] NAME"))
 	}
 	executable, err := os.Executable()
 	if err != nil {
@@ -278,6 +278,9 @@ func runIOSConfig(env commandEnv, args []string) int {
 }
 
 func runIOSSetup(env commandEnv, args []string) int {
+	if len(args) > 0 && args[0] == "patcher" {
+		return runIOSSetupPatcher(env, args[1:])
+	}
 	if len(args) == 0 || args[0] != "source" {
 		return commandUsageError(env, fmt.Errorf("usage: cove ios setup source [-repository PATH_OR_URL] [-dir PATH] [-check]"))
 	}
@@ -362,5 +365,28 @@ func runIOSFirmware(env commandEnv, args []string) int {
 		return commandError(env, err)
 	}
 	fmt.Fprintln(env.Stdout, filepath.Join(flags.Arg(0), "firmware.json"))
+	return 0
+}
+
+func runIOSSetupPatcher(env commandEnv, args []string) int {
+	flags := flag.NewFlagSet("ios setup patcher", flag.ContinueOnError)
+	flags.SetOutput(env.Stderr)
+	dir := flags.String("dir", filepath.Join(vmconfig.StateDir(), "ios", "toolchains", firmware.SourceCommit), "toolchain cache containing source")
+	developer := flags.String("developer-dir", "", "Xcode developer directory for this build")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if flags.NArg() != 0 {
+		return commandUsageError(env, fmt.Errorf("unexpected patcher setup arguments"))
+	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	report, err := firmware.BuildPatcher(ctx, *dir, *developer, env.Stderr)
+	if err != nil {
+		return commandError(env, err)
+	}
+	if err := json.NewEncoder(env.Stdout).Encode(report); err != nil {
+		return commandError(env, err)
+	}
 	return 0
 }
