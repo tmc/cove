@@ -614,3 +614,17 @@ The adapter is not wired into a complete restore controller; automatic signing
 request construction and reacquisition after nonce changes remain required.
 See [the policy boundary](ios-device-packages-2026-09-07.md#ticket-assertions-and-component-policy).
 Full F09 and F01–F39 acceptance remain incomplete.
+
+## Increment 22: native AP signing request path
+
+Cove now derives AP IMG4 signing requests from a selected build identity and
+current device observations, sends them through native TSS transport, and checks
+the returned ticket against next-stage image requirements. Board/chip mismatch
+fails before requesting a ticket. Rules use typed boolean equality, including
+false, and reject unsupported conditions. The path checks SDOM/CPRO/CSEC as well
+as ECID, board/chip IDs, AP/SEP nonces and selected signing digests.
+
+Request, rule and HTTP integration tests pass. The work remains internal restore
+controller code: it does not launch DFU, observe nonces automatically, dispatch a
+complete restore or prove boot. Separate ticket flows and offline persistence
+remain required. See the [signing boundary](ios-device-packages-2026-09-07.md#native-ap-signing-request-path).

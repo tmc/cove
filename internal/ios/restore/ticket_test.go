@@ -102,3 +102,30 @@ func ExampleMatchTicket() {
 	fmt.Println(MatchTicket(ticket, want))
 	// Output: <nil>
 }
+
+func TestMatchTicketPolicy(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		change func(map[string]any)
+	}{
+		{name: "match"},
+		{name: "missing domain", change: func(p map[string]any) { delete(p, "SDOM") }},
+		{name: "wrong domain", change: func(p map[string]any) { p["SDOM"] = uint64(2) }},
+		{name: "wrong security", change: func(p map[string]any) { p["CSEC"] = false }},
+		{name: "missing production", change: func(p map[string]any) { delete(p, "CPRO") }},
+		{name: "integer production", change: func(p map[string]any) { p["CPRO"] = uint64(0) }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			domain, production, security := uint64(1), false, true
+			want := TicketRequirements{ECID: 1, ChipID: 3, APNonce: []byte{1}, ImageDigests: map[string][]byte{"ibss": {2}}, SecurityDomain: &domain, ProductionMode: &production, SecurityMode: &security}
+			props := map[string]any{"ECID": uint64(1), "BORD": uint64(0), "CHIP": uint64(3), "BNCH": []byte{1}, "SDOM": domain, "CPRO": production, "CSEC": security}
+			if tt.change != nil {
+				tt.change(props)
+			}
+			err := MatchTicket(testTicket(props, want.ImageDigests), want)
+			if (err == nil) != (tt.change == nil) {
+				t.Fatalf("got %v", err)
+			}
+		})
+	}
+}

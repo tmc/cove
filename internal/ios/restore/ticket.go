@@ -18,6 +18,11 @@ type TicketRequirements struct {
 	APNonce      []byte
 	SEPNonce     []byte
 	ImageDigests map[string][]byte
+
+	// Non-nil policy fields require the corresponding MANP assertion.
+	SecurityDomain *uint64
+	ProductionMode *bool
+	SecurityMode   *bool
 }
 
 // MatchTicket checks IM4M assertions against want. It does not verify the ticket
@@ -32,6 +37,24 @@ func MatchTicket(ticket []byte, want TicketRequirements) error {
 	manifest, err := img4.ParseManifest(ticket)
 	if err != nil {
 		return fmt.Errorf("parse ticket: %w", err)
+	}
+	if want.SecurityDomain != nil {
+		value, ok := manifest.Properties["SDOM"].(uint64)
+		if !ok || value != *want.SecurityDomain {
+			return fmt.Errorf("ticket SDOM does not match signing security domain")
+		}
+	}
+	for _, p := range []struct {
+		name  string
+		value *bool
+	}{{"CPRO", want.ProductionMode}, {"CSEC", want.SecurityMode}} {
+		if p.value == nil {
+			continue
+		}
+		value, ok := manifest.Properties[p.name].(bool)
+		if !ok || value != *p.value {
+			return fmt.Errorf("ticket %s does not match observed security policy", p.name)
+		}
 	}
 	for _, p := range []struct {
 		name  string

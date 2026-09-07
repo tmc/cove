@@ -8,9 +8,9 @@ this boot milestone to all upstream CLI, guest-service, GUI and media features.
 Its final scope supersedes the deferrals below.
 
 The current implementation keeps Cove policy under `internal/ios` and reusable
-transports under `tmc/apple/x/`. Native ASR, restored identity probes, IMG4 assembly
-and ticket-assertion checks now exist. Component personalization follows the
-pinned upstream tags and nonce-slot rules. These pieces are not yet connected to
+transports under `tmc/apple/x/`. Native ASR, restored identity probes, IMG4 assembly,
+AP signing requests and ticket-assertion checks now exist. Component personalization
+follows the pinned upstream tags and nonce-slot rules. These pieces are not yet connected to
 a complete restore controller, and ticket matching does not authenticate a
 signature. See the [implementation ledger](vphone-implementation-status-2026-09-06.md)
 and [package boundaries](ios-device-packages-2026-09-07.md#ticket-assertions-and-component-policy).

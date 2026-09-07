@@ -220,3 +220,50 @@ The parser is published in Apple commit
 Cove's full `go test ./...` and `go build ./...` gates pass against this published
 pin. Standard and research CLI binaries build and are re-signed with their
 respective entitlements. These host checks do not qualify guest restore or boot.
+
+## Native AP signing request path
+
+`restore.APSigningRequest` derives an AP IMG4 request from one selected
+BuildIdentity and current device observations. It requires matching board/chip
+IDs, a nonzero ECID, AP nonce, security domain, UniqueBuildID and explicitly named
+next-stage components with nonempty signing digests. The request contains all
+eligible AP entries; ticket checks cover the named next-stage components.
+`Info.Img4PayloadType` supplies a ticket tag when present, with the pinned component
+mapping as fallback. Inputs, request data and matching requirements do not alias.
+
+The builder copies the pinned AP manifest fields, renames ApSepNonce to SepNonce,
+applies the RequiresUIDMode/SikaFuse workaround when requested, and handles
+NeRDEpoch/PermitNeRDPivot. It strips component Info, skips the pinned non-AP,
+Cryptex1 and FTAB entries, and supplies empty digests for trusted entries that
+lack one. Empty digests cannot establish next-stage ticket matching. Trusted
+components without RestoreRequestRules are included with EPRO/ESEC from the
+request policy, following libtatsu; untrusted components without rules are
+skipped. This fixes an omission in the pinned Python request builder.
+
+RestoreRequestRules compare typed boolean values, including false. This follows
+[libtatsu's value comparison](https://github.com/libimobiledevice/libtatsu/blob/e7d6ad13ef928aa609d0ccdfc586f7d6e8e049bf/src/tss.c#L448)
+rather than the pinned Python implementation's false-value short-circuit. Unknown
+conditions and malformed rules are errors. Boolean actions are applied in rule
+order; integer 255 is ignored. These checks deliberately surface unsupported
+manifest policy instead of silently dropping it.
+
+`restore.SignAP` connects request construction to the native HTTPS TSS transport
+and rejects missing tickets or mismatched identity, nonces, security policy and
+requested signing digests. Ticket requirements now support SDOM, CPRO and CSEC
+assertions; the signing path always requests these checks. This checks returned
+assertions and relies on trusted HTTP/TLS configuration for source provenance;
+it does not verify the ticket's cryptographic signature or patched payloads.
+Redirects must remain on HTTPS gs.apple.com, on the default port or 443. The
+supplied client's settings remain unchanged; stricter caller redirect callbacks
+are honored.
+
+Fixture and HTTP integration tests cover request derivation, false-valued rules,
+input isolation, filtering, UID policy, high-bit ECIDs, invalid builds, stale
+nonces, wrong security policy, server rejection and missing tickets. No real TSS
+request or signed ticket has been qualified. Complete restore dispatch, automatic
+device observation/reacquisition, offline ticket persistence and separate
+recovery-root, local-policy, baseband and coprocessor flows remain required.
+
+Final validation for this path: focused race tests, `go test ./...`,
+`go build ./...`, and re-signed standard/research CLI builds pass after the
+trusted-component correction. Notebook review approved this checkpoint only.
