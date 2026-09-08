@@ -78,8 +78,7 @@ func (s *ControlServer) captureVZFramebuffer() (image.Image, string) {
 		fmt.Printf("[screenshot] framebuffer backend using %s\n", fbPath)
 	}
 
-	fb := pvz.VZFramebufferFromID(fbID)
-	if !fb.CanTakeScreenshotWithCompletionHandlerImageConversionBlock() {
+	if !objc.RespondsToSelector(fbID, objc.Sel(vzfbTakeScreenshotSel)) {
 		return nil, "framebuffer does not respond to " + vzfbTakeScreenshotSel
 	}
 
@@ -91,12 +90,11 @@ func (s *ControlServer) captureVZFramebuffer() (image.Image, string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	done := make(chan struct{}, 2)
-	if err := fb.TakeScreenshotWithCompletionHandlerImageConversionBlock(
-		func() { done <- struct{}{} },
-		func() { done <- struct{}{} },
-	); err != nil {
-		return nil, fmt.Sprintf("take screenshot: %v", err)
-	}
+	completion, releaseCompletion := foundation.NewVoidBlock(func() { done <- struct{}{} })
+	defer releaseCompletion()
+	conversion, releaseConversion := foundation.NewVoidBlock(func() { done <- struct{}{} })
+	defer releaseConversion()
+	objc.Send[objc.ID](fbID, objc.Sel(vzfbTakeScreenshotSel), completion, conversion)
 	select {
 	case <-done:
 	case <-ctx.Done():
@@ -179,7 +177,7 @@ func isVZFramebuffer(id objc.ID) bool {
 // VZVirtualMachineView (and thus no framebuffer view) exists.
 func findVZFramebufferViaDisplay(vmID objc.ID) (objc.ID, string) {
 	uuid := foundation.NewNSUUID()
-	display := pvz.NewMacGraphicsDisplayWithVirtualMachineGraphicsDeviceIndexFramebufferIndexUuid(
+	display := pvz.NewVZMacGraphicsDisplayWithVirtualMachineGraphicsDeviceIndexFramebufferIndexUuid(
 		objectivec.ObjectFromID(vmID), 0, 0, uuid)
 	if display.ID == 0 {
 		return 0, ""
