@@ -745,6 +745,24 @@ func resolveRunTarget() error {
 	if strings.TrimSpace(ephemeralForkParent) != "" {
 		return nil
 	}
+	if flagWasProvided(flag.CommandLine, "vm-dir") {
+		if strings.TrimSpace(vmDir) == "" {
+			return fmt.Errorf("run: vm-dir must not be empty")
+		}
+		if diskPath != "" && (windowsMode || linuxMode) {
+			info, err := os.Stat(resolvePath(diskPath))
+			if err != nil {
+				return fmt.Errorf("run: stat disk: %w", err)
+			}
+			if !info.Mode().IsRegular() || info.Size() == 0 {
+				return fmt.Errorf("run: disk must be a nonempty regular file")
+			}
+		} else if !vmconfig.Validate(vmDir) {
+			return fmt.Errorf("run: no VM found in explicit directory %s", vmDir)
+		}
+		vmName = filepath.Base(filepath.Clean(vmDir))
+		return nil
+	}
 	if vmDir != "" && vmconfig.Validate(vmDir) {
 		if vmName == "" {
 			vmName = filepath.Base(vmDir)
