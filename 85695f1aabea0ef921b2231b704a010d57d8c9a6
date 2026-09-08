@@ -1,0 +1,11 @@
+commit: 85695f1aabea0ef921b2231b704a010d57d8c9a6
+commit date: 2026-09-08T15:59:54-07:00
+agent: Codex CLI 0.153.4
+model: GPT-6 family; exact runtime model identifier not exposed
+claude-code version: 2.1.263 installed; not executing agent
+tty: ttys027
+agent pid: 12622
+ITERM_SESSION_ID: w0t3p2:91038DBD-731B-4486-967C-D2B1554CFAE3
+commit method: direct git commit explicitly authorized by user
+validation: repository build, targeted Windows/run-directory tests, and full tests with isolated HOME pass; cove-launched Windows cold boot, restart, input effects, and guest shutdown verified
+limits: host-HOME private diagnostic traps; original default-VM config metadata recovery and physical AppKit input remain pending
