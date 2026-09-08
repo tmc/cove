@@ -34,8 +34,10 @@ configuration/regression tests, and full tests with an isolated HOME pass.
 The host-HOME suite traps in a pre-existing private-API test. Source and
 receipts are landed using user-authorized direct Go-style commits.
 
-The native AppKit window uses guest PNG capture; physical keyboard/mouse
-verification remains pending. The first cove launch exposed a silent fallback
+The native AppKit window uses guest PNG capture. Physical mouse and text
+entry reached Notepad in `cove-03`; two differing letters await clarification.
+The window reconnected after restart; physical input in that new session
+remains pending. The first cove launch exposed a silent fallback
 to the default VM directory. Its saved-state file and recorded 8-CPU/32-GB hardware fields were restored.
 Exact pre-incident config bytes and a default-VM recovery boot remain
 unverified; no further default-VM writes are planned. See [the installation report](installation/README.md); do not

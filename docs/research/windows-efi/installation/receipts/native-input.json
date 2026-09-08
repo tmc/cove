@@ -1,0 +1,74 @@
+{
+  "observed": 1788910489.609668,
+  "receiver_run": "viewer-v4/20260908T232759",
+  "frame": {
+    "time": 1788910440.019198,
+    "frame": 677,
+    "source": "192.168.64.70",
+    "sha256": "1beb5710f22cfc1623a4af04a4c913745f47e391c5152089591f9661c40a3323",
+    "input": "",
+    "systemroot": "C:\\Windows",
+    "session": "20260909T062821-5380",
+    "uptime": "357765"
+  },
+  "screenshot": "cove-03/physical-input.png",
+  "user_confirmation": "i did that",
+  "visible_text": "NATIBE WINDOW VHECK",
+  "typed_text_difference": "asked user whether typing slips or wrong mapping",
+  "input_provenance": "no assistant input requests sent in cove-03 before this receipt; native AppKit viewer user interaction",
+  "native_viewer_pid": 20411,
+  "control_batches": 602,
+  "restart_requested": 1788910489.609716,
+  "launch": {
+    "command": [
+      "/Users/tmc2/.vz/research/windows-vz-20260908/validation-synced-01/cove-fixed",
+      "run",
+      "-windows",
+      "-windows-backend",
+      "vz",
+      "-windows-native-pmu",
+      "-windows-graphics",
+      "virtio",
+      "-cpu",
+      "4",
+      "-memory",
+      "8",
+      "-display",
+      "1920x1200",
+      "-network",
+      "nat",
+      "-serial",
+      "none",
+      "-headless",
+      "-no-resume",
+      "-disk",
+      "/Users/tmc2/.vz/research/windows-vz-20260908/cove-03/target.img",
+      "-vm-dir",
+      "/Users/tmc2/.vz/research/windows-vz-20260908/cove-03/state"
+    ],
+    "environment": {
+      "COVE_WINDOWS_MEDIA_TOPOLOGY": "probe",
+      "HOME": "/Users/tmc2/.vz/research/windows-vz-20260908/cove-03/home"
+    },
+    "binary_sha256": "f799adbd385535ab9cf9b17c0404239227c3da6cc2a2f74b25557aaf62b2962a",
+    "started": 1788910080.348043,
+    "deadline_seconds": 900,
+    "purpose": "physical AppKit keyboard and mouse check",
+    "pid": 26756
+  },
+  "restart": {
+    "session": "20260909T063514-9608",
+    "screenshot": "cove-03/reconnected.png",
+    "physical_input_verified": false
+  },
+  "artifacts": {
+    "ready.png": "d50345a7a28ce079640591c096b8286c615ab2d050477ad0ea3642a8c1183bc6",
+    "physical-input.png": "1beb5710f22cfc1623a4af04a4c913745f47e391c5152089591f9661c40a3323",
+    "reconnected.png": "1c4bfde165c6622c5507b1d398576e7319ebfe7acf92c8df65ab013de4be647c"
+  },
+  "limitations": [
+    "Two differing letters await user clarification; do not infer a mapping failure or typing slips.",
+    "Physical keyboard and mouse after restart remain pending.",
+    "The same native viewer displays guest PNG captures, not accelerated VZ scanout."
+  ]
+}

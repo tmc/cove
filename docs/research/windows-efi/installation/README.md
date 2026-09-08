@@ -10,10 +10,12 @@ The native AppKit window displays guest-captured PNGs. It is not a native
 VZ scanout: the synthetic GOP framebuffer lives in guest RAM. The research
 transport captures about twice per second and polls input independently.
 Its scope is desktop interaction, not accelerated graphics or a production
-remote desktop service. The recorded input-effect checks used the same HTTP
-control protocol directly. Native AppKit event forwarding compiled and the
-window displayed live frames; a physical-key/mouse check by the user remains
-pending. Host event-injection preflight returned false, so no automation
+remote desktop service. Earlier input-effect checks used the HTTP control protocol directly.
+In `cove-03`, the user physically opened Notepad through the native window
+and entered `NATIBE WINDOW VHECK`. No assistant input preceded that check.
+Two letters differ from the requested text; user clarification remains
+pending. Windows restarted and the same viewer reconnected; physical input
+after restart remains to be checked. See the [native input receipt](receipts/native-input.json). Host event-injection preflight returned false, so no automation
 permission was requested or changed.
 
 [Receipt manifest](receipts/20260908.json) records exact frame paths,
