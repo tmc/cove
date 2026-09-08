@@ -80,9 +80,33 @@
     "default_disk_mtime": 1788743720.8417165,
     "default_aux_mtime": 1788743701.6413767,
     "limitations": [
-      "config.json CPU/memory may have been rewritten; original values not captured",
-      "old suspend.config.json removed by restore-failure handling; original metadata unavailable"
+      "hardware fields recovered from execution history; exact pre-incident config bytes unavailable",
+      "no default VM boot attempted to validate recovery"
     ],
-    "stopped_pid": 24799
+    "stopped_pid": 24799,
+    "historical_evidence": {
+      "file": "cove-01/default-state-incident/historical-correlations.json",
+      "sha256": "7854d519a7352fb4f4038c41a05c0f6d00f5e31ac82667dbe91052b5f43d1fc2",
+      "prior_directory_listing": "Sep 7 listing has no suspend.config.json; config.json size 686 bytes",
+      "suspend_correlation": "PID71624 ran with cpu4/memory8; SIGINT at 2026-09-07T01:15:22.944Z; exit0; VZ71629 teardown matches preserved state mtime at 18:15:27 PDT",
+      "limit": "correlated run settings do not prove later config.json contents"
+    },
+    "metadata_recovery": {
+      "time": 1788908711.256222,
+      "restored_fields": {
+        "cpu": 8,
+        "memoryGB": 32
+      },
+      "basis": "recorded Sep 6 18:31 PDT successful config write matches historical config mtime",
+      "historical_receipt": "cove-01/default-state-incident/historical-config-write.json",
+      "historical_receipt_sha256": "38a5bf8bb3c6618d59eee7e194baaf1dc829f7dc822943a22365623a4ef88c82",
+      "before_sha256": "456a6a02af13363baf3aa1e759b403c7c3ef330af2c45c44a48526c37a6b651a",
+      "after_sha256": "e5eb6d2a30221133e5b2e4c1f24ce64193b478afcf68b9357153e371fe47fc19",
+      "after_size": 686,
+      "other_fields_unchanged": true,
+      "suspend_file_unchanged": true,
+      "fingerprint_absent_before_and_after": true,
+      "limits": "hardware fields recovered from execution history; exact pre-incident config bytes unavailable; no default VM boot attempted"
+    }
   }
 }

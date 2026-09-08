@@ -19,7 +19,7 @@ permission was requested or changed.
 [Receipt manifest](receipts/20260908.json) records exact frame paths,
 hashes, sessions, launch commands and binaries. Raw artifacts remain under
 `~/.vz/research/windows-vz-20260908`, outside git. The
-[acceptance plan](../installation-plan.md) records the remaining physical AppKit input and metadata-recovery checks.
+[acceptance plan](../installation-plan.md) records remaining physical AppKit input and recovery limitations.
 The research implementation and audit notes have been pushed.
 
 ## Verified progression
@@ -236,10 +236,14 @@ an explicit state directory whose disk was elsewhere and silently selected
 the active `mlx-lm.covevm` directory. The run was stopped. Its original saved
 state file was restored and newly created run artifacts moved to scratch.
 The default disk and auxiliary image retain their earlier modification times.
-However, `config.json` CPU/memory fields may have changed and the original
-`suspend.config.json` was removed by restore-failure handling. Their original
-values were not captured; metadata recovery remains pending. Do not claim
-complete preservation of the default VM. A regression test reproduced the
+The overwritten CPU/memory fields were subsequently restored to 8/32 from
+a recorded successful config write matching the pre-incident modification
+time. The recovered file is 686 bytes, matching the historical listing;
+other parsed fields were preserved. This is semantic field recovery, not
+proof of exact original file bytes. A pre-incident directory listing had no
+`suspend.config.json`, so no fingerprint was recreated. The restored saved
+state correlates with an earlier 4-CPU/8-GB run. No default-VM boot was used
+to test recovery. A regression test reproduced the
 fallback; the fix honors explicit directories and rejects invalid targets.
 Subsequent validation used a separate `HOME` as additional containment.
 

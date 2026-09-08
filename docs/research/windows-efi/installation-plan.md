@@ -36,9 +36,9 @@ receipts are landed using user-authorized direct Go-style commits.
 
 The native AppKit window uses guest PNG capture; physical keyboard/mouse
 verification remains pending. The first cove launch exposed a silent fallback
-to the default VM directory. Its saved-state file was restored, but original
-configuration metadata still needs recovery. That preservation requirement
-is not proven. See [the installation report](installation/README.md); do not
+to the default VM directory. Its saved-state file and recorded 8-CPU/32-GB hardware fields were restored.
+Exact pre-incident config bytes and a default-VM recovery boot remain
+unverified; no further default-VM writes are planned. See [the installation report](installation/README.md); do not
 mark the full goal complete while these checks remain unresolved.
 
 If a gate fails, retain the concrete error and bounded run evidence before
