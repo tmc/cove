@@ -1,0 +1,16 @@
+Continuation audit; not authorship attribution.
+Commit: 53655f3302fd3104d3d14ed1333aafae91783f80
+Commit date: 2026-09-08T11:06:45-07:00
+Audit date: 2026-09-08T20:16:48.221263+00:00
+Agent: Codex CLI 0.153.4
+Model: GPT-6 family; exact runtime model identifier not exposed
+Claude Code installed version: 2.1.263; not the executing agent
+TTY: ttys027 (tool command pipes have no tty)
+PID: 12622
+ITERM_SESSION_ID: w0t3p2:91038DBD-731B-4486-967C-D2B1554CFAE3
+
+Existing research baseline pushed. New Windows installation, native viewer,
+PMU integration and evidence changes remain local because the required
+commit helper's backend reports insufficient Anthropic credits. No new
+source commit is implied by this note. Full cove checks also require the
+missing cove-marina and cove-ocispec replacements.
