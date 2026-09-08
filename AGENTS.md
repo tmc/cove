@@ -37,3 +37,10 @@ the *why* is non-obvious.
 If `git-auto-commit-message` fails with a retired Claude model, set
 `CGPT_MODEL=claude-haiku-4-5` for the helper. Verify HEAD changed: the helper can
 return success even when model generation fails.
+
+## Windows driver media
+
+The VirtIO ISO has hard links across OS-version directories and extracts
+read-only directories. Extract the complete `NetKVM` subtree into a fresh
+scratch directory; extracting only `NetKVM/w11/ARM64` leaves unresolved links,
+and retrying over that partial tree can fail with permission errors.

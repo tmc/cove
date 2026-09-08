@@ -1,0 +1,14 @@
+{
+  "FileName": "26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_en-us.esd",
+  "LanguageCode": "en-us",
+  "Language": "English (United States)",
+  "Edition": "Professional",
+  "Architecture": "ARM64",
+  "Size": "4527171158",
+  "Sha1": "c78fd344e845d3b17cb91c40bf4a856459da1b6c",
+  "FilePath": "http://dl.delivery.mp.microsoft.com/filestreamingservice/files/37acc189-7f4f-4e07-976c-1cf0a099ec79/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_en-us.esd",
+  "Key": null,
+  "Architecture_Loc": "%ARCH_64%",
+  "Edition_Loc": "%CLIENT%",
+  "IsRetailOnly": "True"
+}

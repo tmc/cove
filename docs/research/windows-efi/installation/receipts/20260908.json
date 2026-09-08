@@ -1,0 +1,385 @@
+{
+  "host": {
+    "macos": "27.0",
+    "build": "26A5425a"
+  },
+  "root": "/Users/tmc2/.vz/research/windows-vz-20260908",
+  "frames": {
+    "vendor-01": [
+      {
+        "file": "viewer/20260908T185849/frame-0124.png",
+        "time": 1788895354.892982,
+        "frame": 124,
+        "source": "192.168.64.63",
+        "sha256": "a18dfaeadb2e49f2e56d24657b811f669e7c147aa9790fdc52d2442164de607a",
+        "input": "",
+        "systemroot": "C:\\Windows",
+        "session": "20260909T022229-4072",
+        "uptime": "191187"
+      }
+    ],
+    "visual-01": [
+      {
+        "file": "viewer/20260908T185849/frame-0136.png",
+        "time": 1788896074.163661,
+        "frame": 136,
+        "source": "192.168.64.64",
+        "sha256": "eac5c0aecbe5d12384af9d6da1bdc12529ac1de58cd87c9d13e484008ce40908",
+        "input": "",
+        "systemroot": "C:\\Windows",
+        "session": "20260909T023425-9016",
+        "uptime": "31171"
+      }
+    ],
+    "visual-02": [
+      {
+        "file": "viewer/20260908T185849/frame-0258.png",
+        "time": 1788896417.441775,
+        "frame": 258,
+        "source": "192.168.64.65",
+        "sha256": "8598e0a67b9251118a77914bdf3b343ad68d0f22fdd4d41611812b629c55bce9",
+        "input": "",
+        "systemroot": "C:\\Windows",
+        "session": "20260909T023913-7688",
+        "uptime": "81359"
+      },
+      {
+        "file": "viewer/20260908T185849/frame-0267.png",
+        "time": 1788896437.217531,
+        "frame": 267,
+        "source": "192.168.64.65",
+        "sha256": "3a338dbb2cffb84f77b24ac9422fde733e46f4ccc2f4c8115d5df16518bb3b25",
+        "input": "",
+        "systemroot": "C:\\Windows",
+        "session": "20260909T023913-7688",
+        "uptime": "101109"
+      }
+    ],
+    "visual-03": [
+      {
+        "file": "viewer/20260908T195516/frame-0089.png",
+        "time": 1788897411.4280992,
+        "frame": 89,
+        "source": "192.168.64.66",
+        "sha256": "9f66eb4aedeec9f388d551f31ebc6b6ac1aafd11c11c2fa99cc4c18ccc0546b1",
+        "input": "",
+        "systemroot": "C:\\Windows",
+        "session": "20260909T025621-7408",
+        "uptime": "114296"
+      },
+      {
+        "file": "viewer/20260908T195516/frame-0228.png",
+        "time": 1788897480.9089642,
+        "frame": 228,
+        "source": "192.168.64.66",
+        "sha256": "14d815cb234fcdf1407f8faaa7266bc0754ae447ad5a4039633219f24a01e547",
+        "input": "",
+        "systemroot": "C:\\Windows",
+        "session": "20260909T025621-7408",
+        "uptime": "183796"
+      },
+      {
+        "file": "viewer/20260908T195516/frame-0364.png",
+        "time": 1788897548.918348,
+        "frame": 364,
+        "source": "192.168.64.66",
+        "sha256": "ba6ccdd5d9719f967ade9347a9b4f2621ea308034f24503dd81300cc48ace519",
+        "input": "",
+        "systemroot": "C:\\Windows",
+        "session": "20260909T025621-7408",
+        "uptime": "251781"
+      },
+      {
+        "file": "viewer/20260908T195516/frame-0423.png",
+        "time": 1788897578.38272,
+        "frame": 423,
+        "source": "192.168.64.66",
+        "sha256": "264ca1807edb9321786f79702e97eefd8113d915956d65471851ef1ba457f882",
+        "input": "",
+        "systemroot": "C:\\Windows",
+        "session": "20260909T025621-7408",
+        "uptime": "281265"
+      },
+      {
+        "file": "viewer/20260908T195516/frame-0450.png",
+        "time": 1788897591.920176,
+        "frame": 450,
+        "source": "192.168.64.66",
+        "sha256": "8bfcf5ed2ee55b71386df9bf1e2fcfc1c21e52eee5a013b0403408f4319f99b7",
+        "input": "",
+        "systemroot": "C:\\Windows",
+        "session": "20260909T025621-7408",
+        "uptime": "294781"
+      },
+      {
+        "file": "viewer/20260908T195516/frame-0630.png",
+        "time": 1788897681.9070232,
+        "frame": 630,
+        "source": "192.168.64.66",
+        "sha256": "9756d9e8a01cc7520cee724714bb6b215601e91e2757a6484167befc7d332247",
+        "input": "",
+        "systemroot": "C:\\Windows",
+        "session": "20260909T025621-7408",
+        "uptime": "384781"
+      }
+    ],
+    "restart": [
+      {
+        "file": "viewer/20260908T200152/frame-0186.png",
+        "time": 1788897828.2776608,
+        "frame": 186,
+        "source": "192.168.64.66",
+        "sha256": "80547de11580e4f672a57539a6bc6d33eb6a75edb1045beb5f8f537fa02ac9ea",
+        "input": "",
+        "systemroot": "C:\\Windows",
+        "session": "20260909T030249-5796",
+        "uptime": "73359"
+      },
+      {
+        "file": "viewer/20260908T200152/frame-0337.png",
+        "time": 1788897903.625386,
+        "frame": 337,
+        "source": "192.168.64.66",
+        "sha256": "f194a2a6bf7c4ba0d12eab5ab339290cebb51ea70dd78e5989f1c93c4b57b59d",
+        "input": "",
+        "systemroot": "C:\\Windows",
+        "session": "20260909T030249-5796",
+        "uptime": "148703"
+      },
+      {
+        "file": "viewer/20260908T200152/frame-0522.png",
+        "time": 1788897996.113562,
+        "frame": 522,
+        "source": "192.168.64.66",
+        "sha256": "4a15146f07db2b8bc2e712047ee5204ecc874346058f28f1abd15d8a0fbbf7b5",
+        "input": "",
+        "systemroot": "C:\\Windows",
+        "session": "20260909T030249-5796",
+        "uptime": "241203"
+      }
+    ],
+    "interactive-01": [
+      {
+        "file": "viewer/20260908T200152/frame-1346.png",
+        "time": 1788899221.3557749,
+        "frame": 1346,
+        "source": "192.168.64.67",
+        "sha256": "2cdfe1cc2a13ed5ced6297ecc255a4b38cccac29561619e4a87c575910c7bb33",
+        "input": "",
+        "systemroot": "C:\\Windows",
+        "session": "20260909T032613-8288",
+        "uptime": "66812"
+      }
+    ],
+    "interactive-01-v4": [
+      {
+        "file": "viewer-v4/20260908T203246/frame-0537.png",
+        "time": 1788900200.792119,
+        "frame": 537,
+        "source": "192.168.64.67",
+        "sha256": "71bb2dd089d1e14e188030d91937a81adfcadaa59f076e9f029fd2b88096b05f",
+        "input": "",
+        "systemroot": "C:\\Windows",
+        "session": "20260909T034008-6836",
+        "uptime": "206250"
+      }
+    ]
+  },
+  "binaries": {
+    "screen-v3.exe": {
+      "size": 8540160,
+      "sha256": "fb507d9c2b99b75bf8af899d59e050a27af1385ace9593df7fb74e3eb32e1567"
+    },
+    "installed-shim/INSTALLED.EFI": {
+      "size": 7168,
+      "sha256": "cb9d6acde04dcd644cb5a18f7e7cb8cd93fb098909744b4d1fd8fcc142a0f042"
+    },
+    "visual-03/winbootprobe": {
+      "size": 9728944,
+      "sha256": "6cf4c3e1c967d35da339888ed5cacdfed8f35094da31d8786b2fa20140b7b0cb"
+    },
+    "window-final-app/Windows on VZ.app/Contents/MacOS/windows-vz-window": {
+      "size": 175904,
+      "sha256": "247b124df9a5992d4a9b3604c5a1c3bee991223eeab3ef20c1b56fc38b60e374"
+    },
+    "screen-v4.exe": {
+      "size": 8540160,
+      "sha256": "9d7c96acc9865d64200edd0e888702366fc5b06973533f83c67b95715ac49d2e"
+    },
+    "window-v4-app/Windows on VZ.app/Contents/MacOS/windows-vz-window": {
+      "size": 192832,
+      "sha256": "1931f482cddc8b3aca0b71f24635d37f08c5b8d452f3f6e347633a945ecae85f"
+    }
+  },
+  "limitations": [
+    "cove full build and tests blocked by missing cove-marina and cove-ocispec replacements",
+    "required commit helper backend has insufficient Anthropic credits",
+    "native display uses guest PNG transport, not VZ scanout",
+    "guest capture is bounded to 30 minutes"
+  ],
+  "launches": {
+    "install-02": {
+      "command": [
+        "/Users/tmc2/.vz/research/windows-vz-20260908/winbootprobe",
+        "-pmu",
+        "-nat",
+        "-graphics",
+        "virtio",
+        "-nocap",
+        "-disk",
+        "/Users/tmc2/.vz/research/windows-vz-20260908/install-02/target.img",
+        "-state",
+        "/Users/tmc2/.vz/research/windows-vz-20260908/install-02/state",
+        "-seconds",
+        "600",
+        "-efi",
+        "/Users/tmc2/.vz/research/windows-vz-20260908/install-02/installer.dmg"
+      ],
+      "mode": "install",
+      "started": 1788894487.535845,
+      "exit": 0,
+      "ended": 1788894582.160618
+    },
+    "vendor-01": {
+      "command": [
+        "/Users/tmc2/.vz/research/windows-vz-20260908/vendor-01/winbootprobe",
+        "-pmu",
+        "-nat",
+        "-graphics",
+        "virtio",
+        "-nocap",
+        "-disk",
+        "/Users/tmc2/.vz/research/windows-vz-20260908/vendor-boot/target.img",
+        "-state",
+        "/Users/tmc2/.vz/research/windows-vz-20260908/vendor-boot/state",
+        "-seconds",
+        "300"
+      ],
+      "mode": "boot",
+      "started": 1788895076.622557,
+      "probe_sha256": "6cf4c3e1c967d35da339888ed5cacdfed8f35094da31d8786b2fa20140b7b0cb",
+      "exit": 0,
+      "ended": 1788895377.369848
+    },
+    "visual-01": {
+      "command": [
+        "/Users/tmc2/.vz/research/windows-vz-20260908/visual-01/winbootprobe",
+        "-pmu",
+        "-nat",
+        "-graphics",
+        "virtio",
+        "-nocap",
+        "-disk",
+        "/Users/tmc2/.vz/research/windows-vz-20260908/vendor-boot/target.img",
+        "-state",
+        "/Users/tmc2/.vz/research/windows-vz-20260908/vendor-boot/state",
+        "-seconds",
+        "600",
+        "-oobe-screen"
+      ],
+      "mode": "boot",
+      "started": 1788896040.0518148,
+      "probe_sha256": "55a678c6dff478fd1b94f5634fc235d8865dec150d2acf8b19ab5e47846fedfd",
+      "exit": -15,
+      "ended": 1788896291.075475
+    },
+    "visual-02": {
+      "command": [
+        "/Users/tmc2/.vz/research/windows-vz-20260908/visual-02/winbootprobe",
+        "-pmu",
+        "-nat",
+        "-graphics",
+        "virtio",
+        "-nocap",
+        "-disk",
+        "/Users/tmc2/.vz/research/windows-vz-20260908/vendor-boot/target.img",
+        "-state",
+        "/Users/tmc2/.vz/research/windows-vz-20260908/vendor-boot/state",
+        "-seconds",
+        "1800"
+      ],
+      "mode": "boot",
+      "started": 1788896334.019999,
+      "probe_sha256": "6cf4c3e1c967d35da339888ed5cacdfed8f35094da31d8786b2fa20140b7b0cb",
+      "exit": -15,
+      "ended": 1788897202.208979
+    },
+    "visual-03": {
+      "command": [
+        "/Users/tmc2/.vz/research/windows-vz-20260908/visual-03/winbootprobe",
+        "-pmu",
+        "-nat",
+        "-graphics",
+        "virtio",
+        "-nocap",
+        "-disk",
+        "/Users/tmc2/.vz/research/windows-vz-20260908/vendor-boot/target.img",
+        "-state",
+        "/Users/tmc2/.vz/research/windows-vz-20260908/vendor-boot/state",
+        "-seconds",
+        "1800"
+      ],
+      "mode": "boot",
+      "started": 1788897295.254407,
+      "probe_sha256": "6cf4c3e1c967d35da339888ed5cacdfed8f35094da31d8786b2fa20140b7b0cb",
+      "exit": 0,
+      "ended": 1788899096.378939
+    },
+    "interactive-01": {
+      "command": [
+        "/Users/tmc2/.vz/research/windows-vz-20260908/interactive-01/winbootprobe",
+        "-pmu",
+        "-nat",
+        "-graphics",
+        "virtio",
+        "-nocap",
+        "-disk",
+        "/Users/tmc2/.vz/research/windows-vz-20260908/interactive/target.img",
+        "-state",
+        "/Users/tmc2/.vz/research/windows-vz-20260908/interactive/state",
+        "-seconds",
+        "1800"
+      ],
+      "mode": "boot",
+      "started": 1788899151.4492428,
+      "probe_sha256": "6cf4c3e1c967d35da339888ed5cacdfed8f35094da31d8786b2fa20140b7b0cb"
+    }
+  },
+  "snapshot_at": 1788900236.6836321,
+  "remote_baseline": "53655f3302fd3104d3d14ed1333aafae91783f80",
+  "remote_note_ref": "refs/notes/windows-vz-research",
+  "final_efi_hashes": {
+    "EFI/BOOT/BOOTAA64.EFI": "cb9d6acde04dcd644cb5a18f7e7cb8cd93fb098909744b4d1fd8fcc142a0f042",
+    "EFI/Microsoft/Boot/bootmgfw.efi": "cb9d6acde04dcd644cb5a18f7e7cb8cd93fb098909744b4d1fd8fcc142a0f042",
+    "EFI/Microsoft/Boot/bootmgfw-real.efi": "26085cabe01870a8921b61efd135a59898a51daae25b64b6bedba5830fb472f9"
+  },
+  "final_stop": "probe 1800-second deadline; guest shutdown requested but not confirmed",
+  "preserved_desktop_checkpoint": "desktop-checkpoint",
+  "interactive_clone": "interactive",
+  "session_input_fix": {
+    "cause": "commands queued near visual-03 host deadline crossed into interactive-01 cold boot",
+    "protocol": "X-Session on input and control; discard queue on frame session change; reject stale or mismatched input",
+    "regression_test": "transport_test.py",
+    "restart_request": {
+      "time": 1788899986.1769059,
+      "session": "20260909T033829-8700",
+      "frame_sha256": "6bc8c673df1c5846a82701fbfe763cec3d9f3f4be4540629c6a9d1d58a7aaa97",
+      "command": "shutdown /r /t 0"
+    },
+    "reconnected_session": "20260909T034008-6836",
+    "visible_effect": "new Notepad text and right-click menu",
+    "native_window": "window-v4-app/Windows on VZ.app",
+    "guest_startup": "C:\\Users\\cove\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\CoveDisplay.cmd",
+    "guest_agent": "C:\\CoveDisplayV4\\screen-v4.exe"
+  },
+  "native_input_validation": {
+    "app": "window-v4-app/Windows on VZ.app",
+    "live_display": true,
+    "input_effect_checks": "direct HTTP control protocol",
+    "physical_input_user_check": "pending",
+    "host_event_injection_preflight": false,
+    "host_permissions_changed": false
+  },
+  "new_changes_committed_at_snapshot": false,
+  "landing_authorization": "user authorized direct Go-project-style commits after the helper reported insufficient credits"
+}
