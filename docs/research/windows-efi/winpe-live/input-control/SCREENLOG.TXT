@@ -1,0 +1,7 @@
+guest GDI capture started
+capture 0: <nil>; foreground="Windows Setup"
+capture 1: <nil>; foreground="Windows Setup"
+capture 2: <nil>; foreground="Windows Setup"
+capture 3: <nil>; foreground="Windows Setup"
+capture 4: <nil>; foreground="Windows Setup"
+capture 5: <nil>; foreground="Windows Setup"

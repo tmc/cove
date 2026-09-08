@@ -1,5 +1,11 @@
 # Does macOS 27 enable Windows guests without QEMU?
 
+Follow-up (2026-09-06): [guest-side experiment plan](windows-boot-experiments-2026-09-06.md).
+The entitlement rejection below is established. Whether a linear GOP alone permits
+Windows to boot remains untested; the conclusions about its sufficiency should be
+read as hypotheses. The follow-up measures GOP inside the guest and validates media
+before attempting a shim or changing a spare host's security policy.
+
 Researched 2026-09-05 on macOS 27.0 (build 26A5425a), Apple M4 Pro, arm64.
 
 **Short answer: no. macOS 27 adds UEFI Secure Boot, but Apple scoped it to Linux — it

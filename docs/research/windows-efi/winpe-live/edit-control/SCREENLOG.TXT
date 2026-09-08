@@ -1,0 +1,13 @@
+guest GDI capture started
+capture 0: <nil>; foreground="INPUT: "
+edit text="CINPUT: "
+capture 1: <nil>; foreground="COVEINPUT: "
+edit text="COVEINPUT: "
+capture 2: <nil>; foreground="COVEINPUT: "
+edit text="COVEINPUT: "
+capture 3: <nil>; foreground="COVEINPUT: "
+edit text="COVEINPUT: "
+capture 4: <nil>; foreground="COVEINPUT: "
+edit text="COVEINPUT: "
+capture 5: <nil>; foreground="COVEINPUT: "
+edit text="COVEINPUT: "

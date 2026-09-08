@@ -1,0 +1,20 @@
+diff --git a/cmd/winbootprobe/main.go b/cmd/winbootprobe/main.go
+index 5d26f95a..38cb2a1a 100644
+--- a/cmd/winbootprobe/main.go
++++ b/cmd/winbootprobe/main.go
+@@ -35,0 +36 @@ var (
++	pl011Log = flag.String("pl011", "", "attach private PL011 UART and write output to this file")
+@@ -71,0 +73,13 @@ func run() error {
++	if *pl011Log != "" {
++		serial := pvz.NewVZPL011SerialPortConfiguration()
++		if serial.ID == 0 {
++			return fmt.Errorf("PL011 serial configuration unavailable")
++		}
++		attachment, err := vz.NewFileSerialPortAttachmentWithURLAppendError(foundation.NewURLFileURLWithPath(*pl011Log), false)
++		if err != nil {
++			return fmt.Errorf("create PL011 output: %w", err)
++		}
++		port := vz.VZSerialPortConfigurationFromID(serial.ID)
++		port.SetAttachment(attachment)
++		config.SetSerialPorts([]vz.VZSerialPortConfiguration{port})
++	}

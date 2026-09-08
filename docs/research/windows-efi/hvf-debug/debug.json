@@ -1,0 +1,11 @@
+{
+  "qSupported:multiprocess+;qXfer:features:read+": "PacketSize=20020;qXfer:features:read+;vContSupported+;multiprocess+",
+  "?": "T05core:01;",
+  "g": "801d8fcd00f8ffff00000000000000000000000000000000ffffffff0000000000000000000000000000000000000000202478bd07ceffff6417000000000000483901c081f7ffff483901c081f7ffff000000000000000000000000000000000100000000000000000000000000000032aff207000000005025f1d700f8ffff45337e116e78000045337e116e78000000008fcd00f8ffff102078bd07ceffff80098fcd00f8ffff00000000000000000000000000000000801d8fcd00f8ffffffffffff0000000000000000000000002f938fcd00f8ffff0000000000000000e4f6ff3e01000000108bf6d300f8ffff80cee7d700f8ffff108bf6d300f8ffff8ccee7d700f8ffffc4010060",
+  "pc": "0xfffff800d7e7ce8c",
+  "Qqemu.PhyMemMode:1": "OK",
+  "m0,40": "00040014ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "firmware_matches": true,
+  "Qqemu.PhyMemMode:0": "OK",
+  "D;1": "OK"
+}

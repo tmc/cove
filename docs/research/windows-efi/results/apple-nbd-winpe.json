@@ -1,0 +1,58 @@
+{
+  "read_requests": 81,
+  "logical_read_bytes": 3044352,
+  "reply_events": 81,
+  "reply_error_codes": [
+    0
+  ],
+  "reply_payload_bytes": 3044352,
+  "boot_wim_intersections": 0,
+  "hash_checks": [
+    {
+      "path": "/efi/boot/bootaa64.efi",
+      "length": 2647480,
+      "sha256": "26085cabe01870a8921b61efd135a59898a51daae25b64b6bedba5830fb472f9",
+      "extents": [
+        {
+          "partition": 0,
+          "path": "/EFI/BOOT/BOOTAA64.EFI",
+          "offset": 26681344,
+          "length": 2647480,
+          "file_offset": 0
+        }
+      ],
+      "matches_source": true
+    },
+    {
+      "path": "/efi/microsoft/boot/bcd",
+      "length": 16384,
+      "sha256": "b90ef16b94c3dda7d76cc39840befaa9786887517445c3b6f47ebc806d0ab105",
+      "extents": [
+        {
+          "partition": 0,
+          "path": "/EFI/microsoft/BOOT/BCD",
+          "offset": 29335552,
+          "length": 16384,
+          "file_offset": 0
+        }
+      ],
+      "matches_source": true
+    },
+    {
+      "path": "/sources/boot.wim",
+      "length": 587728733,
+      "sha256": "7ba852ff179199659e125fae385efae566efa024cf1956e1d370f7e61dfd3e0b",
+      "extents": [
+        {
+          "partition": 0,
+          "path": "/SOURCES/BOOT.WIM",
+          "offset": 60092416,
+          "length": 587728733,
+          "file_offset": 0
+        }
+      ],
+      "matches_source": true
+    }
+  ],
+  "interpretation": "preliminary; NBD reply event is issuance, not guest consumption; matched backend behavior still to check"
+}

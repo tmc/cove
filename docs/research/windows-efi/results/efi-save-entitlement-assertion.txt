@@ -1,0 +1,148 @@
+(lldb) target create "/tmp/cove-guest-state-20260907/private-probe"
+Current executable set to '/tmp/cove-guest-state-20260907/private-probe' (arm64).
+(lldb) settings set -- target.run-args  "-efi" "/tmp/cove-guest-state-20260907/diagnostic-private.img" "-graphics" "virtio" "-nocap" "-seconds" "1" "-save-state" "/tmp/cove-guest-state-20260907/debug.vmstate"
+(lldb) run
+EFI state: /var/folders/ch/zpvdq4rj1614hfychskq41980000gn/T/winbootprobe1443838865
+guest: Windows, graphics=virtio 1920x1200
+2026-09-07 19:17:57.421105-0700 private-probe[30210:2745402] [Default] +[DIError errorWithDomain:code:description:verboseInfo:error:]: user data retrieving failed: User data is not supported in this image format (err code 45)
+save validation: supported=true error=<nil>
+config valid
+[  0.06s] started; state=VZVirtualMachineStateRunning
+[  1.07s] state=VZVirtualMachineStateRunning (no-capture)
+save options compress=false encrypt=false
+Process 30210 launched: '/tmp/cove-guest-state-20260907/private-probe' (arm64)
+Process 30210 stopped
+* thread #17, queue = 'com.tmc.cove.winbootprobe', stop reason = EXC_BREAKPOINT (code=1, subcode=0x22edc8940)
+       frame #0: 0x000000022edc8940 Virtualization`Base::assertion_trap() + 56
+Virtualization`Base::assertion_trap:
+->  0x22edc8940 <+56>: brk    #0x1
+
+Virtualization`Base::log_message_and_trap:
+    0x22edc8944 <+0>:  pacibsp
+    0x22edc8948 <+4>:  sub    sp, sp, #0x30
+    0x22edc894c <+8>:  stp    x20, x19, [sp, #0x10]
+Target 0: (private-probe) stopped.
+(lldb) thread backtrace -c 12
+* thread #17, queue = 'com.tmc.cove.winbootprobe', stop reason = EXC_BREAKPOINT (code=1, subcode=0x22edc8940)
+   * frame #0: 0x000000022edc8940 Virtualization`Base::assertion_trap() + 56
+     frame #1: 0x000000022ecbf47c Virtualization`-[VZVirtualMachine(VZPrivate) _saveMachineStateToURL:options:completionHandler:] + 272
+     frame #2: 0x00000001000e64f4 private-probe`syscallX + 292
+     frame #3: 0x000000010007564c private-probe`runtime.asmcgocall.abi0 + 124
+(lldb) frame select 1
+frame #1: 0x000000022ecbf47c Virtualization`-[VZVirtualMachine(VZPrivate) _saveMachineStateToURL:options:completionHandler:] + 272
+Virtualization`-[VZVirtualMachine(VZPrivate) _saveMachineStateToURL:options:completionHandler:]:
+->  0x22ecbf47c <+272>: b      0x22ecbf4cc               ; <+352>
+    0x22ecbf480 <+276>: mov    x0, x24
+    0x22ecbf484 <+280>: bl     0x232d47b60
+    0x22ecbf488 <+284>: bl     0x232db6610
+(lldb) disassemble -f
+Virtualization`-[VZVirtualMachine(VZPrivate) _saveMachineStateToURL:options:completionHandler:]:
+    0x22ecbf36c <+0>:   pacibsp
+    0x22ecbf370 <+4>:   sub    sp, sp, #0x60
+    0x22ecbf374 <+8>:   stp    x26, x25, [sp, #0x10]
+    0x22ecbf378 <+12>:  stp    x24, x23, [sp, #0x20]
+    0x22ecbf37c <+16>:  stp    x22, x21, [sp, #0x30]
+    0x22ecbf380 <+20>:  stp    x20, x19, [sp, #0x40]
+    0x22ecbf384 <+24>:  stp    x29, x30, [sp, #0x50]
+    0x22ecbf388 <+28>:  add    x29, sp, #0x50
+    0x22ecbf38c <+32>:  mov    x21, x4
+    0x22ecbf390 <+36>:  mov    x20, x3
+    0x22ecbf394 <+40>:  mov    x23, x1
+    0x22ecbf398 <+44>:  mov    x22, x0
+    0x22ecbf39c <+48>:  mov    x0, x2
+    0x22ecbf3a0 <+52>:  bl     0x232db66b0
+    0x22ecbf3a4 <+56>:  mov    x19, x0
+    0x22ecbf3a8 <+60>:  mov    x0, x20
+    0x22ecbf3ac <+64>:  bl     0x232db66b0
+    0x22ecbf3b0 <+68>:  mov    x20, x0
+    0x22ecbf3b4 <+72>:  mov    x0, x21
+    0x22ecbf3b8 <+76>:  bl     0x232db66b0
+    0x22ecbf3bc <+80>:  mov    x21, x0
+    0x22ecbf3c0 <+84>:  bl     0x22ed9846c               ; VzCore::VirtualizationEntitlements::from_current_process()
+    0x22ecbf3c4 <+88>:  adrp   x8, 331125
+    0x22ecbf3c8 <+92>:  ldrb   w8, [x8, #0xec8]
+    0x22ecbf3cc <+96>:  tbz    w8, #0x1, 0x22ecbf478     ; <+268>
+    0x22ecbf3d0 <+100>: ldr    x0, [x22, #0x8]
+    0x22ecbf3d4 <+104>: bl     0x232db66b0
+    0x22ecbf3d8 <+108>: mov    x24, x0
+    0x22ecbf3dc <+112>: bl     0x232dbe6b0
+    0x22ecbf3e0 <+116>: mov    x0, x24
+    0x22ecbf3e4 <+120>: bl     0x232db66a0
+    0x22ecbf3e8 <+124>: ldr    x0, [x22, #0x40]
+    0x22ecbf3ec <+128>: str    xzr, [sp, #0x8]
+    0x22ecbf3f0 <+132>: mov    x24, #0x0                 ; =0
+    0x22ecbf3f4 <+136>: add    x2, sp, #0x8
+    0x22ecbf3f8 <+140>: bl     0x232d72610
+    0x22ecbf3fc <+144>: mov    x25, x0
+    0x22ecbf400 <+148>: ldr    x0, [sp, #0x8]
+    0x22ecbf404 <+152>: bl     0x232db66b0
+    0x22ecbf408 <+156>: mov    x24, x0
+    0x22ecbf40c <+160>: tbz    w25, #0x0, 0x22ecbf480    ; <+276>
+    0x22ecbf410 <+164>: cbz    x19, 0x22ecbf4ac          ; <+320>
+    0x22ecbf414 <+168>: mov    x0, x19
+    0x22ecbf418 <+172>: mov    x1, x22
+    0x22ecbf41c <+176>: mov    x2, x23
+    0x22ecbf420 <+180>: bl     0x22eb65b4c               ; Vz::validate_is_file_url(NSURL*, objc_object*, objc_selector*)
+    0x22ecbf424 <+184>: cbz    x20, 0x22ecbf4b8          ; <+332>
+    0x22ecbf428 <+188>: mov    x0, x22
+    0x22ecbf42c <+192>: mov    x1, x19
+    0x22ecbf430 <+196>: mov    x2, x20
+    0x22ecbf434 <+200>: mov    x3, x21
+    0x22ecbf438 <+204>: bl     0x22ecb8290               ; -[VZVirtualMachine _saveMachineStateToURLInternal:options:completionHandler:]
+    0x22ecbf43c <+208>: mov    x0, x24
+    0x22ecbf440 <+212>: bl     0x232db66a0
+    0x22ecbf444 <+216>: mov    x0, x21
+    0x22ecbf448 <+220>: bl     0x232db66a0
+    0x22ecbf44c <+224>: mov    x0, x20
+    0x22ecbf450 <+228>: bl     0x232db66a0
+    0x22ecbf454 <+232>: mov    x0, x19
+    0x22ecbf458 <+236>: bl     0x232db66a0
+    0x22ecbf45c <+240>: ldp    x29, x30, [sp, #0x50]
+    0x22ecbf460 <+244>: ldp    x20, x19, [sp, #0x40]
+    0x22ecbf464 <+248>: ldp    x22, x21, [sp, #0x30]
+    0x22ecbf468 <+252>: ldp    x24, x23, [sp, #0x20]
+    0x22ecbf46c <+256>: ldp    x26, x25, [sp, #0x10]
+    0x22ecbf470 <+260>: add    sp, sp, #0x60
+    0x22ecbf474 <+264>: retab
+    0x22ecbf478 <+268>: bl     0x22edc8908               ; Base::assertion_trap()
+->  0x22ecbf47c <+272>: b      0x22ecbf4cc               ; <+352>
+    0x22ecbf480 <+276>: mov    x0, x24
+    0x22ecbf484 <+280>: bl     0x232d47b60
+    0x22ecbf488 <+284>: bl     0x232db6610
+    0x22ecbf48c <+288>: mov    x25, x0
+    0x22ecbf490 <+292>: str    x0, [sp]
+    0x22ecbf494 <+296>: adrp   x2, 356150
+    0x22ecbf498 <+300>: add    x2, x2, #0x248            ; @"The configuration does not support saving: %@ - Configurations can be validated using VZVirtualMachineConfiguration.validateSaveRestoreSupport() prior to initialization."
+    0x22ecbf49c <+304>: mov    x0, x22
+    0x22ecbf4a0 <+308>: mov    x1, x23
+    0x22ecbf4a4 <+312>: bl     0x22edc66d8               ; Vz::raise_invalid_argument_exception(objc_object*, objc_selector*, NSString*, ...)
+    0x22ecbf4a8 <+316>: b      0x22ecbf4cc               ; <+352>
+    0x22ecbf4ac <+320>: adrp   x2, 356150
+    0x22ecbf4b0 <+324>: add    x2, x2, #0x228            ; @"The saveFileURL is nil."
+    0x22ecbf4b4 <+328>: b      0x22ecbf4c0               ; <+340>
+    0x22ecbf4b8 <+332>: adrp   x2, 356150
+    0x22ecbf4bc <+336>: add    x2, x2, #0x2a8            ; @"The options are nil."
+    0x22ecbf4c0 <+340>: mov    x0, x22
+    0x22ecbf4c4 <+344>: mov    x1, x23
+    0x22ecbf4c8 <+348>: bl     0x22edc66d8               ; Vz::raise_invalid_argument_exception(objc_object*, objc_selector*, NSString*, ...)
+    0x22ecbf4cc <+352>: brk    #0x1
+    0x22ecbf4d0 <+356>: mov    x22, x0
+    0x22ecbf4d4 <+360>: mov    x0, x25
+    0x22ecbf4d8 <+364>: bl     0x232db66a0
+    0x22ecbf4dc <+368>: b      0x22ecbf4e8               ; <+380>
+    0x22ecbf4e0 <+372>: b      0x22ecbf4e4               ; <+376>
+    0x22ecbf4e4 <+376>: mov    x22, x0
+    0x22ecbf4e8 <+380>: mov    x0, x24
+    0x22ecbf4ec <+384>: bl     0x232db66a0
+    0x22ecbf4f0 <+388>: b      0x22ecbf4f8               ; <+396>
+    0x22ecbf4f4 <+392>: mov    x22, x0
+    0x22ecbf4f8 <+396>: mov    x0, x21
+    0x22ecbf4fc <+400>: bl     0x232db66a0
+    0x22ecbf500 <+404>: mov    x0, x20
+    0x22ecbf504 <+408>: bl     0x232db66a0
+    0x22ecbf508 <+412>: mov    x0, x19
+    0x22ecbf50c <+416>: bl     0x232db66a0
+    0x22ecbf510 <+420>: mov    x0, x22
+    0x22ecbf514 <+424>: bl     0x232db6440
+(lldb) process kill
+Process 30210 exited with status = 9 (0x00000009) killed

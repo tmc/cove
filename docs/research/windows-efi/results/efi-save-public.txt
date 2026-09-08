@@ -1,0 +1,7 @@
+EFI state: /var/folders/ch/zpvdq4rj1614hfychskq41980000gn/T/winbootprobe1263881863
+guest: Windows, graphics=virtio 1920x1200
+save validation: supported=true error=<nil>
+config valid
+[  0.08s] started; state=VZVirtualMachineStateRunning
+[  1.09s] state=VZVirtualMachineStateRunning (no-capture)
+save result: <nil>

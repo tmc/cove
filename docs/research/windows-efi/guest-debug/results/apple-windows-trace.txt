@@ -1,0 +1,98 @@
+cove guest EFI entry breakpoint experiment
+GOP: left UNTOUCHED (Apple firmware GOP as-is)
+============================================================
+Report file open: yes
+NOTE: this bounded trace is instrumented execution, not an original-stall sample.
+
+== chainloading bootmgfw ==
+LoadImage(bootmgfw) status 0x0
+StartImage(bootmgfw)... (no return on success)
+loaded image base 0x26de42000 size 0x2ce000
+entry RVA 0x34b70 expected ELR 0x26de76b70
+original instruction 0xa9bb53f3
+original MDSCR 0x0
+entry_call returned 0x1
+observed ELR 0x26fae1980
+ESR 0xcf000022
+FAR 0x0
+SPSR 0x60000905
+child SP 0x26fbd8640
+child LR 0x26df006c4
+trace stop reason 4 (1=limit 2=before-system-instruction 3=synchronous-exception 4=image-boundary)
+steps 67 next instruction 0x0
+x9 0x26f8d5278
+x10 0x26fbf2b60
+x11 0x26fb6ff18
+x12 0x1
+pc[0] 0x26de76b74
+pc[1] 0x26de76b78
+pc[2] 0x26de76b7c
+pc[3] 0x26de76b80
+pc[4] 0x26de76b84
+pc[5] 0x26de76b88
+pc[6] 0x26de76b8c
+pc[7] 0x26de76b90
+pc[8] 0x26de76b94
+pc[9] 0x26de76b98
+pc[10] 0x26de76b9c
+pc[11] 0x26de76ba0
+pc[12] 0x26de76ba4
+pc[13] 0x26de76ba8
+pc[14] 0x26de76bac
+pc[15] 0x26df00620
+pc[16] 0x26df00624
+pc[17] 0x26df00628
+pc[18] 0x26df0062c
+pc[19] 0x26df00630
+pc[20] 0x26df00634
+pc[21] 0x26df00638
+pc[22] 0x26df0063c
+pc[23] 0x26e092930
+pc[24] 0x26e092934
+pc[25] 0x26e092938
+pc[26] 0x26e09293c
+pc[27] 0x26e092940
+pc[28] 0x26e092944
+pc[29] 0x26df00640
+pc[30] 0x26df00644
+pc[31] 0x26df00648
+pc[32] 0x26df0064c
+pc[33] 0x26df00650
+pc[34] 0x26df00654
+pc[35] 0x26df00658
+pc[36] 0x26df0065c
+pc[37] 0x26df00660
+pc[38] 0x26df00664
+pc[39] 0x26df00668
+pc[40] 0x26df0066c
+pc[41] 0x26df00670
+pc[42] 0x26df00674
+pc[43] 0x26df00678
+pc[44] 0x26df0067c
+pc[45] 0x26df00680
+pc[46] 0x26df00684
+pc[47] 0x26df00688
+pc[48] 0x26df0068c
+pc[49] 0x26df00690
+pc[50] 0x26df00694
+pc[51] 0x26df00698
+pc[52] 0x26df0069c
+pc[53] 0x26df006a0
+pc[54] 0x26df006a4
+pc[55] 0x26df006a8
+pc[56] 0x26df006ac
+pc[57] 0x26df006b0
+pc[58] 0x26df006b4
+pc[59] 0x26df006b8
+pc[60] 0x26df006bc
+pc[61] 0x26e092de0
+pc[62] 0x26e092de4
+pc[63] 0x26e092de8
+pc[64] 0x26de84ca8
+pc[65] 0x26df006c0
+pc[66] 0x26fae1980
+BOUNDED TRACE RECOVERED
+one-shot abandoned StartImage; this guest must be discarded
+trace_entry returned 0x8000000000000015 (StartImage deliberately abandoned on breakpoint)
+
+chainload result 0x8000000000000015

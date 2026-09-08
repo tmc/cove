@@ -1,0 +1,352 @@
+nbd_negotiate_begin Beginning negotiation
+nbd_negotiate_options_flags Received client flags 0x3
+nbd_negotiate_options_check_magic Checking opts magic 0x49484156454f5054
+nbd_negotiate_options_check_option Checking option 6 (info)
+nbd_negotiate_handle_export_name_request Client requested export ''
+nbd_negotiate_handle_info_requests Client requested 1 items of info
+nbd_negotiate_handle_info_request Client requested info 3 (block size)
+nbd_negotiate_handle_info_block_size advertising minimum 0x1, preferred 0x1000, maximum 0x2000000
+nbd_negotiate_send_info Sending NBD_REP_INFO type 3 (block size) with remaining length 12
+nbd_negotiate_send_rep_len Reply opt=6 (info), type=3 (info), len=14
+nbd_negotiate_new_style_size_flags advertising size 2147483648 and flags 0xc6d
+nbd_negotiate_send_info Sending NBD_REP_INFO type 0 (export) with remaining length 10
+nbd_negotiate_send_rep_len Reply opt=6 (info), type=3 (info), len=12
+nbd_negotiate_send_rep_len Reply opt=6 (info), type=1 (ack), len=0
+nbd_negotiate_options_check_magic Checking opts magic 0x49484156454f5054
+nbd_negotiate_options_check_option Checking option 7 (go)
+nbd_negotiate_handle_export_name_request Client requested export ''
+nbd_negotiate_handle_info_requests Client requested 1 items of info
+nbd_negotiate_handle_info_request Client requested info 3 (block size)
+nbd_negotiate_handle_info_block_size advertising minimum 0x1, preferred 0x1000, maximum 0x2000000
+nbd_negotiate_send_info Sending NBD_REP_INFO type 3 (block size) with remaining length 12
+nbd_negotiate_send_rep_len Reply opt=7 (go), type=3 (info), len=14
+nbd_negotiate_new_style_size_flags advertising size 2147483648 and flags 0xc6d
+nbd_negotiate_send_info Sending NBD_REP_INFO type 0 (export) with remaining length 10
+nbd_negotiate_send_rep_len Reply opt=7 (go), type=3 (info), len=12
+nbd_negotiate_send_rep_len Reply opt=7 (go), type=1 (ack), len=0
+nbd_negotiate_success Negotiation succeeded
+nbd_trip Reading request
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 0, len = 512 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 0, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 0, error = 0 (success), len = 512
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 512, len = 512 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 1, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 1, error = 0 (success), len = 512
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 1024, len = 16384 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 2, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 2, error = 0 (success), len = 16384
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 2147483136, len = 512 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 3, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 3, error = 0 (success), len = 512
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 2147466752, len = 16384 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 4, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 4, error = 0 (success), len = 16384
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 1024, len = 16384 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 5, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 5, error = 0 (success), len = 16384
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 1048576, len = 512 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 6, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 6, error = 0 (success), len = 512
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 1081344, len = 2048 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 7, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 7, error = 0 (success), len = 2048
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 1081344, len = 512 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 8, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 8, error = 0 (success), len = 512
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 1048576, len = 512 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 9, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 9, error = 0 (success), len = 512
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 1048576, len = 512 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 10, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 10, error = 0 (success), len = 512
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 1064960, len = 512 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 11, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 11, error = 0 (success), len = 512
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 1049088, len = 512 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 12, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 12, error = 0 (success), len = 512
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 0, len = 512 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 13, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 13, error = 0 (success), len = 512
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 512, len = 512 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 14, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 14, error = 0 (success), len = 512
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 1024, len = 16384 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 15, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 15, error = 0 (success), len = 16384
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 2147483136, len = 512 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 16, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 16, error = 0 (success), len = 512
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 2147466752, len = 16384 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 17, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 17, error = 0 (success), len = 16384
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 1024, len = 16384 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 18, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 18, error = 0 (success), len = 16384
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 0, len = 512 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 19, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 19, error = 0 (success), len = 512
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 512, len = 512 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 20, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 20, error = 0 (success), len = 512
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 1024, len = 16384 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 21, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 21, error = 0 (success), len = 16384
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 2147483136, len = 512 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 22, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 22, error = 0 (success), len = 512
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 2147466752, len = 16384 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 23, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 23, error = 0 (success), len = 16384
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 1024, len = 16384 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 24, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 24, error = 0 (success), len = 16384
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 0, len = 512 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 25, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 25, error = 0 (success), len = 512
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 512, len = 512 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 26, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 26, error = 0 (success), len = 512
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 1024, len = 16384 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 27, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 27, error = 0 (success), len = 16384
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 2147483136, len = 512 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 28, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 28, error = 0 (success), len = 512
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 2147466752, len = 16384 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 29, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 29, error = 0 (success), len = 16384
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 1024, len = 16384 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 30, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 30, error = 0 (success), len = 16384
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 0, len = 512 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 31, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 31, error = 0 (success), len = 512
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 512, len = 512 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 32, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 32, error = 0 (success), len = 512
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 1024, len = 16384 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 33, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 33, error = 0 (success), len = 16384
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 2147483136, len = 512 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 34, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 34, error = 0 (success), len = 512
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 2147466752, len = 16384 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 35, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 35, error = 0 (success), len = 16384
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 1024, len = 16384 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 36, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 36, error = 0 (success), len = 16384
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 0, len = 512 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 37, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 37, error = 0 (success), len = 512
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 1064960, len = 32768 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 38, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 38, error = 0 (success), len = 32768
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 5246976, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 39, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 39, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 26677248, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 40, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 40, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 26742784, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 41, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 41, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 26808320, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 42, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 42, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 26873856, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 43, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 43, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 26939392, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 44, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 44, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 27004928, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 45, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 45, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 27070464, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 46, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 46, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 27136000, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 47, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 47, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 27201536, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 48, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 48, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 27267072, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 49, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 49, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 27332608, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 50, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 50, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 27398144, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 51, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 51, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 27463680, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 52, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 52, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 27529216, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 53, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 53, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 27594752, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 54, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 54, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 27660288, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 55, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 55, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 27725824, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 56, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 56, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 27791360, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 57, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 57, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 27856896, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 58, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 58, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 27922432, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 59, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 59, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 27987968, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 60, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 60, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 28053504, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 61, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 61, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 28119040, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 62, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 62, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 28184576, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 63, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 63, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 28250112, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 64, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 64, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 28315648, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 65, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 65, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 28381184, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 66, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 66, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 28446720, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 67, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 67, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 28512256, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 68, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 68, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 28577792, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 69, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 69, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 28643328, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 70, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 70, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 28708864, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 71, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 71, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 28774400, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 72, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 72, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 28839936, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 73, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 73, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 28905472, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 74, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 74, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 28971008, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 75, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 75, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 29036544, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 76, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 76, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 29102080, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 77, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 77, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 29167616, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 78, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 78, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 29233152, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 79, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 79, error = 0 (success), len = 65536
+nbd_receive_request Got request: { magic = 0x25609513, .flags = 0x0, .type = 0x0, from = 29298688, len = 65536 }
+nbd_co_receive_request_decode_type Decoding type: cookie = 80, type = 0 (read)
+nbd_trip Reading request
+nbd_co_send_simple_reply Send simple reply: cookie = 80, error = 0 (success), len = 65536

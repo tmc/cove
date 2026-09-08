@@ -1,0 +1,11 @@
+cove Windows-on-VZ CHAINLOAD control (experiment #4, NO_SHIM)
+GOP: left UNTOUCHED (Apple firmware GOP as-is)
+============================================================
+Report file open: yes
+NOTE: advancing disk reads prove PROGRESS only, not sole-blocker,
+      not shippability. Direct linear-fb writes bypass Blt, so NO
+      post-ExitBootServices screen update is expected.
+
+== chainloading bootmgfw ==
+LoadImage(bootmgfw) status 0x0
+StartImage(bootmgfw)... (no return on success)

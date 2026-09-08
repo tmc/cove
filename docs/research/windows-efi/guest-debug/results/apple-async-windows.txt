@@ -1,0 +1,13 @@
+cove bounded guest PMCCNTR read emulation
+GOP: left UNTOUCHED (Apple firmware GOP as-is)
+============================================================
+Report file open: yes
+NOTE: no code patch or stepping; max64 PMCCNTR reads return CNTVCT ticks.
+
+== chainloading bootmgfw ==
+LoadImage(bootmgfw) status 0x0
+StartImage(bootmgfw)... (no return on success)
+loaded image base 0x26de42000 size 0x2ce000
+image entry RVA 0x34b70
+breakpoint RVA 0x34b70 expected ELR 0x26de76b70
+original instruction 0xa9bb53f3

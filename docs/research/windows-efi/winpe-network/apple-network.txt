@@ -1,0 +1,53 @@
+DrvLoad: Successfully loaded C:\netkvm\netkvm.inf.
+
+
+
+The command completed successfully.
+
+
+Windows IP Configuration
+
+   Host Name . . . . . . . . . . . . : minint-r3dvhvk
+   Primary Dns Suffix  . . . . . . . :
+   Node Type . . . . . . . . . . . . : Hybrid
+   IP Routing Enabled. . . . . . . . : No
+   WINS Proxy Enabled. . . . . . . . : No
+   DNS Suffix Search List. . . . . . : lan
+
+Ethernet adapter Ethernet:
+
+   Connection-specific DNS Suffix  . : lan
+   Description . . . . . . . . . . . : Red Hat VirtIO Ethernet Adapter
+   Physical Address. . . . . . . . . : 4E-F7-EB-36-F3-36
+   DHCP Enabled. . . . . . . . . . . : Yes
+   Autoconfiguration Enabled . . . . : Yes
+   Link-local IPv6 Address . . . . . : fe80::f612:4cca:f1b1:5405%3(Preferred)
+   IPv4 Address. . . . . . . . . . . : 192.168.64.53(Preferred)
+   Subnet Mask . . . . . . . . . . . : 255.255.255.0
+   Lease Obtained. . . . . . . . . . : Tuesday, September 8, 2026 4:01:56 AM
+   Lease Expires . . . . . . . . . . : Tuesday, September 8, 2026 5:01:55 AM
+   Default Gateway . . . . . . . . . : 192.168.64.1
+   DHCP Server . . . . . . . . . . . : 192.168.64.1
+   DHCPv6 IAID . . . . . . . . . . . : 55506923
+   DHCPv6 Client DUID. . . . . . . . : 00-01-00-01-32-31-B1-8B-4E-F7-EB-36-F3-36
+   DNS Servers . . . . . . . . . . . : 192.168.64.1
+   NetBIOS over Tcpip. . . . . . . . : Enabled
+   Connection-specific DNS Suffix Search List :
+                                       lan
+Microsoft PnP Utility
+
+Instance ID:                ROOT\KDNIC\0000
+Device Description:         Microsoft Kernel Debug Network Adapter
+Class Name:                 Net
+Class GUID:                 {4d36e972-e325-11ce-bfc1-08002be10318}
+Manufacturer Name:          Microsoft
+Status:                     Started
+Driver Name:                kdnic.inf
+
+Instance ID:                PCI\VEN_1AF4&DEV_1041&SUBSYS_00411AF4&REV_01\3&11583659&0&08
+Device Description:         Red Hat VirtIO Ethernet Adapter
+Class Name:                 Net
+Class GUID:                 {4d36e972-e325-11ce-bfc1-08002be10318}
+Manufacturer Name:          Red Hat, Inc.
+Status:                     Started
+Driver Name:                oem0.inf

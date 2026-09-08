@@ -1,0 +1,82 @@
+{
+  "TRAP2.EFI": {
+    "path": "/tmp/cove-guest-state-20260907/TRAP2.EFI",
+    "size": 7168,
+    "sha256": "22b4c3777203cf60eb429049684b289553d5c6fd21e74415e76265c249ae4d81"
+  },
+  "ENTRY2.EFI": {
+    "path": "/tmp/cove-guest-state-20260907/ENTRY2.EFI",
+    "size": 9728,
+    "sha256": "f0aaaf56f9b6ff3c8e45eef62308fff962aac59cf2ad5e469d91780ea6a62dd4"
+  },
+  "STEP.EFI": {
+    "path": "/tmp/cove-guest-state-20260907/STEP.EFI",
+    "size": 10240,
+    "sha256": "ef02aae97268dbd66124344abcccc88e3676032328d6a780384f349e25afd869"
+  },
+  "TRACE3.EFI": {
+    "path": "/tmp/cove-guest-state-20260907/TRACE3.EFI",
+    "size": 10752,
+    "sha256": "462a139bb01b26037d28024cae71b7e94cbb1a4d5a991d2d87734a5bd27b3b1c"
+  },
+  "CHILD.EFI": {
+    "path": "/tmp/cove-guest-state-20260907/CHILD.EFI",
+    "size": 1024,
+    "sha256": "2922c168a6d662d2a22b057ca4b5a9fa74ba6c17a184ef53eb46b0b4298dca0f"
+  },
+  "TRACE-CHILD.EFI": {
+    "path": "/tmp/cove-guest-state-20260907/TRACE-CHILD.EFI",
+    "size": 1024,
+    "sha256": "8a29a9bb5fd1fea140f21b9a92c13f378ea14fc66693e92f01fcc80489dae698"
+  },
+  "SITE-CONTROL.EFI": {
+    "path": "/tmp/cove-guest-state-20260907/SITE-CONTROL.EFI",
+    "size": 9728,
+    "sha256": "ed1d094cd615c4bbbb5cf70b0c48539fea4cafffb994479957016f314eef2e9c"
+  },
+  "SITE-WINDOWS.EFI": {
+    "path": "/tmp/cove-guest-state-20260907/SITE-WINDOWS.EFI",
+    "size": 9728,
+    "sha256": "a555c476f5765e7d3e0e37e9d5c45160c61bb3e24973d27914ec866925cfa5f3"
+  },
+  "SITE-INIT.EFI": {
+    "path": "/tmp/cove-guest-state-20260907/SITE-INIT.EFI",
+    "size": 9728,
+    "sha256": "be3d41372a5ed379c30bec83b6bd7a6e12f393aa60b088c989baf5d084aa7e73"
+  },
+  "SITE-CHILD.EFI": {
+    "path": "/tmp/cove-guest-state-20260907/SITE-CHILD.EFI",
+    "size": 1024,
+    "sha256": "37c647a6f731a9ddd1e0b0fc331c7639164244abf6198e9b4ba0cfde388d00ca"
+  },
+  "TRACE-SITE-CONTROL.EFI": {
+    "path": "/tmp/cove-guest-state-20260907/TRACE-SITE-CONTROL.EFI",
+    "size": 10752,
+    "sha256": "6cff77f731450454487bdea29516cb92590afd57e5f951b578a427141e81a287"
+  },
+  "TRACE-INIT.EFI": {
+    "path": "/tmp/cove-guest-state-20260907/TRACE-INIT.EFI",
+    "size": 10752,
+    "sha256": "797e33f0765e06114d4176e8d7dc8dfcd647cdd0477b529f251265ada7397d1b"
+  },
+  "FAULT-CONTROL.EFI": {
+    "path": "/tmp/cove-guest-state-20260907/FAULT-CONTROL.EFI",
+    "size": 9728,
+    "sha256": "555fbea7ddc6c6bf238c1eb864bf16bae066347586773fb13a9aa33711add779"
+  },
+  "FAULT-WINDOWS.EFI": {
+    "path": "/tmp/cove-guest-state-20260907/FAULT-WINDOWS.EFI",
+    "size": 9728,
+    "sha256": "38e3f0b635d4eae3af4e2bc6ce6ce33e85e7425ccce5c241d2aa8ec36f23550f"
+  },
+  "FAULT-CHILD.EFI": {
+    "path": "/tmp/cove-guest-state-20260907/FAULT-CHILD.EFI",
+    "size": 1024,
+    "sha256": "2a1cfac7754f5663e8ec7eb41c0b1b4fa90c5d46bc31a956833dae7b8d78ec4b"
+  },
+  "COUNTER.EFI": {
+    "path": "/tmp/cove-guest-state-20260907/COUNTER.EFI",
+    "size": 7168,
+    "sha256": "1b7acfa0331049e1ee7d06d3caea72d59495c0dfd5fcab54fb6c701fa80a1c4b"
+  }
+}

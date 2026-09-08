@@ -1,0 +1,6 @@
+{
+  "source_sha256": "46708888f415de2758bbee499af8608d231bda22d7c6c6fab06430b29c504faf",
+  "guest_exe_sha256": "bce1fc59d1c125b4f62d06e05b56d4556c939176093952cc653b2e46f8461fd0",
+  "guest_exe_path": "/tmp/cove-winpe-live-20260907/screen.exe",
+  "command": "GOOS=windows GOARCH=arm64 CGO_ENABLED=0 go build -o screen.exe screen_windows.go"
+}

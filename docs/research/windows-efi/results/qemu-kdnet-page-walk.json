@@ -1,0 +1,67 @@
+[
+  {
+    "virtual_address": "0x3fffc014",
+    "steps": [
+      {
+        "level": 0,
+        "address": "0x47fff000",
+        "descriptor": "0x47ffe003"
+      },
+      {
+        "level": 1,
+        "address": "0x47ffe000",
+        "descriptor": "0x47ffb003"
+      },
+      {
+        "level": 2,
+        "address": "0x47ffbff8",
+        "descriptor": "0x0"
+      }
+    ]
+  },
+  {
+    "virtual_address": "0x10040000",
+    "steps": [
+      {
+        "level": 0,
+        "address": "0x47fff000",
+        "descriptor": "0x47ffe003"
+      },
+      {
+        "level": 1,
+        "address": "0x47ffe000",
+        "descriptor": "0x47ffb003"
+      },
+      {
+        "level": 2,
+        "address": "0x47ffb400",
+        "descriptor": "0x60000010000401"
+      }
+    ]
+  },
+  {
+    "virtual_address": "0x40000000",
+    "steps": [
+      {
+        "level": 0,
+        "address": "0x47fff000",
+        "descriptor": "0x47ffe003"
+      },
+      {
+        "level": 1,
+        "address": "0x47ffe008",
+        "descriptor": "0x47ffd003"
+      },
+      {
+        "level": 2,
+        "address": "0x47ffd000",
+        "descriptor": "0x13ea0b003"
+      },
+      {
+        "level": 3,
+        "address": "0x13ea0b000",
+        "descriptor": "0x4000070f"
+      }
+    ]
+  }
+]

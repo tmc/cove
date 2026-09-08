@@ -1,0 +1,22 @@
+{
+  "/tmp/cove-winpe-receipt-20260907/boot.wim": {
+    "size": 589253779,
+    "sha256": "6444aab958243ca33eef0c3982943652b248b831cc721deebcc20bb74dfaf7ec"
+  },
+  "/tmp/cove-winpe-receipt-20260907/winpeshl.ini": {
+    "size": 88,
+    "sha256": "4e4febe26c043284a6f4e0819706d2a2db786eb731cde67ebbb9bae13302857a"
+  },
+  "/tmp/cove-winpe-receipt-20260907/cove-receipt.cmd": {
+    "size": 625,
+    "sha256": "fa3388fc98f81774b954e89878eb24727e1f60d24509e9e0bf18acc27e96bea7"
+  },
+  "/tmp/cove-winpe-receipt-20260907/receipt-base.img": {
+    "size": 2147483648,
+    "sha256": "636df7535bc3368240d0a6d3d22b97a51e2c89d41fd4de07d8358c575b3d7542"
+  },
+  "/tmp/cove-windows-20260906/winpe-tree/sources/boot.wim": {
+    "size": 587728733,
+    "sha256": "7ba852ff179199659e125fae385efae566efa024cf1956e1d370f7e61dfd3e0b"
+  }
+}

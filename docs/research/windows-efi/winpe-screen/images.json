@@ -1,0 +1,56 @@
+{
+  "apple/SCREEN0.PNG": {
+    "path": "/tmp/cove-winpe-screen-20260907/SCREEN0.PNG",
+    "bytes": 31512,
+    "sha256": "52e0aa2ba0cde5c2556ae5ea24b7272feca556919f462f8149f84b2dfbcdcdec",
+    "width_height": [
+      1920,
+      1200
+    ]
+  },
+  "apple/SCREEN1.PNG": {
+    "path": "/tmp/cove-winpe-screen-20260907/SCREEN1.PNG",
+    "bytes": 31512,
+    "sha256": "52e0aa2ba0cde5c2556ae5ea24b7272feca556919f462f8149f84b2dfbcdcdec",
+    "width_height": [
+      1920,
+      1200
+    ]
+  },
+  "apple/SCREEN2.PNG": {
+    "path": "/tmp/cove-winpe-screen-20260907/SCREEN2.PNG",
+    "bytes": 31512,
+    "sha256": "52e0aa2ba0cde5c2556ae5ea24b7272feca556919f462f8149f84b2dfbcdcdec",
+    "width_height": [
+      1920,
+      1200
+    ]
+  },
+  "qemu/SCREEN0.PNG": {
+    "path": "/tmp/cove-winpe-screen-20260907/qemu-recovered/SCREEN0.PNG",
+    "bytes": 22415,
+    "sha256": "af8a299bd30a9234b6c24299d5a53de6d13f0f851cd92de72858c54c01093559",
+    "width_height": [
+      800,
+      600
+    ]
+  },
+  "qemu/SCREEN1.PNG": {
+    "path": "/tmp/cove-winpe-screen-20260907/qemu-recovered/SCREEN1.PNG",
+    "bytes": 22415,
+    "sha256": "af8a299bd30a9234b6c24299d5a53de6d13f0f851cd92de72858c54c01093559",
+    "width_height": [
+      800,
+      600
+    ]
+  },
+  "qemu/SCREEN2.PNG": {
+    "path": "/tmp/cove-winpe-screen-20260907/qemu-recovered/SCREEN2.PNG",
+    "bytes": 22415,
+    "sha256": "af8a299bd30a9234b6c24299d5a53de6d13f0f851cd92de72858c54c01093559",
+    "width_height": [
+      800,
+      600
+    ]
+  }
+}

@@ -21,15 +21,24 @@ import (
 	"github.com/tmc/apple/foundation"
 	"github.com/tmc/apple/objc"
 	"github.com/tmc/apple/objectivec"
+	pvz "github.com/tmc/apple/private/virtualization"
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/vzkit"
+	"github.com/tmc/apple/x/vzkit/debugstub"
 	"github.com/tmc/apple/x/vzkit/framebuffer"
 	platformx "github.com/tmc/apple/x/vzkit/platform"
 	storagex "github.com/tmc/apple/x/vzkit/storage"
 	windowsconfig "github.com/tmc/apple/x/vzkit/windowsconfig"
+	"github.com/tmc/cove/internal/filehandle"
 )
 
 var (
+	nat      = flag.Bool("nat", false, "attach a public NAT network device")
+	pmu      = flag.Bool("pmu", false, "enable private generic-platform PMU emulation")
+	nbdURL   = flag.String("nbd", "", "use this NBD URL for the scratch EFI USB disk instead of its local file")
+	pcapPath = flag.String("pcap", "", "attach isolated capture-only NIC and write Ethernet pcap (no DHCP replies)")
+	gdbPort  = flag.Uint("gdb", 0, "private guest GDB port on loopback (requires restricted entitlement)")
+	efiImage = flag.String("efi", "", "scratch EFI disk to boot read-write without a Windows disk")
 	vmdir    = flag.String("vmdir", os.ExpandEnv("$HOME/.vz/vms/windows-swiftui.covevm"), "Windows VM bundle directory")
 	macosDir = flag.String("macos", "", "boot a macOS guest from this state dir instead (positive control)")
 	graphics = flag.String("graphics", "linear", "graphics device: linear or virtio (Windows only)")
@@ -50,9 +59,61 @@ func main() {
 }
 
 func run() error {
+	if *nat && *pcapPath != "" {
+		return fmt.Errorf("nat and pcap are mutually exclusive")
+	}
+	if *pmu && *macosDir != "" {
+		return fmt.Errorf("pmu requires a generic EFI guest")
+	}
+	if *gdbPort > 65535 {
+		return fmt.Errorf("gdb port exceeds 65535")
+	}
+	if *seconds <= 0 {
+		return fmt.Errorf("seconds must be positive")
+	}
+	if *nbdURL != "" && *efiImage == "" {
+		return fmt.Errorf("nbd requires a scratch efi image")
+	}
+	if *efiImage != "" && *macosDir != "" {
+		return fmt.Errorf("efi and macos are mutually exclusive")
+	}
 	config, err := buildConfig()
 	if err != nil {
 		return err
+	}
+	if *nat {
+		attachment := vz.NewVZNATNetworkDeviceAttachment()
+		device := vz.NewVZVirtioNetworkDeviceConfiguration()
+		if attachment.ID == 0 || device.ID == 0 {
+			return fmt.Errorf("create NAT network device")
+		}
+		device.SetAttachment(&attachment.VZNetworkDeviceAttachment)
+		mac := vz.GetVZMACAddressClass().RandomLocallyAdministeredAddress()
+		device.SetMACAddress(&mac)
+		config.SetNetworkDevices([]vz.VZNetworkDeviceConfiguration{device.VZNetworkDeviceConfiguration})
+		fmt.Printf("NAT network: %s\n", mac.String())
+	}
+	if *pcapPath != "" {
+		session, err := filehandle.NewSession(filehandle.Config{PCAPPath: *pcapPath})
+		if err != nil {
+			return fmt.Errorf("create capture NIC: %w", err)
+		}
+		device := session.DeviceConfiguration()
+		config.SetNetworkDevices([]vz.VZNetworkDeviceConfiguration{device.VZNetworkDeviceConfiguration})
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() { done <- session.Pump(ctx, nil) }()
+		defer func() {
+			cancel()
+			<-done
+			fmt.Println(session.Summary())
+			session.Close()
+		}()
+	}
+	if *gdbPort != 0 {
+		if err := debugstub.AttachGDB(pvz.VZVirtualMachineConfigurationFromID(config.ID), uint16(*gdbPort), false); err != nil {
+			return fmt.Errorf("attach guest debugger: %w", err)
+		}
 	}
 	if _, err := config.ValidateWithError(); err != nil {
 		return fmt.Errorf("validation failed: %w", err)
@@ -88,6 +149,9 @@ func run() error {
 	select {
 	case err := <-errc:
 		if err != nil {
+			if e, ok := err.(*foundation.NSError); ok {
+				fmt.Fprintf(os.Stderr, "start NSError: domain=%s code=%d userInfo=%s\n", e.Domain(), e.Code(), e.UserInfo().Description())
+			}
 			return fmt.Errorf("start refused: %w", err)
 		}
 	case <-time.After(20 * time.Second):
@@ -97,14 +161,22 @@ func run() error {
 
 	// Capture frames as boot progresses.
 	shots := []int{3, 6, 9, 13, 18, 25, 35}
-	if *seconds > 40 {
-		shots = append(shots, *seconds-3)
+	for len(shots) > 0 && shots[len(shots)-1] >= *seconds {
+		shots = shots[:len(shots)-1]
 	}
+	shots = append(shots, *seconds)
 	for _, t := range shots {
 		for time.Since(start) < time.Duration(t)*time.Second {
 			time.Sleep(250 * time.Millisecond)
 		}
 		st := currentState(queue, vm)
+		if st == vz.VZVirtualMachineStateStopped {
+			fmt.Println("guest stopped")
+			return nil
+		}
+		if st == vz.VZVirtualMachineStateError {
+			return fmt.Errorf("guest entered error state")
+		}
 		path := fmt.Sprintf("%s-%02ds.png", *shot, t)
 		if *bootOnly || *noCap {
 			fmt.Printf("[%6.2fs] state=%s (no-capture)\n", time.Since(start).Seconds(), st)
@@ -120,11 +192,17 @@ func run() error {
 	}
 
 	// stop
-	done := make(chan struct{}, 1)
-	queue.Async(func() { defer func() { recover(); done <- struct{}{} }(); vm.StopWithCompletionHandler(func(error) {}) })
+	done := make(chan error, 1)
+	queue.Async(func() {
+		vm.StopWithCompletionHandler(func(err error) { done <- err })
+	})
 	select {
-	case <-done:
+	case err := <-done:
+		if err != nil {
+			return fmt.Errorf("stop: %w", err)
+		}
 	case <-time.After(3 * time.Second):
+		return fmt.Errorf("stop timed out")
 	}
 	return nil
 }
@@ -188,7 +266,12 @@ func buildConfig() (vz.VZVirtualMachineConfiguration, error) {
 
 	bootImg := filepath.Join(*vmdir, "efi-boot.img")
 	diskImg := filepath.Join(*vmdir, "windows-disk.img")
-	for _, p := range []string{bootImg, diskImg} {
+	paths := []string{bootImg, diskImg}
+	if *efiImage != "" {
+		bootImg = *efiImage
+		paths = []string{bootImg}
+	}
+	for _, p := range paths {
 		if _, err := os.Stat(p); err != nil {
 			return vz.VZVirtualMachineConfiguration{}, fmt.Errorf("missing %s", p)
 		}
@@ -198,7 +281,12 @@ func buildConfig() (vz.VZVirtualMachineConfiguration, error) {
 		return vz.VZVirtualMachineConfiguration{}, err
 	}
 	nvram := filepath.Join(scratch, "efi.nvram")
-	_ = copyFile(filepath.Join(*vmdir, "efi.nvram"), nvram)
+	if *efiImage == "" {
+		if err := copyFile(filepath.Join(*vmdir, "efi.nvram"), nvram); err != nil {
+			return vz.VZVirtualMachineConfiguration{}, fmt.Errorf("copy EFI store: %w", err)
+		}
+	}
+	fmt.Printf("EFI state: %s\n", scratch)
 
 	config, err := windowsconfig.Build(windowsconfig.Config{
 		CPUCount: 4, MemoryGB: 8,
@@ -208,6 +296,20 @@ func buildConfig() (vz.VZVirtualMachineConfiguration, error) {
 		return config, err
 	}
 	platform := vz.NewVZGenericPlatformConfiguration()
+	if *pmu {
+		privatePlatform := pvz.VZGenericPlatformConfigurationFromID(platform.ID)
+		if err := privatePlatform.SetPerformanceMonitoringUnitEmulationEnabled(true); err != nil {
+			return config, fmt.Errorf("enable PMU emulation: %w", err)
+		}
+		enabled, err := privatePlatform.PerformanceMonitoringUnitEmulationEnabled()
+		if err != nil {
+			return config, fmt.Errorf("read PMU emulation setting: %w", err)
+		}
+		if !enabled {
+			return config, fmt.Errorf("PMU emulation setting was not retained")
+		}
+		fmt.Println("generic platform: PMU emulation enabled")
+	}
 	mid, _, err := platformx.LoadOrCreateGenericMachineIdentifier(filepath.Join(scratch, "machine.id"))
 	if err != nil {
 		return config, err
@@ -237,9 +339,13 @@ func buildConfig() (vz.VZVirtualMachineConfiguration, error) {
 		return config, fmt.Errorf("unknown -graphics %q", *graphics)
 	}
 
-	bootDev, err := usbStorage(bootImg, true)
+	bootDev, err := usbStorage(bootImg, *efiImage == "")
 	if err != nil {
 		return config, err
+	}
+	if *efiImage != "" {
+		config.SetStorageDevices([]vz.VZStorageDeviceConfiguration{bootDev})
+		return config, nil
 	}
 	diskDev, err := nvmeStorage(diskImg, true)
 	if err != nil {
@@ -250,6 +356,21 @@ func buildConfig() (vz.VZVirtualMachineConfiguration, error) {
 }
 
 func usbStorage(path string, ro bool) (vz.VZStorageDeviceConfiguration, error) {
+	if *nbdURL != "" {
+		url := foundation.NewURLWithString(*nbdURL)
+		if url.ID == 0 {
+			return vz.VZStorageDeviceConfiguration{}, fmt.Errorf("invalid NBD URL")
+		}
+		att, err := vz.NewNetworkBlockDeviceStorageDeviceAttachmentWithURLError(url)
+		if err != nil {
+			return vz.VZStorageDeviceConfiguration{}, fmt.Errorf("attach NBD disk: %w", err)
+		}
+		dev, err := storagex.CreateUSBMassStorageDeviceWithAttachment(att.VZStorageDeviceAttachment)
+		if err != nil {
+			return vz.VZStorageDeviceConfiguration{}, err
+		}
+		return vz.VZStorageDeviceConfigurationFromID(dev.ID), nil
+	}
 	att, err := attach(path, ro)
 	if err != nil {
 		return vz.VZStorageDeviceConfiguration{}, err

@@ -1,0 +1,99 @@
+{
+  "return": [
+    {
+      "bus": 0,
+      "devices": [
+        {
+          "irq_pin": 0,
+          "bus": 0,
+          "qdev_id": "",
+          "slot": 0,
+          "class_info": {
+            "class": 1536,
+            "desc": "Host bridge"
+          },
+          "id": {
+            "device": 8,
+            "subsystem-vendor": 6900,
+            "vendor": 6966,
+            "subsystem": 4352
+          },
+          "function": 0,
+          "regions": []
+        },
+        {
+          "irq_pin": 1,
+          "bus": 0,
+          "qdev_id": "",
+          "irq": 255,
+          "slot": 1,
+          "class_info": {
+            "class": 3075,
+            "desc": "USB controller"
+          },
+          "id": {
+            "device": 13,
+            "subsystem-vendor": 6900,
+            "vendor": 6966,
+            "subsystem": 4352
+          },
+          "function": 0,
+          "regions": [
+            {
+              "prefetch": false,
+              "mem_type_64": true,
+              "bar": 0,
+              "size": 16384,
+              "address": 268713984,
+              "type": "memory"
+            }
+          ]
+        },
+        {
+          "irq_pin": 1,
+          "bus": 0,
+          "qdev_id": "",
+          "irq": 255,
+          "slot": 2,
+          "class_info": {
+            "class": 512,
+            "desc": "Ethernet controller"
+          },
+          "id": {
+            "device": 4161,
+            "subsystem-vendor": 6900,
+            "vendor": 6900,
+            "subsystem": 4352
+          },
+          "function": 0,
+          "regions": [
+            {
+              "prefetch": false,
+              "mem_type_64": false,
+              "bar": 1,
+              "size": 4096,
+              "address": 268730368,
+              "type": "memory"
+            },
+            {
+              "prefetch": true,
+              "mem_type_64": true,
+              "bar": 4,
+              "size": 16384,
+              "address": 268697600,
+              "type": "memory"
+            },
+            {
+              "prefetch": false,
+              "mem_type_64": false,
+              "bar": 6,
+              "size": 262144,
+              "address": -1,
+              "type": "memory"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

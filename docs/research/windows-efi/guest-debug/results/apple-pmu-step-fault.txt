@@ -1,0 +1,160 @@
+cove guest EFI entry breakpoint experiment
+GOP: left UNTOUCHED (Apple firmware GOP as-is)
+============================================================
+Report file open: yes
+NOTE: this bounded trace is instrumented execution, not an original-stall sample.
+
+== chainloading bootmgfw ==
+LoadImage(bootmgfw) status 0x0
+StartImage(bootmgfw)... (no return on success)
+loaded image base 0x26de42000 size 0x2ce000
+image entry RVA 0x34b70
+breakpoint RVA 0x34c9c expected ELR 0x26de76c9c
+original instruction 0x52800788
+original MDSCR 0x0
+entry_call returned 0x1
+observed ELR 0x26de77804
+ESR 0x2000000
+FAR 0x0
+SPSR 0x60200105
+child SP 0x26fbd8500
+child LR 0x26de773a0
+trace stop reason 3 (1=limit 2=before-system-instruction 3=synchronous-exception 4=image-boundary)
+steps 777 next instruction 0xd53b9d09
+x9 0x246
+x10 0x7f
+x11 0x26e0ef8f6
+x12 0x1d6
+pc[649] 0x26de76940
+pc[650] 0x26de76944
+pc[651] 0x26de76948
+pc[652] 0x26de7693c
+pc[653] 0x26de76940
+pc[654] 0x26de76944
+pc[655] 0x26de76948
+pc[656] 0x26de7694c
+pc[657] 0x26de772c8
+pc[658] 0x26de772cc
+pc[659] 0x26de772d0
+pc[660] 0x26de772e8
+pc[661] 0x26de772ec
+pc[662] 0x26de772f0
+pc[663] 0x26de772f4
+pc[664] 0x26de772f8
+pc[665] 0x26de772fc
+pc[666] 0x26de77300
+pc[667] 0x26de77304
+pc[668] 0x26de77308
+pc[669] 0x26de7730c
+pc[670] 0x26de77310
+pc[671] 0x26de77314
+pc[672] 0x26de77318
+pc[673] 0x26de7731c
+pc[674] 0x26de77320
+pc[675] 0x26de77324
+pc[676] 0x26de77344
+pc[677] 0x26de77348
+pc[678] 0x26de77350
+pc[679] 0x26de77354
+pc[680] 0x26de77358
+pc[681] 0x26de7735c
+pc[682] 0x26de77360
+pc[683] 0x26dff02b8
+pc[684] 0x26dff02bc
+pc[685] 0x26dff02c0
+pc[686] 0x26dff02c4
+pc[687] 0x26dff02c8
+pc[688] 0x26dff02ec
+pc[689] 0x26dff02f0
+pc[690] 0x26dff02f8
+pc[691] 0x26dff02fc
+pc[692] 0x26dff0300
+pc[693] 0x26dff0304
+pc[694] 0x26dff0308
+pc[695] 0x26dff030c
+pc[696] 0x26dff0310
+pc[697] 0x26dff0314
+pc[698] 0x26dff0318
+pc[699] 0x26dff031c
+pc[700] 0x26dff0320
+pc[701] 0x26dff0324
+pc[702] 0x26dff0328
+pc[703] 0x26dff035c
+pc[704] 0x26dff0360
+pc[705] 0x26de77364
+pc[706] 0x26de77368
+pc[707] 0x26e076a60
+pc[708] 0x26e076a64
+pc[709] 0x26e076a68
+pc[710] 0x26e076a6c
+pc[711] 0x26e076a70
+pc[712] 0x26e076a94
+pc[713] 0x26e076a98
+pc[714] 0x26e076aa0
+pc[715] 0x26e076aa4
+pc[716] 0x26e076aa8
+pc[717] 0x26e076aac
+pc[718] 0x26e076ab0
+pc[719] 0x26e076ab4
+pc[720] 0x26e076ab8
+pc[721] 0x26e076abc
+pc[722] 0x26e076ad4
+pc[723] 0x26e076ad8
+pc[724] 0x26de7736c
+pc[725] 0x26de77370
+pc[726] 0x26de77374
+pc[727] 0x26de77378
+pc[728] 0x26de7737c
+pc[729] 0x26de77380
+pc[730] 0x26de77384
+pc[731] 0x26de77388
+pc[732] 0x26de7738c
+pc[733] 0x26de77390
+pc[734] 0x26de77394
+pc[735] 0x26de77398
+pc[736] 0x26de7739c
+pc[737] 0x26de77768
+pc[738] 0x26de7776c
+pc[739] 0x26de77770
+pc[740] 0x26de77774
+pc[741] 0x26de77778
+pc[742] 0x26de7777c
+pc[743] 0x26de77780
+pc[744] 0x26de77784
+pc[745] 0x26de77788
+pc[746] 0x26de7778c
+pc[747] 0x26de77790
+pc[748] 0x26de77794
+pc[749] 0x26de77798
+pc[750] 0x26de7779c
+pc[751] 0x26de777a0
+pc[752] 0x26de777a4
+pc[753] 0x26de777a8
+pc[754] 0x26de777ac
+pc[755] 0x26de777b0
+pc[756] 0x26de777b4
+pc[757] 0x26de777b8
+pc[758] 0x26de777bc
+pc[759] 0x26de777c0
+pc[760] 0x26de777c4
+pc[761] 0x26de777c8
+pc[762] 0x26de777cc
+pc[763] 0x26de777d0
+pc[764] 0x26de777d4
+pc[765] 0x26de777d8
+pc[766] 0x26de777dc
+pc[767] 0x26de777e0
+pc[768] 0x26de777e4
+pc[769] 0x26de777e8
+pc[770] 0x26de777ec
+pc[771] 0x26de777f0
+pc[772] 0x26de777f4
+pc[773] 0x26de777f8
+pc[774] 0x26de777fc
+pc[775] 0x26de77800
+pc[776] 0x26de77804
+BOUNDED TRACE RECOVERED
+one-shot abandoned StartImage; this guest must be discarded
+trace_entry returned 0x8000000000000015 (StartImage deliberately abandoned on breakpoint)
+
+chainload result 0x8000000000000015

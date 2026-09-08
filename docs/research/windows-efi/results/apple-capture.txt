@@ -1,0 +1,106 @@
+cove Windows-on-VZ guest EFI diagnostic (experiment #2)
+=======================================================
+UEFI table revision: 2.70
+Firmware revision: 0x10000
+Report file open: yes
+
+== GRAPHICS OUTPUT PROTOCOL (all handles) ==
+GOP handle count: 2
+
+-- GOP handle #0 --
+  MaxMode=37  CurrentMode=23
+  FrameBufferBase=0x0  FrameBufferSize=0 bytes
+  CurrentPixelFormat: BltOnly (NO linear framebuffer)
+  mode 0: 640x480  ppsl=640  fmt=BltOnly (NO linear framebuffer)
+  mode 1: 800x480  ppsl=800  fmt=BltOnly (NO linear framebuffer)
+  mode 2: 800x600  ppsl=800  fmt=BltOnly (NO linear framebuffer)
+  mode 3: 832x624  ppsl=832  fmt=BltOnly (NO linear framebuffer)
+  mode 4: 960x640  ppsl=960  fmt=BltOnly (NO linear framebuffer)
+  mode 5: 1024x600  ppsl=1024  fmt=BltOnly (NO linear framebuffer)
+  mode 6: 1024x768  ppsl=1024  fmt=BltOnly (NO linear framebuffer)
+  mode 7: 1152x864  ppsl=1152  fmt=BltOnly (NO linear framebuffer)
+  mode 8: 1152x870  ppsl=1152  fmt=BltOnly (NO linear framebuffer)
+  mode 9: 1280x720  ppsl=1280  fmt=BltOnly (NO linear framebuffer)
+  mode 10: 1280x760  ppsl=1280  fmt=BltOnly (NO linear framebuffer)
+  mode 11: 1280x768  ppsl=1280  fmt=BltOnly (NO linear framebuffer)
+  mode 12: 1280x800  ppsl=1280  fmt=BltOnly (NO linear framebuffer)
+  mode 13: 1280x960  ppsl=1280  fmt=BltOnly (NO linear framebuffer)
+  mode 14: 1280x1024  ppsl=1280  fmt=BltOnly (NO linear framebuffer)
+  mode 15: 1360x768  ppsl=1360  fmt=BltOnly (NO linear framebuffer)
+  mode 16: 1366x768  ppsl=1366  fmt=BltOnly (NO linear framebuffer)
+  mode 17: 1400x1050  ppsl=1400  fmt=BltOnly (NO linear framebuffer)
+  mode 18: 1440x900  ppsl=1440  fmt=BltOnly (NO linear framebuffer)
+  mode 19: 1600x900  ppsl=1600  fmt=BltOnly (NO linear framebuffer)
+  mode 20: 1600x1200  ppsl=1600  fmt=BltOnly (NO linear framebuffer)
+  mode 21: 1680x1050  ppsl=1680  fmt=BltOnly (NO linear framebuffer)
+  mode 22: 1920x1080  ppsl=1920  fmt=BltOnly (NO linear framebuffer)
+  mode 23: 1920x1200  ppsl=1920  fmt=BltOnly (NO linear framebuffer)
+  mode 24: 1920x1440  ppsl=1920  fmt=BltOnly (NO linear framebuffer)
+  mode 25: 2000x2000  ppsl=2000  fmt=BltOnly (NO linear framebuffer)
+  mode 26: 2048x1536  ppsl=2048  fmt=BltOnly (NO linear framebuffer)
+  mode 27: 2048x2048  ppsl=2048  fmt=BltOnly (NO linear framebuffer)
+  mode 28: 2560x1440  ppsl=2560  fmt=BltOnly (NO linear framebuffer)
+  mode 29: 2560x1600  ppsl=2560  fmt=BltOnly (NO linear framebuffer)
+  mode 30: 2560x2048  ppsl=2560  fmt=BltOnly (NO linear framebuffer)
+  mode 31: 2800x2100  ppsl=2800  fmt=BltOnly (NO linear framebuffer)
+  mode 32: 3200x2400  ppsl=3200  fmt=BltOnly (NO linear framebuffer)
+  mode 33: 3840x2160  ppsl=3840  fmt=BltOnly (NO linear framebuffer)
+  mode 34: 4096x2160  ppsl=4096  fmt=BltOnly (NO linear framebuffer)
+  mode 35: 7680x4320  ppsl=7680  fmt=BltOnly (NO linear framebuffer)
+  mode 36: 8192x4320  ppsl=8192  fmt=BltOnly (NO linear framebuffer)
+
+-- GOP handle #1 --
+  MaxMode=37  CurrentMode=23
+  FrameBufferBase=0x0  FrameBufferSize=0 bytes
+  CurrentPixelFormat: BltOnly (NO linear framebuffer)
+  mode 0: 640x480  ppsl=640  fmt=BltOnly (NO linear framebuffer)
+  mode 1: 800x480  ppsl=800  fmt=BltOnly (NO linear framebuffer)
+  mode 2: 800x600  ppsl=800  fmt=BltOnly (NO linear framebuffer)
+  mode 3: 832x624  ppsl=832  fmt=BltOnly (NO linear framebuffer)
+  mode 4: 960x640  ppsl=960  fmt=BltOnly (NO linear framebuffer)
+  mode 5: 1024x600  ppsl=1024  fmt=BltOnly (NO linear framebuffer)
+  mode 6: 1024x768  ppsl=1024  fmt=BltOnly (NO linear framebuffer)
+  mode 7: 1152x864  ppsl=1152  fmt=BltOnly (NO linear framebuffer)
+  mode 8: 1152x870  ppsl=1152  fmt=BltOnly (NO linear framebuffer)
+  mode 9: 1280x720  ppsl=1280  fmt=BltOnly (NO linear framebuffer)
+  mode 10: 1280x760  ppsl=1280  fmt=BltOnly (NO linear framebuffer)
+  mode 11: 1280x768  ppsl=1280  fmt=BltOnly (NO linear framebuffer)
+  mode 12: 1280x800  ppsl=1280  fmt=BltOnly (NO linear framebuffer)
+  mode 13: 1280x960  ppsl=1280  fmt=BltOnly (NO linear framebuffer)
+  mode 14: 1280x1024  ppsl=1280  fmt=BltOnly (NO linear framebuffer)
+  mode 15: 1360x768  ppsl=1360  fmt=BltOnly (NO linear framebuffer)
+  mode 16: 1366x768  ppsl=1366  fmt=BltOnly (NO linear framebuffer)
+  mode 17: 1400x1050  ppsl=1400  fmt=BltOnly (NO linear framebuffer)
+  mode 18: 1440x900  ppsl=1440  fmt=BltOnly (NO linear framebuffer)
+  mode 19: 1600x900  ppsl=1600  fmt=BltOnly (NO linear framebuffer)
+  mode 20: 1600x1200  ppsl=1600  fmt=BltOnly (NO linear framebuffer)
+  mode 21: 1680x1050  ppsl=1680  fmt=BltOnly (NO linear framebuffer)
+  mode 22: 1920x1080  ppsl=1920  fmt=BltOnly (NO linear framebuffer)
+  mode 23: 1920x1200  ppsl=1920  fmt=BltOnly (NO linear framebuffer)
+  mode 24: 1920x1440  ppsl=1920  fmt=BltOnly (NO linear framebuffer)
+  mode 25: 2000x2000  ppsl=2000  fmt=BltOnly (NO linear framebuffer)
+  mode 26: 2048x1536  ppsl=2048  fmt=BltOnly (NO linear framebuffer)
+  mode 27: 2048x2048  ppsl=2048  fmt=BltOnly (NO linear framebuffer)
+  mode 28: 2560x1440  ppsl=2560  fmt=BltOnly (NO linear framebuffer)
+  mode 29: 2560x1600  ppsl=2560  fmt=BltOnly (NO linear framebuffer)
+  mode 30: 2560x2048  ppsl=2560  fmt=BltOnly (NO linear framebuffer)
+  mode 31: 2800x2100  ppsl=2800  fmt=BltOnly (NO linear framebuffer)
+  mode 32: 3200x2400  ppsl=3200  fmt=BltOnly (NO linear framebuffer)
+  mode 33: 3840x2160  ppsl=3840  fmt=BltOnly (NO linear framebuffer)
+  mode 34: 4096x2160  ppsl=4096  fmt=BltOnly (NO linear framebuffer)
+  mode 35: 7680x4320  ppsl=7680  fmt=BltOnly (NO linear framebuffer)
+  mode 36: 8192x4320  ppsl=8192  fmt=BltOnly (NO linear framebuffer)
+
+VERDICT: linear-framebuffer mode available to a loader (any handle)? NO (BltOnly only)
+
+== ACPI TABLES ==
+RSDP (ACPI 2.0) at 0x26fb9f018
+  signature: RSD PTR
+  OEMID: APPLE
+  revision: 2
+  XSDT at 0x26fb9ff18
+  XSDT signature: XSDT
+  tables (4): FACP GTDT APIC MCFG
+  (APIC=MADT, FACP=FADT, GTDT=timers, SPCR=serial, DBG2=debug port)
+
+== DONE ==

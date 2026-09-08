@@ -1,0 +1,13 @@
+COVE_WINPE_USERMODE_STARTED_20260907
+phase=before-wpeinit
+
+Microsoft Windows [Version 10.0.26100.4349]
+systemroot=X:\windows architecture=ARM64
+time=Tue 09/08/2026  3:45:50.75
+
+COVE_WINPE_USERMODE_STARTED_20260907
+phase=after-wpeinit
+
+Microsoft Windows [Version 10.0.26100.4349]
+systemroot=X:\windows architecture=ARM64
+time=Tue 09/08/2026  3:45:51.56

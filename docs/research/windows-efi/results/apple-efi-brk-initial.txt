@@ -1,0 +1,16 @@
+cove Windows-on-VZ guest EFI diagnostic (experiment #2)
+=======================================================
+UEFI table revision: 2.70
+Firmware revision: 0x10000
+Report file open: yes
+expected ELR: 0x140002044
+observed ELR: 0x140002044
+ESR: 0xf2000007
+FAR: 0x0
+SPSR: 0x800003c5
+handler SP: 0x26fbd8a20
+original VBAR: 0x26fa6c800
+vector VBAR: 0x140001800
+EXCEPTION CONTROL PASS
+
+== DONE ==

@@ -1,0 +1,17 @@
+{
+  "source": "/tmp/cove-winpe-network-20260907/network-base.img",
+  "shim_sha256": "bab5bd9e8822c51c0cc03713f63912886d51a510d5cd7d4ad6c3cc2ba876ef40",
+  "child_sha256": "26085cabe01870a8921b61efd135a59898a51daae25b64b6bedba5830fb472f9",
+  "command": [
+    "/tmp/cove-winpe-network-20260907/probe",
+    "-pmu",
+    "-nat",
+    "-efi",
+    "/tmp/cove-winpe-network-20260907/network-shim.img",
+    "-graphics",
+    "virtio",
+    "-nocap",
+    "-seconds",
+    "30"
+  ]
+}

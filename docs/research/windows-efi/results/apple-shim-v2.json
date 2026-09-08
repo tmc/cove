@@ -1,0 +1,24 @@
+[
+  {
+    "t": 6.013775208,
+    "pid": 34715,
+    "process": "/System/Library/Frameworks/Virtualization.framework/Versions/A/XPCServices/com.apple.Virtualization.VirtualMachine.xpc/Contents/MacOS/com.apple.Virtualization.VirtualMachine",
+    "error": 0,
+    "user_ns": 137464877,
+    "system_ns": 5161261,
+    "rss": 172834816,
+    "read_bytes": 6590464,
+    "write_bytes": 0
+  },
+  {
+    "t": 20.008901375,
+    "pid": 34715,
+    "process": "/System/Library/Frameworks/Virtualization.framework/Versions/A/XPCServices/com.apple.Virtualization.VirtualMachine.xpc/Contents/MacOS/com.apple.Virtualization.VirtualMachine",
+    "error": 0,
+    "user_ns": 471170203,
+    "system_ns": 7094172,
+    "rss": 172736512,
+    "read_bytes": 6590464,
+    "write_bytes": 0
+  }
+]

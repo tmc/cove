@@ -1,0 +1,56 @@
+cove guest EFI entry breakpoint experiment
+GOP: left UNTOUCHED (Apple firmware GOP as-is)
+============================================================
+Report file open: yes
+NOTE: this bounded trace is instrumented execution, not an original-stall sample.
+
+== chainloading bootmgfw ==
+LoadImage(bootmgfw) status 0x0
+StartImage(bootmgfw)... (no return on success)
+loaded image base 0x26e12b000 size 0x2000
+entry RVA 0x1000 expected ELR 0x26e12c000
+original instruction 0xd2822229
+original MDSCR 0x0
+entry_call returned 0x1
+observed ELR 0x26e12c04c
+ESR 0xcf000022
+FAR 0x0
+SPSR 0x60000105
+child SP 0x26fbd8830
+child LR 0x26fbdcd78
+trace stop reason 2 (1=limit 2=before-system-instruction 3=synchronous-exception 4=image-boundary)
+steps 25 next instruction 0xd50342df
+x9 0x1111
+x10 0x2222
+x11 0x3333
+x12 0x4444
+pc[0] 0x26e12c004
+pc[1] 0x26e12c008
+pc[2] 0x26e12c00c
+pc[3] 0x26e12c010
+pc[4] 0x26e12c014
+pc[5] 0x26e12c018
+pc[6] 0x26e12c014
+pc[7] 0x26e12c018
+pc[8] 0x26e12c014
+pc[9] 0x26e12c018
+pc[10] 0x26e12c014
+pc[11] 0x26e12c018
+pc[12] 0x26e12c01c
+pc[13] 0x26e12c020
+pc[14] 0x26e12c024
+pc[15] 0x26e12c028
+pc[16] 0x26e12c02c
+pc[17] 0x26e12c030
+pc[18] 0x26e12c034
+pc[19] 0x26e12c038
+pc[20] 0x26e12c03c
+pc[21] 0x26e12c040
+pc[22] 0x26e12c044
+pc[23] 0x26e12c048
+pc[24] 0x26e12c04c
+BOUNDED TRACE RECOVERED
+one-shot abandoned StartImage; this guest must be discarded
+trace_entry returned 0x8000000000000015 (StartImage deliberately abandoned on breakpoint)
+
+chainload result 0x8000000000000015

@@ -1,0 +1,29 @@
+[
+  {
+    "run": "control",
+    "debugger_return_status": null,
+    "type5_pointer_cleared": false,
+    "pcap_bytes": 10556,
+    "kdnet_udp_packets": 19,
+    "disk_read_bytes": 3282432,
+    "visible_winpe_setup_verified": false
+  },
+  {
+    "run": "treatment",
+    "debugger_return_status": "0",
+    "type5_pointer_cleared": false,
+    "pcap_bytes": 10556,
+    "kdnet_udp_packets": 19,
+    "disk_read_bytes": 3282432,
+    "visible_winpe_setup_verified": false
+  },
+  {
+    "run": "treatment-verified",
+    "debugger_return_status": "0xc0000001",
+    "type5_pointer_cleared": true,
+    "pcap_bytes": 24,
+    "kdnet_udp_packets": 0,
+    "disk_read_bytes": 601106944,
+    "visible_winpe_setup_verified": true
+  }
+]

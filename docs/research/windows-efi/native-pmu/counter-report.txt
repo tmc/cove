@@ -1,0 +1,15 @@
+cove guest counter capability control
+=======================================================
+UEFI table revision: 2.70
+Firmware revision: 0x10000
+Report file open: yes
+CurrentEL 0x4 SPSel 0x1
+ID_AA64DFR0_EL1 instruction 0x140002044 value 0x10305106 (read completed)
+PMUVer field 0x1
+CNTFRQ_EL0 instruction 0x14000204c value 0x16e3600 (read completed)
+CNTVCT_EL0 first instruction 0x140002054 value 0x54b9b05 (read completed)
+CNTVCT_EL0 second instruction 0x140002054 value 0x54d4a6b (read completed)
+CNTVCT_EL0 third instruction 0x140002054 value 0x54f002e (read completed)
+VIRTUAL COUNTER ADVANCE PASS
+
+== DONE ==

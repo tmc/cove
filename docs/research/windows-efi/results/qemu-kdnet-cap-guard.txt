@@ -1,0 +1,75 @@
+(lldb) command source -s 0 '/private/tmp/cove-windows-cap-runtime-20260907/treatment/debug.lldb'
+Executing commands in '/private/tmp/cove-windows-cap-runtime-20260907/treatment/debug.lldb'.
+(lldb) gdb-remote 127.0.0.1:12348
+Process 1 stopped
+* thread #1, stop reason = signal SIGTRAP
+       frame #0: 0x0000000000000000
+->  0x0: b      0x1000
+    0x4: <unknown>
+    0x8: <unknown>
+    0xc: <unknown>
+Target 0: (No executable module.) stopped.
+(lldb) breakpoint set --hardware --address 0x401a4a54
+Breakpoint 1: address = 0x00000000401a4a54
+(lldb) continue
+Process 1 resuming
+Process 1 stopped
+* thread #1, stop reason = breakpoint 1.1
+       frame #0: 0x00000000401a4a54
+->  0x401a4a54: mov    w8, #0x0                  ; =0
+    0x401a4a58: add    x9, sp, #0x110
+    0x401a4a5c: add    x10, sp, #0x138
+    0x401a4a60: mov    x8, x8
+Target 0: (No executable module.) stopped.
+(lldb) register read pc sp
+      pc = 0x00000000401a4a54
+      sp = 0x0000000047685f60
+(lldb) disassemble --start-address 0x401a4a54 --count 16
+->  0x401a4a54: mov    w8, #0x0                  ; =0
+    0x401a4a58: add    x9, sp, #0x110
+    0x401a4a5c: add    x10, sp, #0x138
+    0x401a4a60: mov    x8, x8
+    0x401a4a64: ldr    x12, [x9, x8, lsl #3]
+    0x401a4a68: cbz    x12, 0x401a4868
+    0x401a4a6c: add    w11, w8, #0x1
+    0x401a4a70: cmp    w11, #0x5
+    0x401a4a74: b.eq   0x401a4a88
+    0x401a4a78: ldrb   w8, [x12, #0x4]
+    0x401a4a7c: ldr    x8, [x10, x8, lsl #3]
+    0x401a4a80: ldrb   w8, [x8, #0x1]
+    0x401a4a84: cbz    w8, 0x401a4868
+    0x401a4a88: uxth   w8, w11
+    0x401a4a8c: cmp    w8, #0x5
+    0x401a4a90: b.lo   0x401a4a60
+(lldb) memory read --size 8 --format x --count 5 `$sp+0x110`
+0x47686070: 0x0000000047685fb0 0x0000000047685fe0
+0x47686080: 0x0000000047685fc0 0x0000000047685fd0
+0x47686090: 0x0000000047685ff4
+(lldb) script exec(open("/tmp/cove-windows-cap-runtime-20260907/clear-cap.py").read())
+Traceback (most recent call last):
+  File "<input>", line 1, in <module>
+  File "<string>", line 9, in <module>
+AssertionError: unexpected validation instructions
+(lldb) breakpoint delete --force
+All breakpoints removed. (1 breakpoint)
+(lldb) breakpoint set --hardware --address 0x401a488c
+Breakpoint 2: address = 0x00000000401a488c
+(lldb) continue
+Process 1 resuming
+Process 1 stopped
+* thread #1, stop reason = breakpoint 2.1
+       frame #0: 0x00000000401a488c
+->  0x401a488c: ret
+    0x401a4890: ldr    x21, [x19]
+    0x401a4894: mov    w2, #0x0                  ; =0
+    0x401a4898: ldr    x1, 0x401a4ec8
+Target 0: (No executable module.) stopped.
+(lldb) register read pc w0 sp
+      pc = 0x00000000401a488c
+      w0 = 0x00000000
+      sp = 0x0000000047686120
+(lldb) breakpoint delete --force
+All breakpoints removed. (1 breakpoint)
+(lldb) process detach
+Process 1 detached
+(lldb) quit

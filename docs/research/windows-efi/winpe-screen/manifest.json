@@ -1,0 +1,18 @@
+{
+  "/tmp/cove-winpe-screen-20260907/boot.wim": {
+    "size": 590779085,
+    "sha256": "87cd6ce0a149fa623c152c48c3c0b1614c91cd1b1292da7f627860971a9ba7de"
+  },
+  "/tmp/cove-winpe-screen-20260907/screen.exe": {
+    "size": 2736128,
+    "sha256": "a6ffda2576978fa9c7e7c5bb70c4a05aa770aa18082178e133e03403e1ffd24b"
+  },
+  "/tmp/cove-winpe-screen-20260907/screen_windows.go": {
+    "size": 2776,
+    "sha256": "57522eac97e60f9bc8ee9eff54496837cabe27a031ba6656bd2217fedbe5e74b"
+  },
+  "/tmp/cove-winpe-screen-20260907/cove-receipt.cmd": {
+    "size": 750,
+    "sha256": "fbb494d195758d2c701065956c2b03ae7ed2980f4830608ebe2dd6ccb490ceaa"
+  }
+}

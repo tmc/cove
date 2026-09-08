@@ -1,0 +1,14 @@
+{
+  "command": [
+    "/tmp/cove-windows-native-pmu-20260907/probe",
+    "-pmu",
+    "-efi",
+    "/tmp/cove-windows-native-pmu-20260907/counter.img",
+    "-graphics",
+    "virtio",
+    "-nocap",
+    "-seconds",
+    "5"
+  ],
+  "efi_sha256": "1b7acfa0331049e1ee7d06d3caea72d59495c0dfd5fcab54fb6c701fa80a1c4b"
+}

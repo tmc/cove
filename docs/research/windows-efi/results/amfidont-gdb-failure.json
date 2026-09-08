@@ -1,0 +1,33 @@
+{
+  "process": "amfidont",
+  "pid": 49398,
+  "exit_code": 137,
+  "exception": {
+    "port": 2147483649,
+    "codes": "0x0000000009c00001, 0x0000000000000040",
+    "guardId": 64,
+    "message": " SET_EXCEPTION_BEHAVIOR on mach port 2147483649 (guarded with 0x0000000000000040)",
+    "subtype": "GUARD_TYPE_MACH_PORT",
+    "violations": [
+      "SET_EXCEPTION_BEHAVIOR"
+    ],
+    "type": "EXC_GUARD",
+    "rawCodes": [
+      163577857,
+      64
+    ]
+  },
+  "termination": {
+    "namespace": "GUARD",
+    "flags": 2,
+    "code": 2305843037130981377
+  },
+  "frames": [
+    "mach_msg2_trap",
+    "mach_msg2_internal",
+    "task_set_exception_ports",
+    "syscallX",
+    "runtime.asmcgocall.abi0",
+    null
+  ]
+}

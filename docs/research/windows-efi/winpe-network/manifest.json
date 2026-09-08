@@ -1,0 +1,34 @@
+{
+  "/tmp/cove-winpe-network-20260907/boot.wim": {
+    "size": 592304297,
+    "sha256": "f118e43a969309bc19cc9159a59ae84c9811e41a5cab0c92149dc7edd0f9cf73"
+  },
+  "/tmp/cove-winpe-network-20260907/cove-receipt.cmd": {
+    "size": 1164,
+    "sha256": "2bf6eed0032dd14e142e40dfb42369f2ecb2698002b7c4c539b6c10eca91d1ee"
+  },
+  "/tmp/cove-winpe-network-20260907/netkvm/Readme.md": {
+    "size": 6283,
+    "sha256": "b2eae8d3d3b488f14e481cc09e9297c841930fde9d6d0f7b3c5520ec49ada7ed"
+  },
+  "/tmp/cove-winpe-network-20260907/netkvm/netkvm.cat": {
+    "size": 12499,
+    "sha256": "7185ae6c8c6d31d047c77b167e740b7fe3aa676a89b853783cdc47fd889d51c5"
+  },
+  "/tmp/cove-winpe-network-20260907/netkvm/netkvm.inf": {
+    "size": 18426,
+    "sha256": "1aaf16af51ef4697503e7c261f318a9414dc726be5250f09cc64d558f46138fc"
+  },
+  "/tmp/cove-winpe-network-20260907/netkvm/netkvm.sys": {
+    "size": 197272,
+    "sha256": "211340b8128145bae8890a4fab27b625c23e032ca65be984b524e1b0d4b54f0f"
+  },
+  "/tmp/cove-winpe-network-20260907/netkvm/netkvmco.exe": {
+    "size": 1261152,
+    "sha256": "346c35078dc7adf0c9521243ff817da5e882af668155e7d736fa4bccdc0b04f9"
+  },
+  "/tmp/cove-winpe-network-20260907/netkvm/netkvmp.exe": {
+    "size": 263832,
+    "sha256": "98b239dc9e4080cc21211582f05ab1d7f6ac74d867980b183c3f8f5ae9d5dc5a"
+  }
+}

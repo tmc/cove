@@ -1,0 +1,34 @@
+cove guest EFI entry breakpoint experiment
+GOP: left UNTOUCHED (Apple firmware GOP as-is)
+============================================================
+Report file open: yes
+NOTE: this one-shot breakpoint is instrumented execution, not an original-stall sample.
+
+== chainloading bootmgfw ==
+LoadImage(bootmgfw) status 0x0
+StartImage(bootmgfw)... (no return on success)
+loaded image base 0x26de42000 size 0x2ce000
+image entry RVA 0x34b70
+breakpoint RVA 0x34c9c expected ELR 0x26de76c9c
+original instruction 0x52800788
+entry_call returned 0x1
+observed ELR 0x26de76c9c
+ESR 0xf2000007
+FAR 0x0
+SPSR 0x80000305
+child SP 0x26fbd8720
+child LR 0x26de76c9c
+x0 0x800000000000000e
+x1 0x26fbf43f0
+x2 0x1
+x3 0x26fbf2000
+x4 0x26fbf2000
+x5 0x0
+x6 0x0
+x7 0x26fbd8320
+x8 0x26fa6d224
+SITE BREAKPOINT PASS
+one-shot abandoned StartImage; this guest must be discarded
+trace_entry returned 0x8000000000000015 (StartImage deliberately abandoned on breakpoint)
+
+chainload result 0x8000000000000015

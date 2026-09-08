@@ -1,0 +1,72 @@
+[
+  {
+    "seconds": 1.0451070000126492,
+    "probe_status": null,
+    "vm_services": [
+      {
+        "pid": 39294,
+        "error": 0,
+        "user_ns": 18905464,
+        "system_ns": 7251927,
+        "rss": 447119360,
+        "read_bytes": 285425664
+      }
+    ]
+  },
+  {
+    "seconds": 3.0527245409903117,
+    "probe_status": null,
+    "vm_services": [
+      {
+        "pid": 39294,
+        "error": 0,
+        "user_ns": 76468731,
+        "system_ns": 15083429,
+        "rss": 5418778624,
+        "read_bytes": 620969984
+      }
+    ]
+  },
+  {
+    "seconds": 6.00730774999829,
+    "probe_status": null,
+    "vm_services": [
+      {
+        "pid": 39294,
+        "error": 0,
+        "user_ns": 166243138,
+        "system_ns": 22304627,
+        "rss": 8771272704,
+        "read_bytes": 622231552
+      }
+    ]
+  },
+  {
+    "seconds": 12.08823087500059,
+    "probe_status": null,
+    "vm_services": [
+      {
+        "pid": 39294,
+        "error": 0,
+        "user_ns": 231018439,
+        "system_ns": 28268761,
+        "rss": 8783904768,
+        "read_bytes": 623656960
+      }
+    ]
+  },
+  {
+    "seconds": 19.006565832998604,
+    "probe_status": null,
+    "vm_services": [
+      {
+        "pid": 39294,
+        "error": 0,
+        "user_ns": 232310101,
+        "system_ns": 28544439,
+        "rss": 8783904768,
+        "read_bytes": 623656960
+      }
+    ]
+  }
+]

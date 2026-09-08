@@ -1,0 +1,32 @@
+[
+  {
+    "seconds": 6.040777124988381,
+    "probe_status": null,
+    "vm_services": [
+      {
+        "pid": 73409,
+        "error": 0,
+        "user_ns": 139301741,
+        "system_ns": 4100254,
+        "rss": 172474368,
+        "read_bytes": 5586944,
+        "write_bytes": 0
+      }
+    ]
+  },
+  {
+    "seconds": 20.03789133299142,
+    "probe_status": null,
+    "vm_services": [
+      {
+        "pid": 73409,
+        "error": 0,
+        "user_ns": 474406751,
+        "system_ns": 4652950,
+        "rss": 172474368,
+        "read_bytes": 5586944,
+        "write_bytes": 0
+      }
+    ]
+  }
+]

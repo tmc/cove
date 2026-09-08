@@ -1,0 +1,61 @@
+cove bounded guest PMCCNTR read emulation
+GOP: left UNTOUCHED (Apple firmware GOP as-is)
+============================================================
+Report file open: yes
+NOTE: no code patch or stepping; max64 PMCCNTR reads return CNTVCT ticks.
+
+== chainloading bootmgfw ==
+LoadImage(bootmgfw) status 0x0
+StartImage(bootmgfw)... (no return on success)
+loaded image base 0x26e12b000 size 0x2000
+image entry RVA 0x1000
+breakpoint RVA 0x1000 expected ELR 0x26e12c000
+original instruction 0xd282222a
+entry_call returned 0x1
+observed ELR 0x26e12c040
+ESR 0xf2000063
+FAR 0x0
+SPSR 0x60000305
+child SP 0x26fbd8850
+child LR 0x26fbdcd78
+emulated reads 3 stop reason 2 (1=64-read-limit 2=different-synchronous-exception 3=outside-executable-image)
+PMCCNTR pc[0] 0x26e12c008
+PMCCNTR pc[1] 0x26e12c018
+PMCCNTR pc[2] 0x26e12c01c
+saved x0 0xf5613d
+saved x1 0x26fb60018
+saved x2 0x0
+saved x3 0x26f88fb18
+saved x4 0x2222
+saved x5 0x1
+saved x6 0x0
+saved x7 0x26fbd8320
+saved x8 0x26e12c000
+saved x9 0xf561b1
+saved x10 0x1111
+saved x11 0x2222
+saved x12 0x1
+saved x13 0x0
+saved x14 0x26f39df18
+saved x15 0x1
+saved x16 0x26fbd8850
+saved x17 0x8
+saved x18 0x0
+saved x19 0x26f39d798
+saved x20 0x0
+saved x21 0x0
+saved x22 0x26f3a9718
+saved x23 0x9c
+saved x24 0x26fbf3000
+saved x25 0x26f3a9018
+saved x26 0x8000000000000002
+saved x27 0x26fbf2000
+saved x28 0x58
+saved x29 0x26fbd88b0
+saved x30 0x26fbdcd78
+saved x31 0x0
+counter values are generic timer ticks, not CPU-cycle-equivalent
+one-shot; discard guest after report
+trace_entry returned 0x8000000000000015 (StartImage abandoned only on matching fault)
+
+chainload result 0x8000000000000015

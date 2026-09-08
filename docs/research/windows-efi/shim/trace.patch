@@ -1,0 +1,29 @@
+--- shim.c
++++ shim.c
+@@ -109 +109 @@
+-    void *RaiseTPL, *RestoreTPL;
++    uintn (*RaiseTPL)(uintn); void (*RestoreTPL)(uintn);
+@@ -199,0 +200,13 @@
++static int trace_armed;
++static unsigned trace_seen;
++static void trace_call(unsigned bit, const char *name) {
++    if (!trace_armed || (trace_seen & bit)) return;
++    trace_seen |= bit;
++    uintn tpl = BS->RaiseTPL(16);
++    BS->RestoreTPL(tpl);
++    if (tpl != 4 || !OUT) return;
++    const char *s = name;
++    while (*s && RLEN < sizeof(REPORT)-1) REPORT[RLEN++] = *s++;
++    flush_report();
++}
++
+@@ -214,0 +228 @@
++    trace_call(1, "TRACE QueryMode\n");
+@@ -227,0 +242 @@
++    trace_call(2, "TRACE SetMode\n");
+@@ -254,0 +270 @@
++    trace_call(4, "TRACE Blt\n");
+@@ -361,0 +378 @@
++    trace_armed = 1;
+@@ -362,0 +380 @@
++    trace_armed = 0;

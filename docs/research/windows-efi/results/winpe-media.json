@@ -1,0 +1,26 @@
+{
+  "esd": {
+    "FileName": "26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_en-us.esd",
+    "Size": "4527171158",
+    "Sha1": "c78fd344e845d3b17cb91c40bf4a856459da1b6c",
+    "FilePath": "http://dl.delivery.mp.microsoft.com/filestreamingservice/files/37acc189-7f4f-4e07-976c-1cf0a099ec79/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_en-us.esd"
+  },
+  "boot_files": {
+    "efi/boot/bootaa64.efi": {
+      "bytes": 2647480,
+      "sha256": "26085cabe01870a8921b61efd135a59898a51daae25b64b6bedba5830fb472f9"
+    },
+    "efi/microsoft/boot/bcd": {
+      "bytes": 16384,
+      "sha256": "b90ef16b94c3dda7d76cc39840befaa9786887517445c3b6f47ebc806d0ab105"
+    },
+    "sources/boot.wim": {
+      "bytes": 587728733,
+      "sha256": "7ba852ff179199659e125fae385efae566efa024cf1956e1d370f7e61dfd3e0b"
+    }
+  },
+  "qemu_read_bytes": {
+    "first": 378738176,
+    "final": 601008640
+  }
+}

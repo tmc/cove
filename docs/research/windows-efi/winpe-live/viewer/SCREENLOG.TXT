@@ -1,0 +1,13 @@
+guest GDI capture started
+capture 0: <nil>; foreground="INPUT: "
+edit text="INPUT: "
+capture 1: <nil>; foreground="INPUT: "
+edit text="VINPUT: "
+capture 2: <nil>; foreground="VIEWERINPUT: "
+edit text="VIEWERINPUT: "
+capture 3: <nil>; foreground="VIEWERINPUT: "
+edit text="VIEWERINPUT: "
+capture 4: <nil>; foreground="VIEWERINPUT: "
+edit text="VIEWERINPUT: "
+capture 5: <nil>; foreground="VIEWERINPUT: "
+edit text="VIEWERINPUT: "

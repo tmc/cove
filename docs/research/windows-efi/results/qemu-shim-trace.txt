@@ -1,0 +1,17 @@
+cove Windows-on-VZ GOP SHIM (experiment #4)
+============================================================
+Report file open: yes
+NOTE: advancing disk reads prove PROGRESS only, not sole-blocker,
+      not shippability. Direct linear-fb writes bypass Blt, so NO
+      post-ExitBootServices screen update is expected.
+
+== installing synthetic linear GOP ==
+linear GOP: 800x600 BGRReserved8 fb=0x13c290000 size=1920000
+GOP handles found: 2
+  handle #0 reinstall status 0x0
+  handle #1 reinstall status 0x0
+reinstalled over 2/2 handle(s)
+
+== chainloading bootmgfw ==
+LoadImage(bootmgfw) status 0x0
+StartImage(bootmgfw)... (no return on success)

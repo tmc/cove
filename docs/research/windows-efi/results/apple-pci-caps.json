@@ -1,0 +1,31 @@
+[
+  {
+    "vendor": "0x1af4",
+    "device": "0x1041",
+    "capabilities": [
+      {
+        "offset": "0x40",
+        "type": 1,
+        "bar": 0
+      },
+      {
+        "offset": "0x50",
+        "type": 3,
+        "bar": 0
+      },
+      {
+        "offset": "0x60",
+        "type": 2,
+        "bar": 0
+      },
+      {
+        "offset": "0x74",
+        "type": 4,
+        "bar": 0
+      }
+    ],
+    "missing_types_1_to_5": [
+      5
+    ]
+  }
+]

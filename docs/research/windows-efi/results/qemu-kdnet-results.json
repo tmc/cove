@@ -1,0 +1,16 @@
+{
+  "bootdebug-run": {
+    "pcap_bytes": 24,
+    "reads": {
+      "blockstats-first.json": 461837824,
+      "blockstats-final.json": 601008640
+    }
+  },
+  "bootdebug-modules-run": {
+    "pcap_bytes": 24,
+    "reads": {
+      "blockstats-first.json": 3282432,
+      "blockstats-final.json": 3282432
+    }
+  }
+}

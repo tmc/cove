@@ -1,0 +1,11 @@
+EFI state: /var/folders/ch/zpvdq4rj1614hfychskq41980000gn/T/winbootprobe1127485028
+guest: Windows, graphics=virtio 1920x1200
+config valid
+[  0.08s] started; state=VZVirtualMachineStateRunning
+[  3.10s] state=VZVirtualMachineStateRunning (no-capture)
+[  6.12s] state=VZVirtualMachineStateRunning (no-capture)
+[  9.14s] state=VZVirtualMachineStateRunning (no-capture)
+[ 13.17s] state=VZVirtualMachineStateRunning (no-capture)
+[ 18.20s] state=VZVirtualMachineStateRunning (no-capture)
+[ 24.25s] state=VZVirtualMachineStateRunning (no-capture)
+filehandle network: frames in=0 out=0 bytes in=0 out=0 mtu=1500 pcap=/tmp/cove-windows-kdnet-20260907/apple-kdnet.pcap duration=24.249s last error=context canceled

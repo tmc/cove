@@ -1,0 +1,11 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Windows on VZ</title>
+<style>body{font:16px system-ui;margin:20px;background:#202124;color:#eee}header{display:flex;align-items:center;gap:20px}h1{font-size:22px}button,input{font:inherit;padding:8px}img{display:block;width:100%;max-height:78vh;object-fit:contain;background:#000;margin-top:16px}p{color:#bbb}form{display:flex;gap:8px}input{width:300px}</style>
+<header><h1>Windows on VZ</h1><span id="status">Waiting for frames</span></header>
+<form id="input"><input id="text" maxlength="64" placeholder="Text for the guest" aria-label="Text for the guest"><button>Send text</button></form>
+<p>Experimental viewer · Text goes to the focused guest window.</p><img id="screen" alt="Live Windows screen">
+<script>
+const base=location.pathname.replace(/\/$/,'');let frame=-1;
+async function refresh(){try{const s=await(await fetch(base+'/status')).json();document.querySelector('#status').textContent=s.frames+' frames received';if(s.frames&&s.frames!==frame){frame=s.frames;document.querySelector('#screen').src=base+'/frame?v='+frame}}catch(e){document.querySelector('#status').textContent='Connection closed'}}
+document.querySelector('#input').onsubmit=async e=>{e.preventDefault();const input=document.querySelector('#text');const r=await fetch(base+'/input',{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:input.value});if(r.ok)input.value=''};
+refresh();setInterval(refresh,500);
+</script></html>

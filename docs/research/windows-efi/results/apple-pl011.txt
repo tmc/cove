@@ -1,0 +1,9 @@
+EFI state: /var/folders/ch/zpvdq4rj1614hfychskq41980000gn/T/winbootprobe3202042887
+guest: Windows, graphics=virtio 1920x1200
+config valid
+start NSError: domain=VZErrorDomain code=1 userInfo={
+    NSLocalizedFailure = "Internal Virtualization error.";
+    NSLocalizedFailureReason = "The virtual machine failed to start.";
+}
+
+RESULT: FAILED — start refused: Internal Virtualization error. The virtual machine failed to start.

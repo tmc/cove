@@ -1,0 +1,4 @@
+guest GDI capture started
+capture 0: <nil>
+capture 1: <nil>
+capture 2: <nil>

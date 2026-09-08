@@ -1,0 +1,73 @@
+kd_02_1af4.dll SHA256 9ab61d697fe4a7d3a762c26ef2e6c6bda43fb8b8a1b43c7fd5c72a717d58887c
+Preferred image base 0x1c0000000; addresses below are not runtime addresses.
+Selected llvm-objdump disassembly; full original remains in scratch.
+
+1c0001868: 32020be0    	mov	w0, #-0x3fffffff        // =-1073741823
+1c000186c: 910583ff    	add	sp, sp, #0x160
+1c0001934: 394113f4    	ldrb	w20, [sp, #0x44]
+1c0001938: d2800501    	mov	x1, #0x28               // =40
+1c000193c: 910443e0    	add	x0, sp, #0x110
+1c0001940: 940001f8    	bl	0x1c0002120 <KdInitializeLibrary+0x10f0>
+1c0001944: 340003d4    	cbz	w20, 0x1c00019bc <KdInitializeLibrary+0x98c>
+1c0001948: 52801fc8    	mov	w8, #0xfe               // =254
+1c000194c: 910043e9    	add	x9, sp, #0x10
+1c0001950: 910443ea    	add	x10, sp, #0x110
+1c0001954: 7101029f    	cmp	w20, #0x40
+1c0001958: 54fff883    	b.lo	0x1c0001868 <KdInitializeLibrary+0x838>
+1c000195c: 7200069f    	tst	w20, #0x3
+1c0001960: 7a48028a    	ccmp	w20, w8, #0xa, eq
+1c0001964: 54fff828    	b.hi	0x1c0001868 <KdInitializeLibrary+0x838>
+1c0001968: 8b34412d    	add	x13, x9, w20, uxtw
+1c000196c: 394001ab    	ldrb	w11, [x13]
+1c0001970: 7100257f    	cmp	w11, #0x9
+1c0001974: 54000201    	b.ne	0x1c00019b4 <KdInitializeLibrary+0x984>
+1c0001978: 7103c29f    	cmp	w20, #0xf0
+1c000197c: 54fff768    	b.hi	0x1c0001868 <KdInitializeLibrary+0x838>
+1c0001980: 39400dab    	ldrb	w11, [x13, #0x3]
+1c0001984: 1103fd6c    	add	w12, w11, #0xff
+1c0001988: 53001d8c    	uxtb	w12, w12
+1c000198c: 7100119f    	cmp	w12, #0x4
+1c0001990: 54fff6c8    	b.hi	0x1c0001868 <KdInitializeLibrary+0x838>
+1c0001994: 394011ac    	ldrb	w12, [x13, #0x4]
+1c0001998: 7100199f    	cmp	w12, #0x6
+1c000199c: 54fff662    	b.hs	0x1c0001868 <KdInitializeLibrary+0x838>
+1c00019a0: aa0b03eb    	mov	x11, x11
+1c00019a4: 8b0b0d4c    	add	x12, x10, x11, lsl #3
+1c00019a8: f85f818b    	ldur	x11, [x12, #-0x8]
+1c00019ac: b5fff5eb    	cbnz	x11, 0x1c0001868 <KdInitializeLibrary+0x838>
+1c00019b0: f81f818d    	stur	x13, [x12, #-0x8]
+1c00019b4: 394005b4    	ldrb	w20, [x13, #0x1]
+1c00019b8: 35fffcf4    	cbnz	w20, 0x1c0001954 <KdInitializeLibrary+0x924>
+1c00019bc: 79402be8    	ldrh	w8, [sp, #0x14]
+1c0001a54: 52800008    	mov	w8, #0x0                // =0
+1c0001a58: 910443e9    	add	x9, sp, #0x110
+1c0001a5c: 9104e3ea    	add	x10, sp, #0x138
+1c0001a60: aa0803e8    	mov	x8, x8
+1c0001a64: f868792c    	ldr	x12, [x9, x8, lsl #3]
+1c0001a68: b4fff00c    	cbz	x12, 0x1c0001868 <KdInitializeLibrary+0x838>
+1c0001a6c: 1100050b    	add	w11, w8, #0x1
+1c0001a70: 7100157f    	cmp	w11, #0x5
+1c0001a74: 540000a0    	b.eq	0x1c0001a88 <KdInitializeLibrary+0xa58>
+1c0001a78: 39401188    	ldrb	w8, [x12, #0x4]
+1c0001a7c: f8687948    	ldr	x8, [x10, x8, lsl #3]
+1c0001a80: 39400508    	ldrb	w8, [x8, #0x1]
+1c0001a84: 34ffef28    	cbz	w8, 0x1c0001868 <KdInitializeLibrary+0x838>
+1c0001a88: 53003d68    	uxth	w8, w11
+1c0001a8c: 7100151f    	cmp	w8, #0x5
+1c0001a90: 54fffe83    	b.lo	0x1c0001a60 <KdInitializeLibrary+0xa30>
+1c0001a94: a9515fea    	ldp	x10, x23, [sp, #0x110]
+1c0001a98: 9104e3e9    	add	x9, sp, #0x138
+1c0001a9c: 52800001    	mov	w1, #0x0                // =0
+1c0001aa0: aa1503e0    	mov	x0, x21
+1c0001aa4: 39401148    	ldrb	w8, [x10, #0x4]
+1c0001aa8: f8687928    	ldr	x8, [x9, x8, lsl #3]
+1c0001aac: f9400509    	ldr	x9, [x8, #0x8]
+1c0001ab0: b9400948    	ldr	w8, [x10, #0x8]
+1c0001ab4: 8b284134    	add	x20, x9, w8, uxtw
+1c0001ab8: f94097e8    	ldr	x8, [sp, #0x128]
+1c0001abc: b9400908    	ldr	w8, [x8, #0x8]
+1c0001ac0: 8b284138    	add	x24, x9, w8, uxtw
+1c0001ac4: 91005289    	add	x9, x20, #0x14
+1c0001ac8: 91441aa8    	add	x8, x21, #0x106, lsl #12 // =0x106000
+1c0001acc: f9001509    	str	x9, [x8, #0x28]
+1c0001ad0: 97ffff2e    	bl	0x1c0001788 <KdInitializeLibrary+0x758>

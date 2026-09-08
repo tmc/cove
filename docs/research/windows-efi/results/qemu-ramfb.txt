@@ -1,0 +1,38 @@
+cove Windows-on-VZ guest EFI diagnostic (experiment #2)
+=======================================================
+UEFI table revision: 2.70
+Firmware revision: 0x10000
+Report file open: yes
+
+== GRAPHICS OUTPUT PROTOCOL (all handles) ==
+GOP handle count: 2
+
+-- GOP handle #0 --
+  MaxMode=3  CurrentMode=1
+  FrameBufferBase=0x13c7a0000  FrameBufferSize=3145728 bytes
+  CurrentPixelFormat: BGRReserved8 (linear, Windows-preferred)
+  mode 0: 640x480  ppsl=640  fmt=BGRReserved8 (linear, Windows-preferred)
+  mode 1: 800x600  ppsl=800  fmt=BGRReserved8 (linear, Windows-preferred)
+  mode 2: 1024x768  ppsl=1024  fmt=BGRReserved8 (linear, Windows-preferred)
+
+-- GOP handle #1 --
+  MaxMode=3  CurrentMode=1
+  FrameBufferBase=0x13c7a0000  FrameBufferSize=3145728 bytes
+  CurrentPixelFormat: BGRReserved8 (linear, Windows-preferred)
+  mode 0: 640x480  ppsl=640  fmt=BGRReserved8 (linear, Windows-preferred)
+  mode 1: 800x600  ppsl=800  fmt=BGRReserved8 (linear, Windows-preferred)
+  mode 2: 1024x768  ppsl=1024  fmt=BGRReserved8 (linear, Windows-preferred)
+
+VERDICT: linear-framebuffer mode available to a loader (any handle)? YES
+
+== ACPI TABLES ==
+RSDP (ACPI 2.0) at 0x13cb43018
+  signature: RSD PTR
+  OEMID: BOCHS
+  revision: 2
+  XSDT at 0x13cb43f18
+  XSDT signature: XSDT
+  tables (9): FACP APIC PPTT GTDT MCFG SPCR DBG2 IORT BGRT
+  (APIC=MADT, FACP=FADT, GTDT=timers, SPCR=serial, DBG2=debug port)
+
+== DONE ==

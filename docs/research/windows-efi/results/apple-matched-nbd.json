@@ -1,0 +1,62 @@
+[
+  {
+    "seconds": 6.038429333013482,
+    "probe_status": null,
+    "vm_services": [
+      {
+        "pid": 73547,
+        "error": 0,
+        "user_ns": 139243664,
+        "system_ns": 4158051,
+        "rss": 173867008,
+        "read_bytes": 0,
+        "write_bytes": 0
+      }
+    ],
+    "server": {
+      "pid": 73545,
+      "error": 0,
+      "user_ns": 179680,
+      "system_ns": 214685,
+      "rss": 10289152,
+      "read_bytes": 5734400,
+      "write_bytes": 0
+    },
+    "read_requests": 81,
+    "logical_read_bytes": 3044352,
+    "reply_events": 81,
+    "reply_errors": [
+      0
+    ]
+  },
+  {
+    "seconds": 20.030994208005723,
+    "probe_status": null,
+    "vm_services": [
+      {
+        "pid": 73547,
+        "error": 0,
+        "user_ns": 474147929,
+        "system_ns": 4701862,
+        "rss": 173817856,
+        "read_bytes": 0,
+        "write_bytes": 0
+      }
+    ],
+    "server": {
+      "pid": 73545,
+      "error": 0,
+      "user_ns": 179850,
+      "system_ns": 215155,
+      "rss": 10272768,
+      "read_bytes": 5734400,
+      "write_bytes": 0
+    },
+    "read_requests": 81,
+    "logical_read_bytes": 3044352,
+    "reply_events": 81,
+    "reply_errors": [
+      0
+    ]
+  }
+]

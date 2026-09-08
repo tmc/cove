@@ -1,0 +1,17 @@
+guest: macOS (positive control)
+config valid
+[  0.19s] started; state=VZVirtualMachineStateRunning
+[  3.21s] state=VZVirtualMachineStateRunning (no-capture)
+[  6.23s] state=VZVirtualMachineStateRunning (no-capture)
+[  9.00s] state=VZVirtualMachineStateRunning (no-capture)
+[ 13.03s] state=VZVirtualMachineStateRunning (no-capture)
+[ 18.06s] state=VZVirtualMachineStateRunning (no-capture)
+[ 25.11s] state=VZVirtualMachineStateRunning (no-capture)
+[ 30.14s] state=VZVirtualMachineStateRunning (no-capture)
+filehandle network: frames in=10 out=0 bytes in=1876 out=0 mtu=1500 pcap=/tmp/cove-windows-kdnet-20260907/macos-capture.pcap duration=30.161s last error=context canceled
+
+DHCP packet summary (payload omitted):
+07:58:03.557526 IP 0.0.0.0.68 > 255.255.255.255.67: BOOTP/DHCP, Request from b6:0b:b9:0d:6e:3a, length 300
+07:58:04.621461 IP 0.0.0.0.68 > 255.255.255.255.67: BOOTP/DHCP, Request from b6:0b:b9:0d:6e:3a, length 300
+07:58:07.238342 IP 0.0.0.0.68 > 255.255.255.255.67: BOOTP/DHCP, Request from b6:0b:b9:0d:6e:3a, length 300
+07:58:11.853014 IP 0.0.0.0.68 > 255.255.255.255.67: BOOTP/DHCP, Request from b6:0b:b9:0d:6e:3a, length 300
