@@ -70,5 +70,67 @@
     "Two differing letters await user clarification; do not infer a mapping failure or typing slips.",
     "Physical keyboard and mouse after restart remain pending.",
     "The same native viewer displays guest PNG captures, not accelerated VZ scanout."
-  ]
+  ],
+  "subsequent_user_check": {
+    "observed": 1788911808.809062,
+    "headers": {
+      "Server": "BaseHTTP/0.6 Python/3.14.7",
+      "Date": "Tue, 08 Sep 2026 23:56:48 GMT",
+      "Content-Type": "image/png",
+      "Content-Length": "140129",
+      "Cache-Control": "no-store",
+      "X-Frame-Time": "1788911808.3815198",
+      "X-Agent-Session": "20260909T065434-8820"
+    },
+    "sha256": "ad544504ceacf8f7d659cd94bfa08122afbd2b660e049d92f3322166da67e0e3",
+    "user_confirmation": "seeems to worrrrk",
+    "input_provenance": "no assistant input sent in cove-05; user native window session",
+    "launch": {
+      "command": [
+        "/Users/tmc2/.vz/research/windows-vz-20260908/validation-synced-01/cove-fixed",
+        "run",
+        "-windows",
+        "-windows-backend",
+        "vz",
+        "-windows-native-pmu",
+        "-windows-graphics",
+        "virtio",
+        "-cpu",
+        "4",
+        "-memory",
+        "8",
+        "-display",
+        "1920x1200",
+        "-network",
+        "nat",
+        "-serial",
+        "none",
+        "-headless",
+        "-no-resume",
+        "-disk",
+        "/Users/tmc2/.vz/research/windows-vz-20260908/cove-05/target.img",
+        "-vm-dir",
+        "/Users/tmc2/.vz/research/windows-vz-20260908/cove-05/state"
+      ],
+      "environment": {
+        "COVE_WINDOWS_MEDIA_TOPOLOGY": "probe",
+        "HOME": "/Users/tmc2/.vz/research/windows-vz-20260908/cove-05/home"
+      },
+      "binary_sha256": "f799adbd385535ab9cf9b17c0404239227c3da6cc2a2f74b25557aaf62b2962a",
+      "started": 1788911656.686636,
+      "deadline_seconds": 3300,
+      "purpose": "user session from clean cove-02 checkpoint",
+      "pid": 27446,
+      "exit": 0,
+      "ended": 1788910843.2228858
+    },
+    "screenshot": "cove-05/user-check.png",
+    "visible_effect": "Notepad opened over Edge; new text includes repeated K characters and VKBD beneath checkpoint text",
+    "scope": "User confirms basic interaction works. Exact intended keys and repeat behavior are not established. This is a subsequent cold boot, not the earlier warm-restart session."
+  },
+  "timed_session_recovery": {
+    "cove-03": "900-second run ended; receiver also expired, leaving a stale frame in the native window",
+    "cove-04": "clone of timed-out cove-03 started VZ but delivered no frames during about 150 seconds; stopped with SIGINT, exit 0; cause not established",
+    "cove-05": "clone of clean-shutdown cove-02 reconnected and received physical user input"
+  }
 }

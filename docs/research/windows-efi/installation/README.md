@@ -15,7 +15,12 @@ In `cove-03`, the user physically opened Notepad through the native window
 and entered `NATIBE WINDOW VHECK`. No assistant input preceded that check.
 Two letters differ from the requested text; user clarification remains
 pending. Windows restarted and the same viewer reconnected; physical input
-after restart remains to be checked. See the [native input receipt](receipts/native-input.json). Host event-injection preflight returned false, so no automation
+in that warm-restart session was not checked before the deadline.
+A subsequent cold boot from the clean `cove-02` checkpoint (`cove-05`)
+received physical mouse and keyboard input, and the user confirmed basic
+interaction worked. The screenshot includes repeated K characters and
+`VKBD`; exact intended keys and repeat behavior remain unconfirmed.
+See the [native input receipt](receipts/native-input.json). Host event-injection preflight returned false, so no automation
 permission was requested or changed.
 
 [Receipt manifest](receipts/20260908.json) records exact frame paths,
