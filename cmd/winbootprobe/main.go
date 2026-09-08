@@ -1,11 +1,6 @@
-// Command winbootprobe boots a guest headless and captures the actual guest
-// framebuffer pixels via Virtualization's own screenshot API (not a window
-// capture, so it is immune to Metal-layer black-capture artifacts).
-//
-// It answers the linear-framebuffer (LFB) question directly: with -graphics
-// linear it boots the Windows install media and reads back what the guest
-// painted into the private LFB. -macos <bundle> boots a known-good macOS guest
-// as a positive control for the readback path.
+// Command winbootprobe runs bounded Virtualization.framework boot experiments.
+// Scratch EFI media and NVMe targets must be disposable copies. Guest RAM GOP
+// writes are not visible through the host screenshot API; use guest capture.
 package main
 
 import (
@@ -33,21 +28,23 @@ import (
 )
 
 var (
-	nat      = flag.Bool("nat", false, "attach a public NAT network device")
-	pmu      = flag.Bool("pmu", false, "enable private generic-platform PMU emulation")
-	nbdURL   = flag.String("nbd", "", "use this NBD URL for the scratch EFI USB disk instead of its local file")
-	pcapPath = flag.String("pcap", "", "attach isolated capture-only NIC and write Ethernet pcap (no DHCP replies)")
-	gdbPort  = flag.Uint("gdb", 0, "private guest GDB port on loopback (requires restricted entitlement)")
-	efiImage = flag.String("efi", "", "scratch EFI disk to boot read-write without a Windows disk")
-	vmdir    = flag.String("vmdir", os.ExpandEnv("$HOME/.vz/vms/windows-swiftui.covevm"), "Windows VM bundle directory")
-	macosDir = flag.String("macos", "", "boot a macOS guest from this state dir instead (positive control)")
-	graphics = flag.String("graphics", "linear", "graphics device: linear or virtio (Windows only)")
-	width    = flag.Int("width", 1920, "framebuffer width")
-	height   = flag.Int("height", 1200, "framebuffer height")
-	seconds  = flag.Int("seconds", 40, "observation window")
-	shot     = flag.String("shot", "shot", "PNG basename; frames saved as <shot>-<t>s.png")
-	bootOnly = flag.Bool("boot", false, "boot-only: no delegate, no capture (isolate crashes)")
-	noCap    = flag.Bool("nocap", false, "keep delegate but skip capture (isolate capture vs delegate)")
+	nat         = flag.Bool("nat", false, "attach a public NAT network device")
+	pmu         = flag.Bool("pmu", false, "enable private generic-platform PMU emulation")
+	nbdURL      = flag.String("nbd", "", "use this NBD URL for the scratch EFI USB disk instead of its local file")
+	pcapPath    = flag.String("pcap", "", "attach isolated capture-only NIC and write Ethernet pcap (no DHCP replies)")
+	gdbPort     = flag.Uint("gdb", 0, "private guest GDB port on loopback (requires restricted entitlement)")
+	efiImage    = flag.String("efi", "", "scratch EFI USB disk to attach read-write")
+	targetImage = flag.String("disk", "", "dedicated scratch NVMe disk to attach read-write")
+	stateDir    = flag.String("state", "", "persistent EFI state directory for a scratch guest")
+	vmdir       = flag.String("vmdir", os.ExpandEnv("$HOME/.vz/vms/windows-swiftui.covevm"), "Windows VM bundle directory")
+	macosDir    = flag.String("macos", "", "boot a macOS guest from this state dir instead (positive control)")
+	graphics    = flag.String("graphics", "linear", "graphics device: linear or virtio (Windows only)")
+	width       = flag.Int("width", 1920, "framebuffer width")
+	height      = flag.Int("height", 1200, "framebuffer height")
+	seconds     = flag.Int("seconds", 40, "observation window")
+	shot        = flag.String("shot", "shot", "PNG basename; frames saved as <shot>-<t>s.png")
+	bootOnly    = flag.Bool("boot", false, "boot-only: no delegate, no capture (isolate crashes)")
+	noCap       = flag.Bool("nocap", false, "keep delegate but skip capture (isolate capture vs delegate)")
 )
 
 func main() {
@@ -76,6 +73,9 @@ func run() error {
 	}
 	if *efiImage != "" && *macosDir != "" {
 		return fmt.Errorf("efi and macos are mutually exclusive")
+	}
+	if err := validateScratch(*efiImage, *targetImage, *stateDir, *macosDir); err != nil {
+		return err
 	}
 	config, err := buildConfig()
 	if err != nil {
@@ -168,6 +168,14 @@ func run() error {
 	for _, t := range shots {
 		for time.Since(start) < time.Duration(t)*time.Second {
 			time.Sleep(250 * time.Millisecond)
+			st := currentState(queue, vm)
+			if st == vz.VZVirtualMachineStateStopped {
+				fmt.Println("guest stopped")
+				return nil
+			}
+			if st == vz.VZVirtualMachineStateError {
+				return fmt.Errorf("guest entered error state")
+			}
 		}
 		st := currentState(queue, vm)
 		if st == vz.VZVirtualMachineStateStopped {
@@ -271,17 +279,31 @@ func buildConfig() (vz.VZVirtualMachineConfiguration, error) {
 		bootImg = *efiImage
 		paths = []string{bootImg}
 	}
+	if *targetImage != "" {
+		diskImg = *targetImage
+		bootImg = *efiImage
+		paths = []string{diskImg}
+		if bootImg != "" {
+			paths = append(paths, bootImg)
+		}
+	}
 	for _, p := range paths {
 		if _, err := os.Stat(p); err != nil {
 			return vz.VZVirtualMachineConfiguration{}, fmt.Errorf("missing %s", p)
 		}
 	}
-	scratch, err := os.MkdirTemp("", "winbootprobe")
-	if err != nil {
-		return vz.VZVirtualMachineConfiguration{}, err
+	scratch := *stateDir
+	if scratch == "" {
+		var err error
+		scratch, err = os.MkdirTemp("", "winbootprobe")
+		if err != nil {
+			return vz.VZVirtualMachineConfiguration{}, err
+		}
+	} else if err := os.MkdirAll(scratch, 0700); err != nil {
+		return vz.VZVirtualMachineConfiguration{}, fmt.Errorf("create EFI state directory: %w", err)
 	}
 	nvram := filepath.Join(scratch, "efi.nvram")
-	if *efiImage == "" {
+	if *efiImage == "" && *targetImage == "" {
 		if err := copyFile(filepath.Join(*vmdir, "efi.nvram"), nvram); err != nil {
 			return vz.VZVirtualMachineConfiguration{}, fmt.Errorf("copy EFI store: %w", err)
 		}
@@ -339,6 +361,22 @@ func buildConfig() (vz.VZVirtualMachineConfiguration, error) {
 		return config, fmt.Errorf("unknown -graphics %q", *graphics)
 	}
 
+	if *targetImage != "" {
+		diskDev, err := nvmeStorage(diskImg, false)
+		if err != nil {
+			return config, fmt.Errorf("attach scratch target: %w", err)
+		}
+		devices := []vz.VZStorageDeviceConfiguration{diskDev}
+		if bootImg != "" {
+			bootDev, err := usbStorage(bootImg, false)
+			if err != nil {
+				return config, err
+			}
+			devices = append(devices, bootDev)
+		}
+		config.SetStorageDevices(devices)
+		return config, nil
+	}
 	bootDev, err := usbStorage(bootImg, *efiImage == "")
 	if err != nil {
 		return config, err
