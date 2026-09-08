@@ -45,6 +45,61 @@ func TestParseWindowsGraphicsMode(t *testing.T) {
 	}
 }
 
+func TestWindowsNativePMU(t *testing.T) {
+	probe := vz.NewVZGenericPlatformConfiguration()
+	if !objc.Send[bool](probe.ID, objc.Sel("respondsToSelector:"), objc.Sel("_setPerformanceMonitoringUnitEmulationEnabled:")) {
+		t.Skip("native PMU emulation unavailable")
+	}
+	old := windowsNativePMU
+	t.Cleanup(func() { windowsNativePMU = old })
+	for _, tt := range []struct {
+		name string
+		want bool
+	}{
+		{name: "default", want: false},
+		{name: "opt in", want: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			windowsNativePMU = tt.want
+			config, err := buildWindowsBaseConfigurationForTest(t)
+			if err != nil {
+				t.Fatal(err)
+			}
+			id := objc.Send[objc.ID](config.ID, objc.Sel("platform"))
+			platform := privvz.VZGenericPlatformConfigurationFromID(id)
+			got, err := platform.PerformanceMonitoringUnitEmulationEnabled()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tt.want {
+				t.Fatalf("PMU emulation = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestWindowsProbeTopology(t *testing.T) {
+	t.Setenv("COVE_WINDOWS_MEDIA_TOPOLOGY", "probe")
+	config, err := buildWindowsBaseConfigurationForTest(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name      string
+		got, want int
+	}{
+		{"audio", len(config.AudioDevices()), 0},
+		{"socket", len(config.SocketDevices()), 0},
+		{"balloon", len(config.MemoryBalloonDevices()), 1},
+		{"keyboard", len(config.Keyboards()), 1},
+		{"pointing", len(config.PointingDevices()), 1},
+	} {
+		if tt.got != tt.want {
+			t.Errorf("%s devices = %d, want %d", tt.name, tt.got, tt.want)
+		}
+	}
+}
+
 func TestParseWindowsSerialMode(t *testing.T) {
 	tests := []struct {
 		name    string

@@ -13,6 +13,7 @@ import (
 
 	"github.com/tmc/apple/dispatch"
 	"github.com/tmc/apple/foundation"
+	pvz "github.com/tmc/apple/private/virtualization"
 	vz "github.com/tmc/apple/virtualization"
 	configx "github.com/tmc/apple/x/vzkit/config"
 	displayx "github.com/tmc/apple/x/vzkit/display"
@@ -189,6 +190,7 @@ func buildWindowsBaseConfigurationWithConfig(rc vmrun.RunConfig, hc vmrun.HostCo
 		}
 	}
 	minimalTopology := strings.ToLower(os.Getenv("COVE_WINDOWS_MEDIA_TOPOLOGY")) == "minimal"
+	probeTopology := strings.ToLower(os.Getenv("COVE_WINDOWS_MEDIA_TOPOLOGY")) == "probe"
 	config, err := windowsconfig.Build(windowsconfig.Config{
 		CPUCount:      plan.CPUCount,
 		MemoryGB:      plan.MemoryGB,
@@ -197,16 +199,29 @@ func buildWindowsBaseConfigurationWithConfig(rc vmrun.RunConfig, hc vmrun.HostCo
 		Keyboard:      true,
 		Pointing:      true,
 		Entropy:       true,
-		Sound:         !minimalTopology,
+		Sound:         !minimalTopology && !probeTopology,
 		USBController: true,
 		MemoryBalloon: !minimalTopology,
-		Socket:        !minimalTopology && sandboxAllowsVsock(),
+		Socket:        !minimalTopology && !probeTopology && sandboxAllowsVsock(),
 	})
 	if err != nil {
 		return config, fmt.Errorf("build windows device config: %w", err)
 	}
 
 	platformConfig := vz.NewVZGenericPlatformConfiguration()
+	if windowsNativePMU {
+		platform := pvz.VZGenericPlatformConfigurationFromID(platformConfig.ID)
+		if err := platform.SetPerformanceMonitoringUnitEmulationEnabled(true); err != nil {
+			return config, fmt.Errorf("enable Windows PMU emulation: %w", err)
+		}
+		enabled, err := platform.PerformanceMonitoringUnitEmulationEnabled()
+		if err != nil {
+			return config, fmt.Errorf("read Windows PMU emulation: %w", err)
+		}
+		if !enabled {
+			return config, fmt.Errorf("windows PMU emulation setting was not retained")
+		}
+	}
 	machineID := loadOrCreateWindowsMachineIdentifier()
 	platformConfig.SetMachineIdentifier(&machineID)
 	config.SetPlatform(&platformConfig.VZPlatformConfiguration)
