@@ -19,7 +19,7 @@ permission was requested or changed.
 [Receipt manifest](receipts/20260908.json) records exact frame paths,
 hashes, sessions, launch commands and binaries. Raw artifacts remain under
 `~/.vz/research/windows-vz-20260908`, outside git. The
-[acceptance plan](../installation-plan.md) remains open for full cove validation and physical AppKit input checks.
+[acceptance plan](../installation-plan.md) records the remaining physical AppKit input and metadata-recovery checks.
 The research implementation and audit notes have been pushed.
 
 ## Verified progression
@@ -199,25 +199,49 @@ Cove adds `-windows-native-pmu`, default false. It enables the private PMU
 selector and checks that the setting is retained. The explicit research
 setting `COVE_WINDOWS_MEDIA_TOPOLOGY=probe` suppresses audio and vsock while
 retaining the probe's balloon, keyboard, pointing, entropy and USB devices.
-Defaults and macOS/iOS paths are unchanged.
+The PMU and topology settings remain opt-in.
 
 For a separate cove launch clone, copy the probe's `efi.nvram` into its
 state directory and copy `machine.id` as `windows-machine.id`. The disk
-must already have both installed EFI paths patched. The proposed launch is:
+must already have both installed EFI paths patched. Build and sign the current
+cove source, then launch with an isolated host home directory:
 
 ```sh
-COVE_WINDOWS_MEDIA_TOPOLOGY=probe cove run -windows -windows-backend vz \
+go build -o "$ROOT/cove" ./cmd/cove
+codesign -s - -f --entitlements cmd/cove/vz.entitlements "$ROOT/cove"
+mkdir -p "$ROOT/cove-clone/home"
+HOME="$ROOT/cove-clone/home" COVE_WINDOWS_MEDIA_TOPOLOGY=probe \
+  "$ROOT/cove" run -windows -windows-backend vz \
   -windows-native-pmu -windows-graphics virtio -cpu 4 -memory 8 \
-  -display 1920x1200 -network nat -serial none -headless \
+  -display 1920x1200 -network nat -serial none -headless -no-resume \
   -disk "$ROOT/cove-clone/target.img" -vm-dir "$ROOT/cove-clone/state"
 ```
 
-This cove command is **not runtime-validated**. Both required full repository
-gates, `go build ./...` and `go test ./...`, fail because local replacements
-`../cove-marina` and `../cove-ocispec` are absent. Their private GitHub repos
-were inaccessible; this does not prove deletion. No replacement stubs were
-created. Configuration tests cover PMU opt-in/default and probe topology,
-but cannot execute through the blocked cove package setup.
+The synced `cove-marina` and `cove-ocispec` modules resolved the dependency
+blocker; neither dependency was removed. Two pre-existing framebuffer binding
+compile errors were corrected. `go build ./...`, the run-directory regression
+and Windows configuration tests, and `go test ./...` with an isolated `HOME`
+pass. With the host home directory, the full suite instead traps in the
+existing `TestPrivateAPI_NameGetSet` default-VM diagnostic. Isolated-home
+success does not validate that diagnostic or other skipped host-VM fixtures.
+
+`cove-02` cold-booted the installed clone through the actual cove executable,
+reconnected after a Windows restart, and displayed new Notepad text and a
+right-click menu in both sessions. `shutdown /s /t 0` then stopped Windows;
+cove logged `VM stopped` and exited 0 before its 600-second deadline.
+The stopped clone is preserved. See the [cove launch receipt](receipts/cove-launch.json).
+
+The first cove launch exposed an isolation bug: `resolveRunTarget` rejected
+an explicit state directory whose disk was elsewhere and silently selected
+the active `mlx-lm.covevm` directory. The run was stopped. Its original saved
+state file was restored and newly created run artifacts moved to scratch.
+The default disk and auxiliary image retain their earlier modification times.
+However, `config.json` CPU/memory fields may have changed and the original
+`suspend.config.json` was removed by restore-failure handling. Their original
+values were not captured; metadata recovery remains pending. Do not claim
+complete preservation of the default VM. A regression test reproduced the
+fallback; the fix honors explicit directories and rejects invalid targets.
+Subsequent validation used a separate `HOME` as additional containment.
 
 Focused `cmd/winbootprobe` and `internal/filehandle` tests pass. Run the
 Python checks with:
@@ -241,7 +265,7 @@ installed-loader shim, cove opt-in, and reproduction/evidence commits.
 The research branch and `refs/notes/windows-vz-research` carry the commits
 and their audit notes. The receipt manifest's earlier remote fields record
 the pre-landing snapshot; use branch history for the current landing state.
-Full cove validation remains blocked by the missing module replacements.
+The former module blocker is resolved; the validation scope and metadata incident are recorded above.
 
 The result depends on private VZ PMU and storage APIs, the synthetic GOP,
 and this exact host build. Other macOS builds and future Windows servicing

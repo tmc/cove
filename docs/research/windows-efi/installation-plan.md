@@ -28,15 +28,18 @@ new media must be rebuilt and hashed before use. Durable scratch root:
    limits. Commit atomic source/text changes through the required helper,
    verify HEAD changes, add notes and push the research branch.
 
-Status on 2026-09-08: gates 1–5 now have installation, installed desktop,
-cold-boot reconnection and guest-restart input receipts in
-[the installation report](installation/README.md). The native AppKit window
-uses guest PNG capture; it does not repair the VZ scanout. Gate 6 has source
-and focused checks, but full cove validation is blocked by missing private
-module replacements. The user authorized direct Go-style commits after the
-required helper failed for insufficient credits. Physical keyboard/mouse
-verification through the AppKit window is still pending. Do not mark the
-complete goal achieved until the remaining validation gates are resolved.
+Status on 2026-09-08: installation, desktop, cold-boot, restart, and visible
+input receipts now include the actual cove launcher. The build, targeted
+configuration/regression tests, and full tests with an isolated HOME pass.
+The host-HOME suite traps in a pre-existing private-API test. Source and
+receipts are landed using user-authorized direct Go-style commits.
+
+The native AppKit window uses guest PNG capture; physical keyboard/mouse
+verification remains pending. The first cove launch exposed a silent fallback
+to the default VM directory. Its saved-state file was restored, but original
+configuration metadata still needs recovery. That preservation requirement
+is not proven. See [the installation report](installation/README.md); do not
+mark the full goal complete while these checks remain unresolved.
 
 If a gate fails, retain the concrete error and bounded run evidence before
 choosing a new experiment. Do not revisit delegated PMU exits or modify

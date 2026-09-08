@@ -1,0 +1,88 @@
+{
+  "launch": {
+    "command": [
+      "/Users/tmc2/.vz/research/windows-vz-20260908/validation-synced-01/cove-fixed",
+      "run",
+      "-windows",
+      "-windows-backend",
+      "vz",
+      "-windows-native-pmu",
+      "-windows-graphics",
+      "virtio",
+      "-cpu",
+      "4",
+      "-memory",
+      "8",
+      "-display",
+      "1920x1200",
+      "-network",
+      "nat",
+      "-serial",
+      "none",
+      "-headless",
+      "-no-resume",
+      "-disk",
+      "/Users/tmc2/.vz/research/windows-vz-20260908/cove-02/target.img",
+      "-vm-dir",
+      "/Users/tmc2/.vz/research/windows-vz-20260908/cove-02/state"
+    ],
+    "environment": {
+      "COVE_WINDOWS_MEDIA_TOPOLOGY": "probe",
+      "HOME": "/Users/tmc2/.vz/research/windows-vz-20260908/cove-02/home"
+    },
+    "binary_sha256": "f799adbd385535ab9cf9b17c0404239227c3da6cc2a2f74b25557aaf62b2962a",
+    "started": 1788908045.462838,
+    "deadline_seconds": 600,
+    "pid": 25514,
+    "exit": 0,
+    "ended": 1788908264.0046551
+  },
+  "before_restart": {
+    "time": 1788908133.7422972,
+    "session": "20260909T055425-9052",
+    "sha256": "245e9e6c6ff1e8720129cc10beb397bbb9905f7a626c57e8453f8c1b19ba0b53"
+  },
+  "after_restart": {
+    "time": 1788908233.892725,
+    "session": "20260909T055609-8660",
+    "sha256": "9047fd5522de7c019ca9511e4d32d0078a81ce5cb79924e9c39ad919dbcbbb8e"
+  },
+  "frame_files": [
+    "cove-02/before-restart.png",
+    "cove-02/after-restart.png"
+  ],
+  "visible_effects": [
+    "Notepad text before and after Windows restart",
+    "right-click context menu before and after Windows restart"
+  ],
+  "shutdown": "Windows shutdown /s /t 0; cove logged VM stopped and exited 0 before host deadline",
+  "validation": {
+    "go build ./...": "pass",
+    "targeted run-directory, Windows PMU, Windows topology tests": "pass",
+    "go test ./... with isolated HOME": "pass",
+    "go test ./... with host HOME": "SIGTRAP in existing TestPrivateAPI_NameGetSet on default VM fixture"
+  },
+  "private_modules": {
+    "cove-marina": {
+      "source_files": 23,
+      "source_manifest_sha256": "c58a8aa0a1f1d9925fa34b959709bddf8eeff178b38601a307db6c4ecd54e4cb"
+    },
+    "cove-ocispec": {
+      "source_files": 5,
+      "source_manifest_sha256": "87d7135e2bc58cf24b5db5db142ef8bd003506416a47fbdf1dd75b0440a08df9"
+    }
+  },
+  "first_launch_incident": {
+    "time": 1788907811.8920572,
+    "incident": "explicit post-command vm-dir was replaced by default before Windows launch",
+    "old_suspend_state_restored": true,
+    "new_run_artifacts_moved_to": "/Users/tmc2/.vz/research/windows-vz-20260908/cove-01/default-state-incident",
+    "default_disk_mtime": 1788743720.8417165,
+    "default_aux_mtime": 1788743701.6413767,
+    "limitations": [
+      "config.json CPU/memory may have been rewritten; original values not captured",
+      "old suspend.config.json removed by restore-failure handling; original metadata unavailable"
+    ],
+    "stopped_pid": 24799
+  }
+}
