@@ -318,7 +318,11 @@ static uintn dp_len_no_end(EFI_DEVICE_PATH *dp){
 // \EFI\Microsoft\Boot\bootmgfw.efi as CHAR16 (explicit, avoids wchar_t typing)
 static c16 BOOTMGFW_PATH[] = {
     '\\','E','F','I','\\','M','i','c','r','o','s','o','f','t','\\',
+#ifdef INSTALLED_BOOT
+    'B','o','o','t','\\','b','o','o','t','m','g','f','w','-','r','e','a','l','.','e','f','i', 0
+#else
     'B','o','o','t','\\','b','o','o','t','m','g','f','w','.','e','f','i', 0
+#endif
 };
 
 static EFI_STATUS chainload(EFI_HANDLE image, LOADED_IMAGE *li){
@@ -470,6 +474,9 @@ EFI_STATUS efi_main(EFI_HANDLE image, SYSTEM_TABLE *st){
 #endif
 
     emit("\n== chainloading bootmgfw ==\n"); flush_report();
+#ifdef INSTALLED_BOOT
+    emit("installed boot: bootmgfw-real.efi\n"); flush_report();
+#endif
     EFI_STATUS cs = EFI_SUCCESS;
     if (li) cs = chainload(image, li);
     else { emit("no LoadedImage; cannot chainload\n"); cs = EFI_UNSUPPORTED; }
