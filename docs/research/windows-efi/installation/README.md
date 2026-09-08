@@ -19,8 +19,8 @@ permission was requested or changed.
 [Receipt manifest](receipts/20260908.json) records exact frame paths,
 hashes, sessions, launch commands and binaries. Raw artifacts remain under
 `~/.vz/research/windows-vz-20260908`, outside git. The
-[acceptance plan](../installation-plan.md) remains open for cove validation
-and landing.
+[acceptance plan](../installation-plan.md) remains open for full cove validation and physical AppKit input checks.
+The research implementation and audit notes have been pushed.
 
 ## Verified progression
 
@@ -46,6 +46,16 @@ restarts; guest time changed timezone during setup.
 shutdown was confirmed. Its stopped disk and EFI state were preserved as
 `desktop-checkpoint`; the native user session uses a separate `interactive`
 clone. Do not describe that checkpoint as a confirmed clean shutdown.
+
+`interactive-01` also ended at its 1800-second host deadline. The final
+v4 disk and EFI state were preserved as `installed-v4-checkpoint` after
+confirming the VM process had exited. Read-only inspection verified both
+shim entry hashes, the retained Microsoft loader, the v4 agent hash, and
+an exact match between the installed user Startup script and maintained
+source. See the [checkpoint receipt](receipts/installed-v4-checkpoint.json).
+This checkpoint also lacks a confirmed guest-initiated shutdown. The viewer
+may remain open with its last frame, but this VM run is no longer live.
+
 
 ## Required boot paths
 

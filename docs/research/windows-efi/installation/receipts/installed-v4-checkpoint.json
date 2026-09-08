@@ -1,0 +1,41 @@
+{
+  "created": 1788901609.313857,
+  "source": "/Users/tmc2/.vz/research/windows-vz-20260908/interactive",
+  "checkpoint": "/Users/tmc2/.vz/research/windows-vz-20260908/installed-v4-checkpoint",
+  "disk_size": 68719476736,
+  "copy": "APFS clone of stopped disk; separate EFI state copy",
+  "shutdown": "host deadline; guest shutdown not confirmed",
+  "state_sha256": {
+    "state/efi.nvram": "e7a64fb262fdf67d1d90c55cba9cf8cd39c7f514ebb177adf76d8ffc13d0774f",
+    "state/machine.id": "ca775dd25dafd68a54ad905e83cdb8e5ff32f78d780217c9af9d66ecc11c70f5"
+  },
+  "efi_sha256": {
+    "EFI/BOOT/BOOTAA64.EFI": "cb9d6acde04dcd644cb5a18f7e7cb8cd93fb098909744b4d1fd8fcc142a0f042",
+    "EFI/Microsoft/Boot/bootmgfw.efi": "cb9d6acde04dcd644cb5a18f7e7cb8cd93fb098909744b4d1fd8fcc142a0f042",
+    "EFI/Microsoft/Boot/bootmgfw-real.efi": "26085cabe01870a8921b61efd135a59898a51daae25b64b6bedba5830fb472f9"
+  },
+  "guest_agent_sha256": "9d7c96acc9865d64200edd0e888702366fc5b06973533f83c67b95715ac49d2e",
+  "guest_startup": "@echo off\ntimeout /t 5 /nobreak >nul\ntaskkill /im screen.exe /f >nul 2>&1\ntaskkill /im screen-v3.exe /f >nul 2>&1\nstart \"\" C:\\CoveDisplayV4\\screen-v4.exe C:\\CoveDisplayV4\n",
+  "source_startup_matches": true,
+  "launch": {
+    "command": [
+      "/Users/tmc2/.vz/research/windows-vz-20260908/interactive-01/winbootprobe",
+      "-pmu",
+      "-nat",
+      "-graphics",
+      "virtio",
+      "-nocap",
+      "-disk",
+      "/Users/tmc2/.vz/research/windows-vz-20260908/interactive/target.img",
+      "-state",
+      "/Users/tmc2/.vz/research/windows-vz-20260908/interactive/state",
+      "-seconds",
+      "1800"
+    ],
+    "mode": "boot",
+    "started": 1788899151.4492428,
+    "probe_sha256": "6cf4c3e1c967d35da339888ed5cacdfed8f35094da31d8786b2fa20140b7b0cb",
+    "exit": 0,
+    "ended": 1788900953.1618948
+  }
+}
