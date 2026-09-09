@@ -28,20 +28,28 @@ new media must be rebuilt and hashed before use. Durable scratch root:
    limits. Commit atomic source/text changes through the required helper,
    verify HEAD changes, add notes and push the research branch.
 
-Status on 2026-09-08: installation, desktop, cold-boot, restart, and visible
-input receipts now include the actual cove launcher. The build, targeted
-configuration/regression tests, and full tests with an isolated HOME pass.
-The host-HOME suite traps in a pre-existing private-API test. Source and
-receipts are landed using user-authorized direct Go-style commits.
+Status reviewed on 2026-09-09:
 
-The native AppKit window uses guest PNG capture. Physical mouse and text
-entry reached Notepad in `cove-03`; two differing letters await clarification.
-The window reconnected after restart; physical input in that new session
-remains pending. The first cove launch exposed a silent fallback
-to the default VM directory. Its saved-state file and recorded 8-CPU/32-GB hardware fields were restored.
-Exact pre-incident config bytes and a default-VM recovery boot remain
-unverified; no further default-VM writes are planned. See [the installation report](installation/README.md); do not
-mark the full goal complete while these checks remain unresolved.
+| Requirement | Evidence and remaining limit |
+| --- | --- |
+| Dedicated ARM64 installation and usable desktop under VZ | DISM/BCDBoot, completed OOBE, and installed desktop frames in the [installation report](installation/README.md). WinPE progress alone is not counted. |
+| Actual cove launch and repeat input after restart | [cove-02 receipt](installation/receipts/cove-launch.json): distinct guest sessions, Notepad text and context menus before and after restart, followed by guest shutdown and exit 0. These input requests used the HTTP control protocol. |
+| Native window keyboard and mouse | [Native receipt](installation/receipts/native-input.json): physical user interaction in cove-03 and a later cove-05 cold boot. The same window reconnected after the cove-03 warm restart, but physical input during that particular session was not captured before it ended. |
+| Opt-in configuration, source and validation | Research source is landed. Repository build and targeted tests pass. Full tests pass with isolated HOME; host-HOME tests trap in an existing private-API fixture test. This is not an unrestricted full-suite pass. |
+| Preserve existing VMs and masters | The cove-01 explicit-directory fallback violated the default-VM metadata isolation requirement. The saved state and historically recorded hardware fields were restored; exact original config bytes and successful recovery resume remain unverified. The fallback fix and regression test are landed. No further default-VM writes or boots are planned. |
+| Host security, binaries and platform scope | No host security changes or QEMU execution were used for the installation receipts; binaries remain outside git. Private VZ APIs, synthetic GOP, guest PNG transport and the tested host build remain limitations. |
+| Atomic landing, notes and remote | Through d16b2877, source and receipts plus audit notes are on the remote. The September 9 commit-helper attempt failed for insufficient Anthropic credits and did not change HEAD. The user then authorized manual Go-style commits for the receipt corrections. |
+
+The recorded repeated K characters correspond to 12 transmitted key-down
+commands before key-up. Other differing letters match transmitted virtual
+key codes. These observations do not identify the user's intended physical
+keys or establish a mapping defect.
+
+The full goal remains incomplete. The outstanding native warm-restart
+physical check needs an attended session. Manual commits are authorized;
+helper funding no longer blocks landing. The default-VM incident prevents
+claiming that its preservation invariant held throughout the work; semantic
+recovery is the supported claim, not exact restoration or verified resume.
 
 If a gate fails, retain the concrete error and bounded run evidence before
 choosing a new experiment. Do not revisit delegated PMU exits or modify

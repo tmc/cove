@@ -1,3 +1,9 @@
+> Current status (2026-09-09): this is the historical September 7 audit.
+> Landing subsequently succeeded. See the [installation report](installation/README.md),
+> [native input evidence](installation/receipts/native-input.json), and
+> [current acceptance plan](installation-plan.md) for installation, UI,
+> validation scope, and the default-VM metadata incident.
+
 # Windows boot investigation: completion audit
 
 2026-09-07. The original Windows goal was created at 06:42:16Z in the supplied

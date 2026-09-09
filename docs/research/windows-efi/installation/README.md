@@ -19,7 +19,9 @@ in that warm-restart session was not checked before the deadline.
 A subsequent cold boot from the clean `cove-02` checkpoint (`cove-05`)
 received physical mouse and keyboard input, and the user confirmed basic
 interaction worked. The screenshot includes repeated K characters and
-`VKBD`; exact intended keys and repeat behavior remain unconfirmed.
+`VKBD`; the receiver log contains 12 K key-down events before key-up.
+The first check’s differing B and V also match transmitted virtual key codes.
+This supports faithful guest delivery; intended physical keys remain unrecorded.
 See the [native input receipt](receipts/native-input.json). Host event-injection preflight returned false, so no automation
 permission was requested or changed.
 

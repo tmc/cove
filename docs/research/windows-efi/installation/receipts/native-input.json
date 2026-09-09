@@ -120,17 +120,420 @@
       "started": 1788911656.686636,
       "deadline_seconds": 3300,
       "purpose": "user session from clean cove-02 checkpoint",
-      "pid": 27446,
-      "exit": 0,
-      "ended": 1788910843.2228858
+      "pid": 27446
     },
     "screenshot": "cove-05/user-check.png",
     "visible_effect": "Notepad opened over Edge; new text includes repeated K characters and VKBD beneath checkpoint text",
-    "scope": "User confirms basic interaction works. Exact intended keys and repeat behavior are not established. This is a subsequent cold boot, not the earlier warm-restart session."
+    "scope": "User confirms basic interaction works. Exact intended keys and repeat behavior are not established. This is a subsequent cold boot, not the earlier warm-restart session.",
+    "termination": {
+      "exit_code": 0,
+      "time": 1788913607.7634811,
+      "source": "cove-05/exit.json",
+      "limitation": "process exited 0 before its deadline; reason and clean guest shutdown are not established"
+    }
   },
   "timed_session_recovery": {
     "cove-03": "900-second run ended; receiver also expired, leaving a stale frame in the native window",
     "cove-04": "clone of timed-out cove-03 started VZ but delivered no frames during about 150 seconds; stopped with SIGINT, exit 0; cause not established",
     "cove-05": "clone of clean-shutdown cove-02 reconnected and received physical user input"
+  },
+  "receipt_correction": {
+    "date": "2026-09-09",
+    "removed_inherited_cove03_fields": {
+      "exit": 0,
+      "ended": 1788910843.2228858
+    },
+    "reason": "cove-05 launch copied cove-03 metadata including its exit fields; ended preceded started",
+    "raw_command_preserved": "cove-05/command.json"
+  },
+  "input_event_review": {
+    "date": "2026-09-09",
+    "evidence": [
+      {
+        "source": "viewer-v4/20260908T232759/events.jsonl",
+        "sha256": "be47698a08700239e004355d7d7103ced6ba28a0d7d9b4d195b695f261c8cf3d",
+        "events": [
+          {
+            "time": 1788910364.009429,
+            "keys": [
+              "kbd:16,1"
+            ]
+          },
+          {
+            "time": 1788910364.440578,
+            "keys": [
+              "kbd:78,1"
+            ]
+          },
+          {
+            "time": 1788910364.5471418,
+            "keys": [
+              "kbd:78,0"
+            ]
+          },
+          {
+            "time": 1788910364.582752,
+            "keys": [
+              "kbd:65,1"
+            ]
+          },
+          {
+            "time": 1788910364.692105,
+            "keys": [
+              "kbd:65,0"
+            ]
+          },
+          {
+            "time": 1788910364.764153,
+            "keys": [
+              "kbd:84,1"
+            ]
+          },
+          {
+            "time": 1788910364.836638,
+            "keys": [
+              "kbd:84,0"
+            ]
+          },
+          {
+            "time": 1788910364.945067,
+            "keys": [
+              "kbd:73,1"
+            ]
+          },
+          {
+            "time": 1788910365.015187,
+            "keys": [
+              "kbd:73,0",
+              "kbd:66,1"
+            ]
+          },
+          {
+            "time": 1788910365.054156,
+            "keys": [
+              "kbd:66,0"
+            ]
+          },
+          {
+            "time": 1788910365.160634,
+            "keys": [
+              "kbd:69,1"
+            ]
+          },
+          {
+            "time": 1788910365.3023841,
+            "keys": [
+              "kbd:69,0"
+            ]
+          },
+          {
+            "time": 1788910365.3749728,
+            "keys": [
+              "kbd:32,1"
+            ]
+          },
+          {
+            "time": 1788910365.4848828,
+            "keys": [
+              "kbd:32,0"
+            ]
+          },
+          {
+            "time": 1788910366.354748,
+            "keys": [
+              "kbd:87,1"
+            ]
+          },
+          {
+            "time": 1788910366.462349,
+            "keys": [
+              "kbd:73,1",
+              "kbd:87,0"
+            ]
+          },
+          {
+            "time": 1788910366.495459,
+            "keys": [
+              "kbd:78,1"
+            ]
+          },
+          {
+            "time": 1788910366.568513,
+            "keys": [
+              "kbd:73,0",
+              "kbd:68,1"
+            ]
+          },
+          {
+            "time": 1788910366.640471,
+            "keys": [
+              "kbd:78,0"
+            ]
+          },
+          {
+            "time": 1788910366.679395,
+            "keys": [
+              "kbd:68,0"
+            ]
+          },
+          {
+            "time": 1788910366.7152672,
+            "keys": [
+              "kbd:79,1"
+            ]
+          },
+          {
+            "time": 1788910366.7495182,
+            "keys": [
+              "kbd:87,1"
+            ]
+          },
+          {
+            "time": 1788910366.859221,
+            "keys": [
+              "kbd:79,0",
+              "kbd:87,0",
+              "kbd:32,1"
+            ]
+          },
+          {
+            "time": 1788910366.9673731,
+            "keys": [
+              "kbd:32,0"
+            ]
+          },
+          {
+            "time": 1788910367.038392,
+            "keys": [
+              "kbd:86,1",
+              "kbd:86,0"
+            ]
+          },
+          {
+            "time": 1788910367.072522,
+            "keys": [
+              "kbd:72,1"
+            ]
+          },
+          {
+            "time": 1788910367.2176871,
+            "keys": [
+              "kbd:72,0"
+            ]
+          },
+          {
+            "time": 1788910367.4754739,
+            "keys": [
+              "kbd:69,1"
+            ]
+          },
+          {
+            "time": 1788910367.656574,
+            "keys": [
+              "kbd:69,0"
+            ]
+          },
+          {
+            "time": 1788910367.7274392,
+            "keys": [
+              "kbd:67,1"
+            ]
+          },
+          {
+            "time": 1788910367.835755,
+            "keys": [
+              "kbd:75,1"
+            ]
+          },
+          {
+            "time": 1788910367.872289,
+            "keys": [
+              "kbd:67,0"
+            ]
+          },
+          {
+            "time": 1788910367.945972,
+            "keys": [
+              "kbd:75,0"
+            ]
+          },
+          {
+            "time": 1788910368.016093,
+            "keys": [
+              "kbd:16,0"
+            ]
+          }
+        ]
+      },
+      {
+        "source": "viewer-v4/20260908T235114/events.jsonl",
+        "sha256": "8f133a6deee2e465d27b0533a11773ea0976cd40f556da4e8a71208588bba2af",
+        "events": [
+          {
+            "time": 1788911787.3779259,
+            "keys": [
+              "kbd:86,1",
+              "kbd:86,0"
+            ]
+          },
+          {
+            "time": 1788911787.4504519,
+            "keys": [
+              "kbd:75,1"
+            ]
+          },
+          {
+            "time": 1788911787.709598,
+            "keys": [
+              "kbd:75,1"
+            ]
+          },
+          {
+            "time": 1788911787.7440488,
+            "keys": [
+              "kbd:75,1"
+            ]
+          },
+          {
+            "time": 1788911787.7810829,
+            "keys": [
+              "kbd:75,1",
+              "kbd:75,1"
+            ]
+          },
+          {
+            "time": 1788911787.816812,
+            "keys": [
+              "kbd:75,1"
+            ]
+          },
+          {
+            "time": 1788911787.8507168,
+            "keys": [
+              "kbd:75,1"
+            ]
+          },
+          {
+            "time": 1788911787.8856032,
+            "keys": [
+              "kbd:75,1"
+            ]
+          },
+          {
+            "time": 1788911787.92253,
+            "keys": [
+              "kbd:75,1"
+            ]
+          },
+          {
+            "time": 1788911787.9606662,
+            "keys": [
+              "kbd:75,1"
+            ]
+          },
+          {
+            "time": 1788911787.994633,
+            "keys": [
+              "kbd:75,1"
+            ]
+          },
+          {
+            "time": 1788911788.033497,
+            "keys": [
+              "kbd:75,1",
+              "kbd:75,0",
+              "kbd:66,1",
+              "kbd:66,0"
+            ]
+          },
+          {
+            "time": 1788911788.137693,
+            "keys": [
+              "kbd:68,1"
+            ]
+          },
+          {
+            "time": 1788911788.2415411,
+            "keys": [
+              "kbd:68,0"
+            ]
+          },
+          {
+            "time": 1788911788.343746,
+            "keys": [
+              "kbd:16,0"
+            ]
+          },
+          {
+            "time": 1788911790.0869482,
+            "keys": [
+              "kbd:16,1"
+            ]
+          },
+          {
+            "time": 1788911790.3360581,
+            "keys": [
+              "kbd:13,1"
+            ]
+          },
+          {
+            "time": 1788911790.549196,
+            "keys": [
+              "kbd:13,0"
+            ]
+          },
+          {
+            "time": 1788911790.8075142,
+            "keys": [
+              "kbd:86,1"
+            ]
+          },
+          {
+            "time": 1788911791.056324,
+            "keys": [
+              "kbd:86,0"
+            ]
+          },
+          {
+            "time": 1788911791.237718,
+            "keys": [
+              "kbd:75,1"
+            ]
+          },
+          {
+            "time": 1788911791.342231,
+            "keys": [
+              "kbd:75,0"
+            ]
+          },
+          {
+            "time": 1788911791.597263,
+            "keys": [
+              "kbd:66,1",
+              "kbd:66,0"
+            ]
+          },
+          {
+            "time": 1788911791.743634,
+            "keys": [
+              "kbd:68,1"
+            ]
+          },
+          {
+            "time": 1788911791.8881721,
+            "keys": [
+              "kbd:68,0"
+            ]
+          },
+          {
+            "time": 1788911792.2830532,
+            "keys": [
+              "kbd:16,0"
+            ]
+          }
+        ]
+      }
+    ],
+    "finding": "First text differences correspond to transmitted B and V virtual key codes. Second check contains 12 K key-downs before key-up, followed by a separate VKBD sequence. Visible output is consistent with receiver input; intended physical keys are unrecorded."
   }
 }
