@@ -1,0 +1,10 @@
+Commit: 687266b188ca48996feb37cbdb2751a89d654861
+Commit date: 2026-09-09T17:44:57-07:00
+Agent: Codex CLI 0.153.4
+Model: GPT-6 family; exact runtime ID not exposed
+Installed claude-code: 2.1.265 (not executing agent)
+TTY: ttys023
+Codex PID: 19230
+ITERM_SESSION_ID: w0t3p2:91038DBD-731B-4486-967C-D2B1554CFAE3
+Manual Go-style commits authorized.
+Validation: go build ./... and go test ./... pass with normal HOME; signed live-clone diagnostic verifies crash context and skips restricted name getter; recovery clone preserves source hashes.
