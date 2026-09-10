@@ -757,6 +757,7 @@ func TestLiveAPI_CurrentConfiguration(t *testing.T) {
 
 // Diagnostic properties on running VM
 func TestLiveAPI_DiagnosticProperties(t *testing.T) {
+	requirePrivateVirtualization(t)
 	_, privVM, queue := requireLiveVM(t)
 
 	queue.Sync(func() {
@@ -941,6 +942,7 @@ func TestLiveAPI_DisplayProperties(t *testing.T) {
 
 // _setName / _name on running VM
 func TestLiveAPI_SetName(t *testing.T) {
+	requirePrivateVirtualization(t)
 	_, privVM, queue := requireLiveVM(t)
 
 	queue.Sync(func() {
