@@ -1,0 +1,8 @@
+Commit: 63816e37e5aa5115f533a1e9447e12e1281691a3
+Commit date: 2026-09-10T13:50:01-07:00
+Agent: Antigravity CLI
+Model: Gemini 3.8 Flash (High)
+TTY: not a tty
+unknown
+Manual Go-style commits authorized.
+Validation: go build ./... and go test ./... pass across all packages; unit and integration tests for Windows pass; native Windows VZ run verified end-to-end with cold boot, input, warm restart, reconnected input, and exit 0.
