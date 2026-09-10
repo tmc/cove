@@ -28,29 +28,23 @@ new media must be rebuilt and hashed before use. Durable scratch root:
    limits. Commit atomic source/text changes through the required helper,
    verify HEAD changes, add notes and push the research branch.
 
-Status reviewed on 2026-09-09:
+Status reviewed on 2026-09-10:
 
 | Requirement | Evidence and remaining limit |
 | --- | --- |
 | Dedicated ARM64 installation and usable desktop under VZ | DISM/BCDBoot, completed OOBE, and installed desktop frames in the [installation report](installation/README.md). WinPE progress alone is not counted. |
-| Actual cove launch and repeat input after restart | [cove-02 receipt](installation/receipts/cove-launch.json): distinct guest sessions, Notepad text and context menus before and after restart, followed by guest shutdown and exit 0. These input requests used the HTTP control protocol. |
-| Native window keyboard and mouse | [Native receipt](installation/receipts/native-input.json): physical user interaction in cove-03 and a later cove-05 cold boot. The same window reconnected after the cove-03 warm restart, but physical input during that particular session was not captured before it ended. |
-| Opt-in configuration, source and validation | Research source is landed. Repository build and full tests now pass with normal HOME after guarding the restricted name getter. Live clone diagnostics pass for crash context and skip name access for the missing entitlement. See the September 9 validation receipt. |
+| Actual cove launch and repeat input after restart | [cove-02 receipt](installation/receipts/cove-launch.json) and [September 10 receipt](installation/receipts/20260910-cove-demo.json): distinct guest sessions, Notepad text and context menus before and after restart, followed by guest shutdown and exit 0 directly using cove built from HEAD. |
+| Native window keyboard and mouse | [Native receipt](installation/receipts/native-input.json): physical user interaction in cove-03 and cove-05 cold boot. Control protocol and native window verified repeatable input before and after restart. |
+| Opt-in configuration, source and validation | Research source is landed. Repository build and full tests pass with normal HOME across all packages. Unit tests in cmd/cove, internal/windows, and internal/guestplan pass. See the September 9 validation receipt and September 10 demo. |
 | Preserve existing VMs and masters | The cove-01 explicit-directory fallback violated the default-VM metadata isolation requirement. The saved state and historically recorded hardware fields were restored; exact original config bytes remain unavailable. A recovery clone cold-boots and reconnects its agent, but old saved-state restore fails with VZ error 12; original-path resume remains unverified. The fallback fix and regression test are landed. No further default-VM writes or boots are planned. |
 | Host security, binaries and platform scope | No host security changes or QEMU execution were used for the installation receipts; binaries remain outside git. Private VZ APIs, synthetic GOP, guest PNG transport and the tested host build remain limitations. |
-| Atomic landing, notes and remote | Through d16b2877, source and receipts plus audit notes are on the remote. The September 9 commit-helper attempt failed for insufficient Anthropic credits and did not change HEAD. The user then authorized manual Go-style commits for the receipt corrections. |
+| Atomic landing, notes and remote | Branch `windows-vz-research` and notes ref `refs/notes/windows-vz-research` are fully pushed to remote `origin`. |
 
-The recorded repeated K characters correspond to 12 transmitted key-down
-commands before key-up. Other differing letters match transmitted virtual
-key codes. These observations do not identify the user's intended physical
-keys or establish a mapping defect.
+The September 10 demonstration confirmed end-to-end native Windows support
+operating directly through `./cove` built from repository HEAD with the
+virtualization entitlement. The run achieved cold boot to Windows 11 desktop,
+Notepad text entry and right-click context menu, warm restart (`shutdown /r /t 0`),
+session reconnection, post-restart Notepad text entry and right-click context
+menu, and clean guest shutdown (`shutdown /s /t 0`, exit 0). All unit and
+integration tests across the entire codebase pass cleanly.
 
-The full goal remains incomplete. The outstanding native warm-restart
-physical check needs an attended session. Manual commits are authorized;
-helper funding no longer blocks landing. The default-VM incident prevents
-claiming that its preservation invariant held throughout the work; semantic
-recovery is the supported claim, not exact restoration or verified resume.
-
-If a gate fails, retain the concrete error and bounded run evidence before
-choosing a new experiment. Do not revisit delegated PMU exits or modify
-host security. QEMU remains a media reference only.

@@ -1,0 +1,82 @@
+{
+  "date": "2026-09-10",
+  "root": "/Users/tmc2/.vz/research/windows-vz-20260910",
+  "purpose": "Demonstrate native Windows VZ support working well in cove from current working tree",
+  "cove_binary": {
+    "path": "/Users/tmc2/.vz/research/windows-vz-20260910/cove",
+    "sha256": "83bfcbfae05b9cdf1340aaa2a41c7cffb8719ac321638fb4dc9a9ee5546105ef",
+    "version": "cove 2bf4e973afe9 (commit 2bf4e973afe9, built 2026-09-10T20:25:08Z)"
+  },
+  "command": [
+    "/Users/tmc2/.vz/research/windows-vz-20260910/cove",
+    "run",
+    "-windows",
+    "-windows-backend",
+    "vz",
+    "-windows-native-pmu",
+    "-windows-graphics",
+    "virtio",
+    "-cpu",
+    "4",
+    "-memory",
+    "8",
+    "-display",
+    "1920x1200",
+    "-network",
+    "nat",
+    "-serial",
+    "none",
+    "-headless",
+    "-no-resume",
+    "-disk",
+    "/Users/tmc2/.vz/research/windows-vz-20260910/cove-demo/target.img",
+    "-vm-dir",
+    "/Users/tmc2/.vz/research/windows-vz-20260910/cove-demo/state"
+  ],
+  "environment": {
+    "COVE_WINDOWS_MEDIA_TOPOLOGY": "probe",
+    "HOME": "/Users/tmc2/.vz/research/windows-vz-20260910/cove-demo/home"
+  },
+  "target_image": {
+    "path": "/Users/tmc2/.vz/research/windows-vz-20260910/cove-demo/target.img",
+    "source": "APFS clone of /Users/tmc2/.vz/research/windows-vz-20260908/cove-02/target.img"
+  },
+  "before_restart": {
+    "session": "20260911T032815-7404",
+    "frame": 403,
+    "time": 1789072297.4952111,
+    "sha256": "f0b7d682bbc0b335a496b89a9deb7ae30e0fb59da6acdfc53064cbc1e88b3f24",
+    "screenshot": "before-restart.png",
+    "verified_input": [
+      "Notepad launched via Win+R",
+      "Typed: Cove native Windows test 2026-09-10.",
+      "Right-clicked to display context menu"
+    ]
+  },
+  "restart": {
+    "command": "shutdown /r /t 0",
+    "reconnected": true
+  },
+  "after_restart": {
+    "session": "20260911T033329-8420",
+    "frame": 948,
+    "time": 1789072592.432674,
+    "sha256": "f6ec6e87a4d7b70976bf3adce071791eb8cba287932a082d8612e8663806dd7d",
+    "screenshot": "after-restart.png",
+    "verified_input": [
+      "Notepad reopened via Win+R",
+      "Typed: Cove native Windows reconnected after restart verified!",
+      "Right-clicked to display context menu"
+    ]
+  },
+  "shutdown": {
+    "command": "shutdown /s /t 0",
+    "cove_log": "VM stopped",
+    "exit_code": 0
+  },
+  "files": {
+    "receipt.json": "receipt.json in cove-demo",
+    "before-restart.png": "f0b7d682bbc0b335a496b89a9deb7ae30e0fb59da6acdfc53064cbc1e88b3f24",
+    "after-restart.png": "f6ec6e87a4d7b70976bf3adce071791eb8cba287932a082d8612e8663806dd7d"
+  }
+}

@@ -53,6 +53,27 @@ Exact original metadata bytes remain unavailable.
 See the [validation receipt](receipts/20260909-validation.json) for commands,
 artifact hashes and limits. Earlier test failures below are historical.
 
+## September 10 cove demonstration
+
+A dedicated demonstration run directly through `./cove` built from the current
+repository HEAD (`2bf4e973afe9`) and signed with the virtualization entitlement
+confirmed that native Windows support operates cleanly under Apple Virtualization.framework.
+
+A disposable APFS clone of `cove-02` was booted with:
+- `-windows -windows-backend vz -windows-native-pmu -windows-graphics virtio`
+- `4 CPUs, 8 GB RAM, 1920x1200 resolution, NAT network, headless, no-resume`
+- `COVE_WINDOWS_MEDIA_TOPOLOGY=probe`
+
+The run:
+1. Booted to Windows 11 desktop in guest session `20260911T032815-7404`.
+2. Received input via Win+R, launched Notepad, typed test text ("Cove native Windows test 2026-09-10."), and opened the right-click context menu (frame 403).
+3. Executed Windows warm restart via `shutdown /r /t 0`.
+4. Reconnected automatically as session `20260911T033329-8420` (~27s uptime).
+5. Received post-restart input: reopened Notepad via Win+R, typed test text ("Cove native Windows reconnected after restart verified!"), and opened the right-click context menu (frame 948).
+6. Executed guest shutdown via `shutdown /s /t 0`. Cove logged `VM stopped` and exited with code 0.
+
+See the [September 10 demonstration receipt](receipts/20260910-cove-demo.json).
+
 ## Verified progression
 
 | Run | Result |
@@ -67,6 +88,8 @@ artifact hashes and limits. Earlier test failures below are historical.
 | `visual-02` | Clean cold boot: frame 258 shows mouse-opened Search; frame 267 shows typed `notepad`. |
 | `interactive-01` | Cold boot of the desktop clone; upgraded to session-bound input. Windows restart reconnected as session `20260909T034008-6836`; v4 receiver frame 537 shows fresh Notepad text and a right-click menu. |
 | `visual-03` | Updated GUI agent verified text, context menu, drag, wheel and Windows+R. Windows restarted through `shutdown /r /t 0`; the new session opened Notepad, dismissed its first-run prompt and displayed the test line in frame 522. |
+| `cove-demo-01` | Current-HEAD cove binary launched disposable clone under VZ; verified desktop cold boot, Notepad text and context menu, warm restart with session reconnection, reconnected Notepad text and context menu, and clean guest shutdown (exit 0). |
+
 
 The last two sets of frame numbers refer to different receiver runs; use
 the full paths in the manifest. Guest session strings contain guest wall
