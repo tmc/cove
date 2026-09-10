@@ -31,6 +31,28 @@ hashes, sessions, launch commands and binaries. Raw artifacts remain under
 [acceptance plan](../installation-plan.md) records remaining physical AppKit input and recovery limitations.
 The research implementation and audit notes have been pushed.
 
+## September 9 validation
+
+Repository build and full tests now pass with normal HOME. The private name
+getter checks `com.apple.private.virtualization` and traps when it is absent;
+queue confinement and a running VM alone do not make it available. The tests
+now check the entitlement before calling it and use an explicit live fixture
+instead of the host's default VM files. On a disposable macOS clone, the name
+test skips for the missing entitlement and the crash-context round trip passes.
+No restricted entitlement was added. This corrects the earlier queue-only
+explanation of the full-suite failure.
+
+A separate clone of the preserved default VM failed to restore the old saved
+session with VZ error 12 (`invalid argument`). Its fallback cold boot succeeded
+and the guest agent reconnected. Original file sizes and modification times
+were unchanged; config, auxiliary storage, and saved-state hashes also matched.
+The clone relocated storage and redirected the `tmc` share to empty scratch,
+so this does not prove that the original saved state itself is unusable.
+Exact original metadata bytes remain unavailable.
+
+See the [validation receipt](receipts/20260909-validation.json) for commands,
+artifact hashes and limits. Earlier test failures below are historical.
+
 ## Verified progression
 
 | Run | Result |

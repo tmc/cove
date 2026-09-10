@@ -1,0 +1,92 @@
+{
+  "date": "2026-09-09",
+  "root": "/Users/tmc2/.vz/research/windows-vz-20260909",
+  "diagnostics": {
+    "finding": "_name traps on a missing com.apple.private.virtualization entitlement, not simply off-queue or stopped state",
+    "change": "guard name diagnostics with SecTask entitlement query; use explicit live fixture instead of host default files; dispatch getters/setters on VM queue",
+    "go_build": "pass",
+    "go_test_normal_HOME": "pass",
+    "live_clone_test": "name skips for missing entitlement; crash context getter/setter passes",
+    "disassembly_evidence": [
+      {
+        "command": "lldb: bt 10; frame select 1; disassemble --frame",
+        "output": "-[VZVirtualMachine(VZPrivate) _name]: +20 bl VzCore::VirtualizationEntitlements::from_current_process(); +32 tbz w8, #0x1, <+72>; +72 bl Base::assertion_trap()"
+      },
+      {
+        "command": "lldb: disassemble -s 0x234787d68 -c 100",
+        "output": "entitlements_from_task: +56 add x2, x2, #0xbc0 ; \"com.apple.private.virtualization\"; +224 mov w22, #0x3"
+      }
+    ]
+  },
+  "recovery": {
+    "launch": {
+      "source": "/Users/tmc2/.vz/vms/mlx-lm.covevm",
+      "source_files": {
+        "disk.img": {
+          "size": 51539607552,
+          "mtime_ns": 1788743720841716439
+        },
+        "aux.img": {
+          "size": 33579164,
+          "mtime_ns": 1788743701641376826,
+          "sha256": "fd96fe62d6d2ce4325c98e9f4ebe0e78df267cf8d7df770532edd92b5715019c"
+        },
+        "hw.model": {
+          "size": 132,
+          "mtime_ns": 1777983674675377731
+        },
+        "machine.id": {
+          "size": 68,
+          "mtime_ns": 1777983674677371316
+        },
+        "config.json": {
+          "size": 686,
+          "mtime_ns": 1788908711256043930,
+          "sha256": "e5eb6d2a30221133e5b2e4c1f24ce64193b478afcf68b9357153e371fe47fc19"
+        },
+        "suspend.vmstate": {
+          "size": 2818576384,
+          "mtime_ns": 1788743727800193884,
+          "sha256": "73eab08ff9536d92c67a80defa5b90b7db587e279efaf647a30001f23af6091f"
+        }
+      },
+      "command": [
+        "/Users/tmc2/.vz/research/windows-vz-20260908/validation-synced-01/cove-fixed",
+        "run",
+        "-vm-dir",
+        "/Users/tmc2/.vz/research/windows-vz-20260909/recovery-01/vm",
+        "-cpu",
+        "4",
+        "-memory",
+        "8",
+        "-headless"
+      ],
+      "started": 1789000827.357879,
+      "deadline_seconds": 180,
+      "share": "tmc redirected to empty scratch directory; preserved host share is not exposed",
+      "pid": 24335,
+      "exit": 0,
+      "ended": 1789001010.658904
+    },
+    "source_verification": {
+      "disk.img": true,
+      "aux.img": true,
+      "hw.model": true,
+      "machine.id": true,
+      "config.json": true,
+      "suspend.vmstate": true
+    },
+    "restore": "VZErrorDomain code 12 invalid argument; old suspended session not recovered",
+    "cold_boot": "fallback cold boot succeeded and guest agent reconnected",
+    "limitation": "clone uses relocated disk and auxiliary storage, and tmc share redirected to empty scratch directory; does not prove original saved state is intrinsically unusable or exact metadata recovery"
+  },
+  "files": {
+    "build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "test.log": "24804921d835a8aa2f30d5cb3cef7be067914475de3d7c4d67f0cd320247c02f",
+    "diagnostics/guarded-live-test.log": "e8a591aadbbfda49face407862bdf84992bdf8a404d9bcba9836c3fe413980cd",
+    "diagnostics/lldb-trap.log": "e8aa2510018c26478b0672a50a1b4ffe590d1c64b9dd859ce9a57d8e0554f0e9",
+    "diagnostics/entitlement-map.log": "dadd120efa2d515a5c6775cd4beadbd000991a881245d114ca800d4e63119672",
+    "diagnostics/entitlement-disassembly.log": "6c1558752ac36a307e697516bb8a7b5b58a5b2e609dfac61c8a56d8aa99bd3e8",
+    "recovery-01/run.log": "1e5dfe98be04d7db5616314a66e1985b69bb18a04f4630f65bc187a28fe1fc9b"
+  }
+}
