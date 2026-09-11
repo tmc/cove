@@ -179,7 +179,7 @@ func isVZFramebuffer(id objc.ID) bool {
 // VZVirtualMachineView (and thus no framebuffer view) exists.
 func findVZFramebufferViaDisplay(vmID objc.ID) (objc.ID, string) {
 	uuid := foundation.NewNSUUID()
-	display := pvz.NewMacGraphicsDisplayWithVirtualMachineGraphicsDeviceIndexFramebufferIndexUuid(
+	display := pvz.NewVZMacGraphicsDisplayWithVirtualMachineGraphicsDeviceIndexFramebufferIndexUuid(
 		objectivec.ObjectFromID(vmID), 0, 0, uuid)
 	if display.ID == 0 {
 		return 0, ""
