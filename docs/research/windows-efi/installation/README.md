@@ -285,6 +285,14 @@ right-click menu in both sessions. `shutdown /s /t 0` then stopped Windows;
 cove logged `VM stopped` and exited 0 before its 600-second deadline.
 The stopped clone is preserved. See the [cove launch receipt](receipts/cove-launch.json).
 
+Subsequent verification integrated the host-side capture receiver into cove as
+`cove vz-display` (`cmd/cove/vz_display.go`), providing a native AppKit window and
+HTTP frame receiver in pure Go with loopback management endpoints and graceful
+signal cleanup. Testing against `cove-02` verified live 1920x1200 frames at ~2 Hz,
+Win+R Notepad launching, text input, right-click context menu, warm restart
+(`shutdown /r /t 0`) reconnection in 26 seconds with queue clearing, and clean
+ACPI shutdown (`shutdown /s /t 0`). See the [vz-display E2E receipt](receipts/20260910-vz-display-e2e.json).
+
 The first cove launch exposed an isolation bug: `resolveRunTarget` rejected
 an explicit state directory whose disk was elsewhere and silently selected
 the active `mlx-lm.covevm` directory. The run was stopped. Its original saved

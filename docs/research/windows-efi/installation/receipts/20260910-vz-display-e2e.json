@@ -1,0 +1,96 @@
+{
+  "date": "2026-09-10",
+  "purpose": "Verify cove vz-display native AppKit/HTTP viewer with live Windows 11 desktop on Apple VZ",
+  "worktree": "/Users/tmc2/go/src/github.com/tmc/cove-wt-vz-display",
+  "branch": "windows-vz-display",
+  "commit": "f462712f",
+  "cove_binary": {
+    "path": "/tmp/cove-e2e",
+    "sha256": "d36420ab07b8a4b433a4a2a692cfdbc2f32af008a151113e4112768960028769",
+    "version": "cove 63816e37bf93 (commit 63816e37bf93, built 2026-09-10T22:11:40Z)"
+  },
+  "vm_command": [
+    "/tmp/cove-e2e",
+    "run",
+    "-windows",
+    "-windows-backend",
+    "vz",
+    "-windows-native-pmu",
+    "-windows-graphics",
+    "virtio",
+    "-cpu",
+    "4",
+    "-memory",
+    "8",
+    "-display",
+    "1920x1200",
+    "-network",
+    "nat",
+    "-serial",
+    "none",
+    "-headless",
+    "-no-resume",
+    "-disk",
+    "/Users/tmc2/.vz/research/windows-vz-20260910/cove-e2e-vz-display/target.img",
+    "-vm-dir",
+    "/Users/tmc2/.vz/research/windows-vz-20260910/cove-e2e-vz-display/state"
+  ],
+  "display_command": [
+    "/tmp/cove-e2e",
+    "vz-display",
+    "-vm-dir",
+    "/Users/tmc2/.vz/research/windows-vz-20260910/cove-e2e-vz-display/state",
+    "-token",
+    "c56629eeae8f0aed08295fd1d8ba8fa3f4f5f9f8424c00a1",
+    "-listen",
+    ":49192"
+  ],
+  "checklist": {
+    "item_1_frames_render": {
+      "verified": true,
+      "rate": "~2 Hz (500 ms ticker)",
+      "resolution": "1920x1200"
+    },
+    "item_2_input_reach_guest": {
+      "verified": true,
+      "session": "20260911T050015-9160",
+      "frame": 99,
+      "sha256": "c9af353351cedcf3df9f69d00d5b5b603754980030790db3a0e8a0e2324a5759",
+      "screenshot": "before-restart.png",
+      "verified_input": [
+        "Notepad launched via Win+R",
+        "Typed: Cove native Windows test 2026-09-10.",
+        "Right-clicked to display context menu at (500, 500)"
+      ]
+    },
+    "item_3_warm_restart_reconnect": {
+      "verified": true,
+      "command": "shutdown /r /t 0",
+      "reconnected": true,
+      "session_before": "20260911T050015-9160",
+      "session_after": "20260911T050716-8960",
+      "elapsed_seconds": 26,
+      "queue_cleared": true,
+      "sha256": "aa03b0110a3ed459dbda428d1a5e513c216bb231228c5179332e5246da871933",
+      "screenshot": "after-restart.png",
+      "verified_input": [
+        "Notepad reopened via Win+R",
+        "Typed: Cove native Windows reconnected after restart verified!",
+        "Right-clicked to display context menu at (500, 500)"
+      ]
+    },
+    "item_4_clean_shutdown": {
+      "verified": true,
+      "command": "shutdown /s /t 0",
+      "cove_log": "VM stopped",
+      "exit_code": 0,
+      "push_url_removed": true
+    }
+  },
+  "files": {
+    "receipt": "/Users/tmc2/.vz/research/windows-vz-20260910/cove-e2e-vz-display/receipt.json",
+    "cove_log": "/Users/tmc2/.vz/research/windows-vz-20260910/cove-e2e-vz-display/cove.log",
+    "before_restart_png": "/Users/tmc2/.vz/research/windows-vz-20260910/cove-e2e-vz-display/before-restart.png",
+    "after_restart_png": "/Users/tmc2/.vz/research/windows-vz-20260910/cove-e2e-vz-display/after-restart.png"
+  }
+}
