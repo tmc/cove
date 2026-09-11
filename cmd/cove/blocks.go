@@ -70,6 +70,24 @@ func isVZAlreadyStoppedStopError(err error) bool {
 	return strings.Contains(msg, "stopped") && strings.Contains(msg, "stopping")
 }
 
+// isVZCannotStopError reports whether err is an invalid state transition error
+// resulting from attempting to stop a VM that is already stopped, in an error state,
+// or otherwise unable to transition to stopping.
+func isVZCannotStopError(err error) bool {
+	var snap nsErrorSnapshot
+	if !errors.As(err, &snap) {
+		return false
+	}
+	if !strings.EqualFold(snap.domain, "VZErrorDomain") || snap.code != 4 {
+		return false
+	}
+	desc := strings.ToLower(snap.description + " " + snap.reason)
+	if !strings.Contains(desc, "stopping") {
+		return false
+	}
+	return strings.Contains(desc, "stopped") || strings.Contains(desc, `"error"`) || strings.Contains(desc, "“error”")
+}
+
 // isVZStorageAttachmentError reports whether err is the VZErrorDomain
 // code=2 configuration failure raised when the disk image is already open
 // by another process ("the storage device attachment is invalid", or the

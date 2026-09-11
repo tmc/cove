@@ -37,6 +37,54 @@ func TestIsVZAlreadyStoppedStopErrorRejectsOtherErrors(t *testing.T) {
 	}
 }
 
+func TestIsVZCannotStopError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "stopped to stopping",
+			err: nsErrorSnapshot{
+				domain:      "VZErrorDomain",
+				code:        4,
+				description: `Invalid virtual machine state transition. Transition from state "stopped" to state "stopping" is invalid.`,
+			},
+			want: true,
+		},
+		{
+			name: "error to stopping",
+			err: nsErrorSnapshot{
+				domain:      "VZErrorDomain",
+				code:        4,
+				description: `Invalid virtual machine state transition. Transition from state "error" to state "stopping" is invalid.`,
+			},
+			want: true,
+		},
+		{
+			name: "running to stopping valid transition failure",
+			err: nsErrorSnapshot{
+				domain:      "VZErrorDomain",
+				code:        4,
+				description: `Transition from state "running" to state "stopping" is invalid.`,
+			},
+			want: false,
+		},
+		{
+			name: "other domain",
+			err:  errors.New("something else"),
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isVZCannotStopError(tt.err); got != tt.want {
+				t.Fatalf("isVZCannotStopError() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestNSErrorSnapshotError(t *testing.T) {
 	tests := []struct {
 		name string

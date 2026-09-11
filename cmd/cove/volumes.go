@@ -21,6 +21,7 @@ type volumeSlice []vmconfig.VolumeMount
 var rosettaRuntimeSetup bool
 
 var tccVolumeWarnings sync.Map
+var loggedSavedVolumes sync.Map
 
 func (v *volumeSlice) String() string {
 	if v == nil || len(*v) == 0 {
@@ -193,7 +194,10 @@ func getEffectiveVolumes() []vmconfig.VolumeMount {
 		return nil
 	}
 	if len(cfg.Volumes) > 0 && policy.AllowsVolumes() {
-		fmt.Printf("Using saved volume mounts from %s\n", filepath.Join(vmDir, "config.json"))
+		cfgPath := filepath.Join(vmDir, "config.json")
+		if _, loaded := loggedSavedVolumes.LoadOrStore(cfgPath, true); !loaded {
+			fmt.Printf("Using saved volume mounts from %s\n", cfgPath)
+		}
 	}
 	return policy.EffectiveVolumes(nil, cfg.Volumes)
 }

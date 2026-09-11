@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"google.golang.org/protobuf/encoding/protojson"
@@ -240,6 +242,17 @@ func ServeConnection(conn net.Conn, h Handler) {
 	}
 }
 
+func isClientDisconnectError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, syscall.EPIPE) || errors.Is(err, syscall.ECONNRESET) || errors.Is(err, net.ErrClosed) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "broken pipe") || strings.Contains(msg, "connection reset")
+}
+
 func WriteResponse(conn net.Conn, resp *controlpb.ControlResponse) error {
 	data, err := ProtoJSONMarshaler.Marshal(resp)
 	if err != nil {
@@ -247,7 +260,11 @@ func WriteResponse(conn net.Conn, resp *controlpb.ControlResponse) error {
 		return err
 	}
 	if _, err := conn.Write(append(data, '\n')); err != nil {
-		slog.Error("control socket: write response", slog.Any("err", err))
+		if isClientDisconnectError(err) {
+			slog.Debug("control socket: write response: client disconnected", slog.Any("err", err))
+		} else {
+			slog.Error("control socket: write response", slog.Any("err", err))
+		}
 		return err
 	}
 	return nil

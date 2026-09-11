@@ -3,6 +3,7 @@ package control
 import (
 	"bufio"
 	"context"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -214,5 +215,26 @@ func TestServerCountsRejectedConnections(t *testing.T) {
 	}
 	if got := s.Rejected(); got == 0 {
 		t.Fatalf("Rejected = 0, want >= 1 after over-limit dial")
+	}
+}
+
+func TestIsClientDisconnectError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"broken pipe text", errors.New("write unix: write: broken pipe"), true},
+		{"connection reset text", errors.New("read: connection reset by peer"), true},
+		{"closed net", net.ErrClosed, true},
+		{"other error", errors.New("permission denied"), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isClientDisconnectError(tt.err); got != tt.want {
+				t.Fatalf("isClientDisconnectError(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+		})
 	}
 }

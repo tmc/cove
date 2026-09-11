@@ -192,6 +192,20 @@ func shouldSuspendCurrentSession() bool {
 	return canSaveRestore && activeBootSessionAllowsSuspend()
 }
 
+func canSuspendVM(vm vz.VZVirtualMachine, queue dispatch.Queue) bool {
+	if !shouldSuspendCurrentSession() {
+		return false
+	}
+	if vmBootTransitionInProgress() {
+		return false
+	}
+	state, err := currentVMState(vm, queue)
+	if err != nil {
+		return false
+	}
+	return state == vz.VZVirtualMachineStateRunning || state == vz.VZVirtualMachineStatePaused
+}
+
 func runRequiresColdBootForRun(rc vmrun.RunConfig) bool {
 	return rc.BootCommandsFile != "" || requestedBootSessionModeForRun(rc) != bootSessionModeNormal
 }
@@ -1654,7 +1668,7 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBund
 		if restoreTerminal != nil {
 			restoreTerminal()
 		}
-		if shouldSuspendCurrentSession() {
+		if canSuspendVM(vm, queue) {
 			fmt.Println("\nSuspending VM...")
 			if err := suspendVM(vm, queue, rc, hc); err != nil {
 				fmt.Printf("Suspend failed: %v, stopping VM...\n", err)
@@ -1664,13 +1678,16 @@ func runVMHeadless(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBund
 				fmt.Println("VM suspended")
 			}
 		} else {
-			if mode := currentBootSessionMode(); mode != bootSessionModeNormal {
-				fmt.Printf("\nStopping VM without suspend (%s mode)...\n", bootSessionModeString(mode))
-			} else {
-				fmt.Println("\nStopping VM...")
+			state, _ := currentVMState(vm, queue)
+			if state == vz.VZVirtualMachineStateRunning || state == vz.VZVirtualMachineStatePaused {
+				if mode := currentBootSessionMode(); mode != bootSessionModeNormal {
+					fmt.Printf("\nStopping VM without suspend (%s mode)...\n", bootSessionModeString(mode))
+				} else {
+					fmt.Println("\nStopping VM...")
+				}
+				noteVMRuntimeState(target.Directory, "stopping")
+				hardStopVM(vm, queue)
 			}
-			noteVMRuntimeState(target.Directory, "stopping")
-			hardStopVM(vm, queue)
 		}
 		closeSerialOutputFile()
 		// Stop the event pump only once the suspend (or hard stop) has finished,
@@ -1893,8 +1910,11 @@ func suspendVM(vm vz.VZVirtualMachine, queue dispatch.Queue, rc vmrun.RunConfig,
 // hardStopVM forcibly stops the VM. Used as fallback when suspend fails.
 func hardStopVM(vm vz.VZVirtualMachine, queue dispatch.Queue) {
 	DispatchAsyncQueue(queue, func() {
+		if !vm.CanStop() {
+			return
+		}
 		vm.StopWithCompletionHandler(func(err error) {
-			if err := snapshotNSError(err); err != nil {
+			if err := snapshotNSError(err); err != nil && !isVZCannotStopError(err) {
 				fmt.Fprintf(os.Stderr, "error: vm stop: %v\n", err)
 			}
 		})
@@ -2225,7 +2245,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 	cleanup := func() {
 		close(monitorDone)
 		stopControlRuntimeInfrastructure(controlServer)
-		if shouldSuspendCurrentSession() {
+		if canSuspendVM(vm, queue) {
 			fmt.Println("\nSuspending VM...")
 			if err := suspendVM(vm, queue, rc, hc); err != nil {
 				fmt.Printf("Suspend failed: %v, stopping VM...\n", err)
@@ -2234,13 +2254,16 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 				fmt.Println("VM suspended (will resume on next launch)")
 			}
 		} else {
-			if mode := currentBootSessionMode(); mode != bootSessionModeNormal {
-				fmt.Printf("\nStopping VM without suspend (%s mode)...\n", bootSessionModeString(mode))
-			} else {
-				fmt.Println("\nStopping VM...")
+			state, _ := currentVMState(vm, queue)
+			if state == vz.VZVirtualMachineStateRunning || state == vz.VZVirtualMachineStatePaused {
+				if mode := currentBootSessionMode(); mode != bootSessionModeNormal {
+					fmt.Printf("\nStopping VM without suspend (%s mode)...\n", bootSessionModeString(mode))
+				} else {
+					fmt.Println("\nStopping VM...")
+				}
+				noteVMRuntimeState(target.Directory, "stopping")
+				hardStopVM(vm, queue)
 			}
-			noteVMRuntimeState(target.Directory, "stopping")
-			hardStopVM(vm, queue)
 		}
 		closeSerialOutputFile()
 		noteVMRuntimeState(target.Directory, "stopped")

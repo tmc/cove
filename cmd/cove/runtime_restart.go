@@ -117,9 +117,13 @@ func requestGracefulVMStop(vm vz.VZVirtualMachine, queue dispatch.Queue) bool {
 func hardStopVMAndWait(vm vz.VZVirtualMachine, queue dispatch.Queue) error {
 	ch := make(chan error, 1)
 	DispatchAsyncQueue(queue, func() {
+		if !vm.CanStop() {
+			ch <- nil
+			return
+		}
 		vm.StopWithCompletionHandler(func(err error) {
 			err = snapshotNSError(err)
-			if isVZAlreadyStoppedStopError(err) {
+			if isVZCannotStopError(err) {
 				err = nil
 			}
 			ch <- err
