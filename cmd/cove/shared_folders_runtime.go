@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/tmc/apple/dispatch"
 	"github.com/tmc/apple/foundation"
@@ -44,17 +45,48 @@ func (s *ControlServer) handleSharedFoldersRuntimeStatus() *controlpb.ControlRes
 func (s *ControlServer) sharedFoldersRuntimeStatus() sharedFoldersRuntimeStatus {
 	s.mu.Lock()
 	applier := newSharedFolderRuntimeApplier(s.vm, s.vmQueue)
+	targetDir := s.effectiveVMDir()
 	s.mu.Unlock()
-	return applier.Status()
+	status := applier.Status()
+	for _, f := range LoadSharedFolders(targetDir) {
+		if _, err := os.Stat(f.Path); err != nil {
+			status.AbsentPaths = append(status.AbsentPaths, f.Path)
+		}
+	}
+	if len(status.AbsentPaths) > 0 && status.VirtioFS {
+		status.Message += fmt.Sprintf(" (%d host path(s) temporarily absent)", len(status.AbsentPaths))
+	}
+	return status
 }
 
 func (s *ControlServer) handleSharedFoldersApply() *controlpb.ControlResponse {
 	folders := LoadSharedFolders(s.effectiveVMDir())
-	applied, err := s.applySharedFoldersToRunningVM(folders)
+	applied, absent, err := s.applySharedFoldersToRunningVMWithAbsent(folders)
 	if err != nil {
 		return &controlpb.ControlResponse{Error: err.Error()}
 	}
-	msg := fmt.Sprintf("applied %d shared folder(s)", applied)
+
+	var remountMsg string
+	mountRoot := defaultSharedFoldersMountRoot(s.effectiveVMDir())
+	if mounted, remountErr := mountSharedFoldersInGuest(s.effectiveVMDir(), mountRoot); remountErr != nil {
+		if !strings.Contains(remountErr.Error(), "guest agent unavailable") {
+			remountMsg = fmt.Sprintf("; guest remount warning: %v", remountErr)
+		}
+	} else if mounted {
+		remountMsg = "; remounted in guest"
+	}
+
+	var msg string
+	if len(absent) > 0 {
+		absentDescs := make([]string, 0, len(absent))
+		for _, f := range absent {
+			absentDescs = append(absentDescs, fmt.Sprintf("%s (%s)", f.Tag, f.Path))
+		}
+		msg = fmt.Sprintf("applied %d shared folder(s) (%d temporarily absent: %s)%s", applied, len(absent), strings.Join(absentDescs, ", "), remountMsg)
+	} else {
+		msg = fmt.Sprintf("applied %d shared folder(s)%s", applied, remountMsg)
+	}
+
 	return &controlpb.ControlResponse{
 		Success: true,
 		Data:    msg,
@@ -63,23 +95,34 @@ func (s *ControlServer) handleSharedFoldersApply() *controlpb.ControlResponse {
 }
 
 func (s *ControlServer) applySharedFoldersToRunningVM(folders []SharedFolderEntry) (int, error) {
+	applied, _, err := s.applySharedFoldersToRunningVMWithAbsent(folders)
+	return applied, err
+}
+
+func (s *ControlServer) applySharedFoldersToRunningVMWithAbsent(folders []SharedFolderEntry) (int, []SharedFolderEntry, error) {
 	s.mu.Lock()
 	applier := newSharedFolderRuntimeApplier(s.vm, s.vmQueue)
 	s.mu.Unlock()
-	return applier.Apply(folders)
+	return applier.ApplyWithAbsent(folders)
 }
 
 func (a sharedFolderRuntimeApplier) Apply(folders []SharedFolderEntry) (int, error) {
+	applied, _, err := a.ApplyWithAbsent(folders)
+	return applied, err
+}
+
+func (a sharedFolderRuntimeApplier) ApplyWithAbsent(folders []SharedFolderEntry) (int, []SharedFolderEntry, error) {
 	if a.vm.ID == 0 {
-		return 0, fmt.Errorf("vm not initialized")
+		return 0, nil, fmt.Errorf("vm not initialized")
 	}
 	if a.queue.Handle() == 0 {
-		return 0, fmt.Errorf("vm queue not initialized")
+		return 0, nil, fmt.Errorf("vm queue not initialized")
 	}
 
 	var (
-		applied  int
-		applyErr error
+		applied       int
+		absentFolders []SharedFolderEntry
+		applyErr      error
 	)
 
 	DispatchSync(uintptr(a.queue.Handle()), func() {
@@ -120,6 +163,7 @@ func (a sharedFolderRuntimeApplier) Apply(folders []SharedFolderEntry) (int, err
 		values := make([]objectivec.IObject, 0, len(folders))
 		for _, f := range folders {
 			if _, err := os.Stat(f.Path); err != nil {
+				absentFolders = append(absentFolders, f)
 				continue
 			}
 
@@ -134,7 +178,10 @@ func (a sharedFolderRuntimeApplier) Apply(folders []SharedFolderEntry) (int, err
 		}
 
 		if len(keys) == 0 {
-			applyErr = fmt.Errorf("no existing shared folders to apply")
+			emptyDict := foundation.NewNSDictionary()
+			emptyShare := vz.NewMultipleDirectoryShareWithDirectories(&emptyDict)
+			device.SetShare(&emptyShare.VZDirectoryShare)
+			applied = 0
 			return
 		}
 
@@ -145,9 +192,9 @@ func (a sharedFolderRuntimeApplier) Apply(folders []SharedFolderEntry) (int, err
 	})
 
 	if applyErr != nil {
-		return 0, applyErr
+		return 0, nil, applyErr
 	}
-	return applied, nil
+	return applied, absentFolders, nil
 }
 
 func (a sharedFolderRuntimeApplier) Status() sharedFoldersRuntimeStatus {

@@ -559,7 +559,11 @@ func sharedFolderStatus(vmDirectory, mountPoint string) error {
 		if f.ReadOnly {
 			mode = "ro"
 		}
-		fmt.Printf("  %s\t%s\t%s\n", f.Tag, mode, f.Path)
+		statusSuffix := ""
+		if _, err := os.Stat(f.Path); err != nil {
+			statusSuffix = " [host path absent]"
+		}
+		fmt.Printf("  %s\t%s\t%s%s\n", f.Tag, mode, f.Path, statusSuffix)
 		fmt.Printf("    guest: %s\n", defaultSharedFolderMountPoint(vmDirectory, f.Tag))
 		fmt.Printf("    link:  %s -> %s\n", defaultSharedFolderHomeLink(f.Tag), defaultSharedFolderMountPoint(vmDirectory, f.Tag))
 	}
@@ -699,11 +703,29 @@ func parseSharedFolderProbeOutput(out string) sharedFolderProbeResult {
 	return res
 }
 
+func isDeadOrStaleMountError(errText string) bool {
+	lower := strings.ToLower(errText)
+	return strings.Contains(lower, "input/output error") ||
+		strings.Contains(lower, "device not configured") ||
+		strings.Contains(lower, "stale file handle") ||
+		strings.Contains(lower, "stale nfs file handle") ||
+		strings.Contains(lower, "bad file descriptor") ||
+		strings.Contains(lower, "transport endpoint is not connected") ||
+		strings.Contains(lower, "socket not connected") ||
+		strings.Contains(lower, "host is down") ||
+		strings.Contains(lower, "no such device") ||
+		strings.Contains(lower, "connection reset") ||
+		strings.Contains(lower, "software caused connection abort")
+}
+
 func sharedFolderProbeHint(vmDirectory, guestPath string, res sharedFolderProbeResult) string {
 	if res.Readable && (res.Writable || res.Detail == "") {
 		return ""
 	}
 	detail := strings.ToLower(res.Detail)
+	if isDeadOrStaleMountError(detail) {
+		return fmt.Sprintf("mount point is stale or dead; run: cove ctl shared-folders-apply or cove -vm %s shared-folder mount to recover", sharedFolderVMName(vmDirectory))
+	}
 	if vmconfig.DetectOSType(vmDirectory) != "Linux" && (strings.Contains(detail, "operation not permitted") || strings.Contains(detail, "permission denied") || strings.Contains(detail, "full disk access") || strings.Contains(detail, "user agent")) {
 		return fmt.Sprintf("macOS privacy may be blocking vz-agent; run: cove doctor --tcc-path %s or cove doctor tcc-fda -tcc-path %s", shellQuote(guestPath), shellQuote(guestPath))
 	}
@@ -838,6 +860,53 @@ func mountSharedFoldersInGuest(vmDirectory, mountPoint string) (bool, error) {
 	return mountSharedFoldersInGuestWithTimeouts(vmDirectory, mountPoint, defaultSharedFolderMountTimeouts())
 }
 
+func unmountGuestMountPointWithTimeouts(client *ControlClient, mountPoint string, linuxGuest bool, timeout time.Duration) error {
+	// First attempt standard unmount
+	res, err := client.AgentDaemonExecTypedTimeout([]string{"umount", mountPoint}, nil, "", timeout)
+	if err == nil && res.ExitCode == 0 {
+		return nil
+	}
+	stderr := ""
+	if res != nil {
+		stderr = strings.ToLower(strings.TrimSpace(res.Stderr + " " + res.Stdout))
+	}
+	if strings.Contains(stderr, "not currently mounted") || strings.Contains(stderr, "not mounted") {
+		return nil
+	}
+
+	// Retry with force unmount (-f) for stuck / stale / dead mounts
+	forceRes, forceErr := client.AgentDaemonExecTypedTimeout([]string{"umount", "-f", mountPoint}, nil, "", timeout)
+	if forceErr == nil && forceRes.ExitCode == 0 {
+		return nil
+	}
+	if forceRes != nil {
+		forceStderr := strings.ToLower(strings.TrimSpace(forceRes.Stderr + " " + forceRes.Stdout))
+		if strings.Contains(forceStderr, "not currently mounted") || strings.Contains(forceStderr, "not mounted") {
+			return nil
+		}
+	}
+
+	// On Linux, try lazy unmount (-l) to detach from hierarchy
+	if linuxGuest {
+		lazyRes, lazyErr := client.AgentDaemonExecTypedTimeout([]string{"umount", "-l", mountPoint}, nil, "", timeout)
+		if lazyErr == nil && lazyRes.ExitCode == 0 {
+			return nil
+		}
+	}
+
+	if err != nil {
+		return err
+	}
+	if res != nil && res.ExitCode != 0 {
+		msg := strings.TrimSpace(res.Stderr)
+		if msg == "" {
+			msg = strings.TrimSpace(res.Stdout)
+		}
+		return fmt.Errorf("exit %d: %s", res.ExitCode, msg)
+	}
+	return nil
+}
+
 func mountSharedFoldersInGuestWithTimeouts(vmDirectory, mountPoint string, timeouts sharedFolderMountTimeouts) (bool, error) {
 	if sharedFoldersUsePerTagMounts(vmDirectory, mountPoint) {
 		return mountSharedFolderTagsInGuestWithTimeouts(vmDirectory, timeouts)
@@ -859,6 +928,7 @@ func mountSharedFoldersInGuestWithTimeouts(vmDirectory, mountPoint string, timeo
 		return false, fmt.Errorf("query mounts: %w", err)
 	}
 	tags := expectedSharedFolderTags(vmDirectory)
+	linuxGuest := vmconfig.DetectOSType(vmDirectory) == "Linux"
 	if strings.Contains(mountRes.Stdout, " on "+mountPoint+" ") {
 		lsRes, lsErr := client.AgentExecTypedTimeout([]string{"ls", "-1", mountPoint}, nil, "", timeouts.listTags)
 		if sharedFoldersMountedAndSynced(mountRes.Stdout, mountPoint, tags, lsRes, lsErr) {
@@ -870,24 +940,19 @@ func mountSharedFoldersInGuestWithTimeouts(vmDirectory, mountPoint string, timeo
 		if lsRes == nil {
 			return false, fmt.Errorf("inspect mounted shared folders at %q: missing response", mountPoint)
 		}
-		if lsRes.ExitCode != 0 {
-			msg := strings.TrimSpace(lsRes.Stderr)
-			if msg == "" {
-				msg = strings.TrimSpace(lsRes.Stdout)
-			}
-			if msg == "" {
-				msg = "unknown error"
-			}
-			return false, fmt.Errorf("inspect mounted shared folders at %q: exit %d: %s", mountPoint, lsRes.ExitCode, msg)
-		}
 
-		// Refresh mounted view to pick up newly hotplugged or removed tags.
-		if _, err := client.AgentDaemonExecTypedTimeout([]string{"umount", mountPoint}, nil, "", timeouts.unmount); err != nil && !strings.Contains(strings.ToLower(err.Error()), "not currently mounted") {
+		// Refresh mounted view to pick up newly hotplugged or removed tags,
+		// or recover from a dead/stale mount point.
+		if err := unmountGuestMountPointWithTimeouts(client, mountPoint, linuxGuest, timeouts.unmount); err != nil {
 			return false, fmt.Errorf("remount shared folders: unmount %q: %w", mountPoint, err)
 		}
 		if _, err := client.AgentDaemonExecTypedTimeout([]string{"mkdir", "-p", mountPoint}, nil, "", timeouts.mkdir); err != nil {
 			return false, fmt.Errorf("recreate mount point %q: %w", mountPoint, err)
 		}
+	}
+
+	if len(tags) == 0 {
+		return false, nil
 	}
 
 	mountArgs := sharedFoldersVirtioFSMountArgs(vmDirectory, mountPoint)
@@ -923,6 +988,19 @@ func mountSharedFolderTagsInGuestWithTimeouts(vmDirectory string, timeouts share
 
 	mountedAny := false
 	rootMounted := strings.Contains(mountRes.Stdout, " on "+linuxSharedFoldersMountRoot+" ")
+	if rootMounted {
+		// Probe if root mount is alive
+		lsRes, _ := client.AgentExecTypedTimeout([]string{"ls", "-1", linuxSharedFoldersMountRoot}, nil, "", timeouts.listTags)
+		if lsRes != nil && lsRes.ExitCode != 0 {
+			// Stale root mount: unmount existing bind mounts and root
+			for _, f := range LoadSharedFolders(vmDirectory) {
+				tagMount := defaultSharedFolderMountPoint(vmDirectory, f.Tag)
+				_ = unmountGuestMountPointWithTimeouts(client, tagMount, true, timeouts.unmount)
+			}
+			_ = unmountGuestMountPointWithTimeouts(client, linuxSharedFoldersMountRoot, true, timeouts.unmount)
+			rootMounted = false
+		}
+	}
 	if !rootMounted {
 		if _, err := client.AgentDaemonExecTypedTimeout([]string{"mkdir", "-p", linuxSharedFoldersMountRoot}, nil, "", timeouts.mkdir); err != nil {
 			return false, fmt.Errorf("create mount point %q: %w", linuxSharedFoldersMountRoot, err)
@@ -950,7 +1028,12 @@ func mountSharedFolderTagsInGuestWithTimeouts(vmDirectory string, timeouts share
 			return false, fmt.Errorf("create mount point %q: %w", mountPoint, err)
 		}
 		if strings.Contains(mountRes.Stdout, " on "+mountPoint+" ") {
-			continue
+			lsRes, _ := client.AgentExecTypedTimeout([]string{"ls", "-1", mountPoint}, nil, "", timeouts.listTags)
+			if lsRes != nil && lsRes.ExitCode != 0 {
+				_ = unmountGuestMountPointWithTimeouts(client, mountPoint, true, timeouts.unmount)
+			} else {
+				continue
+			}
 		}
 		source := filepath.Join(linuxSharedFoldersMountRoot, f.Tag)
 		res, err := client.AgentDaemonExecTypedTimeout([]string{"mount", "--bind", source, mountPoint}, nil, "", timeouts.mount)
@@ -994,7 +1077,7 @@ func sharedFoldersMountedAndSynced(mountOutput, mountPoint string, tags []string
 	if lsErr != nil || lsRes == nil || lsRes.ExitCode != 0 {
 		return false
 	}
-	return mountContainsAllTags(lsRes.Stdout, tags)
+	return mountMatchesExpectedTags(lsRes.Stdout, tags)
 }
 
 func printSharedFolderStatusError(prefix string, err error) {
@@ -1009,10 +1092,9 @@ func printSharedFolderStatusError(prefix string, err error) {
 }
 
 func expectedSharedFolderTags(vmDirectory string) []string {
-	folders := LoadSharedFolders(vmDirectory)
-	out := make([]string, 0, len(folders))
-	for _, f := range folders {
-		if strings.TrimSpace(f.Tag) == "" {
+	var out []string
+	for _, f := range LoadSharedFolders(vmDirectory) {
+		if strings.TrimSpace(f.Tag) == "" || strings.TrimSpace(f.Path) == "" {
 			continue
 		}
 		if _, err := os.Stat(f.Path); err != nil {
@@ -1034,6 +1116,26 @@ func mountContainsAllTags(listing string, tags []string) bool {
 			continue
 		}
 		seen[name] = true
+	}
+	for _, tag := range tags {
+		if !seen[tag] {
+			return false
+		}
+	}
+	return true
+}
+
+func mountMatchesExpectedTags(listing string, tags []string) bool {
+	seen := make(map[string]bool)
+	for _, line := range strings.Split(listing, "\n") {
+		name := strings.TrimSpace(line)
+		if name == "" {
+			continue
+		}
+		seen[name] = true
+	}
+	if len(seen) != len(tags) {
+		return false
 	}
 	for _, tag := range tags {
 		if !seen[tag] {

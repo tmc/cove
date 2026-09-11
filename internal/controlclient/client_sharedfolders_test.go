@@ -3,6 +3,7 @@ package controlclient
 import (
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -78,6 +79,20 @@ func TestClientSharedFoldersRuntimeStatus(t *testing.T) {
 			want: SharedFoldersRuntimeStatus{Running: true, VirtioFS: true, State: "ready", Message: "mounted"},
 		},
 		{
+			name: "json status with absent paths",
+			resp: &controlpb.ControlResponse{
+				Success: true,
+				Data:    `{"running":true,"virtiofs":true,"state":"ready","message":"mounted","absent_paths":["/Volumes/External/data"]}`,
+			},
+			want: SharedFoldersRuntimeStatus{
+				Running:     true,
+				VirtioFS:    true,
+				State:       "ready",
+				Message:     "mounted",
+				AbsentPaths: []string{"/Volumes/External/data"},
+			},
+		},
+		{
 			name: "message fallback",
 			resp: &controlpb.ControlResponse{
 				Success: true,
@@ -117,7 +132,7 @@ func TestClientSharedFoldersRuntimeStatus(t *testing.T) {
 			if err != nil {
 				t.Fatalf("SharedFoldersRuntimeStatus: %v", err)
 			}
-			if got != tt.want {
+			if !reflect.DeepEqual(got, tt.want) {
 				t.Fatalf("status = %+v, want %+v", got, tt.want)
 			}
 			if req := <-reqc; req.GetType() != "shared-folders-runtime-status" {

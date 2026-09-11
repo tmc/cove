@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -214,13 +215,9 @@ func taggedVolumes(mounts []vmconfig.VolumeMount) []vmconfig.VolumeMount {
 }
 
 // autoMountTaggedVolumes connects to the guest agent and mounts tagged
-// VirtioFS volumes. It retries the agent connection with backoff until
-// ctx is cancelled. This is intended to be run in a background goroutine
-// after VM start.
+// VirtioFS volumes and shared folders. It maintains active reconciliation
+// to recover dead mounts and reconnect when backing volumes return.
 func autoMountTaggedVolumes(ctx context.Context, cs *ControlServer, mounts []vmconfig.VolumeMount) {
-	// Only volumes with valid host paths get directory-sharing devices, so
-	// only they can be mounted in the guest. Skip the rest to avoid
-	// confusing guest-side mount failures for tags that were never attached.
 	mounts, _ = validateVolumes(mounts)
 	tagged := taggedVolumes(mounts)
 	if len(tagged) == 0 && len(effectiveSharedFolders(vmDir)) == 0 && (!linuxMode || !rosettaRuntimeSetup) {
@@ -234,32 +231,123 @@ func autoMountTaggedVolumes(ctx context.Context, cs *ControlServer, mounts []vmc
 			return
 		}
 
-		if len(tagged) > 0 {
-			fmt.Println("Auto-mounting tagged volumes in guest...")
-			mountTaggedVolumesOnce(ctx, cs, tagged, linuxVirtioFSOwner(vmDir))
-		}
+		reconcileAllMounts(ctx, cs, tagged, vmDir)
 
 		if linuxMode && rosettaRuntimeSetup {
 			setupRosettaInGuest(ctx, cs)
 		}
 
-		sharedConfigured := len(effectiveSharedFolders(vmDir)) > 0
-		if sharedConfigured && !linuxMode {
-			mounted, err := mountSharedFoldersInGuest(vmDir, defaultSharedFoldersMountPoint)
-			if err != nil {
+		// Monitor and reconcile mounts against host volume drops/reconnects.
+		// Returns nil when agent is lost (triggering waitForAgent in outer loop).
+		if err := monitorAndReconcileMounts(ctx, cs, tagged, vmDir); err != nil {
+			return
+		}
+	}
+}
+
+func reconcileAllMounts(ctx context.Context, cs *ControlServer, tagged []vmconfig.VolumeMount, vmDir string) {
+	if len(tagged) > 0 {
+		mountTaggedVolumesOnce(ctx, cs, tagged, linuxVirtioFSOwner(vmDir))
+	}
+
+	sharedFolders := effectiveSharedFolders(vmDir)
+	if len(sharedFolders) > 0 {
+		mountRoot := defaultSharedFoldersMountRoot(vmDir)
+		mounted, err := mountSharedFoldersInGuest(vmDir, mountRoot)
+		if err != nil {
+			if verbose {
 				fmt.Printf("auto-mount shared folders: %v\n", err)
-			} else if mounted {
-				fmt.Printf("Auto-mounted shared folders at %s\n", defaultSharedFoldersMountPoint)
-				go warnWhenTCCFDABlocked(ctx, defaultSharedFoldersMountPoint)
-			} else if verbose {
-				fmt.Printf("Shared folders already mounted at %s\n", defaultSharedFoldersMountPoint)
+			}
+		} else if mounted {
+			if mountRoot == "" {
+				fmt.Printf("Auto-mounted shared folders at %s\n", sharedFoldersMountSummary(vmDir))
+			} else {
+				fmt.Printf("Auto-mounted shared folders at %s\n", mountRoot)
+				if !linuxMode {
+					go warnWhenTCCFDABlocked(ctx, mountRoot)
+				}
 			}
 		}
+	}
+}
 
-		// Wait here until the guest agent goes away (e.g., guest reboot).
-		// Then loop and perform mount reconciliation again when it returns.
-		if err := waitForAgentLoss(ctx, cs); err != nil {
-			return
+func monitorAndReconcileMounts(ctx context.Context, cs *ControlServer, tagged []vmconfig.VolumeMount, vmDir string) error {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	lastSharedPresence := make(map[string]bool)
+	for _, f := range effectiveSharedFolders(vmDir) {
+		_, err := os.Stat(f.Path)
+		lastSharedPresence[f.Path] = (err == nil)
+	}
+	lastTaggedPresence := make(map[string]bool)
+	for _, m := range tagged {
+		_, err := hostPathStat(m.HostPath)
+		lastTaggedPresence[m.HostPath] = (err == nil)
+	}
+
+	tickCount := 0
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			tickCount++
+			_, err := cs.getAgent()
+			if err != nil {
+				if verbose {
+					fmt.Printf("auto-mount: agent unavailable; will re-mount after reconnect: %v\n", err)
+				}
+				return nil
+			}
+
+			// Check host shared folder paths
+			sharedFolders := effectiveSharedFolders(vmDir)
+			sharedChanged := false
+			for _, f := range sharedFolders {
+				_, statErr := os.Stat(f.Path)
+				present := (statErr == nil)
+				if present != lastSharedPresence[f.Path] {
+					sharedChanged = true
+					lastSharedPresence[f.Path] = present
+					if present {
+						fmt.Printf("Shared folder backing path reconnected: %s (%s)\n", f.Tag, f.Path)
+					} else {
+						fmt.Printf("Shared folder backing path disconnected: %s (%s)\n", f.Tag, f.Path)
+					}
+				}
+			}
+
+			if sharedChanged {
+				_, _ = cs.applySharedFoldersToRunningVM(sharedFolders)
+				mountRoot := defaultSharedFoldersMountRoot(vmDir)
+				_, _ = mountSharedFoldersInGuest(vmDir, mountRoot)
+			}
+
+			// Check host tagged volume paths
+			taggedChanged := false
+			for _, m := range tagged {
+				_, statErr := hostPathStat(m.HostPath)
+				present := (statErr == nil)
+				if present != lastTaggedPresence[m.HostPath] {
+					taggedChanged = true
+					lastTaggedPresence[m.HostPath] = present
+					if present {
+						fmt.Printf("Volume backing path reconnected: %s (%s)\n", m.Tag, m.HostPath)
+					} else {
+						fmt.Printf("Volume backing path disconnected: %s (%s)\n", m.Tag, m.HostPath)
+					}
+				}
+			}
+
+			if taggedChanged {
+				mountTaggedVolumesOnce(ctx, cs, tagged, linuxVirtioFSOwner(vmDir))
+			}
+
+			// Periodically check for and heal any dead mounts
+			if tickCount%3 == 0 {
+				reconcileAllMounts(ctx, cs, tagged, vmDir)
+			}
 		}
 	}
 }
@@ -353,11 +441,40 @@ func mountTaggedVolumesOnce(ctx context.Context, cs *ControlServer, tagged []vmc
 
 		if checkErr == nil && checkResult.ExitCode == 0 {
 			if strings.Contains(string(checkResult.Stdout), mountPoint) {
-				if verbose {
-					fmt.Printf("  %s already mounted at %s\n", m.Tag, mountPoint)
+				// Probe health of mount point
+				a, ok = autoMountAgent(cs, "  probe-mount "+m.Tag)
+				if ok {
+					cs.mu.Lock()
+					probeCtx, probeCancel := context.WithTimeout(ctx, 5*time.Second)
+					probeResult, probeErr := a.Exec(probeCtx, []string{"ls", "-1", mountPoint}, nil, "")
+					probeCancel()
+					cs.mu.Unlock()
+
+					if probeErr == nil && probeResult != nil && probeResult.ExitCode == 0 {
+						if verbose {
+							fmt.Printf("  %s already mounted at %s\n", m.Tag, mountPoint)
+						}
+						continue
+					}
+					// Dead/stale mount point: force unmount
+					if verbose {
+						fmt.Printf("  %s at %s is dead/stale; recovering...\n", m.Tag, mountPoint)
+					}
+					cs.mu.Lock()
+					umountCtx, umountCancel := context.WithTimeout(ctx, 10*time.Second)
+					_, _ = a.Exec(umountCtx, []string{"umount", "-f", mountPoint}, nil, "")
+					umountCancel()
+					cs.mu.Unlock()
 				}
-				continue
 			}
+		}
+
+		// Check if host path is currently present
+		if _, err := hostPathStat(m.HostPath); err != nil {
+			if verbose {
+				fmt.Printf("  auto-mount %s: host backing path absent (%s); skipping until reconnected\n", m.Tag, m.HostPath)
+			}
+			continue
 		}
 
 		// Mount the VirtioFS tag using guest-native mount semantics.

@@ -64,8 +64,9 @@ func vmRunHintForSocket(sock string) string {
 }
 
 type SharedFoldersRuntimeStatus struct {
-	Running  bool   `json:"running"`
-	VirtioFS bool   `json:"virtiofs"`
-	State    string `json:"state,omitempty"`
-	Message  string `json:"message,omitempty"`
+	Running     bool     `json:"running"`
+	VirtioFS    bool     `json:"virtiofs"`
+	State       string   `json:"state,omitempty"`
+	Message     string   `json:"message,omitempty"`
+	AbsentPaths []string `json:"absent_paths,omitempty"`
 }
