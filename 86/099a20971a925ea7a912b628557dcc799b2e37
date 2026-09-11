@@ -1,0 +1,2 @@
+commit 86099a20 on 2026-09-10  tool=Claude Code model=claude-opus-4-8 pid=59902 ITERM_SESSION_ID=w0t3p0:7EB19DC7-4953-4B33-9896-95FFA4930548
+vz-display listen fallback (EADDRNOTAVAIL -> all interfaces) so the viewer can start before the VM; +2 unit tests. Verified gofmt/vet/build clean, go test -race green. Local only, not pushed.
