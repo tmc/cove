@@ -44,6 +44,7 @@ type upConfig struct {
 	verbose                  bool
 	linux                    bool
 	windows                  bool
+	windowsNetwork           windowsNetworkOverrides
 	windowsBackend           string
 	windowsBackendSet        bool
 	windowsDisplaySize       string
@@ -101,6 +102,8 @@ func parseUpFlags(env commandEnv, args []string) (upConfig, error) {
 		switch f.Name {
 		case "cpu":
 			cfg.cpuExplicit = true
+		case "network", "net":
+			cfg.windowsNetwork.NetworkSet = true
 		case "windows-backend":
 			cfg.windowsBackendSet = true
 		}
@@ -209,11 +212,20 @@ func newUpFlagSet(errOut io.Writer) (*flag.FlagSet, *upConfig, *bool) {
 		linux:              linuxMode,
 		windows:            windowsMode,
 		windowsBackend:     windowsBackendMode,
+		windowsNetwork:     windowsNetworkFlags,
 		windowsDisplaySize: windowsDisplaySizeFlag,
 		windowsSharedDir:   windowsSharedDirFlag,
 		isoPath:            isoPath,
 		distro:             linuxDistro,
 	}
+	if flagWasProvided(flag.CommandLine, "network") || flagWasProvided(flag.CommandLine, "net") {
+		cfg.networkMode = networkMode
+		cfg.windowsNetwork.NetworkSet = true
+	}
+	if cfg.networkMode == "" {
+		cfg.networkMode = "nat"
+	}
+	registerWindowsNetworkFlags(fs, &cfg.windowsNetwork)
 	headless := new(bool)
 
 	fs.StringVar(&cfg.user, "user", "", "Username for the provisioned user (required)")
@@ -248,8 +260,8 @@ func newUpFlagSet(errOut io.Writer) (*flag.FlagSet, *upConfig, *bool) {
 	fs.BoolVar(&cfg.nested, "nested", false, "Enable nested virtualization for Linux guests (M3/M4 on macOS 15+)")
 	fs.BoolVar(&cfg.nvme, "nvme", false, "Attach Linux root disk through NVMe instead of virtio-blk")
 	fs.BoolVar(&cfg.rosetta, "rosetta", true, "Enable Rosetta translation support for Linux VMs")
-	fs.StringVar(&cfg.networkMode, "network", "nat", "network mode: nat, bridged:<iface>, host-only, none")
-	fs.StringVar(&cfg.networkMode, "net", "nat", "alias for -network")
+	fs.StringVar(&cfg.networkMode, "network", cfg.networkMode, "network mode: nat, bridged:<iface>, host-only, none")
+	fs.StringVar(&cfg.networkMode, "net", cfg.networkMode, "alias for -network")
 	fs.Var(&cfg.portForwards, "port-forward", "forward host TCP to guest vsock: hostPort:guestVsockPort (repeatable)")
 	fs.Var(&cfg.portForwards, "pf", "alias for -port-forward")
 	fs.Usage = func() {
@@ -336,6 +348,7 @@ func runtimeOptionsForUp(cfg upConfig) runtimeOptions {
 	opts.InstallVM = true
 	opts.Linux = cfg.linux
 	opts.Windows = cfg.windows
+	opts.WindowsNetwork = cfg.windowsNetwork
 	opts.WindowsBackendMode = cfg.windowsBackend
 	opts.WindowsBackendSet = cfg.windowsBackendSet
 	opts.WindowsDisplaySize = cfg.windowsDisplaySize
@@ -377,6 +390,7 @@ func withUpRuntimeOptions(opts runtimeOptions, fn func() error) error {
 	installVM = opts.InstallVM
 	linuxMode = opts.Linux
 	windowsMode = opts.Windows
+	windowsNetworkFlags = opts.WindowsNetwork
 	windowsBackendMode = opts.WindowsBackendMode
 	windowsBackendExplicit = opts.WindowsBackendSet
 	windowsDisplaySizeFlag = opts.WindowsDisplaySize
@@ -413,6 +427,7 @@ func withUpRuntimeOptions(opts runtimeOptions, fn func() error) error {
 		installVM = prev.InstallVM
 		linuxMode = prev.Linux
 		windowsMode = prev.Windows
+		windowsNetworkFlags = prev.WindowsNetwork
 		windowsBackendMode = prev.WindowsBackendMode
 		windowsBackendExplicit = prev.WindowsBackendSet
 		windowsDisplaySizeFlag = prev.WindowsDisplaySize

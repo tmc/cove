@@ -75,6 +75,7 @@ func resolveWindowsBackend(mode, vmDir string, explicit bool) (windowsBackend, e
 }
 
 type windowsQEMUConfig struct {
+	NetworkSettings     *windowsNetworkSettings
 	QEMUPath            string
 	QEMUImgPath         string
 	EFICodePath         string
@@ -361,20 +362,20 @@ func windowsQEMUConfigFromRun(rc vmrun.RunConfig, hc vmrun.HostConfig, install b
 		cfg.VNCHost = "127.0.0.1"
 		cfg.VNCPort = int(port)
 	}
-	if agentForward, err := windowsQEMUAgentForwardConfig(rc.NetworkMode); err != nil {
+	settings, err := loadWindowsNetworkSettings(hc.VMDir)
+	if err != nil {
 		return windowsQEMUConfig{}, err
-	} else {
-		cfg.AgentHostAddress = agentForward.hostAddress
-		cfg.AgentHostPort = agentForward.hostPort
-		cfg.AgentGuestPort = agentForward.guestPort
 	}
-	if userAgentForward, err := windowsQEMUUserAgentForwardConfig(rc.NetworkMode); err != nil {
+	overrides := windowsNetworkFlags
+	overrides.NetworkSet = overrides.NetworkSet || flagWasProvided(flag.CommandLine, "network") || flagWasProvided(flag.CommandLine, "net")
+	settings, err = resolveWindowsNetworkSettings(settings, rc.NetworkMode, overrides)
+	if err != nil {
 		return windowsQEMUConfig{}, err
-	} else {
-		cfg.UserAgentHostAddress = userAgentForward.hostAddress
-		cfg.UserAgentHostPort = userAgentForward.hostPort
-		cfg.UserAgentGuestPort = userAgentForward.guestPort
 	}
+	if err := applyWindowsNetworkSettings(&cfg, settings); err != nil {
+		return windowsQEMUConfig{}, err
+	}
+
 	return cfg, os.MkdirAll(qemuDir, 0755)
 }
 
@@ -580,6 +581,10 @@ func ensureWindowsQEMUEFIVars(varsPath, templatePath string) error {
 }
 
 func runWindowsQEMU(cfg windowsQEMUConfig, install bool) error {
+	return runWindowsQEMUContext(context.Background(), cfg, install)
+}
+
+func runWindowsQEMUContext(ctx context.Context, cfg windowsQEMUConfig, install bool) error {
 	noteVMRuntimePhase(cfg.VMDir, "starting", "qemu-start")
 	args, err := windowsQEMUArgs(cfg)
 	if err != nil {
@@ -598,7 +603,8 @@ func runWindowsQEMU(cfg windowsQEMUConfig, install bool) error {
 	}
 	metadataPath := filepath.Join(filepath.Dir(cfg.MonitorSockPath), "metadata.json")
 	if err := writeWindowsQEMUMetadata(metadataPath, cfg, args); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: write QEMU metadata: %v\n", err)
+		noteVMRuntimePhase(cfg.VMDir, "error", "qemu-metadata")
+		return fmt.Errorf("write QEMU metadata: %w", err)
 	}
 	readmePath := filepath.Join(filepath.Dir(cfg.MonitorSockPath), "README")
 	if err := writeWindowsQEMUReadme(readmePath, cfg); err != nil {
@@ -609,7 +615,7 @@ func runWindowsQEMU(cfg windowsQEMUConfig, install bool) error {
 		fmt.Printf("QEMU serial log: %s\n", cfg.SerialOutput)
 	}
 
-	cmd := exec.Command(cfg.QEMUPath, args...)
+	cmd := exec.CommandContext(ctx, cfg.QEMUPath, args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -646,7 +652,7 @@ func runWindowsQEMU(cfg windowsQEMUConfig, install bool) error {
 		noteVMRuntimePhase(cfg.VMDir, "error", "qemu-monitor")
 		return err
 	}
-	controlServer, err := startWindowsQEMUControlServer(context.Background(), cfg.VMDir)
+	controlServer, err := startWindowsQEMUControlServer(ctx, cfg.VMDir)
 	if err != nil {
 		if cmd.Process != nil {
 			_ = cmd.Process.Kill()
@@ -1052,64 +1058,6 @@ func windowsQEMUMachineArg(memoryGB uint64) string {
 	return "virt,accel=hvf,highmem=off"
 }
 
-type windowsQEMUAgentForward struct {
-	hostAddress string
-	hostPort    int
-	guestPort   int
-}
-
-func windowsQEMUAgentForwardConfig(networkMode string) (windowsQEMUAgentForward, error) {
-	if strings.EqualFold(strings.TrimSpace(networkMode), "none") {
-		return windowsQEMUAgentForward{}, nil
-	}
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("COVE_QEMU_AGENT_FORWARD"))) {
-	case "0", "false", "no", "off":
-		return windowsQEMUAgentForward{}, nil
-	}
-	guestPort := windowsQEMUEnvInt("COVE_QEMU_AGENT_GUEST_PORT", 1024)
-	hostPort := windowsQEMUEnvInt("COVE_QEMU_AGENT_HOST_PORT", 0)
-	var err error
-	if hostPort == 0 {
-		hostPort, err = pickFreeLocalTCPPort()
-		if err != nil {
-			return windowsQEMUAgentForward{}, err
-		}
-	}
-	return windowsQEMUAgentForward{
-		hostAddress: "127.0.0.1",
-		hostPort:    hostPort,
-		guestPort:   guestPort,
-	}, nil
-}
-
-func windowsQEMUUserAgentForwardConfig(networkMode string) (windowsQEMUAgentForward, error) {
-	if strings.EqualFold(strings.TrimSpace(networkMode), "none") {
-		return windowsQEMUAgentForward{}, nil
-	}
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("COVE_QEMU_AGENT_FORWARD"))) {
-	case "0", "false", "no", "off":
-		return windowsQEMUAgentForward{}, nil
-	}
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("COVE_QEMU_USER_AGENT_FORWARD"))) {
-	case "0", "false", "no", "off":
-		return windowsQEMUAgentForward{}, nil
-	}
-	guestPort := windowsQEMUEnvInt("COVE_QEMU_USER_AGENT_GUEST_PORT", 1025)
-	hostPort := windowsQEMUEnvInt("COVE_QEMU_USER_AGENT_HOST_PORT", 0)
-	var err error
-	if hostPort == 0 {
-		hostPort, err = pickFreeLocalTCPPort()
-		if err != nil {
-			return windowsQEMUAgentForward{}, err
-		}
-	}
-	return windowsQEMUAgentForward{
-		hostAddress: "127.0.0.1",
-		hostPort:    hostPort,
-		guestPort:   guestPort,
-	}, nil
-}
-
 func pickFreeLocalTCPPort() (int, error) {
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -1212,6 +1160,7 @@ func windowsQEMUSerialArgs(cfg windowsQEMUConfig) []string {
 }
 
 type windowsQEMUMetadata struct {
+	NetworkMode          string   `json:"networkMode,omitempty"`
 	Backend              string   `json:"backend"`
 	QEMUPath             string   `json:"qemuPath"`
 	QEMUVersion          string   `json:"qemuVersion,omitempty"`
@@ -1280,7 +1229,13 @@ func writeWindowsQEMUProcessMetadata(path string, metadata windowsQEMUProcessMet
 }
 
 func writeWindowsQEMUMetadata(path string, cfg windowsQEMUConfig, args []string) error {
+	if cfg.NetworkSettings != nil {
+		if err := saveWindowsNetworkSettings(cfg.VMDir, *cfg.NetworkSettings); err != nil {
+			return err
+		}
+	}
 	metadata := windowsQEMUMetadata{
+		NetworkMode:          cfg.NetworkMode,
 		Backend:              "qemu-hvf",
 		QEMUPath:             cfg.QEMUPath,
 		QEMUVersion:          windowsQEMUVersion(cfg.QEMUPath),

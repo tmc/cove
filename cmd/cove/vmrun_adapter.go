@@ -59,6 +59,7 @@ type runtimeOptions struct {
 	LinuxShell  bool
 	CPUExplicit bool
 
+	WindowsNetwork      windowsNetworkOverrides
 	WindowsBackendMode  string
 	WindowsBackendSet   bool
 	WindowsDisplaySize  string
@@ -160,6 +161,7 @@ func currentRuntimeOptions() runtimeOptions {
 		LinuxShell:  linuxShell,
 		CPUExplicit: cpuExplicit,
 
+		WindowsNetwork:      windowsNetworkFlags,
 		WindowsBackendMode:  windowsBackendMode,
 		WindowsBackendSet:   windowsBackendExplicit,
 		WindowsDisplaySize:  windowsDisplaySizeFlag,
