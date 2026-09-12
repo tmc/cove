@@ -71,7 +71,13 @@ func main() {
 		fmt.Print(text)
 		return
 	}
-	if *clipboardSetBase64 != "" {
+	clipboardSet := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "clipboard-set-base64" {
+			clipboardSet = true
+		}
+	})
+	if clipboardSet {
 		data, err := base64.StdEncoding.DecodeString(*clipboardSetBase64)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "decode clipboard text: %v\n", err)

@@ -12,7 +12,7 @@ func listenAgent(port uint32, tcpAddr string) (net.Listener, error) {
 	}
 	lis, err := net.Listen("tcp", tcpAddr)
 	if err != nil {
-		return nil, fmt.Errorf("listen tcp: %w", err)
+		return nil, fmt.Errorf("listen tcp %q: %w", tcpAddr, err)
 	}
 	return lis, nil
 }

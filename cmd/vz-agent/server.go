@@ -714,11 +714,9 @@ func (s *agentServer) Shutdown(_ context.Context, req *connect.Request[pb.Shutdo
 	slog.Info("shutdown requested")
 	go func() {
 		time.Sleep(500 * time.Millisecond)
-		args := []string{"now"}
-		if req.Msg.Force {
-			args = []string{"-h", "now"}
+		if err := shutdownCommand(false, req.Msg.Force).Run(); err != nil {
+			slog.Error("shutdown", "err", err)
 		}
-		exec.Command("shutdown", args...).Run()
 	}()
 	return connect.NewResponse(&pb.ShutdownResponse{}), nil
 }
@@ -727,7 +725,9 @@ func (s *agentServer) Reboot(_ context.Context, _ *connect.Request[pb.RebootRequ
 	slog.Info("reboot requested")
 	go func() {
 		time.Sleep(500 * time.Millisecond)
-		exec.Command("shutdown", "-r", "now").Run()
+		if err := shutdownCommand(true, false).Run(); err != nil {
+			slog.Error("reboot", "err", err)
+		}
 	}()
 	return connect.NewResponse(&pb.RebootResponse{}), nil
 }

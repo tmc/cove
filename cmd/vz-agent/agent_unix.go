@@ -68,3 +68,13 @@ func ensureSysProcAttr(cmd *exec.Cmd) *syscall.SysProcAttr {
 	}
 	return cmd.SysProcAttr
 }
+
+func shutdownCommand(reboot, force bool) *exec.Cmd {
+	args := []string{"now"}
+	if reboot {
+		args = []string{"-r", "now"}
+	} else if force {
+		args = []string{"-h", "now"}
+	}
+	return exec.Command("shutdown", args...)
+}

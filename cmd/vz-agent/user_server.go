@@ -35,6 +35,12 @@ func (s *userAgentServer) UserExec(ctx context.Context, req *connect.Request[pb.
 	if r.WorkingDir != "" {
 		cmd.Dir = r.WorkingDir
 	}
+	if len(r.Env) > 0 {
+		cmd.Env = cmd.Environ()
+		for key, value := range r.Env {
+			cmd.Env = append(cmd.Env, key+"="+value)
+		}
+	}
 	if r.Stdin != nil {
 		cmd.Stdin = bytes.NewReader(r.Stdin)
 	}
@@ -78,6 +84,12 @@ func (s *userAgentServer) UserExecStream(ctx context.Context, req *connect.Reque
 	cmd := exec.CommandContext(ctx, r.Args[0], r.Args[1:]...)
 	if r.WorkingDir != "" {
 		cmd.Dir = r.WorkingDir
+	}
+	if len(r.Env) > 0 {
+		cmd.Env = cmd.Environ()
+		for key, value := range r.Env {
+			cmd.Env = append(cmd.Env, key+"="+value)
+		}
 	}
 	if r.Stdin != nil {
 		cmd.Stdin = bytes.NewReader(r.Stdin)

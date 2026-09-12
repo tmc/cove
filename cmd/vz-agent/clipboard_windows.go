@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"runtime"
+	"sync"
 	"syscall"
 	"time"
 	"unsafe"
@@ -13,6 +15,7 @@ const (
 )
 
 var (
+	clipboardMu           sync.Mutex
 	user32                = syscall.NewLazyDLL("user32.dll")
 	kernel32              = syscall.NewLazyDLL("kernel32.dll")
 	procOpenClipboard     = user32.NewProc("OpenClipboard")
@@ -26,16 +29,22 @@ var (
 	procGlobalUnlock      = kernel32.NewProc("GlobalUnlock")
 	procGlobalFree        = kernel32.NewProc("GlobalFree")
 	procGlobalSize        = kernel32.NewProc("GlobalSize")
+	procCreateWindowEx    = user32.NewProc("CreateWindowExW")
+	procDestroyWindow     = user32.NewProc("DestroyWindow")
 )
 
 func clipboardGetText() (string, error) {
-	if ok, _, _ := procIsClipboardFormat.Call(cfUnicodeText); ok == 0 {
-		return "", nil
-	}
-	if err := openClipboard(); err != nil {
+	clipboardMu.Lock()
+	defer clipboardMu.Unlock()
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	if err := openClipboard(0); err != nil {
 		return "", err
 	}
 	defer procCloseClipboard.Call()
+	if ok, _, _ := procIsClipboardFormat.Call(cfUnicodeText); ok == 0 {
+		return "", nil
+	}
 
 	h, _, _ := procGetClipboardData.Call(cfUnicodeText)
 	if h == 0 {
@@ -65,8 +74,21 @@ func clipboardGetText() (string, error) {
 func clipboardSetText(text string) error {
 	utf16, err := syscall.UTF16FromString(text)
 	if err != nil {
-		return err
+		return fmt.Errorf("encode clipboard text: %w", err)
 	}
+	clipboardMu.Lock()
+	defer clipboardMu.Unlock()
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	// EmptyClipboard requires a window owner for SetClipboardData to succeed.
+	class := [...]uint16{'S', 'T', 'A', 'T', 'I', 'C', 0}
+	hwnd, _, err := procCreateWindowEx.Call(0, uintptr(unsafe.Pointer(&class[0])), 0, 0,
+		0, 0, 0, 0, ^uintptr(2), 0, 0, 0) // HWND_MESSAGE = -3
+	if hwnd == 0 {
+		return fmt.Errorf("create clipboard window: %w", err)
+	}
+	defer procDestroyWindow.Call(hwnd)
 	size := uintptr(len(utf16) * 2)
 	h, _, _ := procGlobalAlloc.Call(gmemMoveable, size)
 	if h == 0 {
@@ -80,7 +102,7 @@ func clipboardSetText(text string) error {
 	copy(unsafe.Slice((*uint16)(unsafe.Pointer(ptr)), len(utf16)), utf16)
 	procGlobalUnlock.Call(h)
 
-	if err := openClipboard(); err != nil {
+	if err := openClipboard(hwnd); err != nil {
 		procGlobalFree.Call(h)
 		return err
 	}
@@ -96,12 +118,17 @@ func clipboardSetText(text string) error {
 	return nil
 }
 
-func openClipboard() error {
+func openClipboard(hwnd uintptr) error {
+	var err error
 	for i := 0; i < 20; i++ {
-		if ok, _, _ := procOpenClipboard.Call(0); ok != 0 {
+		var ok uintptr
+		ok, _, err = procOpenClipboard.Call(hwnd)
+		if ok != 0 {
 			return nil
 		}
-		time.Sleep(100 * time.Millisecond)
+		if i < 19 {
+			time.Sleep(100 * time.Millisecond)
+		}
 	}
-	return fmt.Errorf("open clipboard failed")
+	return fmt.Errorf("open clipboard: %w", err)
 }

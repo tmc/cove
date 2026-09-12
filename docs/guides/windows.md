@@ -78,7 +78,8 @@ After install, `up` runs the `windows-install` vzscript, plus
 choose recipes instead, and `-no-shutdown` to leave the VM running when the
 scripts finish.
 
-Boot an installed VM again with:
+Installation refuses to overwrite an existing disk. Use a new disk for a fresh
+installation, or boot the installed VM again with:
 
 ```bash
 cove run -windows
@@ -176,6 +177,11 @@ cove ctl -vm windows clipboard-sync-to-guest
 cove ctl -vm windows clipboard-sync-from-guest
 ```
 
+The agent clipboard helpers must run in the logged-in user's desktop session;
+the service session has a separate clipboard. Text is transferred as Unicode,
+including empty text. Direct helper invocation can clear the clipboard with
+`vz-agent.exe -clipboard-set-base64=`.
+
 ## Shared directory
 
 QEMU Windows VMs do not use VirtioFS. `-windows-shared-dir PATH` exports a host
@@ -224,9 +230,22 @@ cove cp ./app.log windows:/C:/Users/me/Desktop/app.log
 cove cp windows:/C:/Users/me/out.txt ./out.txt
 ```
 
-Interactive `cove shell` sessions are not supported for QEMU Windows VMs yet;
-use `cove exec -vm windows powershell.exe` or the display window. Guest paths
-are written as `vm:/C:/path`.
+Commands execute directly, without an implicit shell. For shell syntax, pass
+`cmd.exe /d /c` or a PowerShell command explicitly:
+
+```bash
+cove exec -vm windows cmd.exe /d /c "echo hello & whoami"
+cove exec -vm windows powershell.exe -NoProfile -Command 'Get-NetIPConfiguration'
+```
+
+Interactive `cove shell` and PTY execution are not supported for QEMU Windows
+VMs yet; use one-shot commands or the display window. Guest paths are written
+as `vm:/C:/path`. The daemon cannot switch users; use the user agent to run in
+the logged-in session. The agent signal RPC supports signal 9 to terminate the
+tracked process only; Unix signals 2 and 15 and process-tree termination are
+not supported. Agent exec requests inherit the agent environment and apply any
+requested environment overrides in both service and user modes. Guest time
+synchronization through the agent remains unsupported.
 
 ## Shutdown
 
@@ -250,11 +269,43 @@ and `cove ctl -vm windows agent-shutdown force` forces it.
   the `input:` line in `gui status`. `COVE_QEMU_LEGACY_MONITORS=1` restores the
   older global-event path, which needs Accessibility permission and forwards
   events while unfocused.
-- Agent commands time out while Windows is running: the guest firewall may be
-  blocking the QEMU host-forwarded agent ports.
+- Agent commands time out while Windows is running: confirm NAT networking,
+  that the daemon and user agent are running, and that the guest firewall allows
+  their TCP listeners (ports 1024 and 1025 by default). A user agent requires a
+  logged-in user. `-network none` disables both host forwards.
+- The Windows agent listens on TCP, using `-tcp-listen` or
+  `VZ_AGENT_TCP_LISTEN` to override its address. A guest loopback-only bind cannot
+  receive QEMU NAT forwards. Repeat custom `COVE_QEMU_AGENT_GUEST_PORT` and
+  `COVE_QEMU_USER_AGENT_GUEST_PORT` overrides on each run; saved metadata does
+  not restore them. Keep the guest listeners configured to match.
+  The protocol is plaintext and unauthenticated;
+  restrict access to the host's loopback forwards and a trusted guest network.
+- Agent `-relay`, `-udp-relay`, and reverse relay options require vsock and are
+  unsupported on Windows. Use QEMU networking or SMB for guest connectivity.
 - QEMU monitor unavailable: the VM is not running, or has exited. Serial output
   is written to `<vm>/qemu/serial.log` unless `-serial` says otherwise.
 - Collect everything at once with `cove support bundle -vm <name>`.
+
+## Guest integration tests
+
+On Windows with Go installed, run the agent tests from a checkout:
+
+```powershell
+go test ./cmd/vz-agent
+```
+
+These cover TCP RPC transport with HTTP/1.1 and HTTP/2, command output and exit
+status, disk capacity, process termination, and shutdown command arguments.
+Shutdown tests do not shut down the machine. Clipboard roundtrip tests are
+opt-in because they replace all clipboard formats; run them in a disposable
+logged-in desktop:
+
+```powershell
+$env:COVE_TEST_WINDOWS_CLIPBOARD = '1'
+go test ./cmd/vz-agent -run Clipboard
+```
+
+Cross-compiling these tests on macOS checks compilation only.
 
 ## Diagnostic environment variables
 
