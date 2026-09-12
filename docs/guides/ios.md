@@ -12,7 +12,21 @@ It checks the saved hardware model against the research profile and opens
 existing identity and storage files. It does not create an identity or prepare
 NVRAM. Preserve these files together when preparing a bundle. GUI, recovery,
 save/resume, cloning, provisioning, and guest automation are not supported by
-this runner.
+this runner. Audio, touch input, accelerators, and battery devices are not
+implemented. Idle and maximum-age policies are rejected; the run-budget policy
+still applies.
+
+Run an already-prepared bundle with:
+
+```sh
+cove -headless -vm-dir /path/to/prepared.covevm run
+cove -headless -vm-dir /path/to/prepared.covevm -force-dfu run
+```
+
+Rosetta and clipboard defaults are disabled for iOS bundles. Explicit requests
+to enable them are rejected. Stop the foreground process with SIGINT or SIGTERM;
+Cove confirms the stopped VM state before reporting shutdown. The runner does
+not expose the generic control socket or guest-agent services.
 
 The following illustrative configuration records the default research profile;
 it is not a bootable bundle:
@@ -43,8 +57,8 @@ to the bundle, such as `firmware/boot.bin`. Absolute paths, parent traversal,
 backslashes, colons, and NUL bytes are rejected. Configuration validation does
 not open these files, resolve symbolic links, or establish firmware provenance.
 The optional `firmwareDigest` must contain a SHA-256 hexadecimal string; it is
-stored metadata, not a check of firmware bytes. `bootArgs` records boot arguments, but the native runner currently rejects a
-nonempty value because runtime NVRAM updates are not implemented.
+stored metadata, not a check of firmware bytes. `bootArgs` records boot arguments,
+but the native runner currently rejects a nonempty value because runtime NVRAM updates are not implemented.
 
 Unknown schemas and invalid iOS configuration fail loading instead of falling
 back to macOS, even when `hw.model` is present. Hardware edits preserve the iOS

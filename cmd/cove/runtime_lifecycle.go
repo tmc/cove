@@ -55,6 +55,7 @@ type RunHooks struct {
 	RunMacOSVM                       func(vmrun.RunConfig, vmrun.HostConfig, *RunBundle, runMetricRecorder) error
 	RunLinuxVM                       func(vmrun.RunConfig, vmrun.HostConfig, *RunBundle, runMetricRecorder) error
 	RunWindowsVM                     func(vmrun.RunConfig, vmrun.HostConfig, *RunBundle, runMetricRecorder) error
+	RunIOSVM                         func(vmrun.RunConfig, vmrun.HostConfig, *RunBundle, runMetricRecorder) error
 	StartPreparedFileHandleNetwork   func()
 	StopPreparedFileHandleNetwork    func()
 	ConfigureRequestedProxyAfterBoot func(*ControlServer)
@@ -72,6 +73,7 @@ func defaultRunHooks() RunHooks {
 		RunMacOSVM:                       runMacOSVMWithConfig,
 		RunLinuxVM:                       runLinuxVMWithConfig,
 		RunWindowsVM:                     runWindowsVMWithConfig,
+		RunIOSVM:                         runIOSVMWithConfig,
 		StartPreparedFileHandleNetwork:   startPreparedFileHandleNetwork,
 		StopPreparedFileHandleNetwork:    stopPreparedFileHandleNetwork,
 		ConfigureRequestedProxyAfterBoot: configureRequestedProxyAfterBoot,
@@ -101,6 +103,9 @@ func (h RunHooks) withDefaults() RunHooks {
 	if h.RunLinuxVM == nil {
 		h.RunLinuxVM = defaults.RunLinuxVM
 	}
+	if h.RunIOSVM == nil {
+		h.RunIOSVM = defaults.RunIOSVM
+	}
 	if h.RunWindowsVM == nil {
 		h.RunWindowsVM = defaults.RunWindowsVM
 	}
@@ -126,7 +131,9 @@ func (h RunHooks) withDefaults() RunHooks {
 }
 
 func currentRunConfig() RunConfig {
-	return currentRuntimeOptions().runConfig()
+	cfg := currentRuntimeOptions().runConfig()
+	applyIOSRuntimeDefaults(&cfg)
+	return cfg
 }
 
 func (opts runtimeOptions) runConfig() RunConfig {
@@ -177,6 +184,9 @@ func runVMWithConfig(cfg RunConfig) error {
 	}
 	hooks := cfg.Hooks.withDefaults()
 	rc, hc := cfg.vmrunConfigs()
+	if err := resolveIOSRun(cfg, &rc, hc); err != nil {
+		return err
+	}
 	if rc.SaveCompress || compressedSuspendRequested() {
 		if compressedSuspendAvailable() {
 			rc.SaveCompress = true
@@ -295,11 +305,15 @@ func runVMWithConfig(cfg RunConfig) error {
 		}()
 	}
 
-	lock, err := hooks.AcquireRunLock(vmDir)
+	lockDir := vmDir
+	if rc.OS == vmrun.GuestIOS {
+		lockDir = hc.VMDir
+	}
+	lock, err := hooks.AcquireRunLock(lockDir)
 	if err != nil {
 		return fmt.Errorf("cove run: %w", err)
 	}
-	noteVMRuntimePhase(vmDir, "starting", "configuring")
+	noteVMRuntimePhase(lockDir, "starting", "configuring")
 	defer func() {
 		if releaseErr := lock.Release(); releaseErr != nil {
 			fmt.Fprintf(cfg.Stderr, "warning: release run.lock: %v\n", releaseErr)
@@ -307,7 +321,12 @@ func runVMWithConfig(cfg RunConfig) error {
 	}()
 
 	var runErr error
-	if cfg.Windows {
+	if rc.OS == vmrun.GuestIOS {
+		runErr = hooks.RunIOSVM(rc, hc, nil, metricsRun)
+		if runErr != nil {
+			noteVMRuntimeState(hc.VMDir, "error")
+		}
+	} else if cfg.Windows {
 		runErr = hooks.RunWindowsVM(rc, hc, nil, metricsRun)
 	} else if cfg.Linux {
 		runErr = hooks.RunLinuxVM(rc, hc, nil, metricsRun)

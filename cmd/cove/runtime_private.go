@@ -393,15 +393,54 @@ func attachPrivateCPUEmulator(config vz.VZVirtualMachineConfiguration, path stri
 	return nil
 }
 
+type privateMacStartOptions interface {
+	SetForceDFU(bool) error
+	SetStopInIBootStage1(bool) error
+	SetStopInIBootStage2(bool) error
+}
+
+func applyPrivateMacStartOptions(opts privateMacStartOptions, rc vmrun.RunConfig) error {
+	if err := opts.SetForceDFU(rc.ForceDFU); err != nil {
+		return fmt.Errorf("set force dfu: %w", err)
+	}
+	if err := opts.SetStopInIBootStage1(rc.StopIBoot1); err != nil {
+		return fmt.Errorf("set iboot stage 1 stop: %w", err)
+	}
+	if err := opts.SetStopInIBootStage2(rc.StopIBoot2); err != nil {
+		return fmt.Errorf("set iboot stage 2 stop: %w", err)
+	}
+	return nil
+}
+
+func macStartOptionsRequired(rc vmrun.RunConfig) (bool, error) {
+	if rc.RecoveryMode && rc.OS != vmrun.GuestMacOS {
+		return false, fmt.Errorf("macos recovery requires a macos guest")
+	}
+	if privateMacStartOptionsEnabledForRun(rc) && rc.OS != vmrun.GuestMacOS && rc.OS != vmrun.GuestIOS {
+		return false, fmt.Errorf("dfu and iboot start options require a macos or ios guest")
+	}
+	return rc.RecoveryMode || privateMacStartOptionsEnabledForRun(rc), nil
+}
+
 func startVMWithRunConfig(machine vz.VZVirtualMachine, rc vmrun.RunConfig, completion func(error)) {
-	if rc.OS == vmrun.GuestMacOS && (rc.RecoveryMode || privateMacStartOptionsEnabledForRun(rc)) {
+	useOptions, err := macStartOptionsRequired(rc)
+	if err != nil {
+		completion(err)
+		return
+	}
+	if useOptions {
 		opts := vz.NewVZMacOSVirtualMachineStartOptions()
+		if opts.ID == 0 {
+			completion(fmt.Errorf("create macos virtual machine start options"))
+			return
+		}
 		opts.SetStartUpFromMacOSRecovery(rc.RecoveryMode)
 		if privateMacStartOptionsEnabledForRun(rc) {
 			privateOpts := pvz.VZMacOSVirtualMachineStartOptionsFromID(opts.ID)
-			privateOpts.SetForceDFU(rc.ForceDFU)
-			privateOpts.SetStopInIBootStage1(rc.StopIBoot1)
-			privateOpts.SetStopInIBootStage2(rc.StopIBoot2)
+			if err := applyPrivateMacStartOptions(privateOpts, rc); err != nil {
+				completion(err)
+				return
+			}
 		}
 		machine.StartWithOptionsCompletionHandler(&opts.VZVirtualMachineStartOptions, completion)
 		return
