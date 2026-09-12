@@ -458,6 +458,22 @@ func installWindowsVM(quotaWarnings io.Writer) error {
 	if err := os.MkdirAll(hc.VMDir, 0755); err != nil {
 		return fmt.Errorf("create VM directory: %w", err)
 	}
+	lock, err := AcquireRunLock(hc.VMDir)
+	if err != nil {
+		return fmt.Errorf("cove install -windows -windows-backend vz: %w", err)
+	}
+	defer func() {
+		if err := lock.Release(); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: release run.lock: %v\n", err)
+		}
+	}()
+	resolvedDiskPath := rc.DiskPath
+	if resolvedDiskPath == "" {
+		resolvedDiskPath = filepath.Join(hc.VMDir, "windows-disk.img")
+	}
+	if err := checkWindowsInstallDisk(resolvedDiskPath); err != nil {
+		return err
+	}
 	saveHardwareConfig(hc.VMDir)
 	persistInstallQuota(quotaWarnings, hc.VMDir)
 	if err := applyInstallDiskQuota(quotaWarnings, hc.VMDir); err != nil {
@@ -470,15 +486,9 @@ func installWindowsVM(quotaWarnings io.Writer) error {
 	}
 	fmt.Printf("Using Windows ISO: %s\n", windowsISO)
 
-	resolvedDiskPath := rc.DiskPath
-	if resolvedDiskPath == "" {
-		resolvedDiskPath = filepath.Join(hc.VMDir, "windows-disk.img")
-	}
-	if _, err := os.Stat(resolvedDiskPath); os.IsNotExist(err) {
-		fmt.Printf("Creating disk image: %s (%d GB)\n", resolvedDiskPath, rc.DiskSizeGB)
-		if err := createInstallDiskImage(resolvedDiskPath, rc.DiskSizeGB); err != nil {
-			return fmt.Errorf("create disk image: %w", err)
-		}
+	fmt.Printf("Creating disk image: %s (%d GB)\n", resolvedDiskPath, rc.DiskSizeGB)
+	if err := createInstallDiskImage(resolvedDiskPath, rc.DiskSizeGB); err != nil {
+		return fmt.Errorf("create disk image: %w", err)
 	}
 
 	fmt.Printf("Configuring VM: %d CPUs, %d GB RAM\n", rc.CPUCount, rc.MemoryGB)

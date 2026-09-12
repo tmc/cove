@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/tmc/apple/foundation"
@@ -296,6 +297,8 @@ func buildWindowsBaseConfigurationForTest(t *testing.T) (vz.VZVirtualMachineConf
 }
 
 func TestWarnWindowsVZBackend(t *testing.T) {
+	windowsVZBackendWarning = sync.Once{}
+	t.Cleanup(func() { windowsVZBackendWarning = sync.Once{} })
 	var buf bytes.Buffer
 	warnWindowsVZBackend(&buf)
 	warnWindowsVZBackend(&buf)

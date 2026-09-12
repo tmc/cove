@@ -144,6 +144,11 @@ func installWindowsQEMUVMWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig, quo
 			fmt.Fprintf(os.Stderr, "warning: release run.lock: %v\n", releaseErr)
 		}
 	}()
+	diskPath := windowsQEMUResolvedDiskPath(rc.DiskPath, hc.VMDir)
+	if err := checkWindowsInstallDisk(diskPath); err != nil {
+		return err
+	}
+
 	noteVMRuntimePhase(hc.VMDir, "starting", "qemu-install-prepare")
 
 	saveHardwareConfig(hc.VMDir)
@@ -302,13 +307,7 @@ func windowsQEMUConfigFromRun(rc vmrun.RunConfig, hc vmrun.HostConfig, install b
 	}
 
 	qemuDir := filepath.Join(hc.VMDir, "qemu")
-	diskPath := rc.DiskPath
-	if diskPath == "" {
-		diskPath = filepath.Join(hc.VMDir, "windows.qcow2")
-	}
-	if !filepath.IsAbs(diskPath) {
-		diskPath = filepath.Join(hc.VMDir, diskPath)
-	}
+	diskPath := windowsQEMUResolvedDiskPath(rc.DiskPath, hc.VMDir)
 
 	iso := ""
 	if install || rc.ISOPath != "" {
@@ -498,11 +497,28 @@ func windowsQEMUDiskFormat(path string) string {
 	return "raw"
 }
 
-func ensureWindowsQEMUDisk(cfg windowsQEMUConfig) error {
-	if _, err := os.Stat(cfg.DiskPath); err == nil {
-		return nil
+func windowsQEMUResolvedDiskPath(path, vmDir string) string {
+	if path == "" {
+		return filepath.Join(vmDir, "windows.qcow2")
+	}
+	if !filepath.IsAbs(path) {
+		return filepath.Join(vmDir, path)
+	}
+	return path
+}
+
+func checkWindowsInstallDisk(path string) error {
+	if _, err := os.Lstat(path); err == nil {
+		return fmt.Errorf("refuse to install Windows onto existing disk %s; use cove run or choose a new disk path", path)
 	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("stat Windows QEMU disk image: %w", err)
+		return fmt.Errorf("stat Windows install disk: %w", err)
+	}
+	return nil
+}
+
+func ensureWindowsQEMUDisk(cfg windowsQEMUConfig) error {
+	if err := checkWindowsInstallDisk(cfg.DiskPath); err != nil {
+		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(cfg.DiskPath), 0755); err != nil {
 		return fmt.Errorf("create Windows QEMU disk directory: %w", err)
@@ -613,7 +629,10 @@ func runWindowsQEMU(cfg windowsQEMUConfig, install bool) error {
 		fmt.Fprintf(os.Stderr, "warning: write QEMU process metadata: %v\n", err)
 	}
 	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
+	go func() {
+		done <- cmd.Wait()
+		close(done)
+	}()
 	if err := waitWindowsQEMUMonitor(cfg.MonitorSockPath, done, 5*time.Second); err != nil {
 		if cmd.Process != nil {
 			_ = cmd.Process.Kill()
@@ -830,8 +849,8 @@ func windowsQEMUArgs(cfg windowsQEMUConfig) ([]string, error) {
 		args = append(args, "-nodefaults", "-vga", "none")
 	}
 	args = append(args,
-		"-drive", "if=pflash,format=raw,readonly=on,unit=0,file.locking=off,file="+cfg.EFICodePath,
-		"-drive", "if=pflash,format=raw,unit=1,file="+cfg.EFIVarsPath,
+		"-drive", "if=pflash,format=raw,readonly=on,unit=0,file.locking=off,file="+windowsQEMUOptionValue(cfg.EFICodePath),
+		"-drive", "if=pflash,format=raw,unit=1,file="+windowsQEMUOptionValue(cfg.EFIVarsPath),
 	)
 	args = append(args, displayArgs...)
 	inputArgs, err := windowsQEMUInputDeviceArgs(cfg.InputDevice)
@@ -842,7 +861,7 @@ func windowsQEMUArgs(cfg windowsQEMUConfig) ([]string, error) {
 	args = append(args,
 		"-object", "rng-random,id=rng0,filename=/dev/urandom",
 		"-device", "virtio-rng-pci,rng=rng0",
-		"-drive", fmt.Sprintf("if=none,id=hd0,format=%s,file=%s", cfg.DiskFormat, cfg.DiskPath),
+		"-drive", fmt.Sprintf("if=none,id=hd0,format=%s,file=%s", cfg.DiskFormat, windowsQEMUOptionValue(cfg.DiskPath)),
 		"-device", "nvme,drive=hd0,serial=covewindows001,bootindex=2",
 	)
 	if cfg.EnableClipboard {
@@ -850,7 +869,7 @@ func windowsQEMUArgs(cfg windowsQEMUConfig) ([]string, error) {
 	}
 	if cfg.ISOPath != "" {
 		args = append(args,
-			"-drive", "if=none,id=cd0,format=raw,media=cdrom,readonly=on,file="+cfg.ISOPath,
+			"-drive", "if=none,id=cd0,format=raw,media=cdrom,readonly=on,file="+windowsQEMUOptionValue(cfg.ISOPath),
 			"-device", "usb-storage,drive=cd0,bootindex=1",
 		)
 	}
@@ -859,7 +878,7 @@ func windowsQEMUArgs(cfg windowsQEMUConfig) ([]string, error) {
 			return nil, fmt.Errorf("stat Windows VirtIO ISO: %w", err)
 		}
 		args = append(args,
-			"-drive", "if=none,id=virtio0,format=raw,media=cdrom,readonly=on,file="+cfg.VirtioISOPath,
+			"-drive", "if=none,id=virtio0,format=raw,media=cdrom,readonly=on,file="+windowsQEMUOptionValue(cfg.VirtioISOPath),
 			"-device", "usb-storage,drive=virtio0",
 		)
 	}
@@ -868,7 +887,7 @@ func windowsQEMUArgs(cfg windowsQEMUConfig) ([]string, error) {
 			return nil, fmt.Errorf("stat Windows autounattend ISO: %w", err)
 		}
 		args = append(args,
-			"-drive", "if=none,id=oemdrv0,format=raw,media=cdrom,readonly=on,file="+cfg.AutounattendISOPath,
+			"-drive", "if=none,id=oemdrv0,format=raw,media=cdrom,readonly=on,file="+windowsQEMUOptionValue(cfg.AutounattendISOPath),
 			"-device", "usb-storage,drive=oemdrv0",
 		)
 	}
@@ -889,6 +908,10 @@ func windowsQEMUArgs(cfg windowsQEMUConfig) ([]string, error) {
 		args = append(args, "-display", "cocoa,zoom-to-fit=on,show-cursor=on")
 	}
 	return args, nil
+}
+
+func windowsQEMUOptionValue(s string) string {
+	return strings.ReplaceAll(s, ",", ",,")
 }
 
 func windowsQEMUClipboardArgs() []string {
