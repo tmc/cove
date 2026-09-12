@@ -1,0 +1,9 @@
+commit: 19b515af
+commit date: 2026-09-12
+agent: Codex CLI 0.154.0
+model: gpt-5.6-luna
+tty: ttys046
+pid: 86488
+ITERM_SESSION_ID: w0t7p2:5185D260-2810-4E10-BDFA-8F3B5074BF1F
+validation: go build ./...; signed cove binary; go test ./cmd/cove -run TestWindowsNetwork; go test ./cmd/cove -run TestWindowsQEMU; full go test ./... passed in shared gate
+live: opt-in QEMU/HVF disposable APFS clone reached EFI shim but no Windows agent after 90s; source unchanged
