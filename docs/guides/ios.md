@@ -16,6 +16,49 @@ this runner. Audio, touch input, accelerators, and battery devices are not
 implemented. Idle and maximum-age policies are rejected; the run-budget policy
 still applies.
 
+Validate an idle prepared bundle before attempting a run:
+
+```sh
+cove ios validate -vm-dir /path/to/prepared.covevm
+```
+
+This command loads `config.json`, checks the saved iOS configuration and runtime
+restrictions, and reports file errors together. It does not create a bundle,
+write state, acquire a VM lock, or start a native VM. A successful check prints:
+
+```text
+Prepared iOS files validated; native start, DFU discovery and guest boot are unverified.
+```
+
+Prepare the bundle externally with a matching set of identity, NVRAM, SEP state,
+disk, and firmware artifacts. Set `ios.rom` to the relative boot-ROM path in
+`config.json`; set `ios.sepROM` only when supplying a separate SEP ROM. Do not
+substitute empty files or a macOS hardware model for missing artifacts. Cove has
+no command that generates a bootable iOS consistency set.
+
+| Diagnostic | Required correction |
+| --- | --- |
+| `ios rom: configure a prepared boot rom` | Set `ios.rom` to an existing bundle-relative firmware file. |
+| `resolve existing file inside bundle` | Restore the named artifact and check its path and symlink target. |
+| `expected a nonempty regular file` | Replace the named empty file, directory, or special file with the prepared artifact. |
+| `read/write access required` | Give the running user access to mutable state: `aux.img`, `sep.img`, and `disk.img`. |
+| `read access required` | Give the running user read access to the named identity or firmware file. |
+| `aliases` | Supply separate artifacts; a hard link, symlink, or repeated path cannot reuse another required file. |
+| `runtime nvram updates are unsupported` | Prepare boot arguments in NVRAM externally, then clear `ios.bootArgs`. |
+
+Required files must be nonempty regular files. Relative symlinks are accepted
+only when they resolve inside the bundle; absolute symlinks are rejected.
+Access checks open existing files without creating, truncating, or writing them.
+They do not test whether the bundle directory permits later lock or status-file
+creation. Keep the bundle idle during validation and startup: preflight does not
+reserve the files or prevent concurrent replacement.
+
+Static success does not decode the saved hardware model or identity, establish
+that firmware and state belong together, verify firmware provenance, or prove
+native API availability. Firmware provenance and matching state remain
+unverified. Native startup separately loads the saved identity and hardware
+model and checks host APIs; native guest boot remains unverified.
+
 Run an already-prepared bundle with:
 
 ```sh
@@ -54,8 +97,9 @@ cannot contain whitespace, control characters, slashes, or colons. An optional
 
 Optional `rom` and `sepROM` references use clean, forward-slash paths relative
 to the bundle, such as `firmware/boot.bin`. Absolute paths, parent traversal,
-backslashes, colons, and NUL bytes are rejected. Configuration validation does
-not open these files, resolve symbolic links, or establish firmware provenance.
+backslashes, colons, and NUL bytes are rejected. `Config.Validate` checks
+configuration syntax only; the `ios validate` command also checks files and
+symlink containment as described above.
 The optional `firmwareDigest` must contain a SHA-256 hexadecimal string; it is
 stored metadata, not a check of firmware bytes. `bootArgs` records boot arguments,
 but the native runner currently rejects a nonempty value because runtime NVRAM updates are not implemented.
