@@ -1,0 +1,9 @@
+commit: c653bfb43057f4307b37e2e76a9d5154f6c531b9
+commit date: 2026-09-11T21:50:17-07:00
+agent: Codex CLI 0.154.0
+model: gpt-6-astra
+installed Claude Code version: 2.1.269 (not the authoring agent)
+tty: ttys046
+pid: 86488
+ITERM_SESSION_ID: w0t7p2:5185D260-2810-4E10-BDFA-8F3B5074BF1F
+validation: go build ./...; signed cove binary with virtualization entitlement; go test ./...; focused Windows race tests
