@@ -13,7 +13,6 @@ import (
 	"github.com/tmc/apple/dispatch"
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/apple/x/vzkit"
-	"github.com/tmc/cove/internal/iosbundle"
 	"github.com/tmc/cove/internal/vmconfig"
 	"github.com/tmc/cove/internal/vmpolicy"
 	"github.com/tmc/cove/internal/vmrun"
@@ -47,7 +46,10 @@ func resolveIOSRun(cfg RunConfig, rc *vmrun.RunConfig, hc vmrun.HostConfig) erro
 	if err := validateIOSRun(*rc, hc); err != nil {
 		return err
 	}
-	return validateIOSFiles(hc.VMDir, saved.IOS)
+	if len(saved.Volumes) != 0 {
+		return fmt.Errorf("ios does not support saved shared folders")
+	}
+	return saved.IOS.ValidatePrepared(hc.VMDir)
 }
 
 func validateIOSRun(rc vmrun.RunConfig, hc vmrun.HostConfig) error {
@@ -64,6 +66,9 @@ func validateIOSRun(rc vmrun.RunConfig, hc vmrun.HostConfig) error {
 	if policy.IdleTimeout > 0 || policy.MaxAge > 0 {
 		return fmt.Errorf("ios runtime does not support idle or maximum-age policies")
 	}
+	if rc.SerialOutput != "" && rc.SerialOutput != "none" && rc.SerialOutput != "stdout" {
+		return fmt.Errorf("ios serial output supports stdout or none")
+	}
 	if rc.RawDisk {
 		return fmt.Errorf("ios runtime requires a disk image")
 	}
@@ -73,7 +78,8 @@ func validateIOSRun(rc vmrun.RunConfig, hc vmrun.HostConfig) error {
 	if rc.RecoveryMode {
 		return fmt.Errorf("ios recovery requires the firmware restore pipeline; use force-dfu for research boot")
 	}
-	if rc.SaveCompress || rc.SaveEncrypt || rc.SkipResume || hasSuspendStateForVM(hc.VMDir) {
+	_, suspendErr := os.Stat(filepath.Join(hc.VMDir, "suspend.vmstate"))
+	if rc.SaveCompress || rc.SaveEncrypt || rc.SkipResume || suspendErr == nil {
 		return fmt.Errorf("ios save and resume are not supported; preserve saved state outside the active bundle")
 	}
 	if hc.RecoverIdentity {
@@ -105,7 +111,10 @@ func runIOSVMWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig, bundle *RunBund
 	if saved.IOS == nil {
 		return fmt.Errorf("ios runtime requires an ios configuration")
 	}
-	if err := validateIOSFiles(hc.VMDir, saved.IOS); err != nil {
+	if len(saved.Volumes) != 0 {
+		return fmt.Errorf("ios does not support saved shared folders")
+	}
+	if err := saved.IOS.ValidatePrepared(hc.VMDir); err != nil {
 		return err
 	}
 	config, err := buildIOSVMConfiguration(rc, hc, saved.IOS)
@@ -131,32 +140,53 @@ func runIOSVMWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig, bundle *RunBund
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(signals)
+	return runIOSLifecycle(
+		func() <-chan error { return beginVMStart(vm, queue, rc) },
+		func() <-chan error {
+			result := make(chan error, 1)
+			DispatchAsyncQueue(queue, func() {
+				vm.StopWithCompletionHandler(func(err error) { result <- snapshotNSError(err) })
+			})
+			return result
+		},
+		func() (vz.VZVirtualMachineState, error) { return currentVMState(vm, queue) },
+		signals, rc.StartTimeout, restartHardStopTimeout, vzkit.RunRunLoopOnce,
+		func(state string) {
+			noteVMRuntimeState(hc.VMDir, state)
+			if state == "running" {
+				fmt.Println("iOS research VM started; guest boot and DFU discovery are not verified. Send SIGINT or SIGTERM to stop.")
+			}
+		},
+	)
+}
+
+var errIOSInterrupted = errors.New("ios startup interrupted")
+
+func runIOSLifecycle(start, stop func() <-chan error, poll func() (vz.VZVirtualMachineState, error), signals <-chan os.Signal, startTimeout, stopTimeout time.Duration, pump func(), report func(string)) (runErr error) {
 	defer func() {
-		if err := stopIOSVM(func() error { return hardStopVMAndWait(vm, queue) }, func() (vz.VZVirtualMachineState, error) {
-			vzkit.RunRunLoopOnce()
-			return currentVMState(vm, queue)
-		}, restartHardStopTimeout); err != nil {
+		if err := stopIOSVM(stop, poll, stopTimeout, pump); err != nil {
 			runErr = errors.Join(runErr, fmt.Errorf("stop ios vm: %w", err))
-			noteVMRuntimeState(hc.VMDir, "error")
+			report("error")
 			return
 		}
-		noteVMRuntimeState(hc.VMDir, "stopped")
+		report("stopped")
 	}()
-	startErr := beginVMStart(vm, queue, rc)
-	if err := waitForVMStartPoll(startErr, func() (vz.VZVirtualMachineState, error) { return currentVMState(vm, queue) }, vmStartWaitOptions{Timeout: rc.StartTimeout, PumpRunLoop: true}); err != nil {
+	if err := waitForIOSStart(start(), poll, signals, startTimeout, pump); err != nil {
+		if errors.Is(err, errIOSInterrupted) {
+			return nil
+		}
 		return fmt.Errorf("start ios vm: %w", err)
 	}
-	noteVMRuntimeState(hc.VMDir, "running")
-	fmt.Println("iOS research VM started; guest boot and DFU discovery are not verified. Send SIGINT or SIGTERM to stop.")
-	ticker := time.NewTicker(50 * time.Millisecond)
+	report("running")
+	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-signals:
 			return nil
 		case <-ticker.C:
-			vzkit.RunRunLoopOnce()
-			state, err := currentVMState(vm, queue)
+			pump()
+			state, err := poll()
 			if err != nil {
 				return fmt.Errorf("read ios vm state: %w", err)
 			}
@@ -170,37 +200,71 @@ func runIOSVMWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig, bundle *RunBund
 	}
 }
 
-func stopIOSVM(stop func() error, poll func() (vz.VZVirtualMachineState, error), timeout time.Duration) error {
+func waitForIOSStart(result <-chan error, poll func() (vz.VZVirtualMachineState, error), signals <-chan os.Signal, timeout time.Duration, pump func()) error {
+	if timeout <= 0 {
+		timeout = 60 * time.Second
+	}
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	completed := false
+	for {
+		select {
+		case <-signals:
+			return errIOSInterrupted
+		case err := <-result:
+			if err != nil && !errors.Is(err, errVMStartupInProgress) {
+				return err
+			}
+			completed = err == nil
+			result = nil
+		case <-deadline.C:
+			return fmt.Errorf("ios vm start timed out")
+		case <-ticker.C:
+			pump()
+			state, err := poll()
+			if err != nil {
+				continue
+			}
+			switch state {
+			case vz.VZVirtualMachineStateRunning:
+				return nil
+			case vz.VZVirtualMachineStateError:
+				return fmt.Errorf("ios vm entered error state during startup")
+			case vz.VZVirtualMachineStateStopped:
+				if completed {
+					return fmt.Errorf("ios vm stopped during startup")
+				}
+			}
+		}
+	}
+}
+
+func stopIOSVM(stop func() <-chan error, poll func() (vz.VZVirtualMachineState, error), timeout time.Duration, pump func()) error {
 	if state, err := poll(); err == nil && state == vz.VZVirtualMachineStateStopped {
 		return nil
 	}
-	stopErr := stop()
-	state, waitErr := waitForVMStatePoll(poll, vz.VZVirtualMachineStateStopped, timeout, restartStatePollInterval)
-	if state == vz.VZVirtualMachineStateStopped {
-		return nil
-	}
-	return errors.Join(stopErr, waitErr)
-}
-
-func validateIOSFiles(dir string, cfg *iosbundle.Config) error {
-	names := []string{"hw.model", "machine.id", "aux.img", "sep.img", "disk.img"}
-	if cfg.ROM == "" {
-		return fmt.Errorf("ios requires a prepared boot rom")
-	}
-	names = append(names, cfg.ROM)
-	if cfg.SEPROM != "" {
-		names = append(names, cfg.SEPROM)
-	}
-	for _, name := range names {
-		info, err := os.Stat(filepath.Join(dir, name))
-		if err != nil {
-			return fmt.Errorf("ios state %s: %w", name, err)
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	result := stop()
+	var stopErr error
+	for {
+		pump()
+		if state, err := poll(); err == nil && state == vz.VZVirtualMachineStateStopped {
+			return nil
 		}
-		if !info.Mode().IsRegular() || info.Size() == 0 {
-			return fmt.Errorf("ios state %s must be a nonempty regular file", name)
+		select {
+		case err := <-result:
+			stopErr = err
+			result = nil
+		case <-deadline.C:
+			return errors.Join(stopErr, fmt.Errorf("ios vm stop timed out before reaching stopped state"))
+		case <-ticker.C:
 		}
 	}
-	return nil
 }
 
 func applyIOSRuntimeDefaults(cfg *RunConfig) {

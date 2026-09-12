@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "observedUTC": "2026-09-12",
+  "host": {
+    "model": "Mac16,8",
+    "architecture": "arm64",
+    "memoryBytes": 51539607552,
+    "macOS": "27.0",
+    "build": "26A5425a"
+  },
+  "sourceBase": "5541677e68ea60be6a57cb7a91b83c98dd15c3a7",
+  "sourceState": "working tree with iOS probe and lifecycle changes; binary hashes identify observed executables",
+  "observations": [
+    {
+      "profile": "public",
+      "binarySHA256": "6596c65b0feed7e2ee484e9fd3391e31a5e2f0101fcb0e21a34e8d5051f5b957",
+      "signatureVerificationExit": 0,
+      "entitlements": {
+        "com.apple.security.network.client": true,
+        "com.apple.security.network.server": true,
+        "com.apple.security.virtualization": true
+      },
+      "probeExit": 1,
+      "probeStderr": "error: ios research hardware model unsupported on this host\n",
+      "binaryUnchanged": true,
+      "nativeProbe": {
+        "schemaVersion": 1,
+        "profile": "vresearch101",
+        "selectors": [
+          {
+            "class": "_VZMacHardwareModelDescriptor",
+            "selector": "setPlatformVersion:",
+            "available": true,
+            "encoding": "v20@0:8I16",
+            "expectedEncoding": "v@:I"
+          },
+          {
+            "class": "_VZMacHardwareModelDescriptor",
+            "selector": "setBoardID:",
+            "available": true,
+            "encoding": "v20@0:8I16",
+            "expectedEncoding": "v@:I"
+          },
+          {
+            "class": "_VZMacHardwareModelDescriptor",
+            "selector": "setISA:",
+            "available": true,
+            "encoding": "v24@0:8q16",
+            "expectedEncoding": "v@:q"
+          },
+          {
+            "class": "VZMacHardwareModel",
+            "selector": "_hardwareModelWithDescriptor:",
+            "classMethod": true,
+            "available": true,
+            "encoding": "@24@0:8@16",
+            "expectedEncoding": "@@:@"
+          },
+          {
+            "class": "VZMacMachineIdentifier",
+            "selector": "_ECID",
+            "available": true,
+            "encoding": "Q16@0:8",
+            "expectedEncoding": "Q@:"
+          },
+          {
+            "class": "VZMacOSBootLoader",
+            "selector": "_setROMURL:",
+            "available": true,
+            "encoding": "v24@0:8@16",
+            "expectedEncoding": "v@:@"
+          },
+          {
+            "class": "_VZSEPCoprocessorConfiguration",
+            "selector": "initWithStorageURL:",
+            "available": true,
+            "encoding": "@24@0:8@16",
+            "expectedEncoding": "@@:@"
+          },
+          {
+            "class": "_VZSEPCoprocessorConfiguration",
+            "selector": "setRomBinaryURL:",
+            "available": true,
+            "encoding": "v24@0:8@16",
+            "expectedEncoding": "v@:@"
+          },
+          {
+            "class": "VZVirtualMachineConfiguration",
+            "selector": "_setCoprocessors:",
+            "available": true,
+            "encoding": "v24@0:8@16",
+            "expectedEncoding": "v@:@"
+          },
+          {
+            "class": "_VZPL011SerialPortConfiguration",
+            "selector": "init",
+            "available": true,
+            "encoding": "@16@0:8",
+            "expectedEncoding": "@@:"
+          }
+        ],
+        "modelSupported": false,
+        "error": "ios research hardware model unsupported on this host"
+      }
+    },
+    {
+      "profile": "research",
+      "binarySHA256": "c5d58245ca2062d8686677bb11dcd8f1e3ea2683d0cce0dfbafc5a4fb03c3266",
+      "signatureVerificationExit": 0,
+      "entitlements": {
+        "com.apple.private.virtualization": true,
+        "com.apple.security.network.client": true,
+        "com.apple.security.network.server": true,
+        "com.apple.security.virtualization": true
+      },
+      "probeExit": -9,
+      "probeStderr": "",
+      "binaryUnchanged": true,
+      "hostSigningError": "AppleMobileFileIntegrityError -424: The file is adhoc signed but contains restricted entitlements"
+    }
+  ],
+  "nativeVMStartAttempted": false,
+  "dfuObserved": null,
+  "guestBootVerified": false
+}

@@ -183,12 +183,17 @@ func TestIOSStopConfirmsState(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			stopped := false
-			err := stopIOSVM(func() error { stopped = true; return tt.stopErr }, func() (vz.VZVirtualMachineState, error) {
+			err := stopIOSVM(func() <-chan error {
+				stopped = true
+				result := make(chan error, 1)
+				result <- tt.stopErr
+				return result
+			}, func() (vz.VZVirtualMachineState, error) {
 				if !stopped {
 					return vz.VZVirtualMachineStateRunning, nil
 				}
 				return tt.state, nil
-			}, 0)
+			}, 0, func() {})
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("stop = %v", err)
 			}
