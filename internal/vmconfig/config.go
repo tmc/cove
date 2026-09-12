@@ -84,14 +84,6 @@ func load(dir string) (*Config, error) {
 
 // Save writes cfg to dir/config.json.
 func Save(dir string, cfg *Config) error {
-	if cfg == nil {
-		return fmt.Errorf("save vm config: nil config")
-	}
-	if cfg.IOS != nil {
-		if err := cfg.IOS.Validate(); err != nil {
-			return fmt.Errorf("save vm config: %w", err)
-		}
-	}
 	return withConfigLock(dir, func() error { return save(dir, cfg) })
 }
 
@@ -101,6 +93,14 @@ func Save(dir string, cfg *Config) error {
 // interleave on a shared scratch path and rename a partial file into
 // place: each rename publishes one writer's complete config.
 func save(dir string, cfg *Config) error {
+	if cfg == nil {
+		return fmt.Errorf("save vm config: nil config")
+	}
+	if cfg.IOS != nil {
+		if err := cfg.IOS.Validate(); err != nil {
+			return fmt.Errorf("save vm config: %w", err)
+		}
+	}
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal vm config: %w", err)
@@ -205,12 +205,12 @@ func SetGuestUser(dir string, uid, gid uint32) error {
 }
 
 // SetPostInstallRecipes persists the selected post-install recipes.
-// An unreadable config is replaced rather than reported.
+// An unreadable config is left unchanged.
 func SetPostInstallRecipes(dir, recipes string) error {
 	return withConfigLock(dir, func() error {
 		cfg, err := load(dir)
 		if err != nil {
-			cfg = &Config{}
+			return err
 		}
 		cfg.PostInstallRecipes = recipes
 		return save(dir, cfg)

@@ -71,3 +71,51 @@ func TestRejectInvalidIOSSave(t *testing.T) {
 		t.Fatal("failed save changed authoritative configuration")
 	}
 }
+
+func TestIOSUpdateValidation(t *testing.T) {
+	dir := t.TempDir()
+	ios := iosbundle.DefaultConfig()
+	if err := Save(dir, &Config{IOS: &ios}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = Update(dir, func(cfg *Config) (bool, error) {
+		cfg.IOS.SchemaVersion = 2
+		return true, nil
+	})
+	if err == nil {
+		t.Fatal("updated to an unsupported ios schema")
+	}
+	after, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("failed update changed configuration")
+	}
+}
+
+func TestRecipesPreserveUnreadableIOSConfig(t *testing.T) {
+	for _, data := range []string{`{"ios":{"schemaVersion":2}}`, `{"ios":`} {
+		t.Run(data, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "config.json")
+			if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := SetPostInstallRecipes(dir, "base"); err == nil {
+				t.Fatal("overwrote unreadable configuration")
+			}
+			got, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != data {
+				t.Fatal("recipe edit changed configuration")
+			}
+		})
+	}
+}

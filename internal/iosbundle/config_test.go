@@ -36,6 +36,18 @@ func TestConfigValidate(t *testing.T) {
 		{"unicast", func(c *Config) { c.MAC = "02:00:00:00:00:01" }, true},
 		{"bridge", func(c *Config) { c.Network = "bridged:en0" }, true},
 		{"missing bridge", func(c *Config) { c.Network = "bridged:" }, false},
+		{"bridge carriage return", func(c *Config) { c.Network = "bridged:en0\r" }, false},
+		{"bridge nul", func(c *Config) { c.Network = "bridged:en0\x00" }, false},
+		{"bridge colon", func(c *Config) { c.Network = "bridged:en0:extra" }, false},
+		{"relative rom", func(c *Config) { c.ROM = "firmware/boot.bin" }, true},
+		{"absolute rom", func(c *Config) { c.ROM = "/tmp/boot.bin" }, false},
+		{"escaping rom", func(c *Config) { c.ROM = "../boot.bin" }, false},
+		{"unclean rom", func(c *Config) { c.ROM = "firmware/../boot.bin" }, false},
+		{"directory rom", func(c *Config) { c.ROM = "." }, false},
+		{"windows rom", func(c *Config) { c.ROM = "C:/boot.bin" }, false},
+		{"backslash rom", func(c *Config) { c.ROM = "firmware\\boot.bin" }, false},
+		{"nul rom", func(c *Config) { c.ROM = "boot\x00.bin" }, false},
+		{"escaping sep rom", func(c *Config) { c.SEPROM = "../sep.bin" }, false},
 		{"bad digest", func(c *Config) { c.FirmwareDigest = "abc" }, false},
 	}
 	for _, tt := range tests {

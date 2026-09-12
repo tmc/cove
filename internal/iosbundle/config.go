@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"path"
 	"strings"
+	"unicode"
 )
 
 // Config is the ios object in a cove config.json file.
@@ -62,7 +64,7 @@ func (c Config) Validate() error {
 	switch c.Network {
 	case "nat", "none":
 	default:
-		if iface, ok := strings.CutPrefix(c.Network, "bridged:"); !ok || iface == "" || strings.ContainsAny(iface, " /\t\n") {
+		if iface, ok := strings.CutPrefix(c.Network, "bridged:"); !ok || iface == "" || strings.ContainsAny(iface, "/:") || strings.ContainsFunc(iface, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) {
 			return fmt.Errorf("invalid ios network %q", c.Network)
 		}
 	}
@@ -70,6 +72,11 @@ func (c Config) Validate() error {
 		a, err := net.ParseMAC(c.MAC)
 		if err != nil || len(a) != 6 || a[0]&1 != 0 {
 			return fmt.Errorf("invalid ios unicast mac %q", c.MAC)
+		}
+	}
+	for _, file := range []struct{ name, path string }{{"rom", c.ROM}, {"sepROM", c.SEPROM}} {
+		if file.path != "" && (path.IsAbs(file.path) || path.Clean(file.path) != file.path || file.path == "." || file.path == ".." || strings.HasPrefix(file.path, "../") || strings.ContainsAny(file.path, "\\:\x00")) {
+			return fmt.Errorf("ios %s must be a clean bundle-relative path", file.name)
 		}
 	}
 	if c.FirmwareDigest != "" {
