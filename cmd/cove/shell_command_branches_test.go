@@ -20,7 +20,7 @@ func TestShellCommandResolveSocketMissingVM(t *testing.T) {
 	}
 }
 
-func TestShellCommandWindowsQEMUInteractiveMessage(t *testing.T) {
+func TestShellCommandWindowsQEMURequiresControlSocket(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	name := "qemu-shell"
 	dir := filepath.Join(vmconfig.BaseDir(), name+".covevm")
@@ -38,7 +38,7 @@ func TestShellCommandWindowsQEMUInteractiveMessage(t *testing.T) {
 	if err == nil {
 		t.Fatal("shellCommand succeeded")
 	}
-	if !strings.Contains(err.Error(), "qemu windows shell does not support interactive sessions yet") {
+	if !strings.Contains(err.Error(), "vm is not running: control socket not found") {
 		t.Fatalf("shellCommand error = %v", err)
 	}
 }
@@ -63,7 +63,7 @@ func TestShellCommandWindowsQEMUUsesGlobalVM(t *testing.T) {
 	if err == nil {
 		t.Fatal("shellCommand succeeded")
 	}
-	if !strings.Contains(err.Error(), "qemu windows shell does not support interactive sessions yet") {
+	if !strings.Contains(err.Error(), "vm is not running: control socket not found") {
 		t.Fatalf("shellCommand error = %v", err)
 	}
 }

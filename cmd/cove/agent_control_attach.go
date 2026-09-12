@@ -164,9 +164,17 @@ func (s *ControlServer) serveAgentExecAttach(conn net.Conn, raw []byte, a attach
 	}
 
 	if stdinOK {
-		go forwardAttachStdin(ctx, conn, req.ExecID, stdin)
+		go func() {
+			if !forwardAttachStdin(ctx, conn, req.ExecID, stdin) {
+				drainAttachStdin(ctx, conn)
+			}
+			cancel()
+		}()
 	} else {
-		go drainAttachStdin(ctx, conn)
+		go func() {
+			drainAttachStdin(ctx, conn)
+			cancel()
+		}()
 	}
 
 	var finalExitCode int32
@@ -227,16 +235,17 @@ func drainAttachStdin(ctx context.Context, conn net.Conn) {
 	}
 }
 
-func forwardAttachStdin(ctx context.Context, conn net.Conn, execID string, stream agentstate.ExecAttachStream) {
+// forwardAttachStdin reports whether input ended without an explicit half-close.
+func forwardAttachStdin(ctx context.Context, conn net.Conn, execID string, stream agentstate.ExecAttachStream) bool {
 	defer stream.CloseStdin()
 	dec := json.NewDecoder(conn)
 	for {
 		if err := ctx.Err(); err != nil {
-			return
+			return true
 		}
 		var frame agentExecStdinFrame
 		if err := dec.Decode(&frame); err != nil {
-			return
+			return true
 		}
 		if frame.ExecID != execID {
 			continue
@@ -248,27 +257,27 @@ func forwardAttachStdin(ctx context.Context, conn net.Conn, execID string, strea
 			}
 			data, err := base64.StdEncoding.DecodeString(frame.Data)
 			if err != nil {
-				return
+				return true
 			}
 			if err := stream.SendStdin(data); err != nil {
-				return
+				return true
 			}
 		case "resize":
 			if frame.Rows == 0 || frame.Cols == 0 {
 				continue
 			}
 			if err := stream.SendResize(frame.Rows, frame.Cols); err != nil {
-				return
+				return true
 			}
 		case "signal":
 			if frame.Signal == 0 {
 				continue
 			}
 			if err := stream.SendSignal(frame.Signal); err != nil {
-				return
+				return true
 			}
 		case "close_stdin":
-			return
+			return false
 		}
 	}
 }

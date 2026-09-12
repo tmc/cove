@@ -40,6 +40,7 @@ func startWindowsQEMUControlServer(ctx context.Context, vmDir string) (*windowsQ
 		return nil, err
 	}
 	handler := &windowsQEMUControlHandler{vmDir: vmDir, authToken: token}
+	handler.attach.startLifecycleContext()
 	server := &controlx.Server{
 		SocketPath:    socketPath,
 		Verbose:       verbose,
@@ -119,6 +120,7 @@ func cleanupWindowsQEMUControlSocket(vmDir, socketPath string) {
 
 type windowsQEMUControlHandler struct {
 	vmDir       string
+	attach      ControlServer
 	authToken   string
 	rfbMu       sync.Mutex
 	rfb         *rfb.Client
@@ -132,12 +134,36 @@ func (h *windowsQEMUControlHandler) Authorize(token string) bool {
 	return subtle.ConstantTimeCompare([]byte(strings.TrimSpace(token)), []byte(h.authToken)) == 1
 }
 
-func (h *windowsQEMUControlHandler) HandleStream(net.Conn, *controlpb.ControlRequest, []byte) (bool, bool) {
-	return false, false
+func (h *windowsQEMUControlHandler) HandleStream(conn net.Conn, req *controlpb.ControlRequest, raw []byte) (bool, bool) {
+	if req.Type != "agent-exec-attach" {
+		return false, false
+	}
+	if err := conn.SetDeadline(time.Time{}); err != nil {
+		return true, true
+	}
+	client, err := qemuAgentClient(qemuAgentAddressForVMDir(h.vmDir))
+	if err != nil {
+		writeResponse(conn, &controlpb.ControlResponse{Error: err.Error()})
+		return true, true
+	}
+	defer client.Close()
+	h.attach.serveAgentExecAttach(conn, raw, client)
+	return true, true
 }
 
-func (h *windowsQEMUControlHandler) HandleRaw(*controlpb.ControlRequest, []byte) (*controlpb.ControlResponse, bool) {
-	return nil, false
+func (h *windowsQEMUControlHandler) HandleRaw(req *controlpb.ControlRequest, raw []byte) (*controlpb.ControlResponse, bool) {
+	if req.Type != "agent-exec-resize" && req.Type != "agent-exec-signal" {
+		return nil, false
+	}
+	client, err := qemuAgentClient(qemuAgentAddressForVMDir(h.vmDir))
+	if err != nil {
+		return &controlpb.ControlResponse{Error: err.Error()}, true
+	}
+	defer client.Close()
+	if req.Type == "agent-exec-resize" {
+		return handleAgentExecResize(h.attach.lifecycleContext(), client, raw), true
+	}
+	return handleAgentExecSignal(h.attach.lifecycleContext(), client, raw), true
 }
 
 func (h *windowsQEMUControlHandler) Handle(req *controlpb.ControlRequest) *controlpb.ControlResponse {
@@ -189,8 +215,7 @@ func (h *windowsQEMUControlHandler) Handle(req *controlpb.ControlRequest) *contr
 	case "pause", "resume", "snapshot", "memory", "network-info",
 		"shared-folders-apply", "shared-folders-runtime-status",
 		"port-forward", "server-info", "disk", "pit", "usb",
-		"agent-sshd", "agent-mount-volumes",
-		"agent-exec-attach", "agent-exec-resize", "agent-exec-signal":
+		"agent-sshd", "agent-mount-volumes":
 		return qemuControlUnsupported(req.Type)
 	default:
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("unknown qemu control command type: %s", req.Type)}
@@ -200,6 +225,7 @@ func (h *windowsQEMUControlHandler) Handle(req *controlpb.ControlRequest) *contr
 func (h *windowsQEMUControlHandler) Event(string, *controlpb.ControlResponse) {}
 
 func (h *windowsQEMUControlHandler) Close() {
+	h.attach.shutdownLifecycleContext()
 	h.rfbMu.Lock()
 	defer h.rfbMu.Unlock()
 	h.closeRFBLocked()
@@ -237,6 +263,7 @@ func (h *windowsQEMUControlHandler) capabilities() *controlpb.ControlResponse {
 		"stop", "request-stop", "gui-status", "gui-open", "vnc-status",
 		"agent-connect", "agent-ping", "agent-info", "agent-status",
 		"agent-exec", "agent-exec-auto", "agent-exec-stream",
+		"agent-exec-attach", "agent-exec-resize", "agent-exec-signal",
 		"agent-user-exec", "agent-user-exec-stream",
 		"agent-read", "agent-write", "agent-shutdown", "agent-reboot",
 		"pause", "resume", "snapshot", "memory", "network-info",
@@ -250,6 +277,7 @@ func (h *windowsQEMUControlHandler) capabilities() *controlpb.ControlResponse {
 		"mouse":             qemuMetadataForVMDir(h.vmDir).VNCEndpoint != "",
 		"agentExec":         true,
 		"agentExecStream":   false,
+		"agentExecAttach":   true,
 		"agentFile":         true,
 		"snapshots":         false,
 		"pause":             false,

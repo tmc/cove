@@ -51,9 +51,11 @@ type agentServer struct {
 }
 
 type activeExec struct {
-	pid   int
-	tty   bool
-	ttyFD int
+	pid    int
+	tty    bool
+	ttyFD  int
+	resize func(uint32, uint32) error
+	signal func(int32) error
 	// ptmx holds the PTY master file when the exec was launched with tty=true
 	// via pty.Start. The agent retains it so reads can be drained into the
 	// output stream and so the master fd survives until untrackExec closes it.
@@ -164,7 +166,7 @@ func (s *agentServer) ExecStream(ctx context.Context, req *connect.Request[pb.Ex
 	}
 
 	if r.GetTty() {
-		return s.execStreamPTY(r, cmd, stream)
+		return s.execStreamPTY(ctx, r, cmd, stream)
 	}
 
 	stdoutPipe, err := cmd.StdoutPipe()
@@ -214,7 +216,7 @@ func (s *agentServer) ExecAttach(ctx context.Context, stream *connect.BidiStream
 		return err
 	}
 	if r.GetTty() {
-		return s.execAttachPTY(r, cmd, stream)
+		return s.execAttachPTY(ctx, r, cmd, stream)
 	}
 	return s.execAttachPipes(r, cmd, stream)
 }
@@ -269,10 +271,14 @@ func (s *agentServer) ResizeExecTTY(_ context.Context, req *connect.Request[pb.R
 	if !ok {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("exec not found"))
 	}
-	if !exec.tty || exec.ttyFD < 0 {
+	if !exec.tty || (exec.ttyFD < 0 && exec.resize == nil) {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("exec has no tty"))
 	}
-	if err := resizeTTY(exec.ttyFD, r.GetRows(), r.GetCols()); err != nil {
+	if err := exec.resizeTerminal(r.GetRows(), r.GetCols()); err != nil {
+		var ce *connect.Error
+		if errors.As(err, &ce) {
+			return nil, err
+		}
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("resize tty: %v", err))
 	}
 	return connect.NewResponse(&pb.ResizeExecTTYResponse{}), nil
@@ -290,7 +296,10 @@ func (s *agentServer) SignalExec(_ context.Context, req *connect.Request[pb.Sign
 	if !ok {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("exec not found"))
 	}
-	if err := signalExec(exec.pid, r.GetSignal()); err != nil {
+	if exec.pid == 0 {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("exec is starting"))
+	}
+	if err := exec.sendSignal(r.GetSignal()); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("signal exec: %v", err))
 	}
 	return connect.NewResponse(&pb.SignalExecResponse{}), nil
@@ -730,4 +739,18 @@ func (s *agentServer) Reboot(_ context.Context, _ *connect.Request[pb.RebootRequ
 		}
 	}()
 	return connect.NewResponse(&pb.RebootResponse{}), nil
+}
+
+func (e *activeExec) resizeTerminal(rows, cols uint32) error {
+	if e.resize != nil {
+		return e.resize(rows, cols)
+	}
+	return resizeTTY(e.ttyFD, rows, cols)
+}
+
+func (e *activeExec) sendSignal(sig int32) error {
+	if e.signal != nil {
+		return e.signal(sig)
+	}
+	return signalExec(e.pid, sig)
 }

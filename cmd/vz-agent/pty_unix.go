@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os/exec"
@@ -13,7 +14,7 @@ import (
 	pb "github.com/tmc/cove/proto/agentpb"
 )
 
-func (s *agentServer) execStreamPTY(r *pb.ExecRequest, cmd *exec.Cmd, stream *connect.ServerStream[pb.ExecOutput]) error {
+func (s *agentServer) execStreamPTY(_ context.Context, r *pb.ExecRequest, cmd *exec.Cmd, stream *connect.ServerStream[pb.ExecOutput]) error {
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
 		return connect.NewError(connect.CodeInternal, fmt.Errorf("pty start: %v", err))
@@ -34,7 +35,7 @@ func (s *agentServer) execStreamPTY(r *pb.ExecRequest, cmd *exec.Cmd, stream *co
 	return stream.Send(&pb.ExecOutput{ExitCode: &exitCode})
 }
 
-func (s *agentServer) execAttachPTY(r *pb.ExecRequest, cmd *exec.Cmd, stream *connect.BidiStream[pb.ExecAttachRequest, pb.ExecAttachOutput]) error {
+func (s *agentServer) execAttachPTY(_ context.Context, r *pb.ExecRequest, cmd *exec.Cmd, stream *connect.BidiStream[pb.ExecAttachRequest, pb.ExecAttachOutput]) error {
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
 		return connect.NewError(connect.CodeInternal, fmt.Errorf("pty start: %v", err))

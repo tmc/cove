@@ -47,7 +47,7 @@ type shellSessionOptions struct {
 
 // shellCommand is the entry point for the `cove shell` subcommand.
 //
-// Usage: cove shell <vm> [-- cmd args...]
+// Usage: cove shell [-interactive] <vm> [-- cmd args...]
 //
 // Returns the guest exit code on a clean exit (0 propagated as nil) so
 // main.go can os.Exit(N) for non-zero results.
@@ -56,6 +56,7 @@ func shellCommand(args []string) error {
 	fs.SetOutput(os.Stderr)
 	fs.Usage = func() { printShellUsage(os.Stderr) }
 	var envFlag, secretEnvFlagVar secretEnvFlag
+	interactive := fs.Bool("interactive", false, "attach a Windows command to the daemon agent terminal")
 	fs.Var(&envFlag, "env", "guest env NAME=value (repeatable; not redacted)")
 	fs.Var(&secretEnvFlagVar, "secret-env", "guest env NAME=value|env://VAR|file:///path (repeatable; redacted in run logs)")
 	if err := fs.Parse(args); err != nil {
@@ -79,19 +80,19 @@ func shellCommand(args []string) error {
 	if len(cmd) > 0 && cmd[0] == "--" {
 		cmd = cmd[1:]
 	}
-	explicitCommand := len(cmd) != 0
+	if dir, err := requireExistingVMForControl(vmArg); err == nil && windowsQEMUCTLVM(dir) {
+		if len(cmd) != 0 && !*interactive {
+			if len(envFlag) != 0 || len(secretEnvFlagVar) != 0 {
+				return fmt.Errorf("qemu windows shell one-shot commands do not support --env or --secret-env; use --interactive for a daemon terminal")
+			}
+			return ctlWindowsQEMUUserAgentExec(dir, cmd, 0, 30*time.Second, false)
+		}
+		if len(cmd) == 0 {
+			cmd = []string{"cmd.exe"}
+		}
+	}
 	if len(cmd) == 0 {
 		cmd = append([]string{}, shellDefaultCommand...)
-	}
-
-	if dir, err := requireExistingVMForControl(vmArg); err == nil && windowsQEMUCTLVM(dir) {
-		if !explicitCommand {
-			return fmt.Errorf("qemu windows shell does not support interactive sessions yet; use `cove -vm %s exec powershell.exe` or `cove gui -vm %s open`", vmArg, vmArg)
-		}
-		if len(envFlag) != 0 || len(secretEnvFlagVar) != 0 {
-			return fmt.Errorf("qemu windows shell one-shot commands do not support --env or --secret-env; use cove exec without environment flags")
-		}
-		return ctlWindowsQEMUUserAgentExec(dir, cmd, 0, 30*time.Second, false)
 	}
 
 	sock, err := resolveShellSocket(vmArg)
@@ -557,19 +558,24 @@ func mapAttachError(vmName, raw string) error {
 }
 
 func printShellUsage(w io.Writer) {
-	fmt.Fprintln(w, `Usage: cove shell <vm> [-- cmd args...]
+	fmt.Fprintln(w, `Usage: cove shell [-interactive] <vm> [-- cmd args...]
        cove -vm <vm> shell -- cmd args...
 
 Open a Docker-shaped exec session against a running VM through its
 control socket. The VM-owning cove process brokers the session to the
-in-guest agent over vsock.
-For Windows QEMU VMs, one-shot commands are routed through the forwarded
-user-session agent; interactive shell sessions are not supported yet.
+in-guest agent.
+Windows QEMU defaults to cmd.exe through the daemon agent's ConPTY terminal.
+Use -interactive before the VM name to attach an explicit Windows command.
+Without -interactive, explicit Windows commands use the user-session agent
+as before. Interactive terminals run as the daemon identity; user switching
+is unsupported. ConPTY requires Windows 10 version 1809 or later.
 
 Examples:
   cove shell my-vm                       # bash -l interactive (default)
   cove shell my-vm -- ls /tmp            # one-shot command, prints output
-  cove -vm windows-qemu shell -- whoami
+  cove shell windows-qemu               # interactive cmd.exe
+  cove shell -interactive windows-qemu -- powershell.exe -NoLogo
+  cove -vm windows-qemu shell -- whoami   # user-session one-shot
   cove shell my-vm -- /bin/sh -c 'echo'
 
 The VM must be running with vz-agent reachable on its control socket.

@@ -238,14 +238,48 @@ cove exec -vm windows cmd.exe /d /c "echo hello & whoami"
 cove exec -vm windows powershell.exe -NoProfile -Command 'Get-NetIPConfiguration'
 ```
 
-Interactive `cove shell` and PTY execution are not supported for QEMU Windows
-VMs yet; use one-shot commands or the display window. Guest paths are written
-as `vm:/C:/path`. The daemon cannot switch users; use the user agent to run in
-the logged-in session. The agent signal RPC supports signal 9 to terminate the
-tracked process only; Unix signals 2 and 15 and process-tree termination are
-not supported. Agent exec requests inherit the agent environment and apply any
-requested environment overrides in both service and user modes. Guest time
-synchronization through the agent remains unsupported.
+Guest paths are written as `vm:/C:/path`. Agent exec requests inherit the agent
+environment and apply requested overrides in both service and user modes.
+Guest time synchronization through the agent remains unsupported.
+
+## Interactive terminal
+
+The Windows daemon agent implements the existing bidirectional terminal protocol
+using ConPTY. Install an updated agent in the guest before using it:
+
+```bash
+cove shell windows
+cove shell -interactive windows -- powershell.exe -NoLogo
+cove shell -interactive -env DEMO=value windows -- cmd.exe
+```
+
+With no command, `shell` starts `cmd.exe`. An explicit command without
+`-interactive` keeps the existing one-shot user-agent behavior. Interactive
+terminals run under the daemon agent's identity, often SYSTEM; they do not run
+as the logged-in desktop user, and user switching is unsupported.
+
+ConPTY requires Windows 10 version 1809 or later (including Windows 11).
+Older systems return an explicit unsupported error. Terminal output combines
+stdout and stderr as UTF-8 with terminal escape sequences. Input, resize, and
+exit status use the existing agent protocol; dimensions start at 80 columns
+and 24 rows and accept resize values from 1 through 32767.
+
+Ctrl+C is sent as terminal input. Signal 9 terminates the terminal job, including
+its child processes; signal RPC values 2 and 15 are unsupported. Disconnecting,
+canceling the RPC, or closing terminal stdin ends the terminal session. Unlike
+pipe execution, terminal stdin closure does not leave the process running with
+output open. Piped interactive input therefore ends the session at EOF; use
+one-shot execution for batch commands. Descendants are also terminated when
+the initial command exits.
+For non-PTY exec, signal 9 still terminates only the tracked process.
+
+The user-agent service has no bidirectional attach RPC. ConPTY does not add
+interactive user-session execution, GUI application hosting, or support for
+Windows drive-relative executable paths such as `C:tool.exe`. Use a full path
+or a command found on the agent's PATH.
+
+The host routing and transport tests run on macOS. The Windows ConPTY tests
+cross-compile for ARM64 and AMD64; live guest execution is not yet verified.
 
 ## Shutdown
 
@@ -296,6 +330,13 @@ go test ./cmd/vz-agent
 
 These cover TCP RPC transport with HTTP/1.1 and HTTP/2, command output and exit
 status, disk capacity, process termination, and shutdown command arguments.
+ConPTY tests additionally exercise input, output, resize, cancellation, child
+process cleanup, startup failure cleanup, and handle closure:
+
+```powershell
+go test ./cmd/vz-agent -run 'ConPTY' -count=1 -timeout=2m
+```
+
 Shutdown tests do not shut down the machine. Clipboard roundtrip tests are
 opt-in because they replace all clipboard formats; run them in a disposable
 logged-in desktop:
