@@ -1,0 +1,9 @@
+commit: 9460f165c6ddbda3ed701710125cb4f18ff37e34
+date: 2026-09-12T08:21:27.345331+00:00
+agent: Codex
+codex-version: codex-cli 0.154.0
+model: GPT-5 Codex
+tty: none (tool shell)
+pid: 16564
+ITERM_SESSION_ID: w0t7p3:DC4BB7E3-8467-40C2-B86C-DE77B6D7F6EC
+validation: go test ./cmd/cove -run TestIOS -count=1; go build ./...; signed binary verification; python3 -m unittest discover -s scripts -p ios_smoke_test.py; native public probe selectors matched but PV3 unsupported; research-entitled probe AMFI SIGKILL; no native VM/DFU/boot verified
