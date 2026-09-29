@@ -160,6 +160,9 @@ type VMToolbar struct {
 	installing     bool // true during installation (disables most VM controls)
 	mu             sync.Mutex
 	state          vz.VZVirtualMachineState
+
+	applySharedFoldersFn func([]SharedFolderEntry) (int, error)
+	mountSharedFoldersFn func() error
 }
 
 // NewVMToolbar creates and attaches a toolbar to the VM window.
@@ -561,23 +564,23 @@ func (t *VMToolbar) UpdateState(state vz.VZVirtualMachineState) {
 // Action handlers
 
 func (t *VMToolbar) handleStop(_ objc.ID, _ objc.SEL, _ objc.ID) {
-	requestVMStop("Toolbar", t.vm, t.vmQueue)
+	requestVMStop("Toolbar", t.vm, t.vmQueue, t.window)
 }
 
 func (t *VMToolbar) handleStartPause(_ objc.ID, _ objc.SEL, _ objc.ID) {
-	toggleVMStartPause("Toolbar", t.vm, t.vmQueue)
+	toggleVMStartPause("Toolbar", t.vm, t.vmQueue, t.window)
 }
 
 func (t *VMToolbar) handleRestart(_ objc.ID, _ objc.SEL, _ objc.ID) {
-	restartVM("Toolbar", t.vm, t.vmQueue)
+	restartVM("Toolbar", t.vm, t.vmQueue, t.window)
 }
 
 func (t *VMToolbar) handleBootRecovery(_ objc.ID, _ objc.SEL, _ objc.ID) {
-	bootVMToRecovery("Toolbar", t.vm, t.vmQueue, t.hc.VMDir)
+	bootVMToRecovery("Toolbar", t.vm, t.vmQueue, t.hc.VMDir, t.window)
 }
 
 func (t *VMToolbar) handleSuspend(_ objc.ID, _ objc.SEL, _ objc.ID) {
-	requestVMSuspend("Toolbar", t.vm, t.vmQueue, t.rc, t.hc)
+	requestVMSuspend("Toolbar", t.vm, t.vmQueue, t.rc, t.hc, t.window)
 }
 
 func (t *VMToolbar) handleShowWindow(_ objc.ID, _ objc.SEL, _ objc.ID) {
@@ -611,7 +614,7 @@ func (t *VMToolbar) handleCaptureInput(_ objc.ID, _ objc.SEL, _ objc.ID) {
 }
 
 func (t *VMToolbar) handleScreenshot(_ objc.ID, _ objc.SEL, _ objc.ID) {
-	saveCurrentVMScreenshot("Toolbar", t.screenshots)
+	saveCurrentVMScreenshot("Toolbar", t.screenshots, t.window)
 }
 
 // handleAddSharedFolder opens an NSOpenPanel to pick a directory,
@@ -690,34 +693,47 @@ func (t *VMToolbar) handleRemoveAllSharedFolders(_ objc.ID, _ objc.SEL, _ objc.I
 	t.saveAndApplySharedFolders(nil)
 }
 
+func (t *VMToolbar) applySharedFolders(folders []SharedFolderEntry) (int, error) {
+	if t.applySharedFoldersFn != nil {
+		return t.applySharedFoldersFn(folders)
+	}
+	return t.applySharedFoldersToVM(folders)
+}
+
+func (t *VMToolbar) mountSharedFolders() error {
+	if t.mountSharedFoldersFn != nil {
+		return t.mountSharedFoldersFn()
+	}
+	return t.ensureGuestSharedFoldersMounted()
+}
+
 // saveAndApplySharedFolders persists the folder list and hotplugs into the running VM.
 func (t *VMToolbar) saveAndApplySharedFolders(folders []SharedFolderEntry) {
+	t.saveAndApplySharedFoldersWithDone(folders, nil)
+}
+
+func (t *VMToolbar) saveAndApplySharedFoldersWithDone(folders []SharedFolderEntry, done chan<- struct{}) {
 	if err := saveSharedFolders(t.vmDirectory, folders); err != nil {
 		fmt.Fprintf(os.Stderr, "error: saving shared folders: %v\n", err)
+		reportGUIError(t.window, "Shared Folder Error", err)
+		if done != nil {
+			close(done)
+		}
 		return
 	}
 
 	// Refresh the toolbar dropdown menu (it doesn't use menuNeedsUpdate:).
 	t.refreshSharedFolderToolbarMenu()
 
-	// Hotplug: update the running VM's directory sharing device
-	t.applySharedFoldersToVM(folders)
-
-	// Mirror CLI behavior: after hotplugging shares, ensure the guest mount
-	// exists so folders appear immediately without requiring a reboot.
-	if len(folders) > 0 && !linuxMode {
-		go t.ensureGuestSharedFoldersMounted()
-	}
-}
-
-// applySharedFoldersToVM updates the VirtioFS share on a running VM.
-// It finds the first directory sharing device and sets a VZMultipleDirectoryShare
-// containing all configured folders.
-func (t *VMToolbar) applySharedFoldersToVM(folders []SharedFolderEntry) {
+	// Hotplug and guest-mount sequenced on a background goroutine.
 	go func() {
-		applied, err := newSharedFolderRuntimeApplier(t.vm, t.vmQueue).Apply(folders)
+		if done != nil {
+			defer close(done)
+		}
+		applied, err := t.applySharedFolders(folders)
 		if err != nil {
 			fmt.Printf("Toolbar: %v\n", err)
+			reportGUIError(t.window, "Shared Folder Error", err)
 			return
 		}
 		if applied == 0 {
@@ -725,10 +741,39 @@ func (t *VMToolbar) applySharedFoldersToVM(folders []SharedFolderEntry) {
 			return
 		}
 		fmt.Printf("Toolbar: hotplugged %d shared folder(s) into running VM\n", applied)
+
+		// Mirror CLI behavior: after hotplugging shares, ensure the guest mount
+		// exists so folders appear immediately without requiring a reboot.
+		if len(folders) > 0 && !linuxMode {
+			if err := t.mountSharedFolders(); err != nil {
+				reportGUIError(t.window, "Shared Folder Error", err)
+				return
+			}
+			guestPath := defaultSharedFoldersMountPoint
+			if len(folders) == 1 {
+				guestPath = filepath.Join(defaultSharedFoldersMountPoint, folders[0].Tag)
+			}
+			DispatchAsyncMain(func() {
+				setWindowSubtitle(t.window, "Shared Folders: " + guestPath)
+			})
+		}
 	}()
 }
 
-func (t *VMToolbar) ensureGuestSharedFoldersMounted() {
+var setWindowSubtitle = func(window appkit.NSWindow, subtitle string) {
+	if window.ID != 0 {
+		window.SetSubtitle(subtitle)
+	}
+}
+
+// applySharedFoldersToVM updates the VirtioFS share on a running VM.
+// It finds the first directory sharing device and sets a VZMultipleDirectoryShare
+// containing all configured folders.
+func (t *VMToolbar) applySharedFoldersToVM(folders []SharedFolderEntry) (int, error) {
+	return newSharedFolderRuntimeApplier(t.vm, t.vmQueue).Apply(folders)
+}
+
+func (t *VMToolbar) ensureGuestSharedFoldersMounted() error {
 	var lastErr error
 	for attempt := 1; attempt <= 5; attempt++ {
 		mounted, err := mountSharedFoldersInGuest(t.vmDirectory, defaultSharedFoldersMountPoint)
@@ -738,7 +783,7 @@ func (t *VMToolbar) ensureGuestSharedFoldersMounted() {
 			} else if verbose {
 				fmt.Printf("Toolbar: shared folders already mounted at %s\n", defaultSharedFoldersMountPoint)
 			}
-			return
+			return nil
 		}
 		lastErr = err
 		// Agent/socket readiness often lags behind a recent boot; retry shortly.
@@ -753,4 +798,5 @@ func (t *VMToolbar) ensureGuestSharedFoldersMounted() {
 		break
 	}
 	fmt.Printf("Toolbar: could not mount shared folders in guest: %v\n", lastErr)
+	return fmt.Errorf("mount shared folders in guest: %w", lastErr)
 }

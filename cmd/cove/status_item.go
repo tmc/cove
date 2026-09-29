@@ -388,39 +388,52 @@ func (c *VMStatusItemController) toggleWindow() {
 	c.refreshStatusItem()
 }
 
+func (c *VMStatusItemController) currentWindow() appkit.NSWindow {
+	c.mu.Lock()
+	window := c.window
+	c.mu.Unlock()
+	if gui, ok := c.gui.(vmGUIWindowProvider); ok && gui != nil {
+		w := gui.Window()
+		if w.ID != 0 {
+			window = w
+		}
+	}
+	return window
+}
+
 func (c *VMStatusItemController) handleToggleRunState(_ objc.ID, _ objc.SEL, _ objc.ID) {
 	c.scheduleAction(func() {
-		toggleVMStartPause("Status item", c.vm, c.vmQueue)
+		toggleVMStartPause("Status item", c.vm, c.vmQueue, c.currentWindow())
 	})
 }
 
 func (c *VMStatusItemController) handleStop(_ objc.ID, _ objc.SEL, _ objc.ID) {
 	c.scheduleAction(func() {
-		requestVMStop("Status item", c.vm, c.vmQueue)
+		requestVMStop("Status item", c.vm, c.vmQueue, c.currentWindow())
 	})
 }
 
 func (c *VMStatusItemController) handleRestart(_ objc.ID, _ objc.SEL, _ objc.ID) {
 	c.scheduleAction(func() {
-		restartVM("Status item", c.vm, c.vmQueue)
+		restartVM("Status item", c.vm, c.vmQueue, c.currentWindow())
 	})
 }
 
 func (c *VMStatusItemController) handleBootRecovery(_ objc.ID, _ objc.SEL, _ objc.ID) {
 	c.scheduleAction(func() {
-		bootVMToRecovery("Status item", c.vm, c.vmQueue, c.hc.VMDir)
+		bootVMToRecovery("Status item", c.vm, c.vmQueue, c.hc.VMDir, c.currentWindow())
 	})
 }
 
 func (c *VMStatusItemController) handleSuspend(_ objc.ID, _ objc.SEL, _ objc.ID) {
 	c.scheduleAction(func() {
-		requestVMSuspend("Status item", c.vm, c.vmQueue, c.rc, c.hc)
+		requestVMSuspend("Status item", c.vm, c.vmQueue, c.rc, c.hc, c.currentWindow())
 	})
 }
 
 func (c *VMStatusItemController) handleScreenshot(_ objc.ID, _ objc.SEL, _ objc.ID) {
 	c.scheduleAction(func() {
-		saveCurrentVMScreenshot("Status item", c.screenshots)
+		saveCurrentVMScreenshot("Status item", c.screenshots, c.currentWindow())
 	})
 }
 

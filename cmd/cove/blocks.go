@@ -148,6 +148,18 @@ func DispatchAsyncQueue(queue dispatch.Queue, fn func()) {
 	queue.Async(fn)
 }
 
+var dispatchAsyncMainFn = func(fn func()) {
+	dispatch.MainQueue().Async(fn)
+}
+
+// DispatchAsyncMain schedules a block to run on the main dispatch queue.
+func DispatchAsyncMain(fn func()) {
+	if fn == nil {
+		return
+	}
+	dispatchAsyncMainFn(fn)
+}
+
 // printDetailedInstallError prints verbose error details for an installation failure.
 // It type-asserts the error back to *foundation.NSError (since NSErrorToError preserves
 // the type) and prints domain, code, failure reason, user info, and underlying errors.

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"image/png"
 	"os"
@@ -20,13 +21,14 @@ func actionSourceLabel(source string) string {
 	return source
 }
 
-func requestVMStop(source string, vm vz.VZVirtualMachine, queue dispatch.Queue) {
+func requestVMStop(source string, vm vz.VZVirtualMachine, queue dispatch.Queue, window appkit.NSWindow) {
 	label := actionSourceLabel(source)
 	fmt.Printf("%s: requesting VM stop...\n", label)
 	DispatchAsyncQueue(queue, func() {
 		ok, err := vm.RequestStopWithError()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: vm stop request: %v\n", err)
+			reportGUIError(window, "VM Stop Error", err)
 			return
 		}
 		if ok {
@@ -36,12 +38,13 @@ func requestVMStop(source string, vm vz.VZVirtualMachine, queue dispatch.Queue) 
 		vm.StopWithCompletionHandler(func(err error) {
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "error: vm force stop: %v\n", err)
+				reportGUIError(window, "VM Stop Error", err)
 			}
 		})
 	})
 }
 
-func toggleVMStartPause(source string, vm vz.VZVirtualMachine, queue dispatch.Queue) {
+func toggleVMStartPause(source string, vm vz.VZVirtualMachine, queue dispatch.Queue, window appkit.NSWindow) {
 	label := actionSourceLabel(source)
 	DispatchAsyncQueue(queue, func() {
 		switch state := vz.VZVirtualMachineState(vm.State()); state {
@@ -50,6 +53,7 @@ func toggleVMStartPause(source string, vm vz.VZVirtualMachine, queue dispatch.Qu
 			vm.PauseWithCompletionHandler(func(err error) {
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "error: vm pause: %v\n", err)
+					reportGUIError(window, "VM Pause Error", err)
 				}
 			})
 		case vz.VZVirtualMachineStatePaused:
@@ -58,6 +62,7 @@ func toggleVMStartPause(source string, vm vz.VZVirtualMachine, queue dispatch.Qu
 			vm.ResumeWithCompletionHandler(func(err error) {
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "error: vm resume: %v\n", err)
+					reportGUIError(window, "VM Resume Error", err)
 				}
 			})
 		case vz.VZVirtualMachineStateStopped:
@@ -66,6 +71,7 @@ func toggleVMStartPause(source string, vm vz.VZVirtualMachine, queue dispatch.Qu
 			vm.StartWithCompletionHandler(func(err error) {
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "error: vm start: %v\n", err)
+					reportGUIError(window, "VM Start Error", err)
 				}
 			})
 		}
@@ -75,7 +81,7 @@ func toggleVMStartPause(source string, vm vz.VZVirtualMachine, queue dispatch.Qu
 // restartVM stops the VM and starts it again. The stop half is a real VM stop,
 // which the run-loop state monitors would otherwise read as the VM having
 // exited, so the whole sequence runs inside a boot transition.
-func restartVM(source string, vm vz.VZVirtualMachine, queue dispatch.Queue) {
+func restartVM(source string, vm vz.VZVirtualMachine, queue dispatch.Queue, window appkit.NSWindow) {
 	label := actionSourceLabel(source)
 	fmt.Printf("%s: restarting VM...\n", label)
 	beginVMBootTransition()
@@ -83,6 +89,7 @@ func restartVM(source string, vm vz.VZVirtualMachine, queue dispatch.Queue) {
 		defer endVMBootTransition()
 		if err := stopVMForBootTransition(label, vm, queue); err != nil {
 			reportBootTransitionFailure(label, "vm stop during restart", vm, queue, err)
+			reportGUIError(window, "VM Restart Error", err)
 			return
 		}
 		fmt.Printf("%s: VM stopped, starting again...\n", label)
@@ -92,13 +99,14 @@ func restartVM(source string, vm vz.VZVirtualMachine, queue dispatch.Queue) {
 		})
 		if err != nil {
 			reportBootTransitionFailure(label, "vm start during restart", vm, queue, err)
+			reportGUIError(window, "VM Restart Error", err)
 			return
 		}
 		fmt.Printf("%s: VM restarted\n", label)
 	}()
 }
 
-func bootVMToRecovery(source string, vm vz.VZVirtualMachine, queue dispatch.Queue, vmDirectory string) {
+func bootVMToRecovery(source string, vm vz.VZVirtualMachine, queue dispatch.Queue, vmDirectory string, window appkit.NSWindow) {
 	label := actionSourceLabel(source)
 	fmt.Printf("%s: booting to recovery mode...\n", label)
 	beginVMBootTransition()
@@ -106,6 +114,7 @@ func bootVMToRecovery(source string, vm vz.VZVirtualMachine, queue dispatch.Queu
 		defer endVMBootTransition()
 		if err := stopVMForBootTransition(label, vm, queue); err != nil {
 			reportBootTransitionFailure(label, "vm stop before recovery", vm, queue, err)
+			reportGUIError(window, "VM Recovery Error", err)
 			return
 		}
 		if hasSuspendStateForVM(vmDirectory) {
@@ -120,13 +129,14 @@ func bootVMToRecovery(source string, vm vz.VZVirtualMachine, queue dispatch.Queu
 		})
 		if err != nil {
 			reportBootTransitionFailure(label, "vm recovery start", vm, queue, err)
+			reportGUIError(window, "VM Recovery Error", err)
 			return
 		}
 		fmt.Printf("%s: VM started in recovery mode\n", label)
 	}()
 }
 
-func requestVMSuspend(source string, vm vz.VZVirtualMachine, queue dispatch.Queue, rc vmrun.RunConfig, hc vmrun.HostConfig) {
+func requestVMSuspend(source string, vm vz.VZVirtualMachine, queue dispatch.Queue, rc vmrun.RunConfig, hc vmrun.HostConfig, window appkit.NSWindow) {
 	label := actionSourceLabel(source)
 	if !canSaveRestore {
 		fmt.Printf("%s: save/restore not supported for this VM configuration\n", label)
@@ -140,13 +150,14 @@ func requestVMSuspend(source string, vm vz.VZVirtualMachine, queue dispatch.Queu
 	go func() {
 		if err := suspendVM(vm, queue, rc, hc); err != nil {
 			fmt.Fprintf(os.Stderr, "error: suspend: %v\n", err)
+			reportGUIError(window, "VM Suspend Error", err)
 			return
 		}
 		fmt.Printf("%s: VM suspended (will resume on next launch)\n", label)
 	}()
 }
 
-func saveCurrentVMScreenshot(source string, provider vmScreenshotProvider) {
+func saveCurrentVMScreenshot(source string, provider vmScreenshotProvider, window appkit.NSWindow) {
 	label := actionSourceLabel(source)
 	if provider == nil {
 		fmt.Printf("%s: screenshot unavailable\n", label)
@@ -156,6 +167,7 @@ func saveCurrentVMScreenshot(source string, provider vmScreenshotProvider) {
 	img, errMsg := provider.captureDisplayImage()
 	if errMsg != "" {
 		fmt.Fprintf(os.Stderr, "error: screenshot: %s\n", errMsg)
+		reportGUIError(window, "VM Screenshot Error", errors.New(errMsg))
 		return
 	}
 
@@ -182,12 +194,14 @@ func saveCurrentVMScreenshot(source string, provider vmScreenshotProvider) {
 	f, err := os.Create(savePath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: screenshot save: %v\n", err)
+		reportGUIError(window, "VM Screenshot Error", err)
 		return
 	}
 	defer f.Close()
 
 	if err := png.Encode(f, img); err != nil {
 		fmt.Fprintf(os.Stderr, "error: screenshot encode: %v\n", err)
+		reportGUIError(window, "VM Screenshot Error", err)
 		return
 	}
 	fmt.Printf("%s: screenshot saved to %s\n", label, savePath)
