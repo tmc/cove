@@ -304,10 +304,10 @@ func TestVMDeleteMissingDoesNotCreateVMDir(t *testing.T) {
 		args []string
 		vm   string
 	}{
-		{"vm delete", []string{"vm", "delete", "missing-delete-vm"}, "missing-delete-vm"},
-		{"rm alias", []string{"rm", "missing-rm-vm"}, "missing-rm-vm"},
-		{"remove alias", []string{"remove", "missing-remove-vm"}, "missing-remove-vm"},
-		{"destroy alias", []string{"destroy", "missing-destroy-vm"}, "missing-destroy-vm"},
+		{"vm delete", []string{"vm", "delete", "-y", "missing-delete-vm"}, "missing-delete-vm"},
+		{"rm alias", []string{"rm", "-y", "missing-rm-vm"}, "missing-rm-vm"},
+		{"remove alias", []string{"remove", "-y", "missing-remove-vm"}, "missing-remove-vm"},
+		{"destroy alias", []string{"destroy", "-y", "missing-destroy-vm"}, "missing-destroy-vm"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			home := t.TempDir()

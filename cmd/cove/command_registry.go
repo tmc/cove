@@ -62,7 +62,7 @@ var commandRegistry = []covecli.Spec{
 	{Name: "quota", Summary: "Show or set per-VM resource quotas", Dispatch: covecli.DispatchEarly, Run: runQuotaCommand},
 	{Name: "recording", Aliases: []string{"recordings"}, Summary: "List and export run recording artifacts", Dispatch: covecli.DispatchEarly, Run: runRecordingCommand},
 	{Name: "rename", Summary: "Rename a VM", Dispatch: covecli.DispatchLate, Run: runVMSubcommand},
-	{Name: "rm", Aliases: []string{"remove", "destroy"}, Summary: "Delete a VM", Dispatch: covecli.DispatchLate, Run: runVMDeleteAliasCommand},
+	{Name: "rm", Aliases: []string{"remove", "destroy"}, Summary: "Delete a VM", Dispatch: covecli.DispatchEarly, Run: runVMDeleteAliasCommand},
 	{Name: "rosetta", Summary: "Rosetta 2 for Linux VMs", Dispatch: covecli.DispatchLate, Run: runRosettaCommandSpec},
 	{Name: "run", Summary: "Run a VM", Dispatch: covecli.DispatchLate, Run: runRunCommand},
 	{Name: "runner", Summary: "Generate hosted-runner workflow scaffolding", Dispatch: covecli.DispatchEarly, Run: runRunnerCommand},

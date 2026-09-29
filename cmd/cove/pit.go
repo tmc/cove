@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -685,7 +687,7 @@ Commands:
       Live-swap disk 0 in the running VM to the PIT disk; -ram preserves the
       saved disk by switching to a temporary RAM attachment
 
-  delete <name>
+  delete [-y|--yes] <name>
       Delete a PIT snapshot
 
 Examples:
@@ -754,16 +756,34 @@ func handlePITRestoreCommand(manager *PITSnapshotManager, args []string) error {
 }
 
 func handlePITDeleteCommand(manager *PITSnapshotManager, args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("pit snapshot name required")
+	var yes bool
+	fs := flag.NewFlagSet("pit delete", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	fs.Usage = func() {
+		fmt.Println(`Usage: cove pit delete [-y|--yes] <name>
+
+Delete a PIT snapshot.`)
 	}
-	name := args[0]
-	ok, err := confirmDeletef("Delete PIT snapshot %q? This cannot be undone. [y/N] ", name)
-	if err != nil {
+	fs.BoolVar(&yes, "y", false, "skip confirmation prompt")
+	fs.BoolVar(&yes, "yes", false, "skip confirmation prompt")
+	if err := parseFlagsOrHelp(fs, moveKnownFlagsFirst(args, map[string]bool{"y": false, "yes": false})); err != nil {
+		if errors.Is(err, errFlagHelp) {
+			return nil
+		}
 		return err
 	}
-	if !ok {
-		return nil
+	if fs.NArg() == 0 {
+		return fmt.Errorf("pit snapshot name required")
+	}
+	name := fs.Arg(0)
+	if !yes {
+		ok, err := confirmDeletef("Delete PIT snapshot %q? This cannot be undone. [y/N] ", name)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return nil
+		}
 	}
 	if err := manager.Delete(name); err != nil {
 		return err

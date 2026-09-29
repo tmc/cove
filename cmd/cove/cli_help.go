@@ -756,7 +756,7 @@ Alias for cove vm import.`)
 }
 
 func printVMDeleteAliasUsage(w io.Writer) {
-	fmt.Fprintln(w, `Usage: cove rm [--cascade] <name>
+	fmt.Fprintln(w, `Usage: cove rm [-y|--yes] [--cascade] <name>
 
 Alias for cove vm delete. Deletes a VM directory. With --cascade, recursively
 deletes fork descendants too.`)

@@ -1209,18 +1209,35 @@ func applyNestedLinuxDefaults() {
 	}
 }
 
+var (
+	confirmStdinIsTerminal = func() bool { return term.IsTerminal(int(os.Stdin.Fd())) }
+	confirmStdin           io.Reader       = os.Stdin
+	confirmStderr          io.Writer       = os.Stderr
+	confirmExit                            = os.Exit
+)
+
 func confirmDeletef(format string, args ...any) (bool, error) {
-	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		return true, nil
+	if !confirmStdinIsTerminal() {
+		fmt.Fprintln(confirmStderr, "deletion requires confirmation; use -y/--yes in non-interactive environments")
+		confirmExit(2)
+		return false, fmt.Errorf("deletion requires confirmation; use -y/--yes in non-interactive environments")
 	}
-	fmt.Fprintf(os.Stderr, format, args...)
-	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
-	if err != nil {
-		return false, fmt.Errorf("read confirmation: %w", err)
+	fmt.Fprintf(confirmStderr, format, args...)
+	line, err := bufio.NewReader(confirmStdin).ReadString('\n')
+	if err != nil && len(strings.TrimSpace(line)) == 0 {
+		fmt.Fprintln(confirmStderr, "aborted")
+		confirmExit(1)
+		return false, fmt.Errorf("aborted")
 	}
 	answer := strings.TrimSpace(line)
-	return answer == "y" || answer == "Y", nil
+	if answer != "y" && answer != "Y" {
+		fmt.Fprintln(confirmStderr, "aborted")
+		confirmExit(1)
+		return false, fmt.Errorf("aborted")
+	}
+	return true, nil
 }
+
 
 func handleListTo(stdout io.Writer) error {
 	if listWorkerDelegationEnabled() {
@@ -1887,22 +1904,27 @@ func handleVMCommand(args []string) {
 		delFS := flag.NewFlagSet("vm delete", flag.ContinueOnError)
 		delFS.SetOutput(os.Stderr)
 		delFS.Usage = func() {
-			fmt.Fprintln(delFS.Output(), `Usage: cove vm delete [--cascade] <name>
+			fmt.Fprintln(delFS.Output(), `Usage: cove vm delete [-y|--yes] [--cascade] <name>
 
 Delete a VM directory. With --cascade, recursively delete fork descendants too.
 
 Flags:`)
 			delFS.PrintDefaults()
 		}
+		var delYes bool
+		delFS.BoolVar(&delYes, "y", false, "skip confirmation prompt")
+		delFS.BoolVar(&delYes, "yes", false, "skip confirmation prompt")
 		delCascade := delFS.Bool("cascade", false, "recursively delete fork descendants too")
-		if err := parseFlagsOrHelp(delFS, subargs); err != nil {
+		if err := parseFlagsOrHelp(delFS, moveKnownFlagsFirst(subargs, map[string]bool{
+			"y": false, "yes": false, "cascade": false,
+		})); err != nil {
 			if errors.Is(err, errFlagHelp) {
 				return
 			}
 			os.Exit(2)
 		}
 		if delFS.NArg() < 1 {
-			fmt.Fprintln(os.Stderr, "Usage: cove vm delete [--cascade] <name>")
+			fmt.Fprintln(os.Stderr, "Usage: cove vm delete [-y|--yes] [--cascade] <name>")
 			os.Exit(1)
 		}
 		target := delFS.Arg(0)
@@ -1914,13 +1936,15 @@ Flags:`)
 					target, len(children), strings.Join(children, ", "))
 			}
 		}
-		ok, err := confirmDeletef("%s", prompt)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
-		if !ok {
-			return
+		if !delYes {
+			ok, err := confirmDeletef("%s", prompt)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			if !ok {
+				return
+			}
 		}
 		if err := DeleteVMWithOptions(target, DeleteVMOptions{Cascade: *delCascade}); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -2033,21 +2057,34 @@ func handleSnapshotCommand(env commandEnv, args []string) error {
 		return w.Flush()
 
 	case "delete":
-		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+		delFS := flag.NewFlagSet("snapshot delete", flag.ContinueOnError)
+		delFS.SetOutput(env.Stderr)
+		delFS.Usage = func() {
 			printSnapshotDeleteUsage(env.Stdout)
-			return nil
 		}
-		if len(subargs) < 1 {
-			return fmt.Errorf("usage: cove snapshot delete <name>")
-		}
-		ok, err := confirmDeletef("Delete snapshot %q? This cannot be undone. [y/N] ", subargs[0])
-		if err != nil {
+		var yes bool
+		delFS.BoolVar(&yes, "y", false, "skip confirmation prompt")
+		delFS.BoolVar(&yes, "yes", false, "skip confirmation prompt")
+		if err := parseFlagsOrHelp(delFS, moveKnownFlagsFirst(subargs, map[string]bool{"y": false, "yes": false})); err != nil {
+			if errors.Is(err, errFlagHelp) {
+				return nil
+			}
 			return err
 		}
-		if !ok {
-			return nil
+		if delFS.NArg() < 1 {
+			return fmt.Errorf("usage: cove snapshot delete [-y|--yes] <name>")
 		}
-		if err := mgr.Delete(subargs[0]); err != nil {
+		target := delFS.Arg(0)
+		if !yes {
+			ok, err := confirmDeletef("Delete snapshot %q? This cannot be undone. [y/N] ", target)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return nil
+			}
+		}
+		if err := mgr.Delete(target); err != nil {
 			return err
 		}
 		return nil
@@ -2086,7 +2123,7 @@ List VM state snapshots for the selected VM.`)
 }
 
 func printSnapshotDeleteUsage(w io.Writer) {
-	fmt.Fprintln(w, `Usage: cove snapshot delete <name>
+	fmt.Fprintln(w, `Usage: cove snapshot delete [-y|--yes] <name>
 
 Delete a VM state snapshot.`)
 }

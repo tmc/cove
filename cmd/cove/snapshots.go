@@ -16,6 +16,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -494,7 +495,7 @@ List disk snapshots for the selected VM.`)
 }
 
 func printDiskSnapshotDeleteUsage() {
-	fmt.Println(`Usage: cove disk-snapshot delete <name>
+	fmt.Println(`Usage: cove disk-snapshot delete [-y|--yes] <name>
 
 Delete a disk snapshot for the selected VM.`)
 }
@@ -615,17 +616,33 @@ func handleDiskSnapshotList(mgr *DiskSnapshotManager) error {
 }
 
 func handleDiskSnapshotDelete(mgr *DiskSnapshotManager, args []string) error {
-	if len(args) == 0 {
+	var yes bool
+	fs := flag.NewFlagSet("disk-snapshot delete", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	fs.Usage = func() {
+		printDiskSnapshotDeleteUsage()
+	}
+	fs.BoolVar(&yes, "y", false, "skip confirmation prompt")
+	fs.BoolVar(&yes, "yes", false, "skip confirmation prompt")
+	if err := parseFlagsOrHelp(fs, moveKnownFlagsFirst(args, map[string]bool{"y": false, "yes": false})); err != nil {
+		if errors.Is(err, errFlagHelp) {
+			return nil
+		}
+		return err
+	}
+	if fs.NArg() == 0 {
 		return fmt.Errorf("snapshot name required")
 	}
 
-	name := args[0]
-	ok, err := confirmDeletef("Delete disk snapshot %q? This cannot be undone. [y/N] ", name)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return nil
+	name := fs.Arg(0)
+	if !yes {
+		ok, err := confirmDeletef("Delete disk snapshot %q? This cannot be undone. [y/N] ", name)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return nil
+		}
 	}
 	if err := mgr.Delete(name); err != nil {
 		return err
