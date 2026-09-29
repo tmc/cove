@@ -509,8 +509,16 @@ func main() {
 		}
 
 		// Re-parse remaining args so flags after the subcommand work
-		// (e.g., "cove run -gui" parses -gui here).
-		flag.CommandLine.Parse(args)
+		// (e.g., "cove run -gui" or "cove run foo -gui").
+		if err := parseLateSubcommandArgs(cmd, args); err != nil {
+			var ue *usageError
+			if errors.As(err, &ue) {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(2)
+			}
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 
 		if linuxDesktop || linuxNested || linuxNVMe || nixosMode {
 			linuxMode = true
@@ -563,6 +571,68 @@ func main() {
 
 	// Default: smart routing based on number of VMs
 	handleDefaultAction()
+}
+
+type usageError struct {
+	err error
+}
+
+func (e *usageError) Error() string {
+	return e.err.Error()
+}
+
+func (e *usageError) Unwrap() error {
+	return e.err
+}
+
+func parseLateSubcommandArgs(cmd string, args []string) error {
+	parsedArgs := moveKnownFlagsFirst(args, flagSetTakesValue(flag.CommandLine))
+	if err := flag.CommandLine.Parse(parsedArgs); err != nil {
+		return &usageError{err}
+	}
+	if commandAcceptsPositionalVM(cmd) {
+		if flag.CommandLine.NArg() == 1 {
+			posVM := flag.CommandLine.Arg(0)
+			if vmName != "" && vmName != posVM {
+				return &usageError{fmt.Errorf("conflicting VM names: %s and %s", vmName, posVM)}
+			}
+			if err := applyPositionalVMTarget(cmd, posVM); err != nil {
+				return err
+			}
+		} else if flag.CommandLine.NArg() > 1 {
+			return &usageError{fmt.Errorf("%s: too many arguments: %s", cmd, strings.Join(flag.CommandLine.Args(), " "))}
+		}
+	}
+	return nil
+}
+
+func commandAcceptsPositionalVM(cmd string) bool {
+	switch cmd {
+	case "run", "install":
+		return true
+	default:
+		return false
+	}
+}
+
+func applyPositionalVMTarget(cmd string, posVM string) error {
+	vmName = posVM
+	if cmd == "run" {
+		dir, err := requireExistingRunVMDir(vmName)
+		if err != nil {
+			return err
+		}
+		vmDir = dir
+		applyVMConfig(vmDir)
+		return nil
+	}
+	dir, err := vmconfig.EnsureDir(vmName, "")
+	if err != nil {
+		return err
+	}
+	vmDir = dir
+	applyVMConfig(vmDir)
+	return nil
 }
 
 func validateInstallMediaPaths(args []string) error {

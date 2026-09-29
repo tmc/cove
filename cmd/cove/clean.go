@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -36,25 +37,29 @@ func handleCleanCommand(env commandEnv, args []string) int {
 		return commandUsageError(env, err)
 	}
 
+	effectiveVM := *vmFlag
+	if effectiveVM == "" {
+		effectiveVM = vmName
+	}
 	target := currentVMSelection()
-	if *vmFlag != "" {
+	if effectiveVM != "" {
 		target = vmSelection{
-			Directory: vmconfig.Path(*vmFlag),
-			Name:      *vmFlag,
+			Directory: vmconfig.Path(effectiveVM),
+			Name:      effectiveVM,
 		}
 	}
 
 	if fs.NArg() == 1 {
 		name := fs.Arg(0)
-		if *vmFlag != "" && *vmFlag != name {
-			return commandUsageError(env, fmt.Errorf("conflicting VM names: %s and %s", *vmFlag, name))
+		if effectiveVM != "" && effectiveVM != name {
+			return commandUsageError(env, fmt.Errorf("conflicting VM names: %s and %s", effectiveVM, name))
 		}
 		target = vmSelection{
 			Directory: vmconfig.Path(name),
 			Name:      name,
 		}
 	} else if fs.NArg() > 1 {
-		return commandUsageError(env, fmt.Errorf("unexpected arguments: %s", strings.Join(fs.Args(), " ")))
+		return commandUsageError(env, fmt.Errorf("too many arguments: %s", strings.Join(fs.Args(), " ")))
 	}
 
 	if target.Directory == "" {
@@ -67,6 +72,10 @@ func handleCleanCommand(env commandEnv, args []string) int {
 	}
 	if targetName == "." || targetName == "" {
 		targetName = "default"
+	}
+
+	if _, err := os.Stat(target.Directory); os.IsNotExist(err) {
+		return commandError(env, fmt.Errorf("clean: no VM named %q under %s", targetName, vmconfig.BaseDir()))
 	}
 
 	if isVMRunningAt(target.Directory) && !waitForVMNotRunning(target.Directory, cleanWaitNotRunningTimeout) {

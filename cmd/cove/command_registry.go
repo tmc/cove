@@ -486,5 +486,6 @@ func rerunVMDirForPostCommand(env commandEnv, cmd string, args []string) int {
 		fmt.Fprintf(env.Stderr, "error: %v\n", err)
 		return 1
 	}
+	applyVMConfig(vmDir)
 	return 0
 }

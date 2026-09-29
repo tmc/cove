@@ -22,6 +22,7 @@ var vmDirIndependentCommands = map[string]bool{
 	"__run-worker":    true,
 	"agent-upgrade":   true,
 	"upgrade-agent":   true,
+	"clean":           true,
 	"commands":        true,
 	"config":          true,
 	"daemon":          true,

@@ -1,12 +1,31 @@
 package main
 
-import "strings"
+import (
+	"flag"
+	"strings"
+)
+
+func flagSetTakesValue(fs *flag.FlagSet) map[string]bool {
+	takesValue := make(map[string]bool)
+	fs.VisitAll(func(f *flag.Flag) {
+		if bf, ok := f.Value.(interface{ IsBoolFlag() bool }); ok && bf.IsBoolFlag() {
+			takesValue[f.Name] = false
+		} else {
+			takesValue[f.Name] = true
+		}
+	})
+	return takesValue
+}
 
 func moveKnownFlagsFirst(args []string, takesValue map[string]bool) []string {
 	var flags, rest []string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
-		if !strings.HasPrefix(arg, "-") || arg == "-" || arg == "--" {
+		if arg == "--" {
+			rest = append(rest, args[i:]...)
+			break
+		}
+		if !strings.HasPrefix(arg, "-") || arg == "-" {
 			rest = append(rest, arg)
 			continue
 		}
