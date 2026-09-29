@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -16,6 +17,102 @@ import (
 	vz "github.com/tmc/apple/virtualization"
 	"github.com/tmc/cove/internal/vmrun"
 )
+
+var (
+	selStartPauseVM           = objc.Sel("startPauseVM:")
+	selStopVM                 = objc.Sel("stopVM:")
+	selRestartVM              = objc.Sel("restartVM:")
+	selSuspendVM              = objc.Sel("suspendVM:")
+	selCaptureInput           = objc.Sel("captureInput:")
+	selTakeScreenshot         = objc.Sel("takeScreenshot:")
+	selBootRecovery           = objc.Sel("bootRecovery:")
+	selAddSharedFolder        = objc.Sel("addSharedFolder:")
+	selRemoveSharedFolder     = objc.Sel("removeSharedFolder:")
+	selRemoveAllSharedFolders = objc.Sel("removeAllSharedFolders:")
+)
+
+func isVMStateBusy(state vz.VZVirtualMachineState) bool {
+	return statusItemStatePresentation(state).Busy
+}
+
+func vmRunStateTitle(state vz.VZVirtualMachineState) string {
+	switch state {
+	case vz.VZVirtualMachineStateRunning:
+		return "Pause"
+	case vz.VZVirtualMachineStatePaused:
+		return "Resume"
+	case vz.VZVirtualMachineStateStopped, vz.VZVirtualMachineStateError:
+		return "Start"
+	default:
+		return statusItemStatePresentation(state).Label
+	}
+}
+
+func vmRunStateEnabled(state vz.VZVirtualMachineState) bool {
+	return !isVMStateBusy(state) &&
+		(state == vz.VZVirtualMachineStateRunning ||
+			state == vz.VZVirtualMachineStatePaused ||
+			state == vz.VZVirtualMachineStateStopped ||
+			state == vz.VZVirtualMachineStateError)
+}
+
+// validateVMMenuItem evaluates whether a menu item action is enabled and what
+// title it should have based on the VM state, capture state, and configuration.
+// Returns title (empty if unchanged), enabled, and handled.
+func validateVMMenuItem(action objc.SEL, state vz.VZVirtualMachineState, captureEnabled, canSuspend, installing bool) (title string, enabled bool, handled bool) {
+	busy := isVMStateBusy(state)
+	switch action {
+	case selStartPauseVM:
+		switch state {
+		case vz.VZVirtualMachineStatePaused:
+			title = "Resume"
+		case vz.VZVirtualMachineStateRunning:
+			title = "Pause"
+		case vz.VZVirtualMachineStateStopped, vz.VZVirtualMachineStateError:
+			title = "Start"
+		default:
+			title = vmRunStateTitle(state)
+		}
+		enabled = !busy && !installing
+		return title, enabled, true
+
+	case selSuspendVM:
+		enabled = !installing && canSuspend
+		return "", enabled, true
+
+	case selRestartVM:
+		enabled = !installing && !busy && state == vz.VZVirtualMachineStateRunning
+		return "", enabled, true
+
+	case selStopVM:
+		enabled = !installing && !busy && (state == vz.VZVirtualMachineStateRunning || state == vz.VZVirtualMachineStatePaused)
+		return "", enabled, true
+
+	case selCaptureInput:
+		enabled = !installing && !busy && state == vz.VZVirtualMachineStateRunning
+		if captureEnabled {
+			title = "Release Input (Ctrl-Opt)"
+		} else {
+			title = "Capture Input"
+		}
+		return title, enabled, true
+
+	case selTakeScreenshot:
+		enabled = !busy && state == vz.VZVirtualMachineStateRunning
+		return "", enabled, true
+
+	case selBootRecovery:
+		enabled = !installing && !busy && (state == vz.VZVirtualMachineStateRunning || state == vz.VZVirtualMachineStatePaused || state == vz.VZVirtualMachineStateStopped)
+		return "", enabled, true
+
+	case selAddSharedFolder, selRemoveSharedFolder, selRemoveAllSharedFolders:
+		enabled = !busy
+		return "", enabled, true
+
+	default:
+		return "", true, false
+	}
+}
 
 // Toolbar item identifiers.
 const (
@@ -61,10 +158,16 @@ type VMToolbar struct {
 	screenshots    vmScreenshotProvider
 	captureEnabled bool
 	installing     bool // true during installation (disables most VM controls)
+	mu             sync.Mutex
+	state          vz.VZVirtualMachineState
 }
 
 // NewVMToolbar creates and attaches a toolbar to the VM window.
 func NewVMToolbar(window appkit.NSWindow, vmView vz.VZVirtualMachineView, vm vz.VZVirtualMachine, queue dispatch.Queue, screenshots vmScreenshotProvider, vmDirectory string, rc vmrun.RunConfig, hc vmrun.HostConfig) *VMToolbar {
+	var initialState vz.VZVirtualMachineState
+	if vm.ID != 0 {
+		initialState = vz.VZVirtualMachineState(vm.State())
+	}
 	t := &VMToolbar{
 		window:      window,
 		vmView:      vmView,
@@ -75,6 +178,7 @@ func NewVMToolbar(window appkit.NSWindow, vmView vz.VZVirtualMachineView, vm vz.
 		hc:          hc,
 		items:       make(map[string]appkit.NSToolbarItem),
 		screenshots: screenshots,
+		state:       initialState,
 	}
 
 	t.registerDelegate()
@@ -114,6 +218,8 @@ func (t *VMToolbar) registerDelegate() {
 			{Cmd: objc.RegisterName("removeAllSharedFolders:"), Fn: t.handleRemoveAllSharedFolders},
 			{Cmd: objc.RegisterName("menuNeedsUpdate:"), Fn: t.handleMenuNeedsUpdate},
 			{Cmd: objc.RegisterName("showVMWindow:"), Fn: t.handleShowWindow},
+			{Cmd: objc.RegisterName("validateMenuItem:"), Fn: t.validateMenuItem},
+			{Cmd: objc.RegisterName("validateToolbarItem:"), Fn: t.validateToolbarItem},
 		},
 	)
 	if err != nil {
@@ -325,16 +431,65 @@ func addToolbarMenuSeparator(menu appkit.NSMenu) {
 	menu.AddItem(&sep)
 }
 
+func (t *VMToolbar) currentState() vz.VZVirtualMachineState {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.state
+}
+
+func (t *VMToolbar) canSuspend(state vz.VZVirtualMachineState) bool {
+	if state != vz.VZVirtualMachineStateRunning && state != vz.VZVirtualMachineStatePaused {
+		return false
+	}
+	if !canSaveRestore || !activeBootSessionAllowsSuspend() {
+		return false
+	}
+	if vmBootTransitionInProgress() {
+		return false
+	}
+	return true
+}
+
+func (t *VMToolbar) validateMenuItem(_ objc.ID, _ objc.SEL, itemID objc.ID) bool {
+	item := appkit.NSMenuItemFromID(itemID)
+	action := objc.SEL(item.Action())
+	state := t.currentState()
+	canSuspend := t.canSuspend(state)
+
+	title, enabled, handled := validateVMMenuItem(action, state, t.captureEnabled, canSuspend, t.installing)
+	if !handled {
+		return true
+	}
+	if title != "" {
+		item.SetTitle(title)
+	}
+	return enabled
+}
+
+func (t *VMToolbar) validateToolbarItem(_ objc.ID, _ objc.SEL, itemID objc.ID) bool {
+	item := appkit.NSToolbarItemFromID(itemID)
+	action := objc.SEL(item.Action())
+	state := t.currentState()
+	canSuspend := t.canSuspend(state)
+
+	_, enabled, handled := validateVMMenuItem(action, state, t.captureEnabled, canSuspend, t.installing)
+	if !handled {
+		return true
+	}
+	return enabled
+}
+
 // UpdateState enables/disables toolbar items and swaps the play/pause icon
 // based on the current VM state. Must be called on the main thread.
 func (t *VMToolbar) UpdateState(state vz.VZVirtualMachineState) {
+	t.mu.Lock()
+	t.state = state
+	t.mu.Unlock()
+
 	running := state == vz.VZVirtualMachineStateRunning
 	paused := state == vz.VZVirtualMachineStatePaused
 	stopped := state == vz.VZVirtualMachineStateStopped
-	busy := state == vz.VZVirtualMachineStateStarting ||
-		state == vz.VZVirtualMachineStateStopping ||
-		state == vz.VZVirtualMachineStateSaving ||
-		state == vz.VZVirtualMachineStateRestoring
+	busy := isVMStateBusy(state)
 
 	// During installation, disable all VM control items.
 	// Only screenshot and shared folder remain usable.
@@ -353,7 +508,7 @@ func (t *VMToolbar) UpdateState(state vz.VZVirtualMachineState) {
 	}
 
 	if item, ok := t.items[toolbarIDStop]; ok {
-		item.SetEnabled(running || paused)
+		item.SetEnabled((running || paused) && !busy)
 	}
 	if item, ok := t.items[toolbarIDStartPause]; ok {
 		item.SetEnabled(!busy)
@@ -362,6 +517,11 @@ func (t *VMToolbar) UpdateState(state vz.VZVirtualMachineState) {
 			item.SetImage(&img)
 			item.SetLabel("Pause")
 			item.SetToolTip("Pause")
+		} else if paused {
+			img := appkit.NewImageWithSystemSymbolNameAccessibilityDescription("play.fill", "Resume")
+			item.SetImage(&img)
+			item.SetLabel("Resume")
+			item.SetToolTip("Resume")
 		} else {
 			img := appkit.NewImageWithSystemSymbolNameAccessibilityDescription("play.fill", "Start")
 			item.SetImage(&img)
@@ -370,23 +530,28 @@ func (t *VMToolbar) UpdateState(state vz.VZVirtualMachineState) {
 		}
 	}
 	if item, ok := t.items[toolbarIDRestart]; ok {
-		item.SetEnabled(running)
+		item.SetEnabled(running && !busy)
 	}
 	if item, ok := t.items[toolbarIDBootOptions]; ok {
 		item.SetEnabled((running || paused || stopped) && !busy)
 	}
 	if item, ok := t.items[toolbarIDCaptureInput]; ok {
-		item.SetEnabled(running)
+		item.SetEnabled(running && !busy)
 		if !running && t.captureEnabled {
 			t.captureEnabled = false
 			img := appkit.NewImageWithSystemSymbolNameAccessibilityDescription("keyboard", "Capture Input")
 			item.SetImage(&img)
 			item.SetLabel("Capture Input")
 			item.SetToolTip("Capture Input")
+		} else if running && t.captureEnabled {
+			img := appkit.NewImageWithSystemSymbolNameAccessibilityDescription("keyboard.fill", "Release Input (Ctrl-Opt)")
+			item.SetImage(&img)
+			item.SetLabel("Release Input (Ctrl-Opt)")
+			item.SetToolTip("Release Input (Ctrl-Opt)")
 		}
 	}
 	if item, ok := t.items[toolbarIDScreenshot]; ok {
-		item.SetEnabled(running)
+		item.SetEnabled(running && !busy)
 	}
 	if item, ok := t.items[toolbarIDSharedFolder]; ok {
 		item.SetEnabled(!busy)
@@ -430,7 +595,7 @@ func (t *VMToolbar) handleCaptureInput(_ objc.ID, _ objc.SEL, _ objc.ID) {
 		label := "Capture Input"
 		if t.captureEnabled {
 			symbol = "keyboard.fill"
-			label = "Release Input"
+			label = "Release Input (Ctrl-Opt)"
 		}
 		img := appkit.NewImageWithSystemSymbolNameAccessibilityDescription(symbol, label)
 		item.SetImage(&img)

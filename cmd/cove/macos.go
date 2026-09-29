@@ -391,10 +391,12 @@ var appFinishedLaunching bool
 // before headless VM start so the live VM reuses the same view after launch.
 var preparedHeadlessGUIController *vmGUIController
 
-// Default VM window dimensions.
+// Default and minimum VM window dimensions.
 const (
 	defaultWindowWidth  = 1024
 	defaultWindowHeight = 768
+	minWindowWidth      = 800
+	minWindowHeight     = 600
 )
 
 func vmSelectionFromHostConfig(hc vmrun.HostConfig) vmSelection {
@@ -1976,6 +1978,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 			appkit.NSWindowStyleMaskMiniaturizable |
 			appkit.NSWindowStyleMaskResizable,
 	)
+	window.SetContentMinSize(corefoundation.CGSize{Width: minWindowWidth, Height: minWindowHeight})
 	window.SetTitleVisibility(appkit.NSWindowTitleVisible)
 	window.SetTitlebarAppearsTransparent(false)
 	// Set window title based on OS type and VM name

@@ -780,6 +780,7 @@ func runFullInstallWithGUI(ctx context.Context, provision macOSInstallProvision,
 						appkit.NSBackingStoreBuffered,
 						false,
 					)
+					vmWindow.SetContentMinSize(corefoundation.CGSize{Width: minWindowWidth, Height: minWindowHeight})
 					vmWindow.SetTitleVisibility(appkit.NSWindowTitleVisible)
 					vmWindow.SetTitlebarAppearsTransparent(false)
 					vmWindow.SetTitle(installerWindowTitle())

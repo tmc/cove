@@ -241,6 +241,7 @@ func (c *vmGUIController) initWindow() error {
 			appkit.NSWindowStyleMaskMiniaturizable |
 			appkit.NSWindowStyleMaskResizable,
 	)
+	window.SetContentMinSize(corefoundation.CGSize{Width: minWindowWidth, Height: minWindowHeight})
 	window.SetTitleVisibility(appkit.NSWindowTitleVisible)
 	window.SetTitlebarAppearsTransparent(false)
 	window.SetTitle(c.windowTitleBase)

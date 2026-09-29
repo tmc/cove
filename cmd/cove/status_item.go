@@ -234,30 +234,15 @@ func (c *VMStatusItemController) handleMenuNeedsUpdate(_ objc.ID, _ objc.SEL, me
 }
 
 func (c *VMStatusItemController) stateBusy(state vz.VZVirtualMachineState) bool {
-	return statusItemStatePresentation(state).Busy
+	return isVMStateBusy(state)
 }
 
 func (c *VMStatusItemController) runStateTitle(state vz.VZVirtualMachineState) string {
-	switch state {
-	case vz.VZVirtualMachineStateRunning:
-		return "Pause"
-	case vz.VZVirtualMachineStatePaused:
-		return "Resume"
-	case vz.VZVirtualMachineStateStopped:
-		return "Start"
-	case vz.VZVirtualMachineStateError:
-		return "Start"
-	default:
-		return statusItemStatePresentation(state).Label
-	}
+	return vmRunStateTitle(state)
 }
 
 func (c *VMStatusItemController) runStateEnabled(state vz.VZVirtualMachineState) bool {
-	return !c.stateBusy(state) &&
-		(state == vz.VZVirtualMachineStateRunning ||
-			state == vz.VZVirtualMachineStatePaused ||
-			state == vz.VZVirtualMachineStateStopped ||
-			state == vz.VZVirtualMachineStateError)
+	return vmRunStateEnabled(state)
 }
 
 func (c *VMStatusItemController) isWindowVisible(window appkit.NSWindow) bool {
