@@ -28,7 +28,7 @@ func handleVMConfigCommand(args []string) error {
 
 	switch args[0] {
 	case "help", "-h", "--help":
-		printVMConfigUsage(os.Stderr)
+		printVMConfigUsage(os.Stdout)
 		return nil
 	case "export":
 		path, err := parseVMConfigPathArg("export", args[1:])
@@ -59,7 +59,7 @@ func parseVMConfigPathArg(command string, args []string) (string, error) {
 		return "", fmt.Errorf("%s", usage)
 	}
 	if isHelpArg(args[0]) {
-		fmt.Fprintln(os.Stderr, usage)
+		fmt.Fprintln(os.Stdout, usage)
 		return "", errFlagHelp
 	}
 	afterDashDash := false

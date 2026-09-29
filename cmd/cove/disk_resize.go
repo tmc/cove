@@ -15,9 +15,13 @@ import (
 
 func runDiskCommand(env commandEnv, _ string, args []string) int {
 	env = env.WithDefaultIO()
-	if len(args) == 0 || isHelpArg(args[0]) {
+	if len(args) == 0 {
 		printDiskUsage(env.Stderr)
-		return usageExitCode(args)
+		return 2
+	}
+	if isHelpArg(args[0]) {
+		printDiskUsage(env.Stdout)
+		return 0
 	}
 	return commandError(env, handleDiskCommand(env, args))
 }

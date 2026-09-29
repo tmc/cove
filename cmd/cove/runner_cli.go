@@ -28,9 +28,13 @@ func runRunnerCommand(env commandEnv, _ string, args []string) int {
 	if env.Stderr == nil {
 		env.Stderr = os.Stderr
 	}
-	if len(args) == 0 || isHelpArg(args[0]) {
+	if len(args) == 0 {
 		printRunnerUsage(env.Stderr)
-		return usageExitCode(args)
+		return 2
+	}
+	if isHelpArg(args[0]) {
+		printRunnerUsage(env.Stdout)
+		return 0
 	}
 	switch args[0] {
 	case "workflow":

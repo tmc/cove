@@ -55,11 +55,11 @@ func TestCoveSubcommandsE2E(t *testing.T) {
 		{
 			name:     "pin_no_args_usage",
 			args:     []string{"pin"},
-			wantExit: 1,
+			wantExit: 2,
 			// pin requires an object ref; with no args it must print usage
 			// to stderr. This pins the contract that a bare invocation is
 			// a clear error, not a crash.
-			wantStderr: []string{"usage: cove pin"},
+			wantStderr: []string{"Usage: cove pin"},
 		},
 		{
 			name:     "runs_list_ndjson_empty",

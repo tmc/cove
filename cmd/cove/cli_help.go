@@ -25,6 +25,13 @@ func usageExitCode(args []string) int {
 	return 2
 }
 
+func usageWriterAndCode(args []string) (io.Writer, int) {
+	if len(args) > 0 && isHelpArg(args[0]) {
+		return os.Stdout, 0
+	}
+	return os.Stderr, 2
+}
+
 func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 	if len(args) == 0 {
 		return false, 0
@@ -43,164 +50,169 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			return true, 0
 		}
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			usage()
+			usage(os.Stdout)
 			return true, 0
 		}
 		switch subargs[0] {
 		case "advanced":
-			usageAdvanced()
+			usageAdvanced(os.Stdout)
 		case "first-run":
-			printFirstRunUsage(os.Stderr)
+			printFirstRunUsage(os.Stdout)
 		case "commands":
-			covecli.PrintCommandsUsage(os.Stderr)
+			covecli.PrintCommandsUsage(os.Stdout)
 		case "ctl":
 			fs, _, _, _, _, _, _ := newCtlFlagSet()
+			fs.SetOutput(os.Stdout)
 			fs.Usage()
 		case "shell":
-			printShellUsage(os.Stderr)
+			printShellUsage(os.Stdout)
 		case "up":
-			fs, _, _ := newUpFlagSet(os.Stderr)
+			fs, _, _ := newUpFlagSet(os.Stdout)
 			fs.Usage()
 		case "gc":
-			printGCUsage(os.Stderr)
+			printGCUsage(os.Stdout)
 		case "compact":
-			printCompactUsage(os.Stderr)
+			printCompactUsage(os.Stdout)
 		case "build":
-			printBuildUsage(os.Stderr)
+			printBuildUsage(os.Stdout)
 		case "action":
-			printActionUsage(os.Stderr)
+			printActionUsage(os.Stdout)
 		case "agent-sandbox":
-			printAgentSandboxUsage(os.Stderr)
+			printAgentSandboxUsage(os.Stdout)
 		case "runner":
-			printRunnerUsage(os.Stderr)
+			printRunnerUsage(os.Stdout)
 		case "runs":
-			printRunsUsage(os.Stderr)
+			printRunsUsage(os.Stdout)
 		case "recording", "recordings":
-			printRecordingUsage(os.Stderr)
+			printRecordingUsage(os.Stdout)
 		case "status":
-			printStatusUsage(os.Stderr)
+			printStatusUsage(os.Stdout)
 		case "trace", "traces":
-			printTraceUsage(os.Stderr)
+			printTraceUsage(os.Stdout)
 		case "user":
-			printUserUsage(os.Stderr)
+			printUserUsage(os.Stdout)
 		case "daemon":
-			printDaemonUsage(os.Stderr)
+			printDaemonUsage(os.Stdout)
 		case "cp":
-			printCpUsage(os.Stderr)
+			printCpUsage(os.Stdout)
 		case "exec":
-			printExecUsage(os.Stderr)
+			printExecUsage(os.Stdout)
 		case "forward":
-			printForwardUsage(os.Stderr)
+			printForwardUsage(os.Stdout)
 		case "quota":
-			printQuotaUsage(os.Stderr)
+			printQuotaUsage(os.Stdout)
 		case "diff":
-			printDiffUsage(os.Stderr)
+			printDiffUsage(os.Stdout)
 		case "disk":
-			printDiskUsage(os.Stderr)
+			printDiskUsage(os.Stdout)
 		case "image":
-			printImageUsage(os.Stderr)
+			printImageUsage(os.Stdout)
 		case "logs":
-			printLogsUsage(os.Stderr)
+			printLogsUsage(os.Stdout)
 		case "secret":
-			printSecretUsage(os.Stderr)
+			printSecretUsage(os.Stdout)
 		case "security":
-			printSecurityUsage(os.Stderr)
+			printSecurityUsage(os.Stdout)
 		case "policy":
-			printPolicyUsage(os.Stderr)
+			printPolicyUsage(os.Stdout)
 		case "push":
-			printPushUsage(os.Stderr)
+			printPushUsage(os.Stdout)
 		case "pull":
-			printPullUsage(os.Stderr)
+			printPullUsage(os.Stdout)
 		case "store":
-			printStoreUsage(os.Stderr)
+			printStoreUsage(os.Stdout)
 		case "support":
-			printSupportUsage(os.Stderr)
+			printSupportUsage(os.Stdout)
 		case "support-bundle":
-			printSupportBundleUsage(os.Stderr, "cove support-bundle")
+			printSupportBundleUsage(os.Stdout, "cove support-bundle")
 		case "provision", "inject":
 			fs, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ := newInjectFlagSet()
+			fs.SetOutput(os.Stdout)
 			if subargs[0] == "inject" {
-				printDeprecatedAliasNotice(os.Stderr, "inject", "provision")
-				printInjectUsage(os.Stderr, fs, "cove inject")
+				printDeprecatedAliasNotice(os.Stdout, "inject", "provision")
+				printInjectUsage(os.Stdout, fs, "cove inject")
 			} else {
 				fs.Usage()
 			}
 		case "provision-agent", "inject-agent":
 			if subargs[0] == "inject-agent" {
-				printDeprecatedAliasNotice(os.Stderr, "inject-agent", "provision-agent")
-				printProvisionAgentUsage(os.Stderr, "cove inject-agent")
+				printDeprecatedAliasNotice(os.Stdout, "inject-agent", "provision-agent")
+				printProvisionAgentUsage(os.Stdout, "cove inject-agent")
 			} else {
-				printProvisionAgentUsage(os.Stderr, "cove provision-agent")
+				printProvisionAgentUsage(os.Stdout, "cove provision-agent")
 			}
 		case "doctor", "verify":
 			if subargs[0] == "verify" {
-				printDeprecatedAliasNotice(os.Stderr, "verify", "doctor")
+				printDeprecatedAliasNotice(os.Stdout, "verify", "doctor")
 			}
 			fs, _, _, _, _ := newVerifyFlagSet()
+			fs.SetOutput(os.Stdout)
 			fs.Usage()
 		case "template":
-			printTemplateUsage(os.Stderr)
+			printTemplateUsage(os.Stdout)
 		case "vm", "rename", "export", "import":
 			if len(subargs) > 1 && subargs[1] == "config" {
-				printVMConfigUsage(os.Stderr)
+				printVMConfigUsage(os.Stdout)
 			} else {
-				printVMUsage(os.Stderr)
+				printVMUsage(os.Stdout)
 			}
 		case "config":
-			printVMConfigUsage(os.Stderr)
+			printVMConfigUsage(os.Stdout)
 		case "snapshot":
-			printSnapshotUsage(os.Stderr)
+			printSnapshotUsage(os.Stdout)
 		case "pit":
-			printPITUsageHelp(os.Stderr)
+			printPITUsageHelp(os.Stdout)
 		case "shared-folder", "shared-folders":
-			printSharedFolderUsage(os.Stderr)
+			printSharedFolderUsage(os.Stdout)
 		case "vzscript":
-			printVzscriptUsage(os.Stderr)
+			printVzscriptUsage(os.Stdout)
 		case "serve":
-			printServeUsage()
+			printServeUsage(os.Stdout)
 		case "network":
-			fmt.Println(NetworkModeHelp())
+			fmt.Fprintln(os.Stdout, NetworkModeHelp())
 		case "proxy":
-			printProxyUsage(os.Stderr)
+			printProxyUsage(os.Stdout)
 		case "rosetta":
-			fmt.Println(RosettaHelp())
+			fmt.Fprintln(os.Stdout, RosettaHelp())
 		case "helper":
-			_ = helperUsage()
+			_ = helperUsage(os.Stdout)
 		case "9p":
-			printNinePUsage(os.Stderr)
+			printNinePUsage(os.Stdout)
+		case "storage":
+			printStorageUsage(os.Stdout)
 		case "pin":
-			printPinUsage(os.Stderr)
+			printPinUsage(os.Stdout)
 		case "pins":
-			printPinsUsage(os.Stderr)
+			printPinsUsage(os.Stdout)
 		case "unpin":
-			printUnpinUsage(os.Stderr)
+			printUnpinUsage(os.Stdout)
 		case "gui":
-			printGUIUsage(os.Stderr)
+			printGUIUsage(os.Stdout)
 		case "vnc":
-			printVNCUsage(os.Stderr)
+			printVNCUsage(os.Stdout)
 		case "install":
-			printInstallUsage(os.Stderr)
+			printInstallUsage(os.Stdout)
 		case "run":
-			printRunUsage(os.Stderr)
+			printRunUsage(os.Stdout)
 		case "list", "ls":
-			printListUsage(os.Stderr)
+			printListUsage(os.Stdout)
 		case "clean":
-			printCleanUsage(os.Stderr)
+			printCleanUsage(os.Stdout)
 		case "clone":
-			printCloneUsage(os.Stderr)
+			printCloneUsage(os.Stdout)
 		case "fork":
-			printForkUsage(os.Stderr)
+			printForkUsage(os.Stdout)
 		case "agent-upgrade", "upgrade-agent":
-			printAgentUpgradeUsage(os.Stderr)
+			printAgentUpgradeUsage(os.Stdout)
 		case "disk-detach":
-			printDiskDetachUsage(os.Stderr)
+			printDiskDetachUsage(os.Stdout)
 		case "disk-snapshot":
-			printDiskSnapshotUsageHelp(os.Stderr)
+			printDiskSnapshotUsageHelp(os.Stdout)
 		case "fleet":
-			printFleetUsage(os.Stderr)
+			printFleetUsage(os.Stdout)
 		default:
 			fmt.Fprintf(os.Stderr, "unknown help topic: %s\n\n", subargs[0])
-			usage()
+			usage(os.Stderr)
 			return true, 2
 		}
 		return true, 0
@@ -222,22 +234,25 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 		}
 	case "proxy":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printProxyUsage(os.Stderr)
-			return true, 0
+			w, code := usageWriterAndCode(subargs)
+			printProxyUsage(w)
+			return true, code
 		}
 	case "rosetta":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			fmt.Println(RosettaHelp())
+			fmt.Fprintln(os.Stdout, RosettaHelp())
 			return true, 0
 		}
 	case "ctl":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
 			fs, _, _, _, _, _, _ := newCtlFlagSet()
+			w, code := usageWriterAndCode(subargs)
+			fs.SetOutput(w)
 			fs.Usage()
-			return true, usageExitCode(subargs)
+			return true, code
 		}
 		if len(subargs) > 1 && subargs[0] == "ready" && isHelpArg(subargs[1]) {
-			printReadyUsage(os.Stderr)
+			printReadyUsage(os.Stdout)
 			return true, 0
 		}
 		if len(subargs) > 1 && isHelpArg(subargs[1]) {
@@ -245,61 +260,65 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			if cmdType == "exec" {
 				cmdType = "agent-exec"
 			}
-			if printCtlSubcommandUsage(os.Stderr, cmdType, subargs[1:]) {
+			if printCtlSubcommandUsage(os.Stdout, cmdType, subargs[1:]) {
 				return true, 0
 			}
 		}
 		if len(subargs) > 2 && subargs[0] == "disk" && isHelpArg(subargs[2]) {
-			if printCtlSubcommandUsage(os.Stderr, "disk", subargs[1:]) {
+			if printCtlSubcommandUsage(os.Stdout, "disk", subargs[1:]) {
 				return true, 0
 			}
 		}
 		if len(subargs) > 1 && isHelpArg(subargs[len(subargs)-1]) {
 			fs, _, _, _, _, _, _ := newCtlFlagSet()
+			fs.SetOutput(os.Stdout)
 			fs.Usage()
 			return true, 0
 		}
 	case "disk":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printDiskUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printDiskUsage(w)
+			return true, code
 		}
 	case "shell":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			printShellUsage(os.Stderr)
+			printShellUsage(os.Stdout)
 			return true, 0
 		}
 	case "runs":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printRunsUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printRunsUsage(w)
+			return true, code
 		}
 		if len(subargs) > 1 && (subargs[0] == "list" || subargs[0] == "ls") && isHelpArg(subargs[1]) {
-			printRunsListUsage(os.Stderr)
+			printRunsListUsage(os.Stdout)
 			return true, 0
 		}
 		if len(subargs) > 1 && subargs[0] == "show" && isHelpArg(subargs[1]) {
-			printRunsShowUsage(os.Stderr)
+			printRunsShowUsage(os.Stdout)
 			return true, 0
 		}
 		if len(subargs) > 1 && subargs[0] == "export" && isHelpArg(subargs[1]) {
-			printRunsExportUsage(os.Stderr)
+			printRunsExportUsage(os.Stdout)
 			return true, 0
 		}
 	case "support":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printSupportUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printSupportUsage(w)
+			return true, code
 		}
 		if len(subargs) > 1 && subargs[0] == "bundle" && isHelpArg(subargs[1]) {
-			printSupportBundleUsage(os.Stderr, "cove support bundle")
+			printSupportBundleUsage(os.Stdout, "cove support bundle")
 			return true, 0
 		}
 	case "support-bundle":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
 			// support-bundle is an alias for `cove support bundle`; point users
 			// at the canonical command in its usage header.
-			printSupportBundleUsage(os.Stderr, "cove support bundle")
+			printSupportBundleUsage(os.Stdout, "cove support bundle")
 			return true, 0
 		}
 	case "commands":
@@ -308,165 +327,183 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			return true, code
 		}
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			covecli.PrintCommandsUsage(os.Stderr)
+			covecli.PrintCommandsUsage(os.Stdout)
 			return true, 0
 		}
 	case "action":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printActionUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printActionUsage(w)
+			return true, code
 		}
 	case "runner":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printRunnerUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printRunnerUsage(w)
+			return true, code
 		}
 		if len(subargs) > 1 && subargs[0] == "workflow" && isHelpArg(subargs[1]) {
-			printRunnerWorkflowUsage(os.Stderr)
+			printRunnerWorkflowUsage(os.Stdout)
 			return true, 0
 		}
 	case "daemon":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printDaemonUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printDaemonUsage(w)
+			return true, code
 		}
 	case "cp":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printCpUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printCpUsage(w)
+			return true, code
 		}
 	case "exec":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printExecUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printExecUsage(w)
+			return true, code
 		}
 	case "forward":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printForwardUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printForwardUsage(w)
+			return true, code
 		}
 	case "quota":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printQuotaUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printQuotaUsage(w)
+			return true, code
 		}
 	case "diff":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printDiffUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printDiffUsage(w)
+			return true, code
 		}
 	case "image":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printImageUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printImageUsage(w)
+			return true, code
 		}
 	case "logs":
 		if len(subargs) == 0 && strings.TrimSpace(vmName) != "" {
 			return false, 0
 		}
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printLogsUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printLogsUsage(w)
+			return true, code
 		}
 	case "up":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			fs, _, _ := newUpFlagSet(os.Stderr)
+			fs, _, _ := newUpFlagSet(os.Stdout)
 			fs.Usage()
 			return true, 0
 		}
 	case "gc":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printGCUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printGCUsage(w)
+			return true, code
 		}
 	case "compact":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			printCompactUsage(os.Stderr)
+			printCompactUsage(os.Stdout)
 			return true, 0
 		}
 	case "push":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			printPushUsage(os.Stderr)
+			printPushUsage(os.Stdout)
 			return true, 0
 		}
 	case "pull":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			printPullUsage(os.Stderr)
+			printPullUsage(os.Stdout)
 			return true, 0
 		}
 	case "policy":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printPolicyUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printPolicyUsage(w)
+			return true, code
 		}
 	case "security":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printSecurityUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printSecurityUsage(w)
+			return true, code
 		}
 	case "recording", "recordings":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printRecordingUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printRecordingUsage(w)
+			return true, code
 		}
 		if len(subargs) > 1 && (subargs[0] == "list" || subargs[0] == "ls") && isHelpArg(subargs[1]) {
-			printRecordingListUsage(os.Stderr)
+			printRecordingListUsage(os.Stdout)
 			return true, 0
 		}
 		if len(subargs) > 1 && subargs[0] == "export" && isHelpArg(subargs[1]) {
-			printRecordingExportUsage(os.Stderr)
+			printRecordingExportUsage(os.Stdout)
 			return true, 0
 		}
 	case "status":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			printStatusUsage(os.Stderr)
+			printStatusUsage(os.Stdout)
 			return true, 0
 		}
 	case "trace", "traces":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printTraceUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printTraceUsage(w)
+			return true, code
 		}
 		if len(subargs) > 1 && subargs[0] == "status" && isHelpArg(subargs[1]) {
-			printTraceStatusUsage(os.Stderr)
+			printTraceStatusUsage(os.Stdout)
 			return true, 0
 		}
 		if len(subargs) > 1 && subargs[0] == "capabilities" && isHelpArg(subargs[1]) {
-			printTraceCapabilitiesUsage(os.Stderr)
+			printTraceCapabilitiesUsage(os.Stdout)
 			return true, 0
 		}
 	case "user":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printUserUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printUserUsage(w)
+			return true, code
 		}
 		if len(subargs) > 1 && subargs[0] == "audit" && isHelpArg(subargs[1]) {
-			printUserAuditUsage(os.Stderr)
+			printUserAuditUsage(os.Stdout)
 			return true, 0
 		}
 		if len(subargs) > 1 && subargs[0] == "create" && isHelpArg(subargs[1]) {
-			printUserCreateUsage(os.Stderr)
+			printUserCreateUsage(os.Stdout)
 			return true, 0
 		}
 		if len(subargs) > 1 && subargs[0] == "delete" && isHelpArg(subargs[1]) {
-			printUserDeleteUsage(os.Stderr)
+			printUserDeleteUsage(os.Stdout)
 			return true, 0
 		}
 	case "store":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printStoreUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printStoreUsage(w)
+			return true, code
 		}
 		if subargs[0] == "gc" && len(subargs) > 1 && isHelpArg(subargs[1]) {
-			printStoreGCUsage(os.Stderr)
+			printStoreGCUsage(os.Stdout)
 			return true, 0
 		}
 	case "provision", "inject":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
 			fs, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ := newInjectFlagSet()
+			fs.SetOutput(os.Stdout)
 			if cmd == "inject" {
-				printDeprecatedAliasNotice(os.Stderr, "inject", "provision")
-				printInjectUsage(os.Stderr, fs, "cove inject")
+				printDeprecatedAliasNotice(os.Stdout, "inject", "provision")
+				printInjectUsage(os.Stdout, fs, "cove inject")
 			} else {
 				fs.Usage()
 			}
@@ -475,151 +512,172 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 	case "provision-agent", "inject-agent":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
 			if cmd == "inject-agent" {
-				printDeprecatedAliasNotice(os.Stderr, "inject-agent", "provision-agent")
-				printProvisionAgentUsage(os.Stderr, "cove inject-agent")
+				printDeprecatedAliasNotice(os.Stdout, "inject-agent", "provision-agent")
+				printProvisionAgentUsage(os.Stdout, "cove inject-agent")
 			} else {
-				printProvisionAgentUsage(os.Stderr, "cove provision-agent")
+				printProvisionAgentUsage(os.Stdout, "cove provision-agent")
 			}
 			return true, 0
 		}
 	case "doctor", "verify":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
 			if cmd == "verify" {
-				printDeprecatedAliasNotice(os.Stderr, "verify", "doctor")
-				fmt.Fprintln(os.Stderr, "Usage: cove verify [options]")
-				fmt.Fprintln(os.Stderr)
+				printDeprecatedAliasNotice(os.Stdout, "verify", "doctor")
 			}
 			fs, _, _, _, _ := newVerifyFlagSet()
+			fs.SetOutput(os.Stdout)
 			fs.Usage()
 			return true, 0
 		}
 	case "config", "rename", "export", "import":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printVMSubcommandAliasUsage(os.Stderr, cmd)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printVMSubcommandAliasUsage(w, cmd)
+			return true, code
 		}
 	case "rm":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printVMDeleteAliasUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printVMDeleteAliasUsage(w)
+			return true, code
 		}
 	case "template":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printTemplateUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printTemplateUsage(w)
+			return true, code
 		}
 	case "vm":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printVMUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printVMUsage(w)
+			return true, code
 		}
 		if len(subargs) > 0 && subargs[0] == "config" && (len(subargs) == 1 || isHelpArg(subargs[1])) {
-			printVMConfigUsage(os.Stderr)
-			return true, usageExitCode(subargs[1:])
+			w, code := usageWriterAndCode(subargs[1:])
+			printVMConfigUsage(w)
+			return true, code
 		}
 	case "snapshot":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printSnapshotUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printSnapshotUsage(w)
+			return true, code
 		}
 	case "pit":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printPITUsageHelp(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printPITUsageHelp(w)
+			return true, code
 		}
 	case "shared-folder", "shared-folders":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printSharedFolderUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printSharedFolderUsage(w)
+			return true, code
 		}
 	case "vzscript":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printVzscriptUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printVzscriptUsage(w)
+			return true, code
 		}
 	case "serve":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			printServeUsage()
+			printServeUsage(os.Stdout)
 			return true, 0
 		}
 	case "helper":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			_ = helperUsage()
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			_ = helperUsage(w)
+			return true, code
 		}
 	case "9p":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printNinePUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printNinePUsage(w)
+			return true, code
+		}
+	case "storage":
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			w, code := usageWriterAndCode(subargs)
+			printStorageUsage(w)
+			return true, code
 		}
 	case "pin":
-		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			printPinUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			w, code := usageWriterAndCode(subargs)
+			printPinUsage(w)
+			return true, code
 		}
 	case "pins":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printPinsUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printPinsUsage(w)
+			return true, code
 		}
 	case "unpin":
-		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			printUnpinUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+			w, code := usageWriterAndCode(subargs)
+			printUnpinUsage(w)
+			return true, code
 		}
 	case "gui":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printGUIUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printGUIUsage(w)
+			return true, code
 		}
 	case "vnc":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
-			printVNCUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			w, code := usageWriterAndCode(subargs)
+			printVNCUsage(w)
+			return true, code
 		}
 	case "install":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			printInstallUsage(os.Stderr)
+			printInstallUsage(os.Stdout)
 			return true, 0
 		}
 	case "run":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			printRunUsage(os.Stderr)
+			printRunUsage(os.Stdout)
 			return true, 0
 		}
 	case "list", "ls":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			printListUsage(os.Stderr)
+			printListUsage(os.Stdout)
 			return true, 0
 		}
 	case "clean":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			printCleanUsage(os.Stderr)
+			printCleanUsage(os.Stdout)
 			return true, 0
 		}
 	case "clone":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			printCloneUsage(os.Stderr)
+			printCloneUsage(os.Stdout)
 			return true, 0
 		}
 	case "fork":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			printForkUsage(os.Stderr)
+			printForkUsage(os.Stdout)
 			return true, 0
 		}
 	case "agent-upgrade", "upgrade-agent":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			printAgentUpgradeUsage(os.Stderr)
+			printAgentUpgradeUsage(os.Stdout)
 			return true, 0
 		}
 	case "disk-detach":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			printDiskDetachUsage(os.Stderr)
+			printDiskDetachUsage(os.Stdout)
 			return true, 0
 		}
 	case "disk-snapshot":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
-			printDiskSnapshotUsageHelp(os.Stderr)
+			printDiskSnapshotUsageHelp(os.Stdout)
 			return true, 0
 		}
 	}

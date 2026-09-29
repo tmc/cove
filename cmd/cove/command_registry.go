@@ -203,9 +203,15 @@ func runPullCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handlePull(env, args))
 }
 func runPinCommand(env commandEnv, _ string, args []string) int {
+	if len(args) == 0 {
+		return commandUsageError(env, handlePinCommand(env, args))
+	}
 	return commandError(env, handlePinCommand(env, args))
 }
 func runPinsCommand(env commandEnv, _ string, args []string) int {
+	if len(args) == 0 {
+		return commandUsageError(env, handlePinsCommand(env, args))
+	}
 	return commandError(env, handlePinsCommand(env, args))
 }
 func runPushCommand(env commandEnv, _ string, args []string) int {
@@ -218,6 +224,9 @@ func runQuotaCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleQuotaCommand(env, args))
 }
 func runUnpinCommand(env commandEnv, _ string, args []string) int {
+	if len(args) == 0 {
+		return commandUsageError(env, handleUnpinCommand(env, args))
+	}
 	return commandError(env, handleUnpinCommand(env, args))
 }
 func runUserCommand(env commandEnv, _ string, args []string) int {
@@ -246,10 +255,11 @@ func runSoftresetCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, softresetCommand(args))
 }
 func runStorageCommand(env commandEnv, _ string, args []string) int {
-	if len(args) == 0 {
-		return commandUsageError(env, handleStorageCommand(args))
+	err := handleStorageCommand(args)
+	if err != nil && (len(args) == 0 || strings.HasPrefix(err.Error(), "storage: unknown subcommand") || strings.HasPrefix(err.Error(), "storage: command required")) {
+		return commandUsageError(env, err)
 	}
-	return commandError(env, handleStorageCommand(args))
+	return commandError(env, err)
 }
 func runStoreCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, handleStoreCommand(env, args))
@@ -439,7 +449,11 @@ func runInstallCommand(env commandEnv, _ string, _ []string) int {
 }
 
 func runVMDeleteAliasCommand(env commandEnv, _ string, args []string) int {
-	if len(args) == 0 || isHelpArg(args[0]) {
+	if len(args) == 0 {
+		printVMDeleteAliasUsage(env.Stderr)
+		return 2
+	}
+	if isHelpArg(args[0]) {
 		printVMDeleteAliasUsage(env.Stdout)
 		return 0
 	}
@@ -448,7 +462,11 @@ func runVMDeleteAliasCommand(env commandEnv, _ string, args []string) int {
 }
 
 func runVMSubcommand(env commandEnv, name string, args []string) int {
-	if len(args) == 0 || isHelpArg(args[0]) {
+	if len(args) == 0 {
+		printVMSubcommandAliasUsage(env.Stderr, name)
+		return 2
+	}
+	if isHelpArg(args[0]) {
 		printVMSubcommandAliasUsage(env.Stdout, name)
 		return 0
 	}

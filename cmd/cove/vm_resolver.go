@@ -103,6 +103,15 @@ func singleRunningVM() (name, dir string, ok bool) {
 	return "", "", false
 }
 
+// singleInstalledVM returns the name and directory if exactly one VM is installed.
+func singleInstalledVM() (name, dir string, ok bool) {
+	vms, err := vmconfig.List(detectVMState)
+	if err != nil || len(vms) != 1 {
+		return "", "", false
+	}
+	return vms[0].Name, vms[0].Path, true
+}
+
 func vmNotFoundError(command, name string) error {
 	if command != "" {
 		return fmt.Errorf("%s: no VM named %q under %s\n  list VMs: cove list\n  create a VM: cove up -user <name>", command, name, vmconfig.BaseDir())

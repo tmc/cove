@@ -133,7 +133,7 @@ func newVerifyFlagSet() (*flag.FlagSet, *bool, *bool, *string, *string) {
 	tccPathFlag := fs.String("tcc-path", "", "Guest path to use for Full Disk Access probe (default: first non-system /Volumes mount)")
 	vmFlag := fs.String("vm", "", "VM name")
 	fs.Usage = func() {
-		printVerifyUsage(os.Stderr, fs)
+		printVerifyUsage(fs.Output(), fs)
 	}
 	return fs, verboseFlag, fixFlag, tccPathFlag, vmFlag
 }

@@ -248,7 +248,8 @@ func parseHelperPSSample(out string) (helperProcessSample, bool) {
 // runHelperCmd dispatches `cove helper <subcommand>`.
 func runHelperCmd(args []string) error {
 	if len(args) == 0 {
-		return helperUsage()
+		_ = helperUsage(os.Stderr)
+		return fmt.Errorf("usage: cove helper <subcommand>")
 	}
 	switch args[0] {
 	case "install":
@@ -287,7 +288,7 @@ func runHelperCmd(args []string) error {
 		}
 		return helperDaemon()
 	case "help", "-h", "--help":
-		return helperUsage()
+		return helperUsage(os.Stdout)
 	default:
 		return fmt.Errorf("unknown helper subcommand: %s", args[0])
 	}
@@ -301,8 +302,8 @@ root; users normally manage it with cove helper install, uninstall, and status.`
 	return nil
 }
 
-func helperUsage() error {
-	fmt.Println(`Usage: cove helper <subcommand>
+func helperUsage(w io.Writer) error {
+	fmt.Fprintln(w, `Usage: cove helper <subcommand>
 
 Subcommands:
   install     Install the privileged helper (one-time admin auth required)

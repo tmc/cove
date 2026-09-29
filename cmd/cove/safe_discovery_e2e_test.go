@@ -40,14 +40,14 @@ func TestSafeDiscoveryNoResidueE2E(t *testing.T) {
 			name:       "config export help",
 			args:       []string{"config", "export", "--help"},
 			wantExit:   0,
-			wantStderr: "Usage: cove vm config export <path>",
+			wantStdout: "Usage: cove vm config export <path>",
 			notPath:    "--help",
 		},
 		{
 			name:       "config import help",
 			args:       []string{"config", "import", "--help"},
 			wantExit:   0,
-			wantStderr: "Usage: cove vm config import <path>",
+			wantStdout: "Usage: cove vm config import <path>",
 			notPath:    "--help",
 		},
 		{

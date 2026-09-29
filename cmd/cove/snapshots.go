@@ -439,7 +439,7 @@ func handleDiskSnapshotCommand(args []string) error {
 		}
 	default:
 		printDiskSnapshotUsage()
-		return fmt.Errorf("unknown disk-snapshot command: %s\nRun 'cove -help' for usage.", subcmd)
+		return fmt.Errorf("unknown disk-snapshot command: %s\nRun 'cove help' for usage.", subcmd)
 	}
 
 	targetName, targetDir, err := resolveTargetVM(VMResolveOptions{

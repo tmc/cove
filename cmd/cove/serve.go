@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -27,7 +28,7 @@ type ServeConfig struct {
 
 func parseServeConfig(args []string) (ServeConfig, error) {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
-	fs.Usage = printServeUsage
+	fs.Usage = func() { printServeUsage(fs.Output()) }
 
 	cfg := ServeConfig{HTTPAddr: "127.0.0.1:7777"}
 	fs.StringVar(&cfg.HTTPAddr, "http", cfg.HTTPAddr, "HTTP listen address (host:port or :port)")
@@ -215,8 +216,8 @@ func whoUsers() ([]string, error) {
 	return users, nil
 }
 
-func printServeUsage() {
-	fmt.Fprintln(os.Stderr, `Usage: cove serve [options]
+func printServeUsage(w io.Writer) {
+	fmt.Fprintln(w, `Usage: cove serve [options]
 
 Start a multi-VM HTTP gateway. GET /v1/vms lists known/allowed VMs; per-VM routes proxy only running VMs with reachable control sockets.
 

@@ -15,7 +15,7 @@ cove up -user <name> -vzscripts homebrew,golang  # With recipes
 ```
 sudo cove inject -user <name> -password <pass>  # Inject user into disk
 sudo cove inject -user <name> -skip-setup-assistant -auto-login
-sudo cove inject-agent                 # Inject guest agent only
+sudo cove provision-agent              # Inject guest agent only
 cove verify                            # Check injection status
 ```
 

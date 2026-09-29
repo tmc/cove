@@ -145,7 +145,7 @@ func buildDumpDocs(kind string) (*dumpDocsBundle, error) {
 
 func buildCLIDocs() *cliDocs {
 	docs := &cliDocs{
-		Overview: captureCommandStderr(usage),
+		Overview: captureCommandStderr(func() { usage(os.Stderr) }),
 		Commands: make([]cliCommandDoc, 0, len(cliDocSpecs)),
 	}
 	for _, spec := range cliDocSpecs {
@@ -344,7 +344,7 @@ var cliDocSpecs = []cliDocSpec{
 		return captureWriter(printDiskSnapshotUsageHelp)
 	}},
 	{Name: "serve", Summary: "Run the multi-VM HTTP and MCP gateway.", Usage: func() string {
-		return captureCommandStderr(printServeUsage)
+		return captureWriter(printServeUsage)
 	}},
 	{Name: "ctl", Summary: "Drive a running VM through the control socket.", Usage: func() string {
 		fs, _, _, _, _, _, _ := newCtlFlagSet()
@@ -363,7 +363,7 @@ var cliDocSpecs = []cliDocSpec{
 		return strings.TrimSpace(RosettaHelp())
 	}},
 	{Name: "helper", Summary: "Manage the privileged host helper daemon.", Usage: func() string {
-		return captureCommandStdout(func() { _ = helperUsage() })
+		return captureCommandStdout(func() { _ = helperUsage(os.Stdout) })
 	}},
 	{Name: "disk-detach", Summary: "Detach a VM disk left mounted on the host.", Usage: captureDiskDetachUsage},
 	{Name: "dump-docs", Summary: "Emit machine-readable CLI, HTTP API, and MCP docs as JSON.", Usage: func() string {

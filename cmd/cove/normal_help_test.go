@@ -8,10 +8,9 @@ import (
 )
 
 func TestUsageIsNormalUserFirst(t *testing.T) {
-	stderr, restore := captureStderr(t)
-	usage()
-	restore()
-	out := stderr.String()
+	var buf bytes.Buffer
+	usage(&buf)
+	out := buf.String()
 	for _, want := range []string{"first-run", "doctor host", "up -user <name>", "support bundle", "help advanced"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("usage missing %q:\n%s", want, out)
@@ -23,11 +22,13 @@ func TestUsageIsNormalUserFirst(t *testing.T) {
 }
 
 func TestHelpAdvancedIncludesFullInventory(t *testing.T) {
-	stderr, restore := captureStderr(t)
-	usageAdvanced()
-	restore()
-	out := stderr.String()
-	for _, want := range []string{"softreset", "run -gdb :1234", "first-run", "help advanced"} {
+	var buf bytes.Buffer
+	usageAdvanced(&buf)
+	out := buf.String()
+	for _, want := range []string{
+		"softreset", "run -gdb :1234", "first-run", "help advanced",
+		"storage", "pin", "pins", "unpin", "helper", "vnc", "9p", "secret", "support-bundle",
+	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("advanced usage missing %q:\n%s", want, out)
 		}
@@ -95,10 +96,9 @@ func TestVNCHelpRequiresPasswordInUsage(t *testing.T) {
 }
 
 func TestAdvancedHelpVNCExampleRequiresPassword(t *testing.T) {
-	stderr, restore := captureStderr(t)
-	usageAdvanced()
-	restore()
-	out := stderr.String()
+	var buf bytes.Buffer
+	usageAdvanced(&buf)
+	out := buf.String()
 	if !strings.Contains(out, "run -headless -vnc :5901 -vnc-password <password>") {
 		t.Fatalf("advanced help missing passworded vnc example:\n%s", out)
 	}
@@ -136,15 +136,16 @@ func TestFirstRunCommand(t *testing.T) {
 }
 
 func TestSupportBundleAliasHelp(t *testing.T) {
-	stderr, restore := captureStderr(t)
-	handled, code := handleEarlyCLI([]string{"support-bundle", "-h"})
-	restore()
-	if !handled || code != 0 {
-		t.Fatalf("handleEarlyCLI(support-bundle -h) = %v, %d", handled, code)
-	}
+	out := captureStdout(t, func() error {
+		handled, code := handleEarlyCLI([]string{"support-bundle", "-h"})
+		if !handled || code != 0 {
+			t.Fatalf("handleEarlyCLI(support-bundle -h) = %v, %d", handled, code)
+		}
+		return nil
+	})
 	for _, want := range []string{"Usage: cove support bundle", "-vm NAME", "-out PATH", "-include-screenshot"} {
-		if !strings.Contains(stderr.String(), want) {
-			t.Fatalf("support-bundle help missing %q:\n%s", want, stderr.String())
+		if !strings.Contains(out, want) {
+			t.Fatalf("support-bundle help missing %q:\n%s", want, out)
 		}
 	}
 }
@@ -162,14 +163,15 @@ func TestHelpTopicsForDiscoveryCommands(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.topic, func(t *testing.T) {
-			stderr, restore := captureStderr(t)
-			handled, code := handleEarlyCLI([]string{"help", tt.topic})
-			restore()
-			if !handled || code != 0 {
-				t.Fatalf("handleEarlyCLI(help %s) = %v, %d", tt.topic, handled, code)
-			}
-			if !strings.Contains(stderr.String(), tt.want) {
-				t.Fatalf("help %s missing %q:\n%s", tt.topic, tt.want, stderr.String())
+			out := captureStdout(t, func() error {
+				handled, code := handleEarlyCLI([]string{"help", tt.topic})
+				if !handled || code != 0 {
+					t.Fatalf("handleEarlyCLI(help %s) = %v, %d", tt.topic, handled, code)
+				}
+				return nil
+			})
+			if !strings.Contains(out, tt.want) {
+				t.Fatalf("help %s missing %q:\n%s", tt.topic, tt.want, out)
 			}
 		})
 	}

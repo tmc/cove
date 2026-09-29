@@ -100,14 +100,15 @@ func TestHandleEarlyCLIProductHelpTopics(t *testing.T) {
 		{"vnc", "Usage: cove vnc"},
 	} {
 		t.Run(tc.topic, func(t *testing.T) {
-			stderr, restore := captureStderr(t)
-			handled, code := handleEarlyCLI([]string{"help", tc.topic})
-			restore()
-			if !handled || code != 0 {
-				t.Fatalf("handleEarlyCLI(help %s) = handled %v code %d, want true 0", tc.topic, handled, code)
-			}
-			if !strings.Contains(stderr.String(), tc.want) {
-				t.Fatalf("help %s output missing %q:\n%s", tc.topic, tc.want, stderr.String())
+			out := captureStdout(t, func() error {
+				handled, code := handleEarlyCLI([]string{"help", tc.topic})
+				if !handled || code != 0 {
+					t.Fatalf("handleEarlyCLI(help %s) = handled %v code %d, want true 0", tc.topic, handled, code)
+				}
+				return nil
+			})
+			if !strings.Contains(out, tc.want) {
+				t.Fatalf("help %s output missing %q:\n%s", tc.topic, tc.want, out)
 			}
 		})
 	}

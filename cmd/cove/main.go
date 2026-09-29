@@ -24,7 +24,6 @@ import (
 	"github.com/tmc/cove/internal/bytefmt"
 	"github.com/tmc/cove/internal/covecli"
 	"github.com/tmc/cove/internal/vmconfig"
-	"github.com/tmc/cove/internal/vmrun"
 	"github.com/tmc/cove/internal/vmtree"
 	"golang.org/x/term"
 )
@@ -202,7 +201,9 @@ var (
 )
 
 func init() {
-	flag.Usage = usage
+	flag.Usage = func() {
+		usage(os.Stderr)
+	}
 	flag.BoolVar(&fetchLatest, "fetch-latest", false, "fetch latest supported restore image info")
 	flag.BoolVar(&runVM, "run", false, "deprecated: use the run command")
 	flag.BoolVar(&installVM, "install", false, "deprecated: use the install command")
@@ -329,7 +330,18 @@ func main() {
 	// the hidden subcommand isn't misinterpreted as a flag.
 	maybeRunElevatedOp()
 
-	flag.Parse()
+	flag.CommandLine.Init(os.Args[0], flag.ContinueOnError)
+	flag.CommandLine.SetOutput(io.Discard)
+	flag.CommandLine.Usage = func() {}
+	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			usage(os.Stdout)
+			os.Exit(0)
+		}
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		usage(os.Stderr)
+		os.Exit(2)
+	}
 
 	if showVersion {
 		fmt.Fprintln(newCommandEnv().Stdout, versionInfo())
@@ -349,7 +361,7 @@ func main() {
 	}
 	if windowsMode && linuxMode {
 		fmt.Fprintf(os.Stderr, "error: -windows and -linux are mutually exclusive\n")
-		os.Exit(1)
+		os.Exit(2)
 	}
 	if linuxMode {
 		if _, err := parseLinuxVariant(linuxDistro, linuxDesktop); err != nil {
@@ -359,7 +371,7 @@ func main() {
 	}
 	if err := validateInstallMediaPaths(flag.Args()); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		os.Exit(2)
 	}
 	cpuExplicit = flagWasProvided(flag.CommandLine, "cpu")
 	windowsBackendExplicit = flagWasProvided(flag.CommandLine, "windows-backend")
@@ -376,7 +388,7 @@ func main() {
 		})
 		if guiExplicit {
 			fmt.Fprintf(os.Stderr, "error: -gui and -headless are mutually exclusive\n")
-			os.Exit(1)
+			os.Exit(2)
 		}
 	}
 	// --headless overrides --gui
@@ -391,7 +403,7 @@ func main() {
 		return
 	}
 	if flag.NArg() == 0 && !term.IsTerminal(int(os.Stdin.Fd())) {
-		usage()
+		usage(os.Stderr)
 		return
 	}
 	if flag.NArg() > 0 {
@@ -535,6 +547,20 @@ func main() {
 			os.Exit(1)
 		}
 
+		// Validate mutually exclusive flags after subcommand re-parse.
+		if headlessMode && guiMode {
+			guiExplicit := false
+			flag.Visit(func(f *flag.Flag) {
+				if f.Name == "gui" {
+					guiExplicit = true
+				}
+			})
+			if guiExplicit {
+				fmt.Fprintf(os.Stderr, "error: -gui and -headless are mutually exclusive\n")
+				os.Exit(2)
+			}
+		}
+
 		if linuxDesktop || linuxNested || linuxNVMe || nixosMode {
 			linuxMode = true
 		}
@@ -543,7 +569,7 @@ func main() {
 		}
 		if windowsMode && linuxMode {
 			fmt.Fprintf(os.Stderr, "error: -windows and -linux are mutually exclusive\n")
-			os.Exit(1)
+			os.Exit(2)
 		}
 		if linuxMode {
 			if _, err := parseLinuxVariant(linuxDistro, linuxDesktop); err != nil {
@@ -604,6 +630,17 @@ func parseLateSubcommandArgs(cmd string, args []string) error {
 	parsedArgs := moveKnownFlagsFirst(args, flagSetTakesValue(flag.CommandLine))
 	if err := flag.CommandLine.Parse(parsedArgs); err != nil {
 		return &usageError{err}
+	}
+	if headlessMode && guiMode {
+		guiExplicit := false
+		flag.Visit(func(f *flag.Flag) {
+			if f.Name == "gui" {
+				guiExplicit = true
+			}
+		})
+		if guiExplicit {
+			return &usageError{errors.New("-gui and -headless are mutually exclusive")}
+		}
 	}
 	if commandAcceptsPositionalVM(cmd) {
 		if flag.CommandLine.NArg() == 1 {
@@ -734,8 +771,8 @@ func validateReadableFile(path string) error {
 }
 
 // handleDefaultAction routes based on the selected UI mode:
-//   - GUI mode: show the native selector, including its empty-state New VM flow
-//   - non-GUI mode with 0 VMs: start guided install
+//   - 0 VMs: show first-run usage
+//   - GUI mode: show the native selector
 //   - non-GUI mode with 1 VM: run it directly
 //   - non-GUI mode with 2+ VMs: show native VM selector window
 func handleDefaultAction() {
@@ -749,6 +786,10 @@ func handleDefaultAction() {
 			vms = append(vms, *info)
 		}
 	}
+	if len(vms) == 0 {
+		printFirstRunUsage(os.Stdout)
+		return
+	}
 	if guiMode {
 		showVMSelectorWindow(vms)
 		return
@@ -756,21 +797,8 @@ func handleDefaultAction() {
 
 	switch len(vms) {
 	case 0:
-		if err := denyAppleAppSandboxHostAccess("install"); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
-		guiMode = true
-		opts := currentRuntimeOptions()
-		opts.GUI = guiMode
-		err := installMacOSLikeVZWithProvision(context.Background(), os.Stderr, macOSInstallProvisionFromRuntimeOptions(opts), opts.IPSWPath, opts.vmrunRunConfig(vmrun.GuestMacOS), opts.vmrunHostConfig())
-		if errors.Is(err, errRestartVM) {
-			err = runMacOSVM()
-		}
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
+		printFirstRunUsage(os.Stdout)
+		return
 	case 1:
 		vmDir = vms[0].Path
 		vmName = vms[0].Name
@@ -877,8 +905,8 @@ Commands:
   prepare-image   Validate a local image or running VM for runner use`)
 }
 
-func usage() {
-	fmt.Fprintf(os.Stderr, `cove - macOS and Linux VMs on Apple Silicon
+func usage(w io.Writer) {
+	fmt.Fprintf(w, `cove - macOS and Linux VMs on Apple Silicon
 
 Usage:
   cove [flags] [command]
@@ -933,8 +961,8 @@ Support:
   cove support bundle -vm <name>`)
 }
 
-func usageAdvanced() {
-	fmt.Fprintf(os.Stderr, `cove - macOS and Linux VMs on Apple Silicon
+func usageAdvanced(w io.Writer) {
+	fmt.Fprintf(w, `cove - macOS and Linux VMs on Apple Silicon
 
 Usage:
   cove [flags] [command]
@@ -956,6 +984,7 @@ Provisioning:
   agent-upgrade   Live-upgrade vz-agent in a running VM (build, copy, restart)
   verify          Verify provisioning files in VM disk (alias: doctor)
   sip             SIP management (enable/disable/status + recovery automation)
+  helper          Manage the privileged helper (install/uninstall/status)
 
 VM Management:
   vm set <name>           Set active VM
@@ -985,6 +1014,10 @@ VM Management:
   pull            Validate an OCI pull plan (dry-run)
   policy          VM lifecycle policy (idle timeout, max age, run budget)
   store           Manage the local OCI blob store
+  storage         Inspect cove disk usage under ~/.vz/
+  pin             Pin an object so storage budget eviction skips it
+  pins            List pinned objects
+  unpin           Remove a storage pin
   gc              Delete old disposable VM clones
   template        Manage VM templates (save/list/create)
 
@@ -994,6 +1027,7 @@ Shared Folders:
   shared-folder remove <tag-or-path>    Remove a shared folder
   shared-folder status                  Show mount status in guest
   shared-folder mount                   Mount in guest via agent
+  9p                                    Serve read-only VM metadata over 9p
 
 Snapshots:
   snapshot        Manage VM state snapshots (list/save/restore/delete)
@@ -1010,6 +1044,7 @@ Runtime Control:
   forward         Forward host TCP to guest TCP (cove forward vm 8080:80)
   quota           Show or set per-VM resource quotas
   security        Inspect host-containment policy
+  secret          Debug secret resolver
   ctl disk list   Inspect runtime storage devices
   ctl disk resize 0 96G
                   Grow a live disk; macOS disk 0 also expands APFS
@@ -1021,6 +1056,10 @@ Runtime Control:
   trace           Manage eslogger guest traces
   agent-sandbox   Run a computer-use provider loop in a fresh VM fork
   vzscript        Run guest-agent and UI automation scripts (rsc.io/script + txtar)
+  gui             Control VM GUI window state (status/open/close/diagnose)
+  vnc             Inspect private VNC server state (cove vnc [status|open])
+  support         Create support diagnostics bundles
+  support-bundle  Create a redacted support bundle (alias: cove support bundle)
   run -headless -vnc :5901 -vnc-password <password>
                                       Expose a private VNC console
   run -gdb :1234                      Attach a private GDB debug stub
@@ -1864,7 +1903,7 @@ func handleTemplate(args []string) {
 		fmt.Printf("Template '%s' deleted.\n", subargs[0])
 
 	default:
-		fmt.Fprintf(os.Stderr, "unknown template command: %s\nRun 'cove -help' for usage.\n", subcmd)
+		fmt.Fprintf(os.Stderr, "unknown template command: %s\nRun 'cove help' for usage.\n", subcmd)
 		os.Exit(1)
 	}
 }
@@ -2106,7 +2145,7 @@ Flags:`)
 		}
 
 	default:
-		fmt.Fprintf(os.Stderr, "unknown vm command: %s\nRun 'cove -help' for usage.\n", subcmd)
+		fmt.Fprintf(os.Stderr, "unknown vm command: %s\nRun 'cove help' for usage.\n", subcmd)
 		os.Exit(1)
 	}
 }
@@ -2145,7 +2184,7 @@ func handleSnapshotCommand(env commandEnv, args []string) error {
 		}
 	case "tree":
 	default:
-		return fmt.Errorf("unknown snapshot command: %s\nRun 'cove -help' for usage", subcmd)
+		return fmt.Errorf("unknown snapshot command: %s\nRun 'cove help' for usage", subcmd)
 	}
 
 	targetName, targetDir, err := resolveTargetVM(VMResolveOptions{
@@ -2229,7 +2268,7 @@ func handleSnapshotCommand(env commandEnv, args []string) error {
 		}
 		return nil
 	default:
-		return fmt.Errorf("unknown snapshot command: %s\nRun 'cove -help' for usage", subcmd)
+		return fmt.Errorf("unknown snapshot command: %s\nRun 'cove help' for usage", subcmd)
 	}
 }
 
@@ -2289,7 +2328,7 @@ func handleNetworkCommand(args []string) {
 			os.Exit(1)
 		}
 	default:
-		fmt.Fprintf(os.Stderr, "unknown network command: %s\nRun 'cove -help' for usage.\n", args[0])
+		fmt.Fprintf(os.Stderr, "unknown network command: %s\nRun 'cove help' for usage.\n", args[0])
 		os.Exit(1)
 	}
 }

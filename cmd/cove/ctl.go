@@ -42,7 +42,7 @@ func newCtlFlagSet() (*flag.FlagSet, *string, *time.Duration, *string, *bool, *t
 	wait := fs.Duration("wait", 0, "Wait duration for agent commands (retries until agent is ready)")
 	token := fs.String("token", "", "Control socket auth token (default: env or VM control.token file)")
 	fs.Usage = func() {
-		printCtlUsage(os.Stderr, fs)
+		printCtlUsage(fs.Output(), fs)
 	}
 	// Resolve -vm to -socket lazily at parse time. Done in ctlCommand because
 	// the flag set returns pointers parsed later.
@@ -57,6 +57,7 @@ func newCtlFlagSet() (*flag.FlagSet, *string, *time.Duration, *string, *bool, *t
 // it after fs.Parse without changing newCtlFlagSet's return signature
 // (which is also called from cli_help.go).
 var ctlVMFlag *string
+var currentCtlTarget vmSelection
 
 func printCtlUsage(w io.Writer, fs *flag.FlagSet) {
 	fmt.Fprintf(w, `Usage: cove ctl [options] <command> [args...]
@@ -546,6 +547,7 @@ func ctlCommand(args []string) error {
 	fs, socketPath, timeout, outputFile, raw, wait, token := newCtlFlagSet()
 
 	if len(args) > 0 && isHelpArg(args[0]) {
+		fs.SetOutput(os.Stdout)
 		fs.Usage()
 		return nil
 	}
@@ -595,8 +597,30 @@ func ctlCommand(args []string) error {
 			targetVMDir = dir
 			*socketPath = GetControlSocketPathForVM(dir)
 			ctlTarget = vmSelection{Directory: dir, Name: vmName}
+		case strings.TrimSpace(vmDir) != "":
+			targetVMDir = vmDir
+			*socketPath = GetControlSocketPathForVM(vmDir)
+			ctlTarget = vmSelection{Directory: vmDir, Name: vmName}
+		default:
+			if name, dir, ok := configuredActiveVM(); ok {
+				targetVMDir = dir
+				*socketPath = GetControlSocketPathForVM(dir)
+				ctlTarget = vmSelection{Directory: dir, Name: name}
+			} else if name, dir, ok := singleRunningVM(); ok {
+				targetVMDir = dir
+				*socketPath = GetControlSocketPathForVM(dir)
+				ctlTarget = vmSelection{Directory: dir, Name: name}
+			} else if name, dir, ok := singleInstalledVM(); ok {
+				targetVMDir = dir
+				*socketPath = GetControlSocketPathForVM(dir)
+				ctlTarget = vmSelection{Directory: dir, Name: name}
+			}
 		}
 	}
+	currentCtlTarget = ctlTarget
+	defer func() {
+		currentCtlTarget = vmSelection{}
+	}()
 
 	if fs.NArg() < 1 {
 		fs.Usage()
@@ -608,10 +632,11 @@ func ctlCommand(args []string) error {
 	cmdType := fs.Arg(0)
 	subArgs := append([]string{}, fs.Args()[1:]...)
 	if cmdType == "help" {
+		fs.SetOutput(os.Stdout)
 		fs.Usage()
 		return nil
 	}
-	if ctlVMFlag != nil && *ctlVMFlag == "" && *socketPath == "" && len(subArgs) > 0 {
+	if ctlVMFlag != nil && *ctlVMFlag == "" && len(subArgs) > 0 {
 		if _, ok := vmconfig.ExistingPath(cmdType); ok {
 			return fmt.Errorf("unknown ctl command %q; did you mean: cove ctl -vm %s %s", cmdType, cmdType, strings.Join(subArgs, " "))
 		}
@@ -2938,7 +2963,17 @@ func ctlWaitForVMStopped(sock string, wait time.Duration) error {
 
 // ctlConnectError wraps a control socket dial error with actionable guidance.
 func ctlConnectError(sock string, err error) error {
-	return formatControlSocketDialError(sock, err)
+	dialErr := formatControlSocketDialError(sock, err)
+	if dialErr == nil {
+		return nil
+	}
+	if currentCtlTarget.Name != "" && !strings.Contains(dialErr.Error(), currentCtlTarget.Name) {
+		msg := dialErr.Error()
+		if strings.Contains(msg, "is not running:") {
+			return fmt.Errorf("vm is not running: control socket not found at %s (vm %q)\n  start it with: cove -vm %s run", sock, currentCtlTarget.Name, currentCtlTarget.Name)
+		}
+	}
+	return dialErr
 }
 
 // saveScreenshotPNG saves an image as PNG
