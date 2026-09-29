@@ -160,6 +160,20 @@ func cleanVM() error {
 }
 
 func cleanVMForVM(target vmSelection) error {
+	if target.Directory == "" {
+		return fmt.Errorf("no VM directory specified")
+	}
+	if isVMRunningAt(target.Directory) && !waitForVMNotRunning(target.Directory, cleanWaitNotRunningTimeout) {
+		name := target.Name
+		if name == "" {
+			name = filepath.Base(target.Directory)
+		}
+		if name == "." || name == "" {
+			name = "default"
+		}
+		return cleanRunningVMError(name)
+	}
+
 	fmt.Printf("Cleaning VM directory: %s\n", target.Directory)
 
 	files := []string{

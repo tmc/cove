@@ -952,7 +952,7 @@ Example:
 }
 
 func printCleanUsage(w io.Writer) {
-	fmt.Fprintln(w, `Usage: cove clean [-vm <name>]
+	fmt.Fprintln(w, `Usage: cove clean [-vm <name>] [-y|--yes]
 
 Remove the per-VM artifacts (disk.img, aux.img, hw.model, machine.id,
 boot-args.txt, .inject-succeeded) and the provisioning staging
@@ -960,9 +960,14 @@ directory from the selected VM. The VM directory itself is kept.
 
 Use 'cove vm delete <name>' to remove the entire VM directory.
 
+Flags:
+  -y, --yes    skip confirmation prompt
+  -vm <name>   target VM name
+
 Examples:
   cove clean
-  cove -vm test-vm clean`)
+  cove clean -y
+  cove -vm test-vm clean -y`)
 }
 
 func printCloneUsage(w io.Writer) {

@@ -20,7 +20,7 @@ var commandRegistry = []covecli.Spec{
 	{Name: "agent-upgrade", Aliases: []string{"upgrade-agent"}, Summary: "Live-upgrade vz-agent in a running VM", Dispatch: covecli.DispatchEarly, Run: runAgentUpgradeCommand},
 	{Name: "bench", Summary: "Normalize benchmark evidence into reports and run metrics", Dispatch: covecli.DispatchEarly, Run: runBenchCommand},
 	{Name: "build", Summary: "Chain vzscript steps into a cache-keyed VM image", Dispatch: covecli.DispatchEarly, Run: runBuildCommand},
-	{Name: "clean", Summary: "Remove VM files", Dispatch: covecli.DispatchLate, Run: runCleanCommand},
+	{Name: "clean", Summary: "Remove VM files", Dispatch: covecli.DispatchEarly, Run: runCleanCommand},
 	{Name: "clone", Summary: "Clone a VM", Dispatch: covecli.DispatchLate, Run: runCloneCommand},
 	{Name: "commands", Summary: "Print machine-readable command inventory", Dispatch: covecli.DispatchEarly},
 	{Name: "compact", Summary: "Zero guest free space for smaller pushes", Dispatch: covecli.DispatchEarly, Run: runCompactCommand},
@@ -278,7 +278,9 @@ func runVZScriptCommand(env commandEnv, _ string, args []string) int {
 	return commandError(env, vzscriptCommand(args))
 }
 
-func runCleanCommand(env commandEnv, _ string, _ []string) int { return commandError(env, cleanVM()) }
+func runCleanCommand(env commandEnv, _ string, args []string) int {
+	return handleCleanCommand(env, args)
+}
 func runCloneCommand(_ commandEnv, _ string, args []string) int {
 	handleClone(args)
 	return 0

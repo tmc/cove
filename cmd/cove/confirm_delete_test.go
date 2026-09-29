@@ -153,6 +153,7 @@ func TestDeleteNonInteractiveE2E(t *testing.T) {
 		{"snapshot delete without yes", []string{"snapshot", "delete", "snap1"}},
 		{"disk-snapshot delete without yes", []string{"disk-snapshot", "delete", "snap1"}},
 		{"pit delete without yes", []string{"pit", "delete", "snap1"}},
+		{"clean without yes", []string{"clean"}},
 	}
 
 	for _, tc := range nonInteractiveCases {
