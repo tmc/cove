@@ -255,3 +255,37 @@ func TestIsClientDisconnectError(t *testing.T) {
 		})
 	}
 }
+
+func TestServeConnectionScannerHandlesLargePayload(t *testing.T) {
+	server, client := net.Pipe()
+	defer client.Close()
+
+	h := &fakeHandler{token: "secret"}
+	done := make(chan struct{})
+	go func() {
+		ServeConnection(server, h)
+		close(done)
+	}()
+
+	// Payload > 1 MiB (e.g. 2 MiB string inside JSON)
+	largeData := strings.Repeat("A", 2*1024*1024)
+	req := fmt.Sprintf(`{"type":"agent-write","token":"secret","path":"/tmp/large.txt","data":"%s"}`+"\n", largeData)
+
+	_ = client.SetDeadline(time.Now().Add(5 * time.Second))
+	if _, err := io.WriteString(client, req); err != nil {
+		t.Fatal(err)
+	}
+
+	line, err := bufio.NewReader(client).ReadString('\n')
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(line, `"success":true`) {
+		t.Fatalf("response = %q, want success", line)
+	}
+	client.Close()
+	<-done
+	if h.handled != "agent-write" {
+		t.Fatalf("handled = %q, want agent-write", h.handled)
+	}
+}

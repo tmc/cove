@@ -480,6 +480,38 @@ func (c *AgentClient) CopyReaderToGuest(ctx context.Context, r io.Reader, guestP
 	return nil
 }
 
+// CopyWriterFromGuest streams a file from the guest to an io.Writer.
+func (c *AgentClient) CopyWriterFromGuest(ctx context.Context, guestPath string, w io.Writer) error {
+	stream, err := c.client.CopyOut(ctx, connect.NewRequest(&pb.CopyOutRequest{Path: guestPath}))
+	if err != nil {
+		return fmt.Errorf("open stream: %w", err)
+	}
+
+	if !stream.Receive() {
+		if err := stream.Err(); err != nil {
+			return fmt.Errorf("recv init: %w", err)
+		}
+		return fmt.Errorf("expected init message")
+	}
+	first := stream.Msg()
+	if first.GetInit() == nil {
+		return fmt.Errorf("expected init message")
+	}
+
+	for stream.Receive() {
+		chunk := stream.Msg()
+		if data := chunk.GetData(); len(data) > 0 {
+			if _, err := w.Write(data); err != nil {
+				return fmt.Errorf("write: %w", err)
+			}
+		}
+	}
+	if err := stream.Err(); err != nil {
+		return fmt.Errorf("recv: %w", err)
+	}
+	return nil
+}
+
 // CopyFromGuest streams a file from the guest to a local path.
 func (c *AgentClient) CopyFromGuest(ctx context.Context, guestPath, localPath string) error {
 	stream, err := c.client.CopyOut(ctx, connect.NewRequest(&pb.CopyOutRequest{Path: guestPath}))
@@ -508,7 +540,13 @@ func (c *AgentClient) CopyFromGuest(ctx context.Context, guestPath, localPath st
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	var success bool
+	defer func() {
+		f.Close()
+		if !success {
+			_ = os.Remove(localPath)
+		}
+	}()
 
 	for stream.Receive() {
 		chunk := stream.Msg()
@@ -521,6 +559,7 @@ func (c *AgentClient) CopyFromGuest(ctx context.Context, guestPath, localPath st
 	if err := stream.Err(); err != nil {
 		return fmt.Errorf("recv: %w", err)
 	}
+	success = true
 	return nil
 }
 

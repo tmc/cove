@@ -195,7 +195,7 @@ func ServeConnection(conn net.Conn, h Handler) {
 	defer conn.Close()
 
 	scanner := bufio.NewScanner(conn)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	if err := conn.SetDeadline(time.Now().Add(5 * time.Minute)); err != nil {
 		return
 	}
@@ -217,6 +217,8 @@ func ServeConnection(conn net.Conn, h Handler) {
 			continue
 		}
 
+		_ = conn.SetDeadline(time.Time{})
+
 		if handled, closeConn := h.HandleStream(conn, &req, []byte(line)); handled {
 			if closeConn {
 				return
@@ -228,6 +230,9 @@ func ServeConnection(conn net.Conn, h Handler) {
 		}
 		if resp, ok := h.HandleRaw(&req, []byte(line)); ok {
 			WriteResponse(conn, resp)
+			if err := conn.SetDeadline(time.Now().Add(5 * time.Minute)); err != nil {
+				return
+			}
 			continue
 		}
 

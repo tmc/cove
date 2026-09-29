@@ -1,11 +1,24 @@
 package main
 
 import (
+	"context"
+	"fmt"
+	"net"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"unicode/utf8"
 
+	"connectrpc.com/connect"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
+
 	agentstate "github.com/tmc/cove/internal/agent"
+	pb "github.com/tmc/cove/proto/agentpb"
+	agentpbconnect "github.com/tmc/cove/proto/agentpbconnect"
 	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
@@ -270,4 +283,170 @@ func TestAgentCopyRouting(t *testing.T) {
 		})
 	}
 }
+
+func TestExpandGuestHome(t *testing.T) {
+	s := &ControlServer{
+		consoleUserOverride: func() (string, int, error) {
+			return "alice", 501, nil
+		},
+	}
+
+	// macOS tests (linuxMode = false)
+	oldLinux := linuxMode
+	linuxMode = false
+	defer func() { linuxMode = oldLinux }()
+
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"~", "/Users/alice"},
+		{"~/Desktop/file.txt", "/Users/alice/Desktop/file.txt"},
+		{"/tmp/test.txt", "/tmp/test.txt"},
+		{"/Users/bob/data.txt", "/Users/bob/data.txt"},
+	}
+	for _, tt := range tests {
+		if got := s.expandGuestHome(tt.in); got != tt.want {
+			t.Errorf("expandGuestHome(%q) [macOS] = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+
+	// Linux tests (linuxMode = true)
+	linuxMode = true
+	sLinux := &ControlServer{
+		consoleUserOverride: func() (string, int, error) {
+			return "ubuntu", 1000, nil
+		},
+	}
+	linuxTests := []struct {
+		in   string
+		want string
+	}{
+		{"~", "/home/ubuntu"},
+		{"~/file.txt", "/home/ubuntu/file.txt"},
+		{"/tmp/test.txt", "/tmp/test.txt"},
+		{"/home/dev/test.txt", "/home/dev/test.txt"},
+	}
+	for _, tt := range linuxTests {
+		if got := sLinux.expandGuestHome(tt.in); got != tt.want {
+			t.Errorf("expandGuestHome(%q) [Linux] = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestHandleAgentCopyDirFromGuestOverwrite(t *testing.T) {
+	s := &ControlServer{}
+	existingDir := t.TempDir()
+
+	// Destination exists and overwrite is false -> error
+	ctx := context.Background()
+	resp := s.handleAgentCopyDirFromGuest(ctx, nil, nil, "/guest/dir", existingDir, false)
+	if resp == nil || resp.Success {
+		t.Fatalf("handleAgentCopyDirFromGuest with overwrite=false succeeded, want error")
+	}
+	wantMsg := fmt.Sprintf(`destination %q already exists (use -f to overwrite)`, existingDir)
+	if resp.Error != wantMsg {
+		t.Fatalf("handleAgentCopyDirFromGuest error = %q, want %q", resp.Error, wantMsg)
+	}
+}
+
+func TestHandleAgentCopyTrailingSlash(t *testing.T) {
+	s := &ControlServer{}
+	cmd := &controlpb.AgentCopyCommand{
+		HostPath:  "/nonexistent/file.txt",
+		GuestPath: "/tmp/",
+		ToGuest:   true,
+	}
+	resp := s.handleAgentCopy(cmd)
+	if resp.Success {
+		t.Fatal("handleAgentCopy succeeded for nonexistent host file")
+	}
+	if cmd.GuestPath != "/tmp/file.txt" {
+		t.Fatalf("cmd.GuestPath = %q, want /tmp/file.txt", cmd.GuestPath)
+	}
+
+	cmd2 := &controlpb.AgentCopyCommand{
+		HostPath:  "/tmp/out/",
+		GuestPath: "/remote/dir/file.txt",
+		ToGuest:   false,
+	}
+	_ = s.handleAgentCopy(cmd2)
+	wantHost := filepath.Join("/tmp/out", "file.txt")
+	if cmd2.HostPath != wantHost {
+		t.Fatalf("cmd2.HostPath = %q, want %q", cmd2.HostPath, wantHost)
+	}
+}
+
+type mockTarCopyOutHandler struct {
+	agentpbconnect.UnimplementedAgentHandler
+	tarData []byte
+}
+
+func (m *mockTarCopyOutHandler) Exec(context.Context, *connect.Request[pb.ExecRequest]) (*connect.Response[pb.ExecResponse], error) {
+	return connect.NewResponse(&pb.ExecResponse{ExitCode: 0}), nil
+}
+
+func (m *mockTarCopyOutHandler) CopyOut(_ context.Context, _ *connect.Request[pb.CopyOutRequest], stream *connect.ServerStream[pb.CopyOutChunk]) error {
+	if err := stream.Send(&pb.CopyOutChunk{
+		Content: &pb.CopyOutChunk_Init{Init: &pb.CopyOutInit{Mode: 0644, TotalSize: uint64(len(m.tarData))}},
+	}); err != nil {
+		return err
+	}
+	return stream.Send(&pb.CopyOutChunk{
+		Content: &pb.CopyOutChunk_Data{Data: m.tarData},
+	})
+}
+
+func TestHandleAgentCopyDirFromGuestExtract(t *testing.T) {
+	srcDir := t.TempDir()
+	subDir := filepath.Join(srcDir, "myfolder")
+	if err := os.MkdirAll(subDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(subDir, "hello.txt"), []byte("hello from guest\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	tarCmd := exec.Command("tar", "cf", "-", "-C", srcDir, "myfolder")
+	tarData, err := tarCmd.Output()
+	if err != nil {
+		t.Fatalf("tar error: %v", err)
+	}
+
+	handler := &mockTarCopyOutHandler{tarData: tarData}
+	mux := http.NewServeMux()
+	p, h := agentpbconnect.NewAgentHandler(handler)
+	mux.Handle(p, h)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &http.Server{Handler: h2c.NewHandler(mux, &http2.Server{})}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close(); _ = ln.Close() })
+
+	client, err := agentstate.NewAgentClientWithDial(func(ctx context.Context) (net.Conn, error) {
+		var d net.Dialer
+		return d.DialContext(ctx, "tcp", ln.Addr().String())
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	destDir := filepath.Join(t.TempDir(), "extracted")
+	s := &ControlServer{}
+	resp := s.handleAgentCopyDirFromGuest(context.Background(), client, nil, "/guest/myfolder", destDir, true)
+	if resp == nil || !resp.Success {
+		t.Fatalf("handleAgentCopyDirFromGuest failed: %v", resp)
+	}
+
+	data, err := os.ReadFile(filepath.Join(destDir, "hello.txt"))
+	if err != nil {
+		t.Fatalf("read extracted file: %v", err)
+	}
+	if string(data) != "hello from guest\n" {
+		t.Fatalf("extracted data = %q, want 'hello from guest\\n'", data)
+	}
+}
+
 

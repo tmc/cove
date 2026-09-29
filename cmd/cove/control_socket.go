@@ -59,6 +59,7 @@ type ControlServer struct {
 	running           atomic.Bool
 	capture           controlserver.Capture       // diff cache + lazy OCR service, self-guarded
 	bridge            controlserver.AgentBridge   // agent clients + health state (owns its own mutexes)
+	consoleUserOverride func() (string, int, error) // for tests or overrides
 	network           controlserver.NetworkBridge // iterm2 proxy, port forwards, HTTP listeners, VNC/debug status
 	input             controlserver.InputBridge   // mouse/keyboard delivery
 	windowNum         int                         // cached window number for thread-safe screenshot

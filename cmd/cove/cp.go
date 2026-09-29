@@ -30,8 +30,8 @@ type cpSpec struct {
 }
 
 type cpAgent interface {
-	CopyToGuest(ctx context.Context, hostPath, guestPath string) error
-	CopyFromGuest(ctx context.Context, guestPath, hostPath string) error
+	CopyToGuest(ctx context.Context, hostPath, guestPath string, overwrite bool) error
+	CopyFromGuest(ctx context.Context, guestPath, hostPath string, overwrite bool) error
 }
 
 type controlCpAgent struct {
@@ -52,6 +52,9 @@ func runCp(ctx context.Context, args []string, newAgent func(string) cpAgent) er
 	fs := flag.NewFlagSet("cp", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	vmFlag := fs.String("vm", "", "VM name; must match vm:/path endpoint if both are provided")
+	var force bool
+	fs.BoolVar(&force, "f", false, "Overwrite existing destination")
+	fs.BoolVar(&force, "force", false, "Overwrite existing destination")
 	fs.Usage = func() { printCpUsage(os.Stdout) }
 	if err := parseFlagsOrHelp(fs, moveCpFlagsFirst(args)); err != nil {
 		if errors.Is(err, errFlagHelp) {
@@ -60,7 +63,7 @@ func runCp(ctx context.Context, args []string, newAgent func(string) cpAgent) er
 		return err
 	}
 	if fs.NArg() != 2 {
-		return errors.New("usage: cove cp [-vm name] <host-path> <vm:/guest/path> | <vm:/guest/path> <host-path>")
+		return errors.New("usage: cove cp [-vm name] [-f] <host-path> <vm:/guest/path> | <vm:/guest/path> <host-path>")
 	}
 	selectedVM := *vmFlag
 	if selectedVM == "" && flagWasSet("vm") {
@@ -73,25 +76,26 @@ func runCp(ctx context.Context, args []string, newAgent func(string) cpAgent) er
 	agent := newAgent(spec.VM)
 	switch spec.Direction {
 	case cpHostToGuest:
-		return agent.CopyToGuest(ctx, spec.HostPath, spec.GuestPath)
+		return agent.CopyToGuest(ctx, spec.HostPath, spec.GuestPath, force)
 	case cpGuestToHost:
-		return agent.CopyFromGuest(ctx, spec.GuestPath, spec.HostPath)
+		return agent.CopyFromGuest(ctx, spec.GuestPath, spec.HostPath, force)
 	default:
 		return errors.New("cp: invalid direction")
 	}
 }
 
 func printCpUsage(w io.Writer) {
-	fmt.Fprintln(w, `Usage: cove cp [-vm name] <host-path> <vm:/guest/path>
-       cove cp [-vm name] <vm:/guest/path> <host-path>
+	fmt.Fprintln(w, `Usage: cove cp [-f] [-vm name] <host-path> <vm:/guest/path>
+       cove cp [-f] [-vm name] <vm:/guest/path> <host-path>
 
 Copy files between the host and a running guest through the VM control socket.
 The VM selected by -vm must match the vm:/path endpoint when both are present.
-The -vm flag may appear before or after the copy operands.
+The -vm and -f flags may appear before or after the copy operands.
 For Windows QEMU VMs, use vm:/C:/path or vm:/c/path for guest paths.
 
 Examples:
   cove cp ./app.log work-vm:/tmp/app.log
+  cove cp -f ./dir work-vm:/tmp/dir
   cove cp ./app.log windows-qemu:/C:/Users/cove/Desktop/app.log
   cove cp -vm work-vm work-vm:/tmp/app.log ./app.log
   cove cp work-vm:/tmp/app.log ./app.log -vm work-vm`)
@@ -108,8 +112,12 @@ func moveCpFlagsFirst(args []string) []string {
 				i++
 				flags = append(flags, args[i])
 			}
+		case "-f", "--f", "-force", "--force":
+			flags = append(flags, arg)
 		default:
-			if strings.HasPrefix(arg, "-vm=") || strings.HasPrefix(arg, "--vm=") {
+			if strings.HasPrefix(arg, "-vm=") || strings.HasPrefix(arg, "--vm=") ||
+				strings.HasPrefix(arg, "-f=") || strings.HasPrefix(arg, "--f=") ||
+				strings.HasPrefix(arg, "-force=") || strings.HasPrefix(arg, "--force=") {
 				flags = append(flags, arg)
 			} else {
 				rest = append(rest, arg)
@@ -143,6 +151,11 @@ func parseCpSpecForVM(src, dst, vmFlag string) (cpSpec, error) {
 		if err != nil {
 			return cpSpec{}, err
 		}
+		if strings.HasSuffix(dstPath, "/") || dstPath == "." {
+			hostPath = filepath.Join(hostPath, filepath.Base(srcPath))
+		} else if fi, err := os.Stat(hostPath); err == nil && fi.IsDir() {
+			hostPath = filepath.Join(hostPath, filepath.Base(srcPath))
+		}
 		return cpSpec{
 			Direction: cpGuestToHost,
 			VM:        srcVM,
@@ -157,11 +170,17 @@ func parseCpSpecForVM(src, dst, vmFlag string) (cpSpec, error) {
 	if err := validateCpVMFlag(vmFlag, dstVM); err != nil {
 		return cpSpec{}, err
 	}
+	guestPath := dstPath
+	if strings.HasSuffix(guestPath, "/") {
+		guestPath = guestPath + filepath.Base(hostPath)
+	} else if guestPath == "~" {
+		guestPath = "~/" + filepath.Base(hostPath)
+	}
 	return cpSpec{
 		Direction: cpHostToGuest,
 		VM:        dstVM,
 		HostPath:  hostPath,
-		GuestPath: dstPath,
+		GuestPath: guestPath,
 	}, nil
 }
 
@@ -195,7 +214,7 @@ func parseCpOperand(s string) (remote bool, vm, path string, err error) {
 	if strings.Contains(vm, "/") {
 		return false, "", "", fmt.Errorf("cp: invalid VM name %q in remote path", vm)
 	}
-	if !strings.HasPrefix(path, "/") {
+	if !strings.HasPrefix(path, "/") && path != "~" && !strings.HasPrefix(path, "~/") {
 		return false, "", "", fmt.Errorf("cp: guest path must be absolute in %q", s)
 	}
 	return true, vm, path, nil
@@ -225,11 +244,11 @@ func newControlCpAgent(vm string) cpAgent {
 	}
 	socketPath := filepath.Join(vmconfig.BaseDir(), vm, "control.sock")
 	client := NewControlClient(socketPath)
-	client.SetTimeout(10 * time.Minute)
+	client.SetTimeout(30 * time.Minute)
 	return controlCpAgent{client: client, vm: vm}
 }
 
-func (a qemuWindowsCpAgent) CopyToGuest(ctx context.Context, hostPath, guestPath string) error {
+func (a qemuWindowsCpAgent) CopyToGuest(ctx context.Context, hostPath, guestPath string, _ bool) error {
 	if strings.TrimSpace(a.address) == "" {
 		return fmt.Errorf("cp: qemu windows agent endpoint is unavailable for %q", a.vm)
 	}
@@ -245,7 +264,7 @@ func (a qemuWindowsCpAgent) CopyToGuest(ctx context.Context, hostPath, guestPath
 	return client.CopyToGuest(ctx, hostPath, path, 0644)
 }
 
-func (a qemuWindowsCpAgent) CopyFromGuest(ctx context.Context, guestPath, hostPath string) error {
+func (a qemuWindowsCpAgent) CopyFromGuest(ctx context.Context, guestPath, hostPath string, _ bool) error {
 	if strings.TrimSpace(a.address) == "" {
 		return fmt.Errorf("cp: qemu windows agent endpoint is unavailable for %q", a.vm)
 	}
@@ -276,7 +295,7 @@ func isASCIILetter(b byte) bool {
 	return ('a' <= b && b <= 'z') || ('A' <= b && b <= 'Z')
 }
 
-func (a controlCpAgent) CopyToGuest(_ context.Context, hostPath, guestPath string) error {
+func (a controlCpAgent) CopyToGuest(_ context.Context, hostPath, guestPath string, overwrite bool) error {
 	if _, err := requireExistingVMForControl(a.vm); err != nil {
 		return err
 	}
@@ -286,6 +305,7 @@ func (a controlCpAgent) CopyToGuest(_ context.Context, hostPath, guestPath strin
 			HostPath:  hostPath,
 			GuestPath: guestPath,
 			ToGuest:   true,
+			Overwrite: overwrite,
 		}},
 	}
 	resp, err := a.client.sendRequest(req)
@@ -295,10 +315,17 @@ func (a controlCpAgent) CopyToGuest(_ context.Context, hostPath, guestPath strin
 	if !resp.Success {
 		return fmt.Errorf("cp: %s", resp.Error)
 	}
+	msg := resp.Data
+	if msg == "" && resp.GetAgentFile() != nil {
+		msg = resp.GetAgentFile().Message
+	}
+	if msg != "" {
+		fmt.Println(msg)
+	}
 	return nil
 }
 
-func (a controlCpAgent) CopyFromGuest(_ context.Context, guestPath, hostPath string) error {
+func (a controlCpAgent) CopyFromGuest(_ context.Context, guestPath, hostPath string, overwrite bool) error {
 	if _, err := requireExistingVMForControl(a.vm); err != nil {
 		return err
 	}
@@ -308,6 +335,7 @@ func (a controlCpAgent) CopyFromGuest(_ context.Context, guestPath, hostPath str
 			HostPath:  hostPath,
 			GuestPath: guestPath,
 			ToGuest:   false,
+			Overwrite: overwrite,
 		}},
 	}
 	resp, err := a.client.sendRequest(req)
@@ -316,6 +344,13 @@ func (a controlCpAgent) CopyFromGuest(_ context.Context, guestPath, hostPath str
 	}
 	if !resp.Success {
 		return fmt.Errorf("cp: %s", resp.Error)
+	}
+	msg := resp.Data
+	if msg == "" && resp.GetAgentFile() != nil {
+		msg = resp.GetAgentFile().Message
+	}
+	if msg != "" {
+		fmt.Println(msg)
 	}
 	return nil
 }

@@ -296,7 +296,7 @@ func includeGuestArtifacts(ctx context.Context, root, prefix string, guestPaths 
 		if err := os.MkdirAll(filepath.Dir(hostPath), 0755); err != nil {
 			return fmt.Errorf("runs export: prepare guest artifact path: %w", err)
 		}
-		if err := agent.CopyFromGuest(ctx, filepath.Clean(guestPath), hostPath); err != nil {
+		if err := agent.CopyFromGuest(ctx, filepath.Clean(guestPath), hostPath, true); err != nil {
 			return fmt.Errorf("runs export: copy guest %s: %w", guestPath, err)
 		}
 	}

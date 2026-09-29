@@ -42,6 +42,42 @@ func TestCpParseSpec(t *testing.T) {
 			dst:  "vm2:/var/tmp/in.txt",
 			want: cpSpec{Direction: cpHostToGuest, VM: "vm2", HostPath: "/tmp/in.txt", GuestPath: "/var/tmp/in.txt"},
 		},
+		{
+			name: "host to guest trailing slash appends basename",
+			src:  "file.txt",
+			dst:  "vm1:/tmp/",
+			want: cpSpec{Direction: cpHostToGuest, VM: "vm1", HostPath: filepath.Join(wd, "file.txt"), GuestPath: "/tmp/file.txt"},
+		},
+		{
+			name: "host to guest tilde appends basename",
+			src:  "file.txt",
+			dst:  "vm1:~",
+			want: cpSpec{Direction: cpHostToGuest, VM: "vm1", HostPath: filepath.Join(wd, "file.txt"), GuestPath: "~/file.txt"},
+		},
+		{
+			name: "host to guest tilde path",
+			src:  "file.txt",
+			dst:  "vm1:~/Desktop/file.txt",
+			want: cpSpec{Direction: cpHostToGuest, VM: "vm1", HostPath: filepath.Join(wd, "file.txt"), GuestPath: "~/Desktop/file.txt"},
+		},
+		{
+			name: "host to guest tilde trailing slash appends basename",
+			src:  "file.txt",
+			dst:  "vm1:~/Desktop/",
+			want: cpSpec{Direction: cpHostToGuest, VM: "vm1", HostPath: filepath.Join(wd, "file.txt"), GuestPath: "~/Desktop/file.txt"},
+		},
+		{
+			name: "guest to host trailing slash appends basename",
+			src:  "vm1:/tmp/file.txt",
+			dst:  "out/",
+			want: cpSpec{Direction: cpGuestToHost, VM: "vm1", GuestPath: "/tmp/file.txt", HostPath: filepath.Join(wd, "out", "file.txt")},
+		},
+		{
+			name: "guest to host dot appends basename",
+			src:  "vm1:/tmp/file.txt",
+			dst:  ".",
+			want: cpSpec{Direction: cpGuestToHost, VM: "vm1", GuestPath: "/tmp/file.txt", HostPath: filepath.Join(wd, "file.txt")},
+		},
 		{name: "two local", src: "a", dst: "b", err: "exactly one path must be remote"},
 		{name: "two remote", src: "vm:/a", dst: "vm:/b", err: "exactly one path must be remote"},
 		{name: "relative guest", src: "a", dst: "vm:tmp/a", err: "guest path must be absolute"},
@@ -196,14 +232,16 @@ func TestCpRoundTripWithFakeAgent(t *testing.T) {
 }
 
 type fakeCpAgent struct {
-	guest map[string][]byte
+	guest     map[string][]byte
+	overwrite bool
 }
 
 func newFakeCpAgent() *fakeCpAgent {
 	return &fakeCpAgent{guest: make(map[string][]byte)}
 }
 
-func (f *fakeCpAgent) CopyToGuest(_ context.Context, hostPath, guestPath string) error {
+func (f *fakeCpAgent) CopyToGuest(_ context.Context, hostPath, guestPath string, overwrite bool) error {
+	f.overwrite = overwrite
 	data, err := os.ReadFile(hostPath)
 	if err != nil {
 		return err
@@ -212,7 +250,8 @@ func (f *fakeCpAgent) CopyToGuest(_ context.Context, hostPath, guestPath string)
 	return nil
 }
 
-func (f *fakeCpAgent) CopyFromGuest(_ context.Context, guestPath, hostPath string) error {
+func (f *fakeCpAgent) CopyFromGuest(_ context.Context, guestPath, hostPath string, overwrite bool) error {
+	f.overwrite = overwrite
 	data := f.guest[guestPath]
 	if err := os.MkdirAll(filepath.Dir(hostPath), 0755); err != nil {
 		return err
@@ -261,6 +300,40 @@ func TestRunCpAcceptsVMFlagAfterOperands(t *testing.T) {
 	}
 	if got := string(fake.guest["/tmp/data.txt"]); got != "hello\n" {
 		t.Fatalf("guest data = %q", got)
+	}
+}
+
+func TestRunCpForceFlag(t *testing.T) {
+	for _, flagArg := range []string{"-f", "--force", "-force", "--f"} {
+		t.Run(flagArg, func(t *testing.T) {
+			dir := t.TempDir()
+			src := filepath.Join(dir, "src.txt")
+			if err := os.WriteFile(src, []byte("hello\n"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			fake := newFakeCpAgent()
+			err := runCp(context.Background(), []string{flagArg, src, "vm1:/tmp/data.txt"}, func(vm string) cpAgent {
+				return fake
+			})
+			if err != nil {
+				t.Fatalf("runCp %s: %v", flagArg, err)
+			}
+			if !fake.overwrite {
+				t.Fatalf("fake.overwrite = false with %s, want true", flagArg)
+			}
+
+			// Trailing flag
+			fake2 := newFakeCpAgent()
+			err = runCp(context.Background(), []string{src, "vm1:/tmp/data.txt", flagArg}, func(vm string) cpAgent {
+				return fake2
+			})
+			if err != nil {
+				t.Fatalf("runCp trailing %s: %v", flagArg, err)
+			}
+			if !fake2.overwrite {
+				t.Fatalf("fake2.overwrite = false with trailing %s, want true", flagArg)
+			}
+		})
 	}
 }
 
@@ -373,5 +446,5 @@ func TestCpStoppedExistingVMKeepsControlSocketHint(t *testing.T) {
 
 type errCpAgent struct{ err error }
 
-func (e errCpAgent) CopyToGuest(context.Context, string, string) error   { return e.err }
-func (e errCpAgent) CopyFromGuest(context.Context, string, string) error { return e.err }
+func (e errCpAgent) CopyToGuest(context.Context, string, string, bool) error   { return e.err }
+func (e errCpAgent) CopyFromGuest(context.Context, string, string, bool) error { return e.err }

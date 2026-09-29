@@ -6,6 +6,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -367,3 +369,36 @@ func startAgentHTTP2Server(t *testing.T, register func(*http.ServeMux)) string {
 	})
 	return ln.Addr().String()
 }
+
+type failMidStreamCopyOutHandler struct {
+	agentpbconnect.UnimplementedAgentHandler
+}
+
+func (h *failMidStreamCopyOutHandler) CopyOut(ctx context.Context, req *connect.Request[pb.CopyOutRequest], stream *connect.ServerStream[pb.CopyOutChunk]) error {
+	if err := stream.Send(&pb.CopyOutChunk{
+		Content: &pb.CopyOutChunk_Init{Init: &pb.CopyOutInit{Mode: 0644, TotalSize: 1000}},
+	}); err != nil {
+		return err
+	}
+	if err := stream.Send(&pb.CopyOutChunk{
+		Content: &pb.CopyOutChunk_Data{Data: []byte("partial data")},
+	}); err != nil {
+		return err
+	}
+	return errors.New("mid-stream failure")
+}
+
+func TestCopyFromGuestTruncatedFileCleanup(t *testing.T) {
+	client := newTestAgentClient(t, &failMidStreamCopyOutHandler{})
+	defer client.Close()
+
+	dest := filepath.Join(t.TempDir(), "truncated.txt")
+	err := client.CopyFromGuest(context.Background(), "/remote/file", dest)
+	if err == nil {
+		t.Fatal("CopyFromGuest succeeded, want error")
+	}
+	if _, statErr := os.Stat(dest); !os.IsNotExist(statErr) {
+		t.Fatalf("file %s still exists after failed copy, statErr = %v", dest, statErr)
+	}
+}
+
