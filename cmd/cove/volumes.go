@@ -416,24 +416,8 @@ func mountTaggedVolumesOnce(ctx context.Context, cs *ControlServer, tagged []vmc
 			mountPoint = "/Volumes/" + m.Tag
 		}
 
-		// Create mount point
-		a, ok := autoMountAgent(cs, "  auto-mount "+m.Tag)
-		if !ok {
-			continue
-		}
-		cs.mu.Lock()
-		mkdirCtx, mkdirCancel := context.WithTimeout(ctx, 10*time.Second)
-		_, mkdirErr := a.Exec(mkdirCtx, []string{"mkdir", "-p", mountPoint}, nil, "")
-		mkdirCancel()
-		cs.mu.Unlock()
-
-		if mkdirErr != nil {
-			fmt.Printf("  auto-mount %s: mkdir failed: %v\n", m.Tag, mkdirErr)
-			continue
-		}
-
 		// Check if already mounted (common after VM resume).
-		a, ok = autoMountAgent(cs, "  auto-mount "+m.Tag)
+		a, ok := autoMountAgent(cs, "  auto-mount "+m.Tag)
 		if !ok {
 			continue
 		}
@@ -444,7 +428,7 @@ func mountTaggedVolumesOnce(ctx context.Context, cs *ControlServer, tagged []vmc
 		cs.mu.Unlock()
 
 		if checkErr == nil && checkResult.ExitCode == 0 {
-			if strings.Contains(string(checkResult.Stdout), mountPoint) {
+			if strings.Contains(string(checkResult.Stdout), " on "+mountPoint+" ") {
 				// Probe health of mount point
 				a, ok = autoMountAgent(cs, "  probe-mount "+m.Tag)
 				if ok {
@@ -481,13 +465,25 @@ func mountTaggedVolumesOnce(ctx context.Context, cs *ControlServer, tagged []vmc
 			continue
 		}
 
-		// Mount the VirtioFS tag using guest-native mount semantics.
-		mountArgs := virtioFSMountArgsWithOwner(m, mountPoint, linuxMode, owner)
-
+		// Create the mount point just before mounting: on macOS, unmounting
+		// a stale /Volumes mount above removes its directory.
 		a, ok = autoMountAgent(cs, "  auto-mount "+m.Tag)
 		if !ok {
 			continue
 		}
+		cs.mu.Lock()
+		mkdirCtx, mkdirCancel := context.WithTimeout(ctx, 10*time.Second)
+		_, mkdirErr := a.Exec(mkdirCtx, []string{"mkdir", "-p", mountPoint}, nil, "")
+		mkdirCancel()
+		cs.mu.Unlock()
+		if mkdirErr != nil {
+			fmt.Printf("  auto-mount %s: mkdir failed: %v\n", m.Tag, mkdirErr)
+			continue
+		}
+
+		// Mount the VirtioFS tag using guest-native mount semantics.
+		mountArgs := virtioFSMountArgsWithOwner(m, mountPoint, linuxMode, owner)
+
 		cs.mu.Lock()
 		mountCtx, mountCancel := context.WithTimeout(ctx, 10*time.Second)
 		result, mountErr := a.Exec(mountCtx, mountArgs, nil, "")
