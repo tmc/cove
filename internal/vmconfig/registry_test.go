@@ -109,3 +109,33 @@ func TestListOrphans(t *testing.T) {
 		t.Fatalf("ListOrphans() = %#v, want %#v", got, want)
 	}
 }
+
+func TestStaleActiveLink(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	// No link exists
+	if _, _, stale := StaleActiveLink(); stale {
+		t.Fatal("StaleActiveLink() = true when no current link exists, want false")
+	}
+
+	// Link points to missing VM bundle
+	linkPath := CurrentLink()
+	if err := os.MkdirAll(filepath.Dir(linkPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	missingTarget := filepath.Join(BaseDir(), "missing.covevm")
+	if err := os.Symlink(missingTarget, linkPath); err != nil {
+		t.Fatal(err)
+	}
+
+	name, target, stale := StaleActiveLink()
+	if !stale {
+		t.Fatal("StaleActiveLink() = false for missing target, want true")
+	}
+	if name != "missing" {
+		t.Errorf("StaleActiveLink() name = %q, want missing", name)
+	}
+	if target != missingTarget {
+		t.Errorf("StaleActiveLink() target = %q, want %q", target, missingTarget)
+	}
+}

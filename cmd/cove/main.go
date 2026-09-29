@@ -864,6 +864,9 @@ func resolveRunTarget() error {
 	}
 	name := strings.TrimSpace(vmName)
 	if name == "" {
+		if _, target, stale := vmconfig.StaleActiveLink(); stale {
+			return staleActiveVMError("run", target)
+		}
 		name = strings.TrimSpace(vmconfig.ActiveName())
 	}
 	if name == "" {

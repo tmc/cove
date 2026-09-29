@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -21,6 +23,15 @@ type VMResolveOptions struct {
 	PositionalIsOptionalVM bool
 	// RequireRunning indicates that the resolved VM must be currently running.
 	RequireRunning bool
+	// Stderr specifies where warnings should be written. If nil, os.Stderr is used.
+	Stderr io.Writer
+}
+
+func (opts VMResolveOptions) stderr() io.Writer {
+	if opts.Stderr != nil {
+		return opts.Stderr
+	}
+	return os.Stderr
 }
 
 // extractVMFlag searches args for -vm or --vm flags (-vm name, -vm=name,
@@ -134,11 +145,19 @@ func vmNotRunningError(command, name, dir string) error {
 	return fmt.Errorf("vm %q is %s; requires a running VM\n  start it with: cove run %s\n  list VMs with: cove list", name, state, name)
 }
 
+func staleActiveVMError(command, target string) error {
+	msg := fmt.Sprintf("active VM pointer is stale (%s points to missing %s)\n  set active VM with: cove vm set <name>\n  list VMs: cove list\n  create a VM: cove up -user <name>", vmconfig.CurrentLink(), target)
+	if command != "" {
+		return fmt.Errorf("%s: %s", command, msg)
+	}
+	return errors.New(msg)
+}
+
 // resolveTargetVM resolves the target VM using the standard precedence:
 //  1. Explicit -vm flag
 //  2. Positional VM name if applicable/valid
 //  3. Fallback to active VM (if configured and valid)
-//  4. Fallback to the only running VM (when exactly one VM is running)
+//  4. Fallback to the only running VM (when active VM link is stale or not set)
 //  5. Informative error if no VM could be resolved or the specified VM does not exist.
 func resolveTargetVM(opts VMResolveOptions) (name, dir string, err error) {
 	// 1. Explicit -vm flag
@@ -193,11 +212,20 @@ func resolveTargetVM(opts VMResolveOptions) (name, dir string, err error) {
 		return activeName, activeDir, nil
 	}
 
-	// 4. Fallback to the only running VM
+	// 4. Stale active VM fallback or error
+	if _, staleTarget, isStale := vmconfig.StaleActiveLink(); isStale {
+		if rName, rDir, rOK := singleRunningVM(); rOK {
+			fmt.Fprintf(opts.stderr(), "warning: active VM pointer is stale (%s points to missing %s)\n  set active VM with: cove vm set <name>\n", vmconfig.CurrentLink(), staleTarget)
+			return rName, rDir, nil
+		}
+		return "", "", staleActiveVMError(opts.Command, staleTarget)
+	}
+
+	// 5. Fallback to the only running VM
 	if rName, rDir, rOK := singleRunningVM(); rOK {
 		return rName, rDir, nil
 	}
 
-	// 5. Informative error
+	// 6. Informative error
 	return "", "", noVMResolvedError(opts.Command)
 }

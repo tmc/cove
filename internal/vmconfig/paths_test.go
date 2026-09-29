@@ -162,3 +162,40 @@ func TestEnsureDirReportsDanglingActiveAlias(t *testing.T) {
 		t.Errorf("error still surfaces raw mkdir EEXIST: %v", err)
 	}
 }
+
+func TestDanglingSymlinks(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	base := BaseDir()
+	bundles := BundleDir()
+	if err := os.MkdirAll(base, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(bundles, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	danglingBase := filepath.Join(base, "bad-link")
+	if err := os.Symlink(filepath.Join(base, "missing.covevm"), danglingBase); err != nil {
+		t.Fatal(err)
+	}
+	danglingBundle := filepath.Join(bundles, "bad-bundle.covevm")
+	if err := os.Symlink(filepath.Join(base, "missing.covevm"), danglingBundle); err != nil {
+		t.Fatal(err)
+	}
+
+	links := DanglingVMSymlinks()
+	if len(links) != 2 {
+		t.Fatalf("DanglingVMSymlinks() returned %d links, want 2: %+v", len(links), links)
+	}
+
+	removed, err := RemoveDanglingVMSymlinks()
+	if err != nil {
+		t.Fatalf("RemoveDanglingVMSymlinks() error = %v", err)
+	}
+	if len(removed) != 2 {
+		t.Fatalf("RemoveDanglingVMSymlinks() removed %d links, want 2: %+v", len(removed), removed)
+	}
+	if remaining := DanglingVMSymlinks(); len(remaining) != 0 {
+		t.Fatalf("DanglingVMSymlinks() after remove = %+v, want 0", remaining)
+	}
+}

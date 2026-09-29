@@ -33,7 +33,7 @@ func statusCommand(env commandEnv, args ...string) error {
 	if statusWorkerDelegationEnabled() {
 		return statusCommandViaRunWorker(env, opts)
 	}
-	targetDir, cleanup, err := resolveStatusVMDir(opts.VM)
+	targetDir, cleanup, err := resolveStatusVMDir(opts.VM, env.Stderr)
 	if err != nil {
 		return err
 	}
@@ -153,14 +153,21 @@ Show guest-agent and GUI-session status for a running VM.
 If no VM is named, cove uses the active VM.`)
 }
 
-func resolveStatusVMDir(name string) (string, func(), error) {
+func resolveStatusVMDir(name string, stderr io.Writer) (string, func(), error) {
 	if strings.TrimSpace(name) != "" {
 		return resolveStatusNamedVMDir(name)
 	}
 	if strings.TrimSpace(vmDir) != "" && vmconfig.Validate(vmDir) {
 		return vmDir, func() {}, nil
 	}
-	return resolveStatusNamedVMDir(vmconfig.ActiveName())
+	resolvedName, _, err := resolveTargetVM(VMResolveOptions{
+		Command: "status",
+		Stderr:  stderr,
+	})
+	if err != nil {
+		return "", nil, err
+	}
+	return resolveStatusNamedVMDir(resolvedName)
 }
 
 func resolveStatusNamedVMDir(name string) (string, func(), error) {

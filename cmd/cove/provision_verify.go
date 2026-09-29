@@ -13,6 +13,7 @@ import (
 	"time"
 
 	agentstate "github.com/tmc/cove/internal/agent"
+	"github.com/tmc/cove/internal/vmconfig"
 	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
@@ -29,17 +30,21 @@ type VerifyResult struct {
 
 // handleVerify verifies provisioning files in a VM disk
 func handleVerify(args []string) error {
+	return handleVerifyWithOutput(args, os.Stdout)
+}
+
+func handleVerifyWithOutput(args []string, w io.Writer) error {
 	if len(args) > 0 && args[0] == "host" {
-		return handleDoctorHost(args[1:], os.Stdout)
+		return handleDoctorHost(args[1:], w)
 	}
 	if len(args) > 0 && args[0] == "vm-processes" {
-		return handleDoctorVMProcesses(args[1:], os.Stdout)
+		return handleDoctorVMProcesses(args[1:], w)
 	}
 	if len(args) > 0 && args[0] == "clear-stale-locks" {
-		return handleDoctorClearStaleLocks(args[1:], os.Stdout)
+		return handleDoctorClearStaleLocks(args[1:], w)
 	}
 	if len(args) > 0 && args[0] == "qemu" {
-		return handleDoctorQEMU(args[1:], os.Stdout)
+		return handleDoctorQEMU(args[1:], w)
 	}
 	if len(args) > 0 && args[0] == "tcc-preauth" {
 		return runPreAuth(args[1:])
@@ -66,6 +71,15 @@ func handleVerify(args []string) error {
 		provisionVerbose = true
 	}
 
+	danglingCount, danglingErr := verifyDanglingSymlinks(w, *fixFlag)
+	if danglingErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: dangling symlinks: %v\n", danglingErr)
+	}
+
+	if _, staleTarget, isStale := vmconfig.StaleActiveLink(); isStale {
+		fmt.Fprintf(w, "Active VM pointer is stale: %s points to missing %s\n  set active VM with: cove vm set <name>\n\n", vmconfig.CurrentLink(), staleTarget)
+	}
+
 	// Check if VM is running.
 	target := currentVMSelection()
 	if *vmFlag != "" || vmName != "" {
@@ -78,19 +92,57 @@ func handleVerify(args []string) error {
 		if err != nil {
 			return err
 		}
+	} else if target.Directory == "" {
+		if resolvedName, resolvedDir, err := resolveTargetVM(VMResolveOptions{
+			Command: "doctor",
+			Stderr:  io.Discard,
+		}); err == nil {
+			target = vmSelection{Directory: resolvedDir, Name: resolvedName}
+		}
 	}
+
+	if *fixFlag && target.Directory == "" && danglingCount > 0 {
+		return nil
+	}
+
 	if windowsQEMUCTLVM(target.Directory) {
 		return verifyWindowsQEMUVM(target)
 	}
 	sock := target.controlSocketPath()
 	if isVMRunning(sock) {
 		if agentstate.Platform(target.Directory) == agentstate.PlatformMacOS {
-			reportHostTCCPreAuthState(os.Stdout)
+			reportHostTCCPreAuthState(w)
 		}
 		return verifyRunningForVM(target, sock, *verboseFlag, *tccPathFlag)
 	}
 
 	return verifyStoppedForVM(target, *verboseFlag, *fixFlag)
+}
+
+func verifyDanglingSymlinks(w io.Writer, fix bool) (int, error) {
+	dangling := vmconfig.DanglingVMSymlinks()
+	if len(dangling) == 0 {
+		return 0, nil
+	}
+	if fix {
+		removed, err := vmconfig.RemoveDanglingVMSymlinks()
+		fmt.Fprintf(w, "Removed %d dangling VM symlink(s):\n", len(removed))
+		for _, sym := range removed {
+			fmt.Fprintf(w, "  - removed: %s\n", sym.Path)
+		}
+		if err != nil {
+			return len(removed), fmt.Errorf("remove dangling symlinks: %w", err)
+		}
+		fmt.Fprintln(w)
+		return len(removed), nil
+	}
+	fmt.Fprintf(w, "Dangling VM symlinks: %d dangling symlink(s) found in %s and %s\n", len(dangling), vmconfig.BaseDir(), vmconfig.BundleDir())
+	for _, sym := range dangling {
+		fmt.Fprintf(w, "  - %s -> %s (missing)\n", sym.Path, sym.Target)
+	}
+	fmt.Fprintln(w, "  run 'cove doctor --fix' to remove dangling symlinks")
+	fmt.Fprintln(w)
+	return len(dangling), nil
 }
 
 // reportHostTCCPreAuthState prints a concise summary of the host

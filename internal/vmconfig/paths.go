@@ -138,11 +138,11 @@ func EnsureDir(vmName, currentDir string) (string, error) {
 	return resolvePath(resolvedDir), nil
 }
 
-// danglingLink reports whether path is a symlink whose target does not exist,
+// DanglingLink reports whether path is a symlink whose target does not exist,
 // and returns the target it names. os.MkdirAll on such a path fails with
 // EEXIST ("file exists") because the link itself is present while Stat fails,
 // which reads as a confusing error unless the caller names the real cause.
-func danglingLink(path string) (string, bool) {
+func DanglingLink(path string) (string, bool) {
 	info, err := os.Lstat(path)
 	if err != nil || info.Mode()&os.ModeSymlink == 0 {
 		return "", false
@@ -155,6 +155,61 @@ func danglingLink(path string) (string, bool) {
 		return "", true
 	}
 	return target, true
+}
+
+func danglingLink(path string) (string, bool) {
+	return DanglingLink(path)
+}
+
+// DanglingSymlink represents a symlink whose target does not exist.
+type DanglingSymlink struct {
+	Path   string
+	Target string
+}
+
+// DanglingSymlinks returns all dangling symlinks found directly under dirs.
+func DanglingSymlinks(dirs ...string) []DanglingSymlink {
+	var list []DanglingSymlink
+	for _, dir := range dirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			p := filepath.Join(dir, entry.Name())
+			if target, ok := DanglingLink(p); ok {
+				list = append(list, DanglingSymlink{
+					Path:   p,
+					Target: target,
+				})
+			}
+		}
+	}
+	return list
+}
+
+// DanglingVMSymlinks returns all dangling symlinks in BaseDir (~/.vz/vms)
+// and BundleDir (~/.vz/covevms).
+func DanglingVMSymlinks() []DanglingSymlink {
+	return DanglingSymlinks(BaseDir(), BundleDir())
+}
+
+// RemoveDanglingVMSymlinks removes all dangling symlinks in BaseDir (~/.vz/vms)
+// and BundleDir (~/.vz/covevms).
+func RemoveDanglingVMSymlinks() ([]DanglingSymlink, error) {
+	dangling := DanglingVMSymlinks()
+	var removed []DanglingSymlink
+	var firstErr error
+	for _, sym := range dangling {
+		if err := os.Remove(sym.Path); err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("remove dangling symlink %s: %w", sym.Path, err)
+			}
+		} else {
+			removed = append(removed, sym)
+		}
+	}
+	return removed, firstErr
 }
 
 // IsSubdir reports whether path is below base.

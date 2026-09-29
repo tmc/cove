@@ -15,6 +15,7 @@ import (
 	"syscall"
 
 	"github.com/tmc/cove/internal/bytefmt"
+	"github.com/tmc/cove/internal/vmconfig"
 	"golang.org/x/sys/unix"
 )
 
@@ -75,6 +76,7 @@ Checks:
   stale-disk     stopped VM disks held open by orphaned VZ processes
   volume-shares  saved VM volumes referencing missing paths or duplicate tags
   xcode          Xcode Command Line Tools availability
+  dangling-symlinks dangling symlinks under ~/.vz/vms and ~/.vz/covevms
   qemu/*         QEMU Windows backend readiness, included when this host has a
                  QEMU-backed Windows VM or the invocation asks for one
 
@@ -95,6 +97,7 @@ func collectHostDoctorReport() hostDoctorReport {
 	checks = append(checks, hostDoctorStaleDiskCheck())
 	checks = append(checks, hostDoctorVolumeSharesCheck())
 	checks = append(checks, hostDoctorXcodeCheck())
+	checks = append(checks, hostDoctorDanglingSymlinksCheck())
 	// The QEMU/HVF Windows prerequisites are only interesting to a host that
 	// has a QEMU-backed Windows VM, or to an invocation that asked for one.
 	// Nobody else should pay for the qemu subprocess probes, and a Windows
@@ -273,4 +276,20 @@ func hostDoctorXcodeCheck() hostDoctorCheck {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+func hostDoctorDanglingSymlinksCheck() hostDoctorCheck {
+	dangling := vmconfig.DanglingVMSymlinks()
+	if len(dangling) > 0 {
+		return hostDoctorCheck{
+			Name:    "dangling-symlinks",
+			Status:  "warn",
+			Message: fmt.Sprintf("found %d dangling symlink(s) in %s and %s; clean up with: cove doctor --fix", len(dangling), vmconfig.BaseDir(), vmconfig.BundleDir()),
+		}
+	}
+	return hostDoctorCheck{
+		Name:    "dangling-symlinks",
+		Status:  "pass",
+		Message: "no dangling symlinks in vms/ or covevms/",
+	}
 }

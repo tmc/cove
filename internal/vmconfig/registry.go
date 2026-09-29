@@ -76,6 +76,29 @@ func ActiveName() string {
 	return NameForPath(target)
 }
 
+// StaleActiveLink reports whether the active VM symlink (~/.vz/current) is stale
+// because it points to a nonexistent directory or bundle.
+func StaleActiveLink() (name, target string, stale bool) {
+	linkPath := CurrentLink()
+	info, err := os.Lstat(linkPath)
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		return "", "", false
+	}
+	target, err = os.Readlink(linkPath)
+	if err != nil {
+		return "", "", false
+	}
+	targetPath := target
+	if !filepath.IsAbs(targetPath) {
+		targetPath = filepath.Join(filepath.Dir(linkPath), targetPath)
+	}
+	statInfo, err := os.Stat(targetPath)
+	if err != nil || !statInfo.IsDir() || !Validate(targetPath) {
+		return NameForPath(target), target, true
+	}
+	return "", "", false
+}
+
 // SetActive sets the active VM symlink.
 func SetActive(name string) error {
 	vmPath := Path(name)
