@@ -17,7 +17,7 @@ Order is roughly by user impact:
 - 09-cp-rough-edges.md                OPEN
 - 10-gui-errors-stdout-only.md        FIXED b639a8c0
 - 11-menu-shortcuts-steal-keys.md     FIXED 55f9c07e
-- 12-window-close-semantics.md        UNVERIFIED
+- 12-window-close-semantics.md        FIXED c4eb5472
 - 13-menu-state-validation.md         FIXED 40667e30
 - 14-vm-flag-inconsistency.md         FIXED 6b654380
 - 15-stale-active-vm.md               FIXED 9a79f9ef
