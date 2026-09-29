@@ -1,0 +1,4 @@
+commit 593f832d on 2026-09-10
+tool=Claude Code  model=claude-opus-4-8  tty=not a tty
+n/a  pid=57868  ITERM_SESSION_ID=w0t3p0:7EB19DC7-4953-4B33-9896-95FFA4930548
+vet-clean fix for private_api_diagnostics_test.go (unsafeptr); go vet ./... now exit 0. Local only, not pushed.

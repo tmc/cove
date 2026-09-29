@@ -1,0 +1,8 @@
+authored via Claude Code
+version: 2.1.268 (Claude Code)
+model: claude-opus-4-8
+tty: not a tty
+pid: 46223
+iterm_session: w0t3p0:7EB19DC7-4953-4B33-9896-95FFA4930548
+date: 2026-09-10T21:56:01Z
+note: amended to add -vm-dir/-token flags for zero-touch cove-02 connect

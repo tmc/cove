@@ -1,0 +1,2 @@
+commit 685c0934 on 2026-09-11 tool=Antigravity conversation=a5b84e55-eb66-4678-bf0d-fdd2b936b00e
+Slice 2: Windows-on-Apple-VZ unattended install automation (cove up/install -windows-backend vz). Tested live on cove-02: 78.5s WinPE apply, OOBE completed, screen.exe auto-started, 828+ frames streamed to vz-display at 1920x1200. Local only, not pushed.

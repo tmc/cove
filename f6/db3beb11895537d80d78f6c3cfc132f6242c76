@@ -1,0 +1,2 @@
+commit f6db3beb on 2026-09-11 tool=Antigravity conversation=a5b84e55-eb66-4678-bf0d-fdd2b936b00e
+Slice 3: Windows-on-Apple-VZ display transport & blank screen fix. Implemented COVERECT dirty-rect binary protocol, GDI 64x64 uint64 dirty-tile diffing in cmd/cove-screen, dual host loopback/NAT gateway listeners, SetThreadExecutionState sleep prevention, and 60 Hz event loop. Tested live on cove-02: 30-40 fps active, zero idle bandwidth, desktop active and streaming. Local only, not pushed.

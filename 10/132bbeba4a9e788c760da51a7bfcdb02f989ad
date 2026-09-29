@@ -1,0 +1,2 @@
+commit 10132bbe on 2026-09-10  tool=Claude Code model=claude-opus-4-8 pid=59902 ITERM_SESSION_ID=w0t3p0:7EB19DC7-4953-4B33-9896-95FFA4930548
+Add requirePrivateVirtualization guard to TestPrivateAPI_CrashContextMessage for parity with NameGetSet. Local only, not pushed.
