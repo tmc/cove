@@ -193,7 +193,7 @@ func TestHandleDiskSnapshotRestoreSystemFlag(t *testing.T) {
 	// -system selects DiskSnapshotSystem; restore reaches mgr.Restore which
 	// returns an error because there is no live disk to clobber. We only
 	// care that the arg branch executed without a parse-time failure.
-	err := handleDiskSnapshotRestore(mgr, []string{"snap1", "-system"})
+	err := handleDiskSnapshotRestore(mgr, []string{"snap1", "-system", "-y"})
 	if err == nil {
 		t.Skip("Restore unexpectedly succeeded with no live disk; skipping branch check")
 	}

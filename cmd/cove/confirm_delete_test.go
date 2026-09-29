@@ -152,6 +152,7 @@ func TestDeleteNonInteractiveE2E(t *testing.T) {
 		{"vm delete without yes", []string{"vm", "delete", "demo-vm"}},
 		{"snapshot delete without yes", []string{"snapshot", "delete", "snap1"}},
 		{"disk-snapshot delete without yes", []string{"disk-snapshot", "delete", "snap1"}},
+		{"disk-snapshot restore without yes", []string{"disk-snapshot", "restore", "snap1"}},
 		{"pit delete without yes", []string{"pit", "delete", "snap1"}},
 		{"clean without yes", []string{"clean"}},
 	}

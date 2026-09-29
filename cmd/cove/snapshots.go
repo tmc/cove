@@ -168,6 +168,9 @@ func (m *DiskSnapshotManager) Save(name string, target DiskSnapshotTarget, descr
 // (Model A — Persistent fork) for the full model; ForkVMDisk in fork.go
 // is the underlying single-file primitive.
 func (m *DiskSnapshotManager) Restore(name string, target DiskSnapshotTarget) error {
+	if isVMRunningAt(m.vmDir) {
+		return fmt.Errorf("vm must be stopped before restoring a disk snapshot")
+	}
 	if err := validateSnapshotName(name); err != nil {
 		return err
 	}
@@ -186,11 +189,14 @@ func (m *DiskSnapshotManager) Restore(name string, target DiskSnapshotTarget) er
 		dstPath := filepath.Join(m.vmDir, "disk.img")
 		if _, err := os.Stat(srcPath); err == nil {
 			fmt.Printf("  Restoring system disk...\n")
-			if err := os.Remove(dstPath); err != nil && !os.IsNotExist(err) {
-				return fmt.Errorf("remove existing system disk: %w", err)
-			}
-			if err := m.cloneFileWithFallback(srcPath, dstPath); err != nil {
+			tmpPath := filepath.Join(m.vmDir, fmt.Sprintf("disk.img.restore.%d", time.Now().UnixNano()))
+			if err := m.cloneFileWithFallback(srcPath, tmpPath); err != nil {
+				os.Remove(tmpPath)
 				return fmt.Errorf("restore system disk: %w", err)
+			}
+			if err := os.Rename(tmpPath, dstPath); err != nil {
+				os.Remove(tmpPath)
+				return fmt.Errorf("replace system disk: %w", err)
 			}
 		} else if info.Target&DiskSnapshotSystem != 0 {
 			return fmt.Errorf("snapshot claims to have system disk but file not found")
@@ -451,8 +457,8 @@ Commands:
   run <name> [-ram]
       Boot a disposable clone from the snapshot and discard changes on exit
 
-  restore <name> [-system]
-      Fork the live disk from a snapshot (CoW clone; snapshot is preserved)
+  restore [-y|--yes] <name> [-system]
+      Restore the live disk from snapshot, replacing current disk state (CoW clone; snapshot is preserved)
 
   list
       List all disk snapshots
@@ -483,9 +489,9 @@ Save an APFS copy-on-write disk snapshot for the selected VM.`)
 }
 
 func printDiskSnapshotRestoreUsage() {
-	fmt.Println(`Usage: cove disk-snapshot restore <name> [-system]
+	fmt.Println(`Usage: cove disk-snapshot restore [-y|--yes] <name> [-system]
 
-Restore the live disk from a disk snapshot while preserving the snapshot.`)
+Restore the live disk from a disk snapshot, replacing current disk state while preserving the snapshot.`)
 }
 
 func printDiskSnapshotListUsage() {
@@ -529,17 +535,49 @@ func handleDiskSnapshotSave(mgr *DiskSnapshotManager, args []string) error {
 }
 
 func handleDiskSnapshotRestore(mgr *DiskSnapshotManager, args []string) error {
-	if len(args) == 0 {
+	var (
+		name   string
+		target = DiskSnapshotBoth
+		yes    bool
+	)
+
+	for _, arg := range args {
+		if isHelpArg(arg) {
+			printDiskSnapshotRestoreUsage()
+			return nil
+		}
+		switch arg {
+		case "-system", "--system":
+			target = DiskSnapshotSystem
+		case "-y", "-yes", "--yes":
+			yes = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return fmt.Errorf("unknown disk-snapshot restore option: %s", arg)
+			}
+			if name == "" {
+				name = arg
+			} else {
+				return fmt.Errorf("unknown disk-snapshot restore option: %s", arg)
+			}
+		}
+	}
+
+	if name == "" {
 		return fmt.Errorf("snapshot name required")
 	}
 
-	name := args[0]
-	target := DiskSnapshotBoth
+	if isVMRunningAt(mgr.vmDir) {
+		return fmt.Errorf("vm must be stopped before restoring a disk snapshot")
+	}
 
-	for i := 1; i < len(args); i++ {
-		switch args[i] {
-		case "-system":
-			target = DiskSnapshotSystem
+	if !yes {
+		ok, err := confirmDeletef("Restore disk snapshot %q? Current live disk state will be replaced. [y/N] ", name)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return nil
 		}
 	}
 
