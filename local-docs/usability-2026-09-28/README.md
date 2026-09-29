@@ -14,7 +14,7 @@ Order is roughly by user impact:
 - 06-delete-autoconfirm-no-tty.md     FIXED 3e915b28
 - 07-drag-and-drop.md                 OPEN (feature)
 - 08-cp-runs-as-root.md               FIXED 941306a0
-- 09-cp-rough-edges.md                OPEN
+- 09-cp-rough-edges.md                FIXED 22503af1
 - 10-gui-errors-stdout-only.md        FIXED b639a8c0
 - 11-menu-shortcuts-steal-keys.md     FIXED 55f9c07e
 - 12-window-close-semantics.md        FIXED c4eb5472
