@@ -4,10 +4,13 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -225,15 +228,29 @@ func TestIsClientDisconnectError(t *testing.T) {
 		want bool
 	}{
 		{"nil", nil, false},
+		{"epipe", syscall.EPIPE, true},
+		{"econnreset", syscall.ECONNRESET, true},
+		{"econnaborted", syscall.ECONNABORTED, true},
+		{"enotconn", syscall.ENOTCONN, true},
+		{"eshutdown", syscall.ESHUTDOWN, true},
+		{"closed net", net.ErrClosed, true},
+		{"eof", io.EOF, true},
+		{"unexpected eof", io.ErrUnexpectedEOF, true},
+		{"closed pipe", io.ErrClosedPipe, true},
+		{"wrapped broken pipe", fmt.Errorf("write unix ->: %w", syscall.EPIPE), true},
 		{"broken pipe text", errors.New("write unix: write: broken pipe"), true},
 		{"connection reset text", errors.New("read: connection reset by peer"), true},
-		{"closed net", net.ErrClosed, true},
+		{"connection abort text", errors.New("connection aborted by server"), true},
+		{"not connected text", errors.New("socket is not connected"), true},
 		{"other error", errors.New("permission denied"), false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := isClientDisconnectError(tt.err); got != tt.want {
 				t.Fatalf("isClientDisconnectError(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+			if got := IsClientDisconnectError(tt.err); got != tt.want {
+				t.Fatalf("IsClientDisconnectError(%v) = %v, want %v", tt.err, got, tt.want)
 			}
 		})
 	}

@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net"
 	"os"
 	"os/exec"
@@ -115,6 +116,22 @@ func (s *ControlServer) LaunchAgentArtifact() (string, string) {
 	return agentLaunchAgentLabel, agentLaunchAgentPlist
 }
 
+func (s *ControlServer) shouldLogVersionMismatch(key string) bool {
+	if s == nil {
+		return true
+	}
+	s.versionWarnMu.Lock()
+	defer s.versionWarnMu.Unlock()
+	if s.warnedVersions == nil {
+		s.warnedVersions = make(map[string]bool)
+	}
+	if s.warnedVersions[key] {
+		return false
+	}
+	s.warnedVersions[key] = true
+	return true
+}
+
 // MaybeAutoUpgradeAgent compares the guest agent version with the
 // host version and triggers an in-place upgrade in a goroutine when
 // the policy allows. Returns true when an upgrade was kicked off.
@@ -134,10 +151,16 @@ func (s *ControlServer) MaybeAutoUpgradeAgent(agentVer string, onUpgraded func()
 		// fall through to upgrade path
 	}
 
-	log.Printf("agent-health: version mismatch: host=%s guest=%s", hostVer, agentVer)
+	key := hostVer + ":" + agentVer
+	firstWarning := s.shouldLogVersionMismatch(key)
+	if firstWarning {
+		log.Printf("agent-health: version mismatch: host=%s guest=%s", hostVer, agentVer)
+	}
 
 	if !sandboxAllowsAgentUpgrade() {
-		log.Printf("agent-health: run 'cove agent-upgrade' to update, or use -auto-upgrade-agent")
+		if firstWarning {
+			log.Printf("agent-health: run 'cove agent-upgrade' to update, or use -auto-upgrade-agent")
+		}
 		return false
 	}
 
@@ -199,7 +222,7 @@ func (s *ControlServer) handleAgentCommand(req *controlpb.ControlRequest) (resp 
 			return &controlpb.ControlResponse{Error: "missing agent-exec command payload"}, true
 		}
 		if req.Type == "agent-exec-auto" && agentstate.RouteForExec(cmd.Args, linuxMode) == agentstate.RouteUser {
-			log.Printf("agent-route: exec %v -> user agent", cmd.Args)
+			slog.Debug(fmt.Sprintf("agent-route: exec %v -> user agent", cmd.Args))
 			return s.handleAgentUserExec(cmd), true
 		}
 		return s.handleAgentExec(cmd), true
@@ -458,7 +481,7 @@ func (s *ControlServer) handleAgentRead(cmd *controlpb.AgentFileReadCommand) *co
 	var data []byte
 	var err error
 	if agentstate.RouteFor("read", cmd.Path, linuxMode) == agentstate.RouteUser {
-		log.Printf("agent-route: read %s -> user agent (TCC path)", cmd.Path)
+		slog.Debug(fmt.Sprintf("agent-route: read %s -> user agent (TCC path)", cmd.Path))
 		data, err = s.userAgentReadFile(ctx, cmd.Path)
 	} else {
 		var a *agentstate.AgentClient
@@ -513,7 +536,7 @@ func (s *ControlServer) handleAgentWrite(cmd *controlpb.AgentFileWriteCommand) *
 	defer cancel()
 
 	if agentstate.RouteFor("write", cmd.Path, linuxMode) == agentstate.RouteUser {
-		log.Printf("agent-route: write %s -> user agent (TCC path)", cmd.Path)
+		slog.Debug(fmt.Sprintf("agent-route: write %s -> user agent (TCC path)", cmd.Path))
 		if err := s.userAgentWriteFile(ctx, cmd.Path, data, mode); err != nil {
 			return &controlpb.ControlResponse{Error: fmt.Sprintf("write: %v", err)}
 		}

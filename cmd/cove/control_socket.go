@@ -81,6 +81,9 @@ type ControlServer struct {
 
 	opsMu  sync.Mutex                    // guards opsReg lazy init
 	opsReg *operations.OperationRegistry // file-backed at <vmDir>/operations/, lazy
+
+	versionWarnMu  sync.Mutex
+	warnedVersions map[string]bool
 }
 
 // NewControlServerWithVMDir creates a new control server bound to a specific VM directory.

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"os"
@@ -242,15 +243,35 @@ func ServeConnection(conn net.Conn, h Handler) {
 	}
 }
 
-func isClientDisconnectError(err error) bool {
+// IsClientDisconnectError reports whether err indicates the peer disconnected
+// or closed the connection (e.g. broken pipe, connection reset, EOF).
+func IsClientDisconnectError(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, syscall.EPIPE) || errors.Is(err, syscall.ECONNRESET) || errors.Is(err, net.ErrClosed) {
+	if errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, syscall.ECONNABORTED) ||
+		errors.Is(err, syscall.ENOTCONN) ||
+		errors.Is(err, syscall.ESHUTDOWN) ||
+		errors.Is(err, net.ErrClosed) ||
+		errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, io.ErrClosedPipe) {
 		return true
 	}
 	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "broken pipe") || strings.Contains(msg, "connection reset")
+	return strings.Contains(msg, "broken pipe") ||
+		strings.Contains(msg, "connection reset") ||
+		strings.Contains(msg, "connection aborted") ||
+		strings.Contains(msg, "use of closed network connection") ||
+		strings.Contains(msg, "closed pipe") ||
+		strings.Contains(msg, "not connected") ||
+		strings.Contains(msg, "eof")
+}
+
+func isClientDisconnectError(err error) bool {
+	return IsClientDisconnectError(err)
 }
 
 func WriteResponse(conn net.Conn, resp *controlpb.ControlResponse) error {
