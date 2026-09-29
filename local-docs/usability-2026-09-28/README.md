@@ -13,7 +13,7 @@ Order is roughly by user impact:
 - 05-disk-snapshot-restore.md         FIXED 89079359
 - 06-delete-autoconfirm-no-tty.md     FIXED 3e915b28
 - 07-drag-and-drop.md                 OPEN (feature)
-- 08-cp-runs-as-root.md               OPEN (blocks 07)
+- 08-cp-runs-as-root.md               FIXED 941306a0
 - 09-cp-rough-edges.md                OPEN
 - 10-gui-errors-stdout-only.md        FIXED b639a8c0
 - 11-menu-shortcuts-steal-keys.md     FIXED 55f9c07e
