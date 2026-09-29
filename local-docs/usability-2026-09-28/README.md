@@ -22,5 +22,5 @@ Order is roughly by user impact:
 - 14-vm-flag-inconsistency.md         FIXED 6b654380
 - 15-stale-active-vm.md               FIXED 9a79f9ef
 - 16-log-spam.md                      FIXED 40f5316e
-- 17-clipboard.md                     UNVERIFIED
+- 17-clipboard.md                     FIXED 09c643d1
 - 18-help-and-misc-cli.md             FIXED
