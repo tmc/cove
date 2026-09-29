@@ -184,6 +184,7 @@ func newVerifyFlagSet() (*flag.FlagSet, *bool, *bool, *string, *string) {
 	fixFlag := fs.Bool("fix", false, "Attempt to fix issues automatically")
 	tccPathFlag := fs.String("tcc-path", "", "Guest path to use for Full Disk Access probe (default: first non-system /Volumes mount)")
 	vmFlag := fs.String("vm", "", "VM name")
+	fs.BoolVar(&enableClipboard, "clipboard", enableClipboard, "Check guest tools for clipboard sharing")
 	fs.Usage = func() {
 		printVerifyUsage(fs.Output(), fs)
 	}
@@ -339,7 +340,7 @@ type verifyRunningGuestProbe struct {
 func verifyRunningGuestProbes(platform string) []verifyRunningGuestProbe {
 	switch platform {
 	case agentstate.PlatformLinux:
-		return []verifyRunningGuestProbe{
+		probes := []verifyRunningGuestProbe{
 			{
 				desc:    "Agent binary",
 				args:    []string{"test", "-f", "/usr/local/bin/vz-agent"},
@@ -381,8 +382,21 @@ func verifyRunningGuestProbes(platform string) []verifyRunningGuestProbe {
 				missing: "not running",
 			},
 		}
+		if enableClipboard {
+			probes = append(probes, verifyRunningGuestProbe{
+				desc: "Guest tools (clipboard)",
+				args: []string{"sh", "-lc", strings.Join([]string{
+					"command -v spice-vdagent",
+					"test -f /usr/bin/spice-vdagent",
+					"test -f /usr/local/bin/spice-vdagent",
+				}, " || ")},
+				ok:      "spice-vdagent present",
+				missing: "not found; clipboard sharing requires spice-vdagent (run 'cove provision -guest-tools')",
+			})
+		}
+		return probes
 	default:
-		return []verifyRunningGuestProbe{
+		probes := []verifyRunningGuestProbe{
 			{
 				desc:    "Agent binary",
 				args:    []string{"test", "-f", "/usr/local/bin/vz-agent"},
@@ -414,6 +428,19 @@ func verifyRunningGuestProbes(platform string) []verifyRunningGuestProbe {
 				missing: "not running",
 			},
 		}
+		if enableClipboard {
+			probes = append(probes, verifyRunningGuestProbe{
+				desc: "Guest tools (clipboard)",
+				args: []string{"sh", "-lc", strings.Join([]string{
+					"command -v spice-vdagent",
+					"test -f /Library/LaunchDaemons/com.utmapp.spice-vdagentd.plist",
+					"test -f /usr/local/bin/spice-vdagent",
+				}, " || ")},
+				ok:      "spice-vdagent present",
+				missing: "not found; clipboard sharing requires spice-vdagent (run 'cove provision -guest-tools')",
+			})
+		}
+		return probes
 	}
 }
 
@@ -457,7 +484,7 @@ func verifyStoppedForVM(target vmSelection, verbose, fix bool) error {
 	fmt.Println("=== Verifying Provisioning Files (Disk) ===")
 	fmt.Printf("VM: %s\n\n", target.Directory)
 
-	mountPoint, device, dataPartition, err := attachAndMountDataVolume(diskPath)
+	mountPoint, device, dataPartition, err := attachAndMountDataVolumeHook(diskPath)
 	if err != nil {
 		return fmt.Errorf("mount data volume: %w", err)
 	}
@@ -489,6 +516,8 @@ func verifyStoppedForVM(target vmSelection, verbose, fix bool) error {
 		{"private/var/db/.vz-provisioned", "any", false, "Provisioning completed marker"},
 		{"private/var/db/vz-guest-tools.pkg", "root:wheel", false, "SPICE guest tools package (pending install)"},
 		{"private/var/db/.vz-guest-tools-installed", "any", false, "SPICE guest tools installed marker"},
+		{"Library/LaunchDaemons/com.utmapp.spice-vdagentd.plist", "root:wheel", false, "SPICE guest tools LaunchDaemon"},
+		{"usr/local/bin/spice-vdagent", "root:wheel", false, "SPICE guest tools binary (spice-vdagent)"},
 		{"usr/local/bin/vz-agent", "root:wheel", false, "Guest agent binary (vz-agent)"},
 		{"Library/LaunchDaemons/com.tmc.cove.vz-agent.plist", "root:wheel", false, "Guest agent LaunchDaemon"},
 	}
@@ -571,6 +600,11 @@ func verifyStoppedForVM(target vmSelection, verbose, fix bool) error {
 		agentMissing = true
 	}
 
+	guestToolsMissing := false
+	if enableClipboard && !guestToolsInstalledOnDisk(mountPoint) {
+		guestToolsMissing = true
+	}
+
 	// Collect paths needing ownership fix.
 	var badOwnerPaths []string
 	for _, r := range results {
@@ -580,10 +614,18 @@ func verifyStoppedForVM(target vmSelection, verbose, fix bool) error {
 	}
 
 	reportProxyRecoveryState(os.Stdout, target.Directory, &allOK)
+	if enableClipboard {
+		fmt.Println()
+		if guestToolsMissing {
+			fmt.Println("  - Guest tools (clipboard): not found; clipboard sharing requires spice-vdagent (run 'cove provision -guest-tools')")
+		} else {
+			fmt.Println("  + Guest tools (clipboard): spice-vdagent present")
+		}
+	}
 	fmt.Println()
 	if criticalFail {
 		fmt.Println("VERIFICATION FAILED: Critical files missing or have wrong ownership")
-	} else if !allOK || agentMissing {
+	} else if !allOK || agentMissing || guestToolsMissing {
 		fmt.Println("VERIFICATION WARNING: Issues found")
 	} else {
 		fmt.Println("VERIFICATION PASSED: All files present with correct ownership")
@@ -670,4 +712,19 @@ func reportProxyRecoveryState(w io.Writer, vmDirectory string, allOK *bool) {
 	if allOK != nil {
 		*allOK = false
 	}
+}
+
+func guestToolsInstalledOnDisk(mountPoint string) bool {
+	paths := []string{
+		filepath.Join(mountPoint, "private", "var", "db", "vz-guest-tools.pkg"),
+		filepath.Join(mountPoint, "private", "var", "db", ".vz-guest-tools-installed"),
+		filepath.Join(mountPoint, "Library", "LaunchDaemons", "com.utmapp.spice-vdagentd.plist"),
+		filepath.Join(mountPoint, "usr", "local", "bin", "spice-vdagent"),
+	}
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
+	return false
 }
