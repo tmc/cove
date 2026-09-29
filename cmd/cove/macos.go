@@ -2246,10 +2246,19 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 	// Setup cleanup on window close / app quit — suspend if possible
 	var statusItem *VMStatusItemController
 	var appLoopStop atomic.Bool
+	var (
+		cleanupOnce          sync.Once
+		cleanupDone          atomic.Bool
+		forceStop            atomic.Bool
+		terminating          atomic.Bool
+		shouldTerminateReply atomic.Bool
+		alertSheetActive     atomic.Bool
+	)
 	cleanup := func() {
+		defer cleanupDone.Store(true)
 		close(monitorDone)
 		stopControlRuntimeInfrastructure(controlServer)
-		if canSuspendVM(vm, queue) {
+		if !forceStop.Load() && canSuspendVM(vm, queue) {
 			fmt.Println("\nSuspending VM...")
 			if err := suspendVM(vm, queue, rc, hc); err != nil {
 				fmt.Printf("Suspend failed: %v, stopping VM...\n", err)
@@ -2258,6 +2267,9 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 				fmt.Println("VM suspended (will resume on next launch)")
 			}
 		} else {
+			if forceStop.Load() {
+				discardSuspendStateForVM(hc.VMDir)
+			}
 			state, _ := currentVMState(vm, queue)
 			if state == vz.VZVirtualMachineStateRunning || state == vz.VZVirtualMachineStatePaused {
 				if mode := currentBootSessionMode(); mode != bootSessionModeNormal {
@@ -2272,7 +2284,6 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 		closeSerialOutputFile()
 		noteVMRuntimeState(target.Directory, "stopped")
 	}
-	var cleanupOnce sync.Once
 	doCleanup := func() { cleanupOnce.Do(cleanup) }
 	quitRuntime := func() {
 		appLoopStop.Store(true)
@@ -2282,38 +2293,98 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 		saveWindowDisplayPlacement(window, frameAutosaveName)
 		window.SaveFrameUsingName(frameAutosaveName)
 		doCleanup()
+		postDummyEvent(app)
 	}
 	statusItem = NewVMStatusItemController(app, vm, queue, controlServer, window, guiController, vmToolbar, quitRuntime, rc, hc)
 
-	// Close-window should behave like app quit: clean up VM lifecycle and stop the app.
+	closeController := &windowCloseController{
+		vmState: func() (vz.VZVirtualMachineState, error) {
+			return currentVMState(vm, queue)
+		},
+		canSuspend: func() bool {
+			return canSuspendVM(vm, queue)
+		},
+		showAlert: func(canSuspend bool, onChoice func(windowCloseAction)) {
+			if alertSheetActive.Swap(true) {
+				return
+			}
+			alert := newWindowCloseAlert(canSuspend)
+			alert.BeginSheetModalForWindowCompletionHandler(window, func(response appkit.NSModalResponse) {
+				alertSheetActive.Store(false)
+				onChoice(windowCloseActionForResponse(response, canSuspend))
+			})
+		},
+		hideWindow: func() {
+			if guiController != nil {
+				_ = guiController.hideOnMain()
+			} else {
+				window.OrderOut(nil)
+			}
+		},
+		closeWindow: func() {
+			window.Close()
+		},
+		terminateApp: func() {
+			app.Terminate(nil)
+		},
+		doCleanup:   doCleanup,
+		quitRuntime: quitRuntime,
+		cleanupDone: cleanupDone.Load,
+		terminating: terminating.Load,
+		setTerminating: func() {
+			terminating.Store(true)
+		},
+		setForceStop: func() {
+			forceStop.Store(true)
+		},
+		replyTerminate: func() {
+			if shouldTerminateReply.Load() {
+				app.ReplyToApplicationShouldTerminate(true)
+			}
+		},
+	}
+
 	windowDelegate := appkit.NewNSWindowDelegate(appkit.NSWindowDelegateConfig{
 		ShouldClose: func(_ appkit.NSWindow) bool {
-			stateUpdate.mu.Lock()
-			stateUpdate.signalCleanup = true
-			stateUpdate.mu.Unlock()
-			quitRuntime()
-			return true
+			return closeController.ShouldClose()
 		},
 	})
 	window.SetDelegate(windowDelegate)
 
-	// Register an NSApplicationDelegate so that Cmd+Q and "Quit" in the
-	// status item menu trigger a clean suspend instead of a hard kill.
-	// ShouldTerminate runs cleanup, then cancels NSApp's terminate: flow
-	// so we control the exit through the shared AppKit event pump.
+	termCoordinator := &appTerminationCoordinator{
+		cleanupDone:          &cleanupDone,
+		terminating:          &terminating,
+		shouldTerminateReply: &shouldTerminateReply,
+		beforeCleanup: func() {
+			stateUpdate.mu.Lock()
+			stateUpdate.signalCleanup = true
+			stateUpdate.mu.Unlock()
+			saveWindowDisplayPlacement(window, frameAutosaveName)
+			window.SaveFrameUsingName(frameAutosaveName)
+		},
+		doCleanup: doCleanup,
+		replyTerminate: func() {
+			app.ReplyToApplicationShouldTerminate(true)
+		},
+		stopLoop: func() {
+			appLoopStop.Store(true)
+			postDummyEvent(app)
+		},
+	}
+
 	delegate := appkit.NewNSApplicationDelegate(appkit.NSApplicationDelegateConfig{
 		ShouldTerminate: func(_ appkit.NSApplication) appkit.NSApplicationTerminateReply {
-			quitRuntime()
-			return appkit.NSTerminateCancel
+			return termCoordinator.ShouldTerminate()
 		},
 	})
 	app.SetDelegate(delegate)
 	setupSignalHandler(func() {
-		appLoopStop.Store(true)
 		stateUpdate.mu.Lock()
 		stateUpdate.signalCleanup = true
 		stateUpdate.mu.Unlock()
 		doCleanup()
+		appLoopStop.Store(true)
+		postDummyEvent(app)
 	})
 
 	// A long-lived NSApplication.Run() traps on macOS 26 for this bare-binary
