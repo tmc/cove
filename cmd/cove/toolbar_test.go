@@ -12,10 +12,11 @@ func TestIsModalResponseOK(t *testing.T) {
 		in   appkit.NSModalResponse
 		want bool
 	}{
-		{"ok", modalResponseOKCode, true},
+		{"ok", 1, true},
 		{"cancel", 0, false},
-		{"abort", -1000, false},
-		{"alt", 1001, false},
+		{"stop", -1000, false},
+		{"abort", -1001, false},
+		{"alert-first-button", 1000, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

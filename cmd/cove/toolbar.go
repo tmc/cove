@@ -38,7 +38,7 @@ const SharedFoldersVirtioFSTag = "_shared-folders"
 
 // modalResponseOKCode is NSModalResponseOK from AppKit.
 // Use the numeric value to stay compatible across apple binding revisions.
-const modalResponseOKCode = 1000
+const modalResponseOKCode = 1
 
 var toolbarDelegateSerial uint64
 
