@@ -30,6 +30,7 @@ func TestAgentRouteFor(t *testing.T) {
 		{name: "write /Volumes virtiofs routes to user", op: "write", path: "/Volumes/share/x.txt", want: RouteUser},
 		{name: "write Macintosh HD stays daemon", op: "write", path: "/Volumes/Macintosh HD/etc/hosts", want: RouteDaemon},
 		{name: "cp ~/Desktop routes to user", op: "cp", path: "/Users/me/Desktop/screenshot.png", want: RouteUser},
+		{name: "cp ~/Desktop tilde routes to user", op: "cp", path: "~/Desktop/screenshot.png", want: RouteUser},
 		{name: "cp empty path stays daemon", op: "cp", path: "", want: RouteDaemon},
 		{name: "linux guest forces daemon for user-exec", op: "user-exec", linuxGuest: true, want: RouteDaemon},
 		{name: "linux guest forces daemon for /Users TCC", op: "read", path: "/Users/me/Documents/x", linuxGuest: true, want: RouteDaemon},
@@ -156,6 +157,11 @@ func TestIsUserPath(t *testing.T) {
 		{"/Volumes/My Shared Files/ml-explore/file.txt", true},
 		{"/Volumes/Macintosh HD/etc/hosts", false},
 		{"/Volumes/Macintosh HD - Data/Users/me", false},
+		{"~/Documents/file.txt", true},
+		{"~/Library/Preferences/x.plist", true},
+		{"~/Desktop/screenshot.png", true},
+		{"~/Downloads", true},
+		{"~/.ssh/known_hosts", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {

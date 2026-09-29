@@ -314,6 +314,14 @@ func (b *AgentBridge) consoleUserLocked() (string, int, error) {
 // ConsoleUser returns the active console user, connecting the daemon
 // agent if needed.
 func (b *AgentBridge) ConsoleUser() (string, int, error) {
+	state, err := b.currentVMState()
+	if err != nil {
+		return "", 0, err
+	}
+	if err := AgentUnavailableForVMState(state); err != nil {
+		return "", 0, err
+	}
+
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -358,6 +366,9 @@ func (b *AgentBridge) connectAgentLocked() error {
 	client, err := agentstate.NewAgentClientWithDial(func(ctx context.Context) (net.Conn, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
+		}
+		if b.host == nil {
+			return nil, fmt.Errorf("vm not configured")
 		}
 		conn, err := b.host.DialAgent(ctx, agentstate.DaemonPort)
 		if err != nil {

@@ -277,16 +277,20 @@ func IsUserPath(p string) bool {
 		rest := strings.TrimPrefix(p, "/Volumes/")
 		return !strings.HasPrefix(rest, "Macintosh HD")
 	}
-	if !strings.HasPrefix(p, "/Users/") {
+	var tail string
+	if strings.HasPrefix(p, "/Users/") {
+		// Strip /Users/<name>/ to inspect the user-relative tail.
+		rest := strings.TrimPrefix(p, "/Users/")
+		slash := strings.IndexByte(rest, '/')
+		if slash < 0 {
+			return false
+		}
+		tail = rest[slash+1:]
+	} else if strings.HasPrefix(p, "~/") {
+		tail = strings.TrimPrefix(p, "~/")
+	} else {
 		return false
 	}
-	// Strip /Users/<name>/ to inspect the user-relative tail.
-	rest := strings.TrimPrefix(p, "/Users/")
-	slash := strings.IndexByte(rest, '/')
-	if slash < 0 {
-		return false
-	}
-	tail := rest[slash+1:]
 	for _, dir := range tccProtectedHomeDirs {
 		if tail == dir || strings.HasPrefix(tail, dir+"/") {
 			return true

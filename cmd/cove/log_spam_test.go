@@ -7,6 +7,8 @@ import (
 	"log"
 	"log/slog"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -74,6 +76,11 @@ func TestAgentRouteLogsAtDebug(t *testing.T) {
 
 	cs := &ControlServer{}
 
+	dummyFile := filepath.Join(t.TempDir(), "dummy")
+	if err := os.WriteFile(dummyFile, []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
 	tests := []struct {
 		name    string
 		req     *controlpb.ControlRequest
@@ -115,6 +122,20 @@ func TestAgentRouteLogsAtDebug(t *testing.T) {
 				},
 			},
 			wantMsg: "agent-route: write",
+		},
+		{
+			name: "cp tcc route",
+			req: &controlpb.ControlRequest{
+				Type: "agent-cp",
+				Command: &controlpb.ControlRequest_AgentCp{
+					AgentCp: &controlpb.AgentCopyCommand{
+						HostPath:  dummyFile,
+						GuestPath: "/Users/test/Documents/file.txt",
+						ToGuest:   true,
+					},
+				},
+			},
+			wantMsg: "agent-route: cp",
 		},
 	}
 
