@@ -15,7 +15,7 @@ Order is roughly by user impact:
 - 07-drag-and-drop.md                 OPEN (feature)
 - 08-cp-runs-as-root.md               OPEN (blocks 07)
 - 09-cp-rough-edges.md                OPEN
-- 10-gui-errors-stdout-only.md        OPEN
+- 10-gui-errors-stdout-only.md        FIXED b639a8c0
 - 11-menu-shortcuts-steal-keys.md     FIXED 55f9c07e
 - 12-window-close-semantics.md        UNVERIFIED
 - 13-menu-state-validation.md         FIXED 40667e30
