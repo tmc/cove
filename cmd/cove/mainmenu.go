@@ -10,7 +10,16 @@ import (
 // The toolbar delegate is used as the target for VM-specific actions.
 func setupMainMenu(toolbarDelegate objc.ID) {
 	app := getSharedApp()
+	mainMenu, windowMenu := buildMainMenu(toolbarDelegate)
 
+	// Set the window menu so macOS tracks windows automatically
+	objc.Send[objc.ID](app.ID, objc.Sel("setWindowsMenu:"), windowMenu.ID)
+
+	// Set the main menu
+	objc.Send[objc.ID](app.ID, objc.Sel("setMainMenu:"), mainMenu.ID)
+}
+
+func buildMainMenu(toolbarDelegate objc.ID) (appkit.NSMenu, appkit.NSMenu) {
 	mainMenu := appkit.NewMenuWithTitle("")
 
 	// App menu (macOS auto-populates the name from the process)
@@ -37,10 +46,13 @@ func setupMainMenu(toolbarDelegate objc.ID) {
 	mainMenu.AddItem(&editMenuItem)
 
 	// VM menu (uses toolbar delegate as target)
+	// VM shortcuts use Ctrl-Cmd modifier flags so guest OS shortcuts
+	// (Cmd-S save, Cmd-R reload, Cmd-P print) are not intercepted by the host.
+	ctrlCmd := appkit.NSEventModifierFlagCommand | appkit.NSEventModifierFlagControl
 	vmMenu := appkit.NewMenuWithTitle("VM")
-	addMainMenuItem(vmMenu, "Stop", "stopVM:", ".", toolbarDelegate)
-	addMainMenuItem(vmMenu, "Pause", "startPauseVM:", "p", toolbarDelegate)
-	addMainMenuItem(vmMenu, "Restart", "restartVM:", "r", toolbarDelegate)
+	addMainMenuItemWithModifiers(vmMenu, "Stop", "stopVM:", ".", toolbarDelegate, ctrlCmd)
+	addMainMenuItemWithModifiers(vmMenu, "Pause", "startPauseVM:", "p", toolbarDelegate, ctrlCmd)
+	addMainMenuItemWithModifiers(vmMenu, "Restart", "restartVM:", "r", toolbarDelegate, ctrlCmd)
 	addMainMenuItem(vmMenu, "Suspend", "suspendVM:", "", toolbarDelegate)
 	// Boot Options submenu
 	bootMenu := appkit.NewMenuWithTitle("Boot Options")
@@ -49,13 +61,15 @@ func setupMainMenu(toolbarDelegate objc.ID) {
 	bootMenuItem.SetSubmenu(&bootMenu)
 	vmMenu.AddItem(&bootMenuItem)
 	addMainMenuSeparator(vmMenu)
-	addMainMenuItem(vmMenu, "Capture Input", "captureInput:", "k", toolbarDelegate)
-	addMainMenuItem(vmMenu, "Screenshot...", "takeScreenshot:", "s", toolbarDelegate)
+	addMainMenuItemWithModifiers(vmMenu, "Capture Input", "captureInput:", "k", toolbarDelegate, ctrlCmd)
+	addMainMenuItemWithModifiers(vmMenu, "Screenshot...", "takeScreenshot:", "s", toolbarDelegate, ctrlCmd)
 	// Shared Folders submenu
 	sharedMenu := appkit.NewMenuWithTitle("Shared Folders")
 	// Set the delegate so menuNeedsUpdate: fires before each open
-	delegateObj := appkit.NSMenuDelegateObjectFromID(toolbarDelegate)
-	sharedMenu.SetDelegate(delegateObj)
+	if toolbarDelegate != 0 {
+		delegateObj := appkit.NSMenuDelegateObjectFromID(toolbarDelegate)
+		sharedMenu.SetDelegate(delegateObj)
+	}
 	addMainMenuItem(sharedMenu, "Add Folder...", "addSharedFolder:", "", toolbarDelegate)
 	sharedMenuItem := appkit.NewMenuItemWithTitleActionKeyEquivalent("Shared Folders", 0, "")
 	sharedMenuItem.SetSubmenu(&sharedMenu)
@@ -66,10 +80,9 @@ func setupMainMenu(toolbarDelegate objc.ID) {
 
 	// View menu
 	viewMenu := appkit.NewMenuWithTitle("View")
-	addMainMenuItem(viewMenu, "Toggle Toolbar", "toggleToolbarShown:", "t", 0)
+	addMainMenuItemWithModifiers(viewMenu, "Toggle Toolbar", "toggleToolbarShown:", "t", 0, ctrlCmd)
 	addMainMenuSeparator(viewMenu)
-	addMainMenuItemWithModifiers(viewMenu, "Enter Full Screen", "toggleFullScreen:", "f", 0,
-		appkit.NSEventModifierFlagCommand|appkit.NSEventModifierFlagControl)
+	addMainMenuItemWithModifiers(viewMenu, "Enter Full Screen", "toggleFullScreen:", "f", 0, ctrlCmd)
 	viewMenuItem := appkit.NewMenuItemWithTitleActionKeyEquivalent("View", 0, "")
 	viewMenuItem.SetSubmenu(&viewMenu)
 	mainMenu.AddItem(&viewMenuItem)
@@ -84,11 +97,7 @@ func setupMainMenu(toolbarDelegate objc.ID) {
 	windowMenuItem.SetSubmenu(&windowMenu)
 	mainMenu.AddItem(&windowMenuItem)
 
-	// Set the window menu so macOS tracks windows automatically
-	objc.Send[objc.ID](app.ID, objc.Sel("setWindowsMenu:"), windowMenu.ID)
-
-	// Set the main menu
-	objc.Send[objc.ID](app.ID, objc.Sel("setMainMenu:"), mainMenu.ID)
+	return mainMenu, windowMenu
 }
 
 // addMainMenuItem adds a menu item. If target is 0 (nil), uses first responder chain.
