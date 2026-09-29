@@ -265,9 +265,9 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			return true, usageExitCode(subargs)
 		}
 	case "shell":
-		if len(subargs) == 0 || isHelpArg(subargs[0]) {
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
 			printShellUsage(os.Stderr)
-			return true, usageExitCode(subargs)
+			return true, 0
 		}
 	case "runs":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {

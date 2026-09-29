@@ -480,12 +480,22 @@ func rerunVMDirForPostCommand(env commandEnv, cmd string, args []string) int {
 		}
 		return 0
 	}
-	var err error
-	vmDir, err = vmconfig.EnsureDir(vmName, vmDir)
+	if cmd == "install" {
+		var err error
+		vmDir, err = vmconfig.EnsureDir(vmName, vmDir)
+		if err != nil {
+			fmt.Fprintf(env.Stderr, "error: %v\n", err)
+			return 1
+		}
+		applyVMConfig(vmDir)
+		return 0
+	}
+	dir, err := requireExistingVMDir(cmd, vmName)
 	if err != nil {
 		fmt.Fprintf(env.Stderr, "error: %v\n", err)
 		return 1
 	}
+	vmDir = dir
 	applyVMConfig(vmDir)
 	return 0
 }

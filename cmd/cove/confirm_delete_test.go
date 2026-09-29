@@ -160,6 +160,11 @@ func TestDeleteNonInteractiveE2E(t *testing.T) {
 	for _, tc := range nonInteractiveCases {
 		t.Run(tc.name, func(t *testing.T) {
 			home := t.TempDir()
+			t.Setenv("HOME", home)
+			writeTreeVM(t, "demo-vm", vmconfig.Config{})
+			if err := vmconfig.SetActive("demo-vm"); err != nil {
+				t.Fatalf("SetActive: %v", err)
+			}
 			cmd := exec.Command(bin, tc.args...)
 			cmd.Env = doctorE2EEnv(home)
 			var stdout, stderr bytes.Buffer

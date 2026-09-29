@@ -43,9 +43,13 @@ func handleCleanCommand(env commandEnv, args []string) int {
 	}
 	target := currentVMSelection()
 	if effectiveVM != "" {
-		target = vmSelection{
-			Directory: vmconfig.Path(effectiveVM),
-			Name:      effectiveVM,
+		if effectiveVM == vmName && vmDir != "" {
+			target = vmSelection{Directory: vmDir, Name: vmName}
+		} else {
+			target = vmSelection{
+				Directory: vmconfig.Path(effectiveVM),
+				Name:      effectiveVM,
+			}
 		}
 	}
 
@@ -54,16 +58,27 @@ func handleCleanCommand(env commandEnv, args []string) int {
 		if effectiveVM != "" && effectiveVM != name {
 			return commandUsageError(env, fmt.Errorf("conflicting VM names: %s and %s", effectiveVM, name))
 		}
-		target = vmSelection{
-			Directory: vmconfig.Path(name),
-			Name:      name,
+		if name == vmName && vmDir != "" {
+			target = vmSelection{Directory: vmDir, Name: vmName}
+		} else {
+			target = vmSelection{
+				Directory: vmconfig.Path(name),
+				Name:      name,
+			}
 		}
 	} else if fs.NArg() > 1 {
 		return commandUsageError(env, fmt.Errorf("too many arguments: %s", strings.Join(fs.Args(), " ")))
 	}
 
 	if target.Directory == "" {
-		return commandError(env, fmt.Errorf("no VM selected"))
+		resolvedName, resolvedDir, err := resolveTargetVM(VMResolveOptions{
+			Command:    "clean",
+			ExplicitVM: effectiveVM,
+		})
+		if err != nil {
+			return commandError(env, err)
+		}
+		target = vmSelection{Directory: resolvedDir, Name: resolvedName}
 	}
 
 	targetName := target.Name

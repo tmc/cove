@@ -48,6 +48,9 @@ func TestParseExecArgsDockerShapedFlags(t *testing.T) {
 }
 
 func TestParseExecArgsDoesNotRewriteGuestFlags(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	writeTreeVM(t, "dev", vmconfig.Config{})
+
 	opts, vm, argv, err := parseExecArgs([]string{"-it", "dev", "bash", "-it"})
 	if err != nil {
 		t.Fatalf("parseExecArgs: %v", err)
@@ -96,6 +99,9 @@ func TestParseExecArgsUsesVMFlag(t *testing.T) {
 }
 
 func TestParseExecArgsDaemonFlag(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	writeTreeVM(t, "win", vmconfig.Config{})
+
 	opts, vm, argv, err := parseExecArgs([]string{"--daemon", "win", "whoami"})
 	if err != nil {
 		t.Fatalf("parseExecArgs: %v", err)

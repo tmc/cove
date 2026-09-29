@@ -397,51 +397,95 @@ func (s *ControlServer) handleSnapshotSaveAsync(mgr *snapshotx.Manager, name str
 // =============================================================================
 
 func handleDiskSnapshotCommand(args []string) error {
-	if len(args) == 0 {
+	vmArg, cleanArgs := extractVMFlag(args)
+	if vmArg == "" {
+		vmArg = vmName
+	}
+	if len(cleanArgs) == 0 {
 		printDiskSnapshotUsage()
 		return nil
 	}
+	subcmd := cleanArgs[0]
+	subargs := cleanArgs[1:]
 
-	mgr := NewDiskSnapshotManager(vmDir)
-
-	switch args[0] {
-	case "save":
-		if len(args) > 1 && isHelpArg(args[1]) {
-			printDiskSnapshotSaveUsage()
-			return nil
-		}
-		return handleDiskSnapshotSave(mgr, args[1:])
-	case "run":
-		if len(args) > 1 && isHelpArg(args[1]) {
-			printDiskSnapshotUsage()
-			return nil
-		}
-		return handleDiskSnapshotRun(args[1:])
-	case "restore":
-		if len(args) > 1 && isHelpArg(args[1]) {
-			printDiskSnapshotRestoreUsage()
-			return nil
-		}
-		return handleDiskSnapshotRestore(mgr, args[1:])
-	case "list":
-		if len(args) > 1 && isHelpArg(args[1]) {
-			printDiskSnapshotListUsage()
-			return nil
-		}
-		return handleDiskSnapshotList(mgr)
-	case "delete":
-		if len(args) > 1 && isHelpArg(args[1]) {
-			printDiskSnapshotDeleteUsage()
-			return nil
-		}
-		return handleDiskSnapshotDelete(mgr, args[1:])
+	switch subcmd {
 	case "help", "-h", "--help":
 		printDiskSnapshotUsage()
 		return nil
+	case "save":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printDiskSnapshotSaveUsage()
+			return nil
+		}
+	case "run":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printDiskSnapshotUsage()
+			return nil
+		}
+	case "restore":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printDiskSnapshotRestoreUsage()
+			return nil
+		}
+	case "list":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printDiskSnapshotListUsage()
+			return nil
+		}
+	case "delete":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printDiskSnapshotDeleteUsage()
+			return nil
+		}
 	default:
 		printDiskSnapshotUsage()
-		return fmt.Errorf("unknown disk-snapshot command: %s\nRun 'cove -help' for usage.", args[0])
+		return fmt.Errorf("unknown disk-snapshot command: %s\nRun 'cove -help' for usage.", subcmd)
 	}
+
+	targetName, targetDir, err := resolveTargetVM(VMResolveOptions{
+		Command:    "disk-snapshot",
+		ExplicitVM: vmArg,
+	})
+	if err != nil {
+		return err
+	}
+	vmName = targetName
+	vmDir = targetDir
+
+	mgr := NewDiskSnapshotManager(targetDir)
+	switch subcmd {
+		case "save":
+			if len(subargs) > 0 && isHelpArg(subargs[0]) {
+				printDiskSnapshotSaveUsage()
+				return nil
+			}
+			return handleDiskSnapshotSave(mgr, subargs)
+		case "run":
+			if len(subargs) > 0 && isHelpArg(subargs[0]) {
+				printDiskSnapshotUsage()
+				return nil
+			}
+			return handleDiskSnapshotRun(subargs)
+		case "restore":
+			if len(subargs) > 0 && isHelpArg(subargs[0]) {
+				printDiskSnapshotRestoreUsage()
+				return nil
+			}
+			return handleDiskSnapshotRestore(mgr, subargs)
+		case "list":
+			if len(subargs) > 0 && isHelpArg(subargs[0]) {
+				printDiskSnapshotListUsage()
+				return nil
+			}
+			return handleDiskSnapshotList(mgr)
+		case "delete":
+			if len(subargs) > 0 && isHelpArg(subargs[0]) {
+				printDiskSnapshotDeleteUsage()
+				return nil
+			}
+			return handleDiskSnapshotDelete(mgr, subargs)
+		}
+		return nil
 }
 
 func printDiskSnapshotUsage() {

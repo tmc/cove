@@ -428,7 +428,7 @@ func main() {
 	// `helper daemon`, which runs as root via launchd. As root, $HOME is
 	// /var/root, which is on the SIP-sealed root volume (EROFS).
 	var err error
-	if openedCoveVMDir == "" && !subcommandSkipsVMDir(flag.Args()) {
+	if openedCoveVMDir == "" && installCommandRequested(flag.Args()) && !subcommandSkipsVMDir(flag.Args()) {
 		vmDir, err = vmconfig.EnsureDir(vmName, vmDir)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -437,6 +437,21 @@ func main() {
 
 		// Load saved VM config and apply defaults for flags not explicitly set.
 		applyVMConfig(vmDir)
+	} else if openedCoveVMDir == "" && !subcommandSkipsVMDir(flag.Args()) {
+		if vmDir != "" {
+			applyVMConfig(vmDir)
+		} else if vmName != "" {
+			if dir, ok := vmconfig.ExistingPath(vmName); ok && vmconfig.Validate(dir) {
+				vmDir = dir
+				applyVMConfig(vmDir)
+			} else {
+				fmt.Fprintf(os.Stderr, "error: no VM named %q under %s\n  list VMs: cove list\n  create a VM: cove up -user <name>\n", vmName, vmconfig.BaseDir())
+				os.Exit(1)
+			}
+		} else if _, dir, ok := configuredActiveVM(); ok {
+			vmDir = dir
+			applyVMConfig(vmDir)
+		}
 	}
 	if err := applySandboxDefaults(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -1974,7 +1989,7 @@ func handleVMCommand(args []string) {
 		delFS := flag.NewFlagSet("vm delete", flag.ContinueOnError)
 		delFS.SetOutput(os.Stderr)
 		delFS.Usage = func() {
-			fmt.Fprintln(delFS.Output(), `Usage: cove vm delete [-y|--yes] [--cascade] <name>
+			fmt.Fprintln(delFS.Output(), `Usage: cove vm delete [-y|--yes] [--cascade] [-vm <name>] [name]
 
 Delete a VM directory. With --cascade, recursively delete fork descendants too.
 
@@ -1985,19 +2000,27 @@ Flags:`)
 		delFS.BoolVar(&delYes, "y", false, "skip confirmation prompt")
 		delFS.BoolVar(&delYes, "yes", false, "skip confirmation prompt")
 		delCascade := delFS.Bool("cascade", false, "recursively delete fork descendants too")
+		var delVM string
+		delFS.StringVar(&delVM, "vm", "", "VM name to delete")
 		if err := parseFlagsOrHelp(delFS, moveKnownFlagsFirst(subargs, map[string]bool{
-			"y": false, "yes": false, "cascade": false,
+			"y": false, "yes": false, "cascade": false, "vm": true,
 		})); err != nil {
 			if errors.Is(err, errFlagHelp) {
 				return
 			}
 			os.Exit(2)
 		}
-		if delFS.NArg() < 1 {
+		target := strings.TrimSpace(delVM)
+		if target == "" && delFS.NArg() > 0 {
+			target = strings.TrimSpace(delFS.Arg(0))
+		}
+		if target == "" && strings.TrimSpace(vmName) != "" {
+			target = strings.TrimSpace(vmName)
+		}
+		if target == "" {
 			fmt.Fprintln(os.Stderr, "Usage: cove vm delete [-y|--yes] [--cascade] <name>")
 			os.Exit(1)
 		}
-		target := delFS.Arg(0)
 		prompt := fmt.Sprintf("Delete VM %q? This cannot be undone. [y/N] ", target)
 		if *delCascade {
 			children, _ := childVMNames(target)
@@ -2090,19 +2113,53 @@ Flags:`)
 
 // handleSnapshotCommand handles the snapshot subcommand
 func handleSnapshotCommand(env commandEnv, args []string) error {
-	if len(args) == 0 {
+	vmArg, cleanArgs := extractVMFlag(args)
+	if vmArg == "" {
+		vmArg = vmName
+	}
+	if len(cleanArgs) == 0 {
 		printSnapshotUsage(env.Stderr)
 		return fmt.Errorf("usage: cove snapshot <command>")
 	}
-
-	mgr := snapshotx.NewManager(vmDir)
-	subcmd := args[0]
-	subargs := args[1:]
+	subcmd := cleanArgs[0]
+	subargs := cleanArgs[1:]
 
 	switch subcmd {
 	case "help", "-h", "--help":
 		printSnapshotUsage(env.Stdout)
 		return nil
+	case "list":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printSnapshotListUsage(env.Stdout)
+			return nil
+		}
+	case "save", "restore":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printSnapshotSaveRestoreUsage(env.Stdout, subcmd)
+			return nil
+		}
+	case "delete":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printSnapshotDeleteUsage(env.Stdout)
+			return nil
+		}
+	case "tree":
+	default:
+		return fmt.Errorf("unknown snapshot command: %s\nRun 'cove -help' for usage", subcmd)
+	}
+
+	targetName, targetDir, err := resolveTargetVM(VMResolveOptions{
+		Command:    "snapshot",
+		ExplicitVM: vmArg,
+	})
+	if err != nil {
+		return err
+	}
+	vmName = targetName
+	vmDir = targetDir
+
+	mgr := snapshotx.NewManager(targetDir)
+	switch subcmd {
 	case "list":
 		if len(subargs) > 0 && isHelpArg(subargs[0]) {
 			printSnapshotListUsage(env.Stdout)
@@ -2171,7 +2228,6 @@ func handleSnapshotCommand(env commandEnv, args []string) error {
 			return err
 		}
 		return nil
-
 	default:
 		return fmt.Errorf("unknown snapshot command: %s\nRun 'cove -help' for usage", subcmd)
 	}

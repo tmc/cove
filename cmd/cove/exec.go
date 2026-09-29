@@ -88,7 +88,8 @@ func parseExecArgs(args []string) (execOptions, string, []string, error) {
 }
 
 func parseExecArgsWithDefault(args []string, defaultVM string) (execOptions, string, []string, error) {
-	args = normalizeExecShortFlags(args)
+	vmArg, argsWithoutVM := extractVMFlag(args)
+	args = normalizeExecShortFlags(argsWithoutVM)
 
 	fs := flag.NewFlagSet("exec", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -113,29 +114,66 @@ func parseExecArgsWithDefault(args []string, defaultVM string) (execOptions, str
 		return execOptions{}, "", nil, err
 	}
 	tail := fs.Args()
-	if len(tail) == 0 {
-		fs.Usage()
-		if defaultVM != "" {
-			return execOptions{}, "", nil, fmt.Errorf("exec requires a command")
-		}
-		return execOptions{}, "", nil, fmt.Errorf("usage: cove exec [options] <vm> <cmd> [args...]")
-	}
 	vm := opts.vm
+	if vm == "" {
+		vm = vmArg
+	}
 	if vm == "" {
 		vm = defaultVM
 	}
-	argv := append([]string{}, tail...)
 	if vm == "" {
-		vm = tail[0]
-		argv = append([]string{}, tail[1:]...)
+		vm = vmName
 	}
-	if len(argv) > 0 && argv[0] == "--" {
-		argv = argv[1:]
+
+	var argv []string
+	if vm != "" {
+		argv = append([]string{}, tail...)
+		if len(argv) > 0 && argv[0] == "--" {
+			argv = argv[1:]
+		}
+		if len(argv) == 0 {
+			fs.Usage()
+			return execOptions{}, "", nil, fmt.Errorf("exec requires a command")
+		}
+	} else {
+		if len(tail) == 0 {
+			fs.Usage()
+			return execOptions{}, "", nil, fmt.Errorf("usage: cove exec [options] <vm> <cmd> [args...]")
+		}
+		if isKnownVM(tail[0]) || (len(tail) > 1 && tail[1] == "--") {
+			vm = tail[0]
+			if len(tail) > 1 && tail[1] == "--" {
+				argv = append([]string{}, tail[2:]...)
+			} else {
+				argv = append([]string{}, tail[1:]...)
+			}
+			if len(argv) > 0 && argv[0] == "--" {
+				argv = argv[1:]
+			}
+			if len(argv) == 0 {
+				fs.Usage()
+				return execOptions{}, "", nil, fmt.Errorf("exec requires a command")
+			}
+		} else {
+			resolvedName, _, err := resolveTargetVM(VMResolveOptions{
+				Command:        "exec",
+				RequireRunning: false,
+			})
+			if err != nil {
+				return execOptions{}, "", nil, err
+			}
+			vm = resolvedName
+			argv = append([]string{}, tail...)
+			if len(argv) > 0 && argv[0] == "--" {
+				argv = argv[1:]
+			}
+			if len(argv) == 0 {
+				fs.Usage()
+				return execOptions{}, "", nil, fmt.Errorf("exec requires a command")
+			}
+		}
 	}
-	if len(argv) == 0 {
-		fs.Usage()
-		return execOptions{}, "", nil, fmt.Errorf("exec requires a command")
-	}
+	opts.vm = vm
 	return opts, vm, argv, nil
 }
 
