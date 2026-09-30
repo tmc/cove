@@ -70,13 +70,13 @@ func TestCpParseSpec(t *testing.T) {
 			name: "guest to host trailing slash appends basename",
 			src:  "vm1:/tmp/file.txt",
 			dst:  "out/",
-			want: cpSpec{Direction: cpGuestToHost, VM: "vm1", GuestPath: "/tmp/file.txt", HostPath: filepath.Join(wd, "out", "file.txt")},
+			want: cpSpec{Direction: cpGuestToHost, VM: "vm1", GuestPath: "/tmp/file.txt", HostPath: filepath.Join(wd, "out") + "/"},
 		},
 		{
 			name: "guest to host dot appends basename",
 			src:  "vm1:/tmp/file.txt",
 			dst:  ".",
-			want: cpSpec{Direction: cpGuestToHost, VM: "vm1", GuestPath: "/tmp/file.txt", HostPath: filepath.Join(wd, "file.txt")},
+			want: cpSpec{Direction: cpGuestToHost, VM: "vm1", GuestPath: "/tmp/file.txt", HostPath: wd},
 		},
 		{name: "two local", src: "a", dst: "b", err: "exactly one path must be remote"},
 		{name: "two remote", src: "vm:/a", dst: "vm:/b", err: "exactly one path must be remote"},
@@ -448,3 +448,54 @@ type errCpAgent struct{ err error }
 
 func (e errCpAgent) CopyToGuest(context.Context, string, string, bool) error   { return e.err }
 func (e errCpAgent) CopyFromGuest(context.Context, string, string, bool) error { return e.err }
+
+func TestResolveCopyHostPath(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "data"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name, input, want string
+	}{
+		{"existing directory", dir, filepath.Join(dir, "data")},
+		{"trailing slash", filepath.Join(dir, "new") + "/", filepath.Join(dir, "new", "data")},
+		{"exact file", filepath.Join(dir, "out"), filepath.Join(dir, "out")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resolveCopyHostPath(tt.input, "/guest/data"); got != tt.want {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+	// Parse keeps the directory operand so the server expands it only once.
+	spec, err := parseCpSpec("vm:/guest/data", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := resolveCopyHostPath(spec.HostPath, spec.GuestPath); got != filepath.Join(dir, "data") {
+		t.Fatalf("directory destination = %q", got)
+	}
+}
+
+func TestCheckCopyDestination(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file")
+	if err := os.WriteFile(file, []byte("original"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(filepath.Join(dir, "missing"), link); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{file, link, dir} {
+		if err := checkCopyDestination(path, false); err == nil {
+			t.Fatalf("accepted existing destination %q", path)
+		}
+		if err := checkCopyDestination(path, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := checkCopyDestination(filepath.Join(dir, "new"), false); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -455,4 +455,12 @@ func TestHandleAgentCopyDirFromGuestExtract(t *testing.T) {
 	}
 }
 
-
+func TestHandleAgentCopyUnresolvedHome(t *testing.T) {
+	s := &ControlServer{consoleUserOverride: func() (string, int, error) { return "", 0, nil }}
+	for _, guestPath := range []string{"~", "~/Downloads/file"} {
+		resp := s.handleAgentCopy(&controlpb.AgentCopyCommand{HostPath: "file", GuestPath: guestPath, ToGuest: true})
+		if resp.Success || !strings.Contains(resp.Error, "cannot resolve guest home") {
+			t.Fatalf("copy to %q = %v", guestPath, resp)
+		}
+	}
+}

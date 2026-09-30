@@ -905,14 +905,16 @@ func (s *ControlServer) handleAgentCopy(cmd *controlpb.AgentCopyCommand) *contro
 		return &controlpb.ControlResponse{Error: "host_path and guest_path required"}
 	}
 	cmd.GuestPath = s.expandGuestHome(cmd.GuestPath)
+	if cmd.GuestPath == "~" || strings.HasPrefix(cmd.GuestPath, "~/") {
+		return &controlpb.ControlResponse{Error: "cannot resolve guest home directory; log in to the guest or use an absolute path"}
+	}
 	if cmd.ToGuest {
 		if strings.HasSuffix(cmd.GuestPath, "/") {
 			cmd.GuestPath = path.Join(cmd.GuestPath, filepath.Base(cmd.HostPath))
 		}
+
 	} else {
-		if strings.HasSuffix(cmd.HostPath, "/") {
-			cmd.HostPath = filepath.Join(cmd.HostPath, filepath.Base(cmd.GuestPath))
-		}
+		cmd.HostPath = resolveCopyHostPath(cmd.HostPath, cmd.GuestPath)
 	}
 	route := agentstate.RouteFor("cp", cmd.GuestPath, linuxMode)
 	if route == agentstate.RouteUser {
@@ -1031,10 +1033,8 @@ chmod "$4" "$destPath"`
 	}
 
 	// Guest to host
-	if strings.HasSuffix(cmd.HostPath, "/") {
-		cmd.HostPath = filepath.Join(cmd.HostPath, filepath.Base(cmd.GuestPath))
-	} else if fi, err := os.Stat(cmd.HostPath); err == nil && fi.IsDir() {
-		cmd.HostPath = filepath.Join(cmd.HostPath, filepath.Base(cmd.GuestPath))
+	if err := checkCopyDestination(cmd.HostPath, cmd.Overwrite); err != nil {
+		return &controlpb.ControlResponse{Error: err.Error()}
 	}
 
 	var ua *agentstate.UserAgentClient
@@ -1137,6 +1137,7 @@ func (s *ControlServer) handleAgentCopyDir(ctx context.Context, a *agentstate.Ag
 	}()
 
 	pr, pw := io.Pipe()
+	defer pr.Close()
 
 	go func() {
 		cmd := exec.Command("tar", "cf", "-", "-C", filepath.Dir(hostDir), filepath.Base(hostDir))
@@ -1265,6 +1266,7 @@ tar cf "$2" -C "$dir" "$base"`
 	pr, pw := io.Pipe()
 	extractErrCh := make(chan error, 1)
 	go func() {
+		defer pr.Close()
 		cmd := exec.CommandContext(ctx, "tar", "xf", "-", "--strip-components=1", "-C", hostDir)
 		cmd.Stdin = pr
 		var stderr bytes.Buffer

@@ -151,10 +151,8 @@ func parseCpSpecForVM(src, dst, vmFlag string) (cpSpec, error) {
 		if err != nil {
 			return cpSpec{}, err
 		}
-		if strings.HasSuffix(dstPath, "/") || dstPath == "." {
-			hostPath = filepath.Join(hostPath, filepath.Base(srcPath))
-		} else if fi, err := os.Stat(hostPath); err == nil && fi.IsDir() {
-			hostPath = filepath.Join(hostPath, filepath.Base(srcPath))
+		if strings.HasSuffix(dstPath, "/") && !strings.HasSuffix(hostPath, "/") {
+			hostPath += "/"
 		}
 		return cpSpec{
 			Direction: cpGuestToHost,
@@ -264,7 +262,11 @@ func (a qemuWindowsCpAgent) CopyToGuest(ctx context.Context, hostPath, guestPath
 	return client.CopyToGuest(ctx, hostPath, path, 0644)
 }
 
-func (a qemuWindowsCpAgent) CopyFromGuest(ctx context.Context, guestPath, hostPath string, _ bool) error {
+func (a qemuWindowsCpAgent) CopyFromGuest(ctx context.Context, guestPath, hostPath string, overwrite bool) error {
+	hostPath = resolveCopyHostPath(hostPath, guestPath)
+	if err := checkCopyDestination(hostPath, overwrite); err != nil {
+		return err
+	}
 	if strings.TrimSpace(a.address) == "" {
 		return fmt.Errorf("cp: qemu windows agent endpoint is unavailable for %q", a.vm)
 	}
@@ -351,6 +353,30 @@ func (a controlCpAgent) CopyFromGuest(_ context.Context, guestPath, hostPath str
 	}
 	if msg != "" {
 		fmt.Println(msg)
+	}
+	return nil
+}
+
+func resolveCopyHostPath(hostPath, guestPath string) string {
+	if strings.HasSuffix(hostPath, "/") {
+		return filepath.Join(hostPath, filepath.Base(guestPath))
+	}
+	if info, err := os.Stat(hostPath); err == nil && info.IsDir() {
+		return filepath.Join(hostPath, filepath.Base(guestPath))
+	}
+	return hostPath
+}
+
+func checkCopyDestination(path string, overwrite bool) error {
+	if overwrite {
+		return nil
+	}
+	_, err := os.Lstat(path)
+	if err == nil {
+		return fmt.Errorf("destination %q already exists (use -f to overwrite)", path)
+	}
+	if !os.IsNotExist(err) {
+		return fmt.Errorf("check destination %s: %w", path, err)
 	}
 	return nil
 }
