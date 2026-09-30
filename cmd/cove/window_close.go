@@ -97,8 +97,11 @@ type windowCloseController struct {
 }
 
 func (c *windowCloseController) ShouldClose() bool {
-	if (c.cleanupDone != nil && c.cleanupDone()) || (c.terminating != nil && c.terminating()) {
+	if c.cleanupDone != nil && c.cleanupDone() {
 		return true
+	}
+	if c.terminating != nil && c.terminating() {
+		return false
 	}
 	state, err := c.vmState()
 	if err != nil || !vmRequiresCloseConfirmation(state) {
@@ -185,7 +188,10 @@ type appTerminationCoordinator struct {
 
 func (c *appTerminationCoordinator) ShouldTerminate() appkit.NSApplicationTerminateReply {
 	if c.cleanupDone != nil && c.cleanupDone.Load() {
-		return appkit.NSTerminateNow
+		if c.stopLoop != nil {
+			c.stopLoop()
+		}
+		return appkit.NSTerminateCancel
 	}
 	if c.shouldTerminateReply != nil {
 		c.shouldTerminateReply.Store(true)

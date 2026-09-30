@@ -1941,7 +1941,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 			fmt.Println("GUI launch order: start-first")
 		}
 		if err := startConfiguredVM(vm, queue, true, metrics, rc, hc); err != nil {
-			reportGUIError(appkit.NSWindow{}, "VM Start Error", err)
+			guiAlertPresenter(appkit.NSWindow{}, "VM Start Error", err)
 			return err
 		}
 	} else if verbose {
@@ -2339,7 +2339,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 		},
 		replyTerminate: func() {
 			if shouldTerminateReply.Load() {
-				app.ReplyToApplicationShouldTerminate(true)
+				app.ReplyToApplicationShouldTerminate(false)
 			}
 		},
 	}
@@ -2364,7 +2364,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 		},
 		doCleanup: doCleanup,
 		replyTerminate: func() {
-			app.ReplyToApplicationShouldTerminate(true)
+			app.ReplyToApplicationShouldTerminate(false)
 		},
 		stopLoop: func() {
 			appLoopStop.Store(true)
@@ -2439,7 +2439,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 						startResult = nil
 						if err != nil {
 							setRunErr(err)
-							reportGUIError(window, "VM Start Error", err)
+							guiAlertPresenter(appkit.NSWindow{}, "VM Start Error", err)
 							stateUpdate.mu.Lock()
 							stateUpdate.terminate = true
 							stateUpdate.changed = true

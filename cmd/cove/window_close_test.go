@@ -120,12 +120,12 @@ func TestWindowCloseController_ShouldClose(t *testing.T) {
 		}
 	})
 
-	t.Run("terminating returns true", func(t *testing.T) {
+	t.Run("terminating keeps window alive", func(t *testing.T) {
 		c := &windowCloseController{
 			terminating: func() bool { return true },
 		}
-		if got := c.ShouldClose(); !got {
-			t.Errorf("ShouldClose() = false, want true")
+		if got := c.ShouldClose(); got {
+			t.Errorf("ShouldClose() = true, want false")
 		}
 	})
 
@@ -369,7 +369,7 @@ func TestAppTerminationCoordinator(t *testing.T) {
 	defer func() { dispatchAsyncMainFn = origDispatch }()
 	dispatchAsyncMainFn = func(fn func()) { fn() }
 
-	t.Run("returns NSTerminateNow when cleanup is already done", func(t *testing.T) {
+	t.Run("cancels AppKit termination when cleanup is already done", func(t *testing.T) {
 		var cleanupDone atomic.Bool
 		cleanupDone.Store(true)
 
@@ -377,8 +377,8 @@ func TestAppTerminationCoordinator(t *testing.T) {
 			cleanupDone: &cleanupDone,
 		}
 		reply := coordinator.ShouldTerminate()
-		if reply != appkit.NSTerminateNow {
-			t.Errorf("ShouldTerminate() = %v, want NSTerminateNow (%v)", reply, appkit.NSTerminateNow)
+		if reply != appkit.NSTerminateCancel {
+			t.Errorf("ShouldTerminate() = %v, want NSTerminateCancel (%v)", reply, appkit.NSTerminateCancel)
 		}
 	})
 
