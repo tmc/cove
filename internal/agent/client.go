@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
@@ -536,15 +537,18 @@ func (c *AgentClient) CopyFromGuest(ctx context.Context, guestPath, localPath st
 		mode = 0644
 	}
 
-	f, err := os.OpenFile(localPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
+	// Write to a temporary file beside localPath and rename it into place
+	// on success, so a failed copy never truncates or removes an existing
+	// file at localPath.
+	f, err := os.CreateTemp(filepath.Dir(localPath), "."+filepath.Base(localPath)+".cove-partial-*")
 	if err != nil {
 		return err
 	}
 	var success bool
 	defer func() {
-		f.Close()
 		if !success {
-			_ = os.Remove(localPath)
+			f.Close()
+			os.Remove(f.Name())
 		}
 	}()
 
@@ -558,6 +562,15 @@ func (c *AgentClient) CopyFromGuest(ctx context.Context, guestPath, localPath st
 	}
 	if err := stream.Err(); err != nil {
 		return fmt.Errorf("recv: %w", err)
+	}
+	if err := f.Chmod(mode); err != nil {
+		return fmt.Errorf("chmod local: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("write local: %w", err)
+	}
+	if err := os.Rename(f.Name(), localPath); err != nil {
+		return fmt.Errorf("rename local: %w", err)
 	}
 	success = true
 	return nil

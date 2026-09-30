@@ -402,3 +402,30 @@ func TestCopyFromGuestTruncatedFileCleanup(t *testing.T) {
 	}
 }
 
+func TestCopyFromGuestFailureKeepsExistingFile(t *testing.T) {
+	client := newTestAgentClient(t, &failMidStreamCopyOutHandler{})
+	defer client.Close()
+
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "existing.txt")
+	if err := os.WriteFile(dest, []byte("original"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.CopyFromGuest(context.Background(), "/remote/file", dest); err == nil {
+		t.Fatal("CopyFromGuest succeeded, want error")
+	}
+	data, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("existing file removed after failed copy: %v", err)
+	}
+	if string(data) != "original" {
+		t.Errorf("existing file = %q, want %q", data, "original")
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("dir has %d entries after failed copy, want 1 (partial file left behind)", len(entries))
+	}
+}

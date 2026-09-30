@@ -1077,12 +1077,10 @@ src="$1"; case "$src" in "~/"*) src="$HOME/${src#\~/}" ;; esac
 			return &controlpb.ControlResponse{Error: fmt.Sprintf("cp: exit %d: %s", result.ExitCode, strings.TrimSpace(string(result.Stderr)))}
 		}
 		if err := a.CopyFromGuest(ctx, stagePath, cmd.HostPath); err != nil {
-			_ = os.Remove(cmd.HostPath)
 			return &controlpb.ControlResponse{Error: fmt.Sprintf("cp: %v", err)}
 		}
 	} else {
 		if err := a.CopyFromGuest(ctx, cmd.GuestPath, cmd.HostPath); err != nil {
-			_ = os.Remove(cmd.HostPath)
 			return &controlpb.ControlResponse{Error: fmt.Sprintf("cp: %v", err)}
 		}
 	}
