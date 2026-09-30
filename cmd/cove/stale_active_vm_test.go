@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -169,13 +170,31 @@ func TestDoctorFixRemovesDanglingSymlinks(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	oldIsTerminal, oldStdin, oldStderr := confirmStdinIsTerminal, confirmStdin, confirmStderr
+	t.Cleanup(func() {
+		confirmStdinIsTerminal, confirmStdin, confirmStderr = oldIsTerminal, oldStdin, oldStderr
+	})
+	confirmStderr = io.Discard
+
+	// Without a terminal to confirm, --fix must not remove anything.
+	confirmStdinIsTerminal = func() bool { return false }
 	var stdoutBuf bytes.Buffer
+	if err := handleVerifyWithOutput([]string{"--fix"}, &stdoutBuf); err != nil {
+		t.Fatalf("handleVerifyWithOutput(--fix) error = %v", err)
+	}
+	if _, err := os.Lstat(danglingVMLink); err != nil {
+		t.Fatalf("--fix without confirmation removed %s: %v", danglingVMLink, err)
+	}
+
+	confirmStdinIsTerminal = func() bool { return true }
+	confirmStdin = strings.NewReader("y\n")
+	stdoutBuf.Reset()
 	if err := handleVerifyWithOutput([]string{"--fix"}, &stdoutBuf); err != nil {
 		t.Fatalf("handleVerifyWithOutput(--fix) error = %v", err)
 	}
 
 	out := stdoutBuf.String()
-	if !strings.Contains(out, "Removed") || !strings.Contains(out, "dangling") {
+	if !strings.Contains(out, "removed:") || !strings.Contains(out, "angling") {
 		t.Errorf("cove doctor --fix output missing removal notice:\n%s", out)
 	}
 

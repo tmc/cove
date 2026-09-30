@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"syscall"
 
@@ -279,12 +280,27 @@ func fileExists(path string) bool {
 }
 
 func hostDoctorDanglingSymlinksCheck() hostDoctorCheck {
-	dangling := vmconfig.DanglingVMSymlinks()
-	if len(dangling) > 0 {
+	var missing int
+	var volumes []string
+	for _, sym := range vmconfig.DanglingVMSymlinks() {
+		if sym.Volume == "" {
+			missing++
+		} else if !slices.Contains(volumes, sym.Volume) {
+			volumes = append(volumes, sym.Volume)
+		}
+	}
+	if missing > 0 {
 		return hostDoctorCheck{
 			Name:    "dangling-symlinks",
 			Status:  "warn",
-			Message: fmt.Sprintf("found %d dangling symlink(s) in %s and %s; clean up with: cove doctor --fix", len(dangling), vmconfig.BaseDir(), vmconfig.BundleDir()),
+			Message: fmt.Sprintf("found %d dangling symlink(s) in %s and %s; clean up with: cove doctor --fix", missing, vmconfig.BaseDir(), vmconfig.BundleDir()),
+		}
+	}
+	if len(volumes) > 0 {
+		return hostDoctorCheck{
+			Name:    "dangling-symlinks",
+			Status:  "warn",
+			Message: fmt.Sprintf("VM symlinks point at unmounted volume(s): %s", strings.Join(volumes, ", ")),
 		}
 	}
 	return hostDoctorCheck{

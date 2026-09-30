@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"flag"
 	"fmt"
@@ -119,29 +120,52 @@ func handleVerifyWithOutput(args []string, w io.Writer) error {
 	return verifyStoppedForVM(target, *verboseFlag, *fixFlag)
 }
 
+// verifyDanglingSymlinks reports dangling VM symlinks and, when fix is set
+// and the user confirms, removes them. It returns the number found.
 func verifyDanglingSymlinks(w io.Writer, fix bool) (int, error) {
 	dangling := vmconfig.DanglingVMSymlinks()
 	if len(dangling) == 0 {
 		return 0, nil
 	}
-	if fix {
-		removed, err := vmconfig.RemoveDanglingVMSymlinks()
-		fmt.Fprintf(w, "Removed %d dangling VM symlink(s):\n", len(removed))
-		for _, sym := range removed {
-			fmt.Fprintf(w, "  - removed: %s\n", sym.Path)
-		}
-		if err != nil {
-			return len(removed), fmt.Errorf("remove dangling symlinks: %w", err)
-		}
-		fmt.Fprintln(w)
-		return len(removed), nil
-	}
+	var removable []vmconfig.DanglingSymlink
 	fmt.Fprintf(w, "Dangling VM symlinks: %d dangling symlink(s) found in %s and %s\n", len(dangling), vmconfig.BaseDir(), vmconfig.BundleDir())
 	for _, sym := range dangling {
+		if sym.Volume != "" {
+			fmt.Fprintf(w, "  - %s -> %s (volume %s not mounted; kept)\n", sym.Path, sym.Target, sym.Volume)
+			continue
+		}
 		fmt.Fprintf(w, "  - %s -> %s (missing)\n", sym.Path, sym.Target)
+		removable = append(removable, sym)
 	}
-	fmt.Fprintln(w, "  run 'cove doctor --fix' to remove dangling symlinks")
+	if len(removable) == 0 {
+		fmt.Fprintln(w)
+		return len(dangling), nil
+	}
+	if !fix {
+		fmt.Fprintln(w, "  run 'cove doctor --fix' to remove dangling symlinks")
+		fmt.Fprintln(w)
+		return len(dangling), nil
+	}
+	if !confirmStdinIsTerminal() {
+		fmt.Fprintln(w, "  not removed: run 'cove doctor --fix' from a terminal to confirm")
+		fmt.Fprintln(w)
+		return len(dangling), nil
+	}
+	fmt.Fprintf(confirmStderr, "Remove %d dangling symlink(s)? [y/N] ", len(removable))
+	line, _ := bufio.NewReader(confirmStdin).ReadString('\n')
+	if answer := strings.TrimSpace(line); answer != "y" && answer != "Y" {
+		fmt.Fprintln(w, "  not removed")
+		fmt.Fprintln(w)
+		return len(dangling), nil
+	}
+	removed, err := vmconfig.RemoveDanglingSymlinks(removable)
+	for _, sym := range removed {
+		fmt.Fprintf(w, "  - removed: %s\n", sym.Path)
+	}
 	fmt.Fprintln(w)
+	if err != nil {
+		return len(dangling), fmt.Errorf("remove dangling symlinks: %w", err)
+	}
 	return len(dangling), nil
 }
 

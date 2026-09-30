@@ -188,14 +188,64 @@ func TestDanglingSymlinks(t *testing.T) {
 		t.Fatalf("DanglingVMSymlinks() returned %d links, want 2: %+v", len(links), links)
 	}
 
-	removed, err := RemoveDanglingVMSymlinks()
+	removed, err := RemoveDanglingSymlinks(links)
 	if err != nil {
-		t.Fatalf("RemoveDanglingVMSymlinks() error = %v", err)
+		t.Fatalf("RemoveDanglingSymlinks() error = %v", err)
 	}
 	if len(removed) != 2 {
-		t.Fatalf("RemoveDanglingVMSymlinks() removed %d links, want 2: %+v", len(removed), removed)
+		t.Fatalf("RemoveDanglingSymlinks() removed %d links, want 2: %+v", len(removed), removed)
 	}
 	if remaining := DanglingVMSymlinks(); len(remaining) != 0 {
 		t.Fatalf("DanglingVMSymlinks() after remove = %+v, want 0", remaining)
+	}
+}
+
+func TestDanglingSymlinksKeepsUnmountedVolume(t *testing.T) {
+	dir := t.TempDir()
+	link := filepath.Join(dir, "detached.covevm")
+	target := "/Volumes/cove-test-not-mounted-7f3a/vms/detached.covevm"
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+
+	links := DanglingSymlinks(dir)
+	if len(links) != 1 {
+		t.Fatalf("DanglingSymlinks() = %+v, want 1 link", links)
+	}
+	if want := "/Volumes/cove-test-not-mounted-7f3a"; links[0].Volume != want {
+		t.Errorf("Volume = %q, want %q", links[0].Volume, want)
+	}
+	removed, err := RemoveDanglingSymlinks(links)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(removed) != 0 {
+		t.Errorf("RemoveDanglingSymlinks() removed %+v, want none", removed)
+	}
+	if _, err := os.Lstat(link); err != nil {
+		t.Errorf("link on unmounted volume was removed: %v", err)
+	}
+}
+
+func TestDanglingLinkUnreadableTarget(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	dir := t.TempDir()
+	locked := filepath.Join(dir, "locked")
+	if err := os.MkdirAll(filepath.Join(locked, "vm.covevm"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "vm")
+	if err := os.Symlink(filepath.Join(locked, "vm.covevm"), link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(locked, 0755)
+
+	if _, ok := DanglingLink(link); ok {
+		t.Error("DanglingLink() = true for a target that exists but cannot be read")
 	}
 }

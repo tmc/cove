@@ -1,7 +1,9 @@
 package vmconfig
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -142,12 +144,14 @@ func EnsureDir(vmName, currentDir string) (string, error) {
 // and returns the target it names. os.MkdirAll on such a path fails with
 // EEXIST ("file exists") because the link itself is present while Stat fails,
 // which reads as a confusing error unless the caller names the real cause.
+// A target that cannot be checked (for example, permission denied) is not
+// reported as dangling.
 func DanglingLink(path string) (string, bool) {
 	info, err := os.Lstat(path)
 	if err != nil || info.Mode()&os.ModeSymlink == 0 {
 		return "", false
 	}
-	if _, err := os.Stat(path); err == nil {
+	if _, err := os.Stat(path); !errors.Is(err, fs.ErrNotExist) {
 		return "", false
 	}
 	target, err := os.Readlink(path)
@@ -165,6 +169,11 @@ func danglingLink(path string) (string, bool) {
 type DanglingSymlink struct {
 	Path   string
 	Target string
+
+	// Volume is set when Target lies on a volume under /Volumes that
+	// is not mounted. The VM is then likely intact on a detached disk,
+	// and the link should be kept.
+	Volume string
 }
 
 // DanglingSymlinks returns all dangling symlinks found directly under dirs.
@@ -181,11 +190,30 @@ func DanglingSymlinks(dirs ...string) []DanglingSymlink {
 				list = append(list, DanglingSymlink{
 					Path:   p,
 					Target: target,
+					Volume: unmountedVolume(target),
 				})
 			}
 		}
 	}
 	return list
+}
+
+// unmountedVolume returns the /Volumes/<name> root of target if that
+// volume is not mounted, or "" otherwise.
+func unmountedVolume(target string) string {
+	rest, ok := strings.CutPrefix(filepath.Clean(target), "/Volumes/")
+	if !ok {
+		return ""
+	}
+	name, _, _ := strings.Cut(rest, "/")
+	if name == "" {
+		return ""
+	}
+	vol := "/Volumes/" + name
+	if _, err := os.Stat(vol); errors.Is(err, fs.ErrNotExist) {
+		return vol
+	}
+	return ""
 }
 
 // DanglingVMSymlinks returns all dangling symlinks in BaseDir (~/.vz/vms)
@@ -194,13 +222,18 @@ func DanglingVMSymlinks() []DanglingSymlink {
 	return DanglingSymlinks(BaseDir(), BundleDir())
 }
 
-// RemoveDanglingVMSymlinks removes all dangling symlinks in BaseDir (~/.vz/vms)
-// and BundleDir (~/.vz/covevms).
-func RemoveDanglingVMSymlinks() ([]DanglingSymlink, error) {
-	dangling := DanglingVMSymlinks()
+// RemoveDanglingSymlinks removes the links in list that are still dangling.
+// Links whose target is on an unmounted volume are skipped.
+func RemoveDanglingSymlinks(list []DanglingSymlink) ([]DanglingSymlink, error) {
 	var removed []DanglingSymlink
 	var firstErr error
-	for _, sym := range dangling {
+	for _, sym := range list {
+		if sym.Volume != "" {
+			continue
+		}
+		if _, ok := DanglingLink(sym.Path); !ok {
+			continue
+		}
 		if err := os.Remove(sym.Path); err != nil {
 			if firstErr == nil {
 				firstErr = fmt.Errorf("remove dangling symlink %s: %w", sym.Path, err)
