@@ -1,0 +1,12 @@
+commit: 96e299eb1f61258a01c87318a1fbe56742905904
+commit date: 2026-09-30T14:21:32-07:00
+agent: Codex
+codex version: codex-cli 0.159.2
+claude-code version: not applicable
+model: GPT-6 (exact runtime model id unavailable)
+tty: not a tty
+tool process pid: 62329
+agent pid: unavailable
+ITERM_SESSION_ID: w8t7p11:B5AB46F8-1F00-4CA5-B479-EE4A9F188927
+validation: go build ./...; go test ./...; signed cmd/cove binary
+physical VM/GUI validation: not performed
