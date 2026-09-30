@@ -835,27 +835,45 @@ func isUserPathOrHome(path string) bool {
 	return path == "~" || strings.HasPrefix(path, "~/")
 }
 
+// targetUserForPath returns the guest user who should own a file written
+// to path, or "" if path is not in a user home. The owner comes from the
+// path itself (/Users/<name>/...); only "~" paths fall back to the console
+// user.
 func (s *ControlServer) targetUserForPath(path string) string {
 	if !isUserPathOrHome(path) {
 		return ""
 	}
+	for _, prefix := range []string{"/Users/", "/home/"} {
+		if rest, ok := strings.CutPrefix(path, prefix); ok {
+			user, _, _ := strings.Cut(rest, "/")
+			if user != "" && user != "Shared" {
+				return user
+			}
+			return ""
+		}
+	}
 	if u, _, err := s.consoleUser(); err == nil && u != "" {
 		return u
 	}
-	for _, prefix := range []string{"/Users/", "/home/"} {
-		if strings.HasPrefix(path, prefix) {
-			rest := strings.TrimPrefix(path, prefix)
-			if i := strings.IndexByte(rest, '/'); i > 0 {
-				user := rest[:i]
-				if user != "Shared" {
-					return user
-				}
-			} else if rest != "" && rest != "Shared" {
-				return rest
-			}
-		}
-	}
 	return ""
+}
+
+// chownGuest sets the owner of path on the guest without following
+// symbolic links, so a user-controlled link cannot redirect a root chown.
+func chownGuest(ctx context.Context, a *agentstate.AgentClient, user, path string, recursive bool) error {
+	args := []string{"chown", "-h"}
+	if recursive {
+		args = []string{"chown", "-hR"}
+	}
+	args = append(args, "--", user, path)
+	result, err := a.Exec(ctx, args, nil, "")
+	if err != nil {
+		return fmt.Errorf("chown %s: %w", path, err)
+	}
+	if result.ExitCode != 0 {
+		return fmt.Errorf("chown %s: exit %d: %s", path, result.ExitCode, strings.TrimSpace(string(result.Stderr)))
+	}
+	return nil
 }
 
 func (s *ControlServer) expandGuestHome(path string) string {
@@ -967,7 +985,9 @@ func (s *ControlServer) handleAgentCopy(cmd *controlpb.AgentCopyCommand) *contro
 				return &controlpb.ControlResponse{Error: fmt.Sprintf("cp stage: %v", err)}
 			}
 			if targetUser != "" {
-				a.Exec(ctx, []string{"chown", targetUser, stagePath}, nil, "")
+				if err := chownGuest(ctx, a, targetUser, stagePath, false); err != nil {
+					return &controlpb.ControlResponse{Error: fmt.Sprintf("cp stage: %v", err)}
+				}
 			}
 
 			destDir := guestDir(cmd.GuestPath)
@@ -996,7 +1016,9 @@ chmod "$4" "$destPath"`
 				return &controlpb.ControlResponse{Error: fmt.Sprintf("cp: %v", err)}
 			}
 			if targetUser != "" {
-				a.Exec(ctx, []string{"chown", targetUser, cmd.GuestPath}, nil, "")
+				if err := chownGuest(ctx, a, targetUser, cmd.GuestPath, false); err != nil {
+					return &controlpb.ControlResponse{Error: fmt.Sprintf("cp: %v", err)}
+				}
 			}
 		}
 
@@ -1135,7 +1157,9 @@ func (s *ControlServer) handleAgentCopyDir(ctx context.Context, a *agentstate.Ag
 
 	if ua != nil {
 		if targetUser != "" {
-			a.Exec(ctx, []string{"chown", targetUser, tmpTar}, nil, "")
+			if err := chownGuest(ctx, a, targetUser, tmpTar, false); err != nil {
+				return &controlpb.ControlResponse{Error: fmt.Sprintf("stream tar to guest: %v", err)}
+			}
 		}
 		script := `set -e
 dest="$1"; case "$dest" in "~/"*) dest="$HOME/${dest#\~/}" ;; esac
@@ -1175,7 +1199,9 @@ tar xf "$2" --no-same-owner --strip-components=1 -C "$dest"`
 	}
 
 	if targetUser != "" {
-		a.Exec(ctx, []string{"chown", "-R", targetUser, guestDir}, nil, "")
+		if err := chownGuest(ctx, a, targetUser, guestDir, true); err != nil {
+			return &controlpb.ControlResponse{Error: fmt.Sprintf("cp: %v", err)}
+		}
 	}
 
 	sizeResult, _ := a.Exec(ctx, []string{"du", "-sh", guestDir}, nil, "")

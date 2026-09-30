@@ -189,7 +189,9 @@ func TestIsUserPathOrHome(t *testing.T) {
 }
 
 func TestTargetUserForPath(t *testing.T) {
-	s := &ControlServer{}
+	s := &ControlServer{
+		consoleUserOverride: func() (string, int, error) { return "console", 501, nil },
+	}
 	tests := []struct {
 		path string
 		want string
@@ -198,6 +200,10 @@ func TestTargetUserForPath(t *testing.T) {
 		{"/Users/bob/Downloads", "bob"},
 		{"/Users/carol/.zshrc", "carol"},
 		{"/Users/Shared/notes.txt", ""},
+		{"/Users/Shared", ""},
+		{"/Users/dave", "dave"},
+		{"~/Desktop/a.txt", "console"},
+		{"~", "console"},
 		{"/home/ubuntu/test.txt", "ubuntu"},
 		{"/tmp/scratch.txt", ""},
 		{"/var/log/install.log", ""},
