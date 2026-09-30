@@ -88,8 +88,8 @@ func parseExecArgs(args []string) (execOptions, string, []string, error) {
 }
 
 func parseExecArgsWithDefault(args []string, defaultVM string) (execOptions, string, []string, error) {
-	vmArg, argsWithoutVM := extractVMFlag(args)
-	args = normalizeExecShortFlags(argsWithoutVM)
+	activeCommand := hasCommandSeparator(args)
+	args = normalizeExecShortFlags(args)
 
 	fs := flag.NewFlagSet("exec", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -116,9 +116,6 @@ func parseExecArgsWithDefault(args []string, defaultVM string) (execOptions, str
 	tail := fs.Args()
 	vm := opts.vm
 	if vm == "" {
-		vm = vmArg
-	}
-	if vm == "" {
 		vm = defaultVM
 	}
 	if vm == "" {
@@ -140,37 +137,22 @@ func parseExecArgsWithDefault(args []string, defaultVM string) (execOptions, str
 			fs.Usage()
 			return execOptions{}, "", nil, fmt.Errorf("usage: cove exec [options] <vm> <cmd> [args...]")
 		}
-		if isKnownVM(tail[0]) || (len(tail) > 1 && tail[1] == "--") {
+		if !activeCommand {
 			vm = tail[0]
-			if len(tail) > 1 && tail[1] == "--" {
-				argv = append([]string{}, tail[2:]...)
-			} else {
-				argv = append([]string{}, tail[1:]...)
-			}
-			if len(argv) > 0 && argv[0] == "--" {
-				argv = argv[1:]
-			}
-			if len(argv) == 0 {
-				fs.Usage()
-				return execOptions{}, "", nil, fmt.Errorf("exec requires a command")
-			}
+			argv = append([]string{}, tail[1:]...)
 		} else {
-			resolvedName, _, err := resolveTargetVM(VMResolveOptions{
-				Command:        "exec",
-				RequireRunning: false,
-			})
+			resolvedName, _, err := resolveTargetVM(VMResolveOptions{Command: "exec"})
 			if err != nil {
 				return execOptions{}, "", nil, err
 			}
 			vm = resolvedName
 			argv = append([]string{}, tail...)
-			if len(argv) > 0 && argv[0] == "--" {
-				argv = argv[1:]
-			}
-			if len(argv) == 0 {
-				fs.Usage()
-				return execOptions{}, "", nil, fmt.Errorf("exec requires a command")
-			}
+		}
+		if len(argv) > 0 && argv[0] == "--" {
+			argv = argv[1:]
+		}
+		if len(argv) == 0 {
+			return execOptions{}, "", nil, fmt.Errorf("exec requires a command")
 		}
 	}
 	opts.vm = vm
@@ -192,7 +174,7 @@ func normalizeExecShortFlags(args []string) []string {
 		switch arg {
 		case "-it", "-ti":
 			out = append(out, "-i", "-t")
-		case "-e", "--env", "-secret-env", "--secret-env", "-w", "--workdir", "-u", "--user":
+		case "-e", "--env", "-secret-env", "--secret-env", "-w", "--workdir", "-u", "--user", "-vm", "--vm":
 			out = append(out, arg)
 			if i+1 < len(args) {
 				i++
@@ -208,6 +190,7 @@ func normalizeExecShortFlags(args []string) []string {
 func printExecUsage(w io.Writer) {
 	fmt.Fprint(w, `Usage: cove exec [options] <vm> <cmd> [args...]
        cove -vm <vm> exec [options] <cmd> [args...]
+       cove exec [options] -- <cmd> [args...]
 
 Run a command in a running VM through the guest agent.
 
@@ -238,4 +221,20 @@ func runExecCommand(env commandEnv, _ string, args []string) int {
 		return commandUsageError(env, err)
 	}
 	return commandError(env, err)
+}
+
+func hasCommandSeparator(args []string) bool {
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--":
+			return true
+		case "-e", "--env", "-env", "-secret-env", "--secret-env", "-w", "--workdir", "-workdir", "-u", "--user", "-user", "-vm", "--vm":
+			i++
+		default:
+			if !strings.HasPrefix(args[i], "-") || args[i] == "-" {
+				return false
+			}
+		}
+	}
+	return false
 }

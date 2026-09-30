@@ -117,6 +117,10 @@ func commandError(env commandEnv, err error) int {
 		return 0
 	}
 	fmt.Fprintf(env.Stderr, "error: %v\n", err)
+	var ue *usageError
+	if errors.As(err, &ue) {
+		return 2
+	}
 	return 1
 }
 

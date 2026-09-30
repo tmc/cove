@@ -227,24 +227,12 @@ func TestIssue18CtlSocketResolution(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 1. Without -vm, resolves mock-vm as the single installed VM.
+	// Without an active or running VM, require an explicit target.
 	err := ctlCommand([]string{"screenshot"})
-	if err == nil {
-		t.Fatal("ctlCommand(screenshot) succeeded on stopped VM, want error")
+	if err == nil || !strings.Contains(err.Error(), "no VM specified") {
+		t.Fatalf("ctlCommand(screenshot) = %v, want explicit target error", err)
 	}
-	errStr := err.Error()
-	if strings.Contains(errStr, "at control.sock") {
-		t.Fatalf("error still contains bare relative 'at control.sock': %s", errStr)
-	}
-	if !strings.Contains(errStr, "vm is not running") {
-		t.Fatalf("error %q does not contain 'vm is not running'", errStr)
-	}
-	if !strings.Contains(errStr, "mock-vm") {
-		t.Fatalf("error %q does not contain VM name 'mock-vm'", errStr)
-	}
-	if !strings.Contains(errStr, "cove -vm mock-vm run") {
-		t.Fatalf("error %q does not contain run hint with VM name", errStr)
-	}
+	var errStr string
 
 	// 2. With -vm mock-vm, resolves mock-vm explicitly.
 	err = ctlCommand([]string{"-vm", "mock-vm", "screenshot"})

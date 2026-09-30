@@ -573,12 +573,23 @@ func ctlCommand(args []string) error {
 		return err
 	}
 
+	if fs.NArg() < 1 {
+		fs.Usage()
+		return fmt.Errorf("command required")
+	}
+	if fs.Arg(0) == "help" {
+		fs.SetOutput(os.Stdout)
+		fs.Usage()
+		return nil
+	}
+
 	// If a VM was selected and -socket was not, resolve the socket from the VM
 	// dir. ctl skips the startup vmDir resolution (see cli_skip_vmdir.go), so
 	// the resolved directory is also tracked here for subcommands that touch
 	// VM files directly (reset-password offline injection).
 	ctlTarget := currentVMSelection()
 	targetVMDir := ""
+	var targetError error
 	if *socketPath == "" {
 		switch {
 		case ctlVMFlag != nil && *ctlVMFlag != "":
@@ -602,15 +613,9 @@ func ctlCommand(args []string) error {
 			*socketPath = GetControlSocketPathForVM(vmDir)
 			ctlTarget = vmSelection{Directory: vmDir, Name: vmName}
 		default:
-			if name, dir, ok := configuredActiveVM(); ok {
-				targetVMDir = dir
-				*socketPath = GetControlSocketPathForVM(dir)
-				ctlTarget = vmSelection{Directory: dir, Name: name}
-			} else if name, dir, ok := singleRunningVM(); ok {
-				targetVMDir = dir
-				*socketPath = GetControlSocketPathForVM(dir)
-				ctlTarget = vmSelection{Directory: dir, Name: name}
-			} else if name, dir, ok := singleInstalledVM(); ok {
+			name, dir, err := resolveTargetVM(VMResolveOptions{Command: "ctl"})
+			targetError = err
+			if err == nil {
 				targetVMDir = dir
 				*socketPath = GetControlSocketPathForVM(dir)
 				ctlTarget = vmSelection{Directory: dir, Name: name}
@@ -651,6 +656,10 @@ func ctlCommand(args []string) error {
 	}
 	if cmdType == "disk" && len(subArgs) > 1 && isHelpArg(subArgs[1]) && printCtlSubcommandUsage(os.Stdout, cmdType, subArgs) {
 		return nil
+	}
+
+	if targetError != nil {
+		return targetError
 	}
 
 	// Subcommands that own their flag parsing (including --daemon, -o, --) get

@@ -248,3 +248,20 @@ func TestCLIPositionalVMCleanMissing(t *testing.T) {
 		t.Fatalf("stderr = %q, want containing 'clean: no VM named \"bogus-vm\"'", stderr.String())
 	}
 }
+
+func TestRunForkPositionalChild(t *testing.T) {
+	oldParent, oldName, oldVM, oldDir := ephemeralForkParent, ephemeralForkName, vmName, vmDir
+	t.Cleanup(func() {
+		ephemeralForkParent, ephemeralForkName, vmName, vmDir = oldParent, oldName, oldVM, oldDir
+	})
+	ephemeralForkParent, ephemeralForkName, vmName, vmDir = "base", "", "", ""
+	if err := applyPositionalVMTarget("run", "child"); err != nil {
+		t.Fatal(err)
+	}
+	if ephemeralForkName != "child" || vmDir != "" || vmName != "" {
+		t.Fatalf("fork name = %q, VM = %q, directory = %q", ephemeralForkName, vmName, vmDir)
+	}
+	if err := applyPositionalVMTarget("run", "other"); err == nil {
+		t.Fatal("accepted conflicting child names")
+	}
+}

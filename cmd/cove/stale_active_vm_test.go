@@ -52,19 +52,23 @@ func TestResolveTargetVM_StaleActiveVMWithRunningVM(t *testing.T) {
 		Command: "test",
 		Stderr:  &stderrBuf,
 	})
-	if err != nil {
-		t.Fatalf("resolveTargetVM error = %v, want fallback to running VM", err)
+	if err == nil || !strings.Contains(err.Error(), "active VM pointer is stale") {
+		t.Fatalf("resolveTargetVM = (%q, %q, %v), want stale active VM error", name, dir, err)
 	}
-	if name != "running-box" || vmconfig.NameForPath(dir) != "running-box" {
-		t.Errorf("resolveTargetVM = (%q, %q), want name running-box", name, dir)
+	if name != "" || dir != "" {
+		t.Fatalf("resolved another VM despite stale selection: (%q, %q)", name, dir)
 	}
 
-	out := stderrBuf.String()
-	if !strings.Contains(out, "warning: active VM pointer is stale") {
-		t.Errorf("stderr missing stale active VM warning:\n%s", out)
+	if err := os.Remove(linkPath); err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(out, "cove vm set <name>") {
-		t.Errorf("stderr missing suggestion to run 'cove vm set <name>':\n%s", out)
+	writeTestVM(t, "stopped-box")
+	if err := vmconfig.SetActive("stopped-box"); err != nil {
+		t.Fatal(err)
+	}
+	name, dir, err = resolveTargetVM(VMResolveOptions{Command: "test", RequireRunning: true})
+	if err == nil || !strings.Contains(err.Error(), "stopped-box") || name != "" || dir != "" {
+		t.Fatalf("stopped active VM resolved to another running VM: (%q, %q, %v)", name, dir, err)
 	}
 }
 

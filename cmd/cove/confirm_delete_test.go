@@ -17,90 +17,74 @@ func TestConfirmDeletefUnit(t *testing.T) {
 	oldIsTerminal := confirmStdinIsTerminal
 	oldStdin := confirmStdin
 	oldStderr := confirmStderr
-	oldExit := confirmExit
 	t.Cleanup(func() {
 		confirmStdinIsTerminal = oldIsTerminal
 		confirmStdin = oldStdin
 		confirmStderr = oldStderr
-		confirmExit = oldExit
 	})
 
 	tests := []struct {
-		name           string
-		isTerminal     bool
-		input          string
-		wantExitCode   int
-		wantCalledExit bool
-		wantStderr     string
-		wantOK         bool
-		wantErr        bool
+		name       string
+		isTerminal bool
+		input      string
+		wantStderr string
+		wantOK     bool
+		wantErr    bool
 	}{
 		{
-			name:           "non-interactive fails with exit 2",
-			isTerminal:     false,
-			wantCalledExit: true,
-			wantExitCode:   2,
-			wantStderr:     "deletion requires confirmation; use -y/--yes in non-interactive environments",
-			wantOK:         false,
-			wantErr:        true,
+			name:       "non-interactive fails with exit 2",
+			isTerminal: false,
+			wantStderr: "deletion requires confirmation; use -y/--yes in non-interactive environments",
+			wantOK:     false,
+			wantErr:    true,
 		},
 		{
-			name:           "interactive answer y confirms",
-			isTerminal:     true,
-			input:          "y\n",
-			wantCalledExit: false,
-			wantStderr:     "",
-			wantOK:         true,
-			wantErr:        false,
+			name:       "interactive answer y confirms",
+			isTerminal: true,
+			input:      "y\n",
+			wantStderr: "",
+			wantOK:     true,
+			wantErr:    false,
 		},
 		{
-			name:           "interactive answer Y confirms",
-			isTerminal:     true,
-			input:          "Y\n",
-			wantCalledExit: false,
-			wantStderr:     "",
-			wantOK:         true,
-			wantErr:        false,
+			name:       "interactive answer Y confirms",
+			isTerminal: true,
+			input:      "Y\n",
+			wantStderr: "",
+			wantOK:     true,
+			wantErr:    false,
 		},
 		{
-			name:           "interactive answer n aborts with exit 1",
-			isTerminal:     true,
-			input:          "n\n",
-			wantCalledExit: true,
-			wantExitCode:   1,
-			wantStderr:     "aborted",
-			wantOK:         false,
-			wantErr:        true,
+			name:       "interactive answer n aborts with exit 1",
+			isTerminal: true,
+			input:      "n\n",
+			wantStderr: "aborted",
+			wantOK:     false,
+			wantErr:    true,
 		},
 		{
-			name:           "interactive answer no aborts with exit 1",
-			isTerminal:     true,
-			input:          "no\n",
-			wantCalledExit: true,
-			wantExitCode:   1,
-			wantStderr:     "aborted",
-			wantOK:         false,
-			wantErr:        true,
+			name:       "interactive answer no aborts with exit 1",
+			isTerminal: true,
+			input:      "no\n",
+			wantStderr: "aborted",
+			wantOK:     false,
+			wantErr:    true,
 		},
 		{
-			name:           "interactive empty input aborts with exit 1",
-			isTerminal:     true,
-			input:          "\n",
-			wantCalledExit: true,
-			wantExitCode:   1,
-			wantStderr:     "aborted",
-			wantOK:         false,
-			wantErr:        true,
+			name:       "interactive empty input aborts with exit 1",
+			isTerminal: true,
+			input:      "\n",
+			wantStderr: "aborted",
+			wantOK:     false,
+			wantErr:    true,
 		},
 		{
-			name:           "interactive EOF aborts with exit 1",
-			isTerminal:     true,
-			input:          "",
-			wantCalledExit: true,
-			wantExitCode:   1,
-			wantStderr:     "aborted",
-			wantOK:         false,
-			wantErr:        true,
+			name:       "interactive EOF aborts with exit 1",
+			isTerminal: true,
+			input:      "",
+			wantStderr: "aborted",
+			wantOK:     false,
+			wantErr:    true,
 		},
 	}
 
@@ -111,25 +95,12 @@ func TestConfirmDeletefUnit(t *testing.T) {
 			var errBuf bytes.Buffer
 			confirmStderr = &errBuf
 
-			var gotExitCode int
-			var calledExit bool
-			confirmExit = func(code int) {
-				calledExit = true
-				gotExitCode = code
-			}
-
 			ok, err := confirmDeletef("Delete item? [y/N] ")
 			if (err != nil) != tt.wantErr {
 				t.Errorf("confirmDeletef() err = %v, wantErr = %v", err, tt.wantErr)
 			}
 			if ok != tt.wantOK {
 				t.Errorf("confirmDeletef() ok = %v, wantOK = %v", ok, tt.wantOK)
-			}
-			if calledExit != tt.wantCalledExit {
-				t.Errorf("confirmExit called = %v, want %v", calledExit, tt.wantCalledExit)
-			}
-			if calledExit && gotExitCode != tt.wantExitCode {
-				t.Errorf("confirmExit code = %d, want %d", gotExitCode, tt.wantExitCode)
 			}
 			if tt.wantStderr != "" && !strings.Contains(errBuf.String(), tt.wantStderr) {
 				t.Errorf("stderr = %q, want substring %q", errBuf.String(), tt.wantStderr)

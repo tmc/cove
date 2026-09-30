@@ -50,12 +50,10 @@ func TestDiskSnapshotRestoreConfirmation(t *testing.T) {
 	oldIsTerminal := confirmStdinIsTerminal
 	oldStdin := confirmStdin
 	oldStderr := confirmStderr
-	oldExit := confirmExit
 	t.Cleanup(func() {
 		confirmStdinIsTerminal = oldIsTerminal
 		confirmStdin = oldStdin
 		confirmStderr = oldStderr
-		confirmExit = oldExit
 	})
 
 	dir := t.TempDir()
@@ -76,26 +74,12 @@ func TestDiskSnapshotRestoreConfirmation(t *testing.T) {
 		confirmStdinIsTerminal = func() bool { return false }
 		var stderr bytes.Buffer
 		confirmStderr = &stderr
-		var exitCode int
-		confirmExit = func(code int) {
-			exitCode = code
-			panic("exit called")
+		if err := handleDiskSnapshotRestore(mgr, []string{"snap1"}); err == nil {
+			t.Fatal("restore without confirmation succeeded")
 		}
-
-		defer func() {
-			r := recover()
-			if r == nil {
-				t.Fatal("expected panic from exit")
-			}
-			if exitCode != 2 {
-				t.Errorf("exitCode = %d, want 2", exitCode)
-			}
-			if !strings.Contains(stderr.String(), "deletion requires confirmation; use -y/--yes") {
-				t.Errorf("stderr = %q, want confirmation prompt warning", stderr.String())
-			}
-		}()
-
-		_ = handleDiskSnapshotRestore(mgr, []string{"snap1"})
+		if data, err := os.ReadFile(liveDisk); err != nil || string(data) != "modified live" {
+			t.Fatalf("declined restore changed disk: %q, %v", data, err)
+		}
 	})
 
 	t.Run("interactive decline exits 1", func(t *testing.T) {
@@ -103,26 +87,12 @@ func TestDiskSnapshotRestoreConfirmation(t *testing.T) {
 		confirmStdin = strings.NewReader("n\n")
 		var stderr bytes.Buffer
 		confirmStderr = &stderr
-		var exitCode int
-		confirmExit = func(code int) {
-			exitCode = code
-			panic("exit called")
+		if err := handleDiskSnapshotRestore(mgr, []string{"snap1"}); err == nil {
+			t.Fatal("declined restore succeeded")
 		}
-
-		defer func() {
-			r := recover()
-			if r == nil {
-				t.Fatal("expected panic from exit")
-			}
-			if exitCode != 1 {
-				t.Errorf("exitCode = %d, want 1", exitCode)
-			}
-			if !strings.Contains(stderr.String(), "aborted") {
-				t.Errorf("stderr = %q, want 'aborted'", stderr.String())
-			}
-		}()
-
-		_ = handleDiskSnapshotRestore(mgr, []string{"snap1"})
+		if data, err := os.ReadFile(liveDisk); err != nil || string(data) != "modified live" {
+			t.Fatalf("declined restore changed disk: %q, %v", data, err)
+		}
 	})
 
 	t.Run("interactive accept restores snapshot", func(t *testing.T) {
@@ -130,9 +100,6 @@ func TestDiskSnapshotRestoreConfirmation(t *testing.T) {
 		confirmStdin = strings.NewReader("y\n")
 		var stderr bytes.Buffer
 		confirmStderr = &stderr
-		confirmExit = func(code int) {
-			t.Fatalf("unexpected exit: %d", code)
-		}
 
 		err := handleDiskSnapshotRestore(mgr, []string{"snap1"})
 		if err != nil {

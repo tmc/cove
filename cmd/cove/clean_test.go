@@ -114,23 +114,15 @@ func TestCleanNonInteractiveWithoutYesFailsExit2(t *testing.T) {
 	oldIsTerminal := confirmStdinIsTerminal
 	oldStdin := confirmStdin
 	oldStderr := confirmStderr
-	oldExit := confirmExit
 	t.Cleanup(func() {
 		confirmStdinIsTerminal = oldIsTerminal
 		confirmStdin = oldStdin
 		confirmStderr = oldStderr
-		confirmExit = oldExit
 	})
 
 	confirmStdinIsTerminal = func() bool { return false }
 	var errBuf bytes.Buffer
 	confirmStderr = &errBuf
-	var gotExitCode int
-	var calledExit bool
-	confirmExit = func(code int) {
-		calledExit = true
-		gotExitCode = code
-	}
 
 	dir := t.TempDir()
 	stageTestVMForClean(t, dir)
@@ -149,9 +141,6 @@ func TestCleanNonInteractiveWithoutYesFailsExit2(t *testing.T) {
 	code := handleCleanCommand(env, nil)
 	if code != 2 {
 		t.Fatalf("handleCleanCommand exit code = %d, want 2", code)
-	}
-	if !calledExit || gotExitCode != 2 {
-		t.Errorf("confirmExit called = %v, gotExitCode = %d, want 2", calledExit, gotExitCode)
 	}
 	wantMsg := "deletion requires confirmation; use -y/--yes in non-interactive environments"
 	if !strings.Contains(errBuf.String(), wantMsg) {
@@ -190,24 +179,16 @@ func TestCleanInteractiveRejectionAbortsExit1(t *testing.T) {
 	oldIsTerminal := confirmStdinIsTerminal
 	oldStdin := confirmStdin
 	oldStderr := confirmStderr
-	oldExit := confirmExit
 	t.Cleanup(func() {
 		confirmStdinIsTerminal = oldIsTerminal
 		confirmStdin = oldStdin
 		confirmStderr = oldStderr
-		confirmExit = oldExit
 	})
 
 	confirmStdinIsTerminal = func() bool { return true }
 	confirmStdin = strings.NewReader("n\n")
 	var errBuf bytes.Buffer
 	confirmStderr = &errBuf
-	var gotExitCode int
-	var calledExit bool
-	confirmExit = func(code int) {
-		calledExit = true
-		gotExitCode = code
-	}
 
 	dir := t.TempDir()
 	stageTestVMForClean(t, dir)
@@ -227,9 +208,6 @@ func TestCleanInteractiveRejectionAbortsExit1(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("handleCleanCommand exit code = %d, want 1", code)
 	}
-	if !calledExit || gotExitCode != 1 {
-		t.Errorf("confirmExit called = %v, gotExitCode = %d, want 1", calledExit, gotExitCode)
-	}
 	if !strings.Contains(errBuf.String(), "aborted") {
 		t.Errorf("confirmStderr = %q, want substring 'aborted'", errBuf.String())
 	}
@@ -240,21 +218,16 @@ func TestCleanInteractiveConfirmationRemovesFiles(t *testing.T) {
 	oldIsTerminal := confirmStdinIsTerminal
 	oldStdin := confirmStdin
 	oldStderr := confirmStderr
-	oldExit := confirmExit
 	t.Cleanup(func() {
 		confirmStdinIsTerminal = oldIsTerminal
 		confirmStdin = oldStdin
 		confirmStderr = oldStderr
-		confirmExit = oldExit
 	})
 
 	confirmStdinIsTerminal = func() bool { return true }
 	confirmStdin = strings.NewReader("y\n")
 	var errBuf bytes.Buffer
 	confirmStderr = &errBuf
-	confirmExit = func(code int) {
-		t.Fatalf("confirmExit called unexpectedly with code %d", code)
-	}
 
 	dir := t.TempDir()
 	stageTestVMForClean(t, dir)

@@ -114,15 +114,6 @@ func singleRunningVM() (name, dir string, ok bool) {
 	return "", "", false
 }
 
-// singleInstalledVM returns the name and directory if exactly one VM is installed.
-func singleInstalledVM() (name, dir string, ok bool) {
-	vms, err := vmconfig.List(detectVMState)
-	if err != nil || len(vms) != 1 {
-		return "", "", false
-	}
-	return vms[0].Name, vms[0].Path, true
-}
-
 func vmNotFoundError(command, name string) error {
 	if command != "" {
 		return fmt.Errorf("%s: no VM named %q under %s\n  list VMs: cove list\n  create a VM: cove up -user <name>", command, name, vmconfig.BaseDir())
@@ -157,7 +148,7 @@ func staleActiveVMError(command, target string) error {
 //  1. Explicit -vm flag
 //  2. Positional VM name if applicable/valid
 //  3. Fallback to active VM (if configured and valid)
-//  4. Fallback to the only running VM (when active VM link is stale or not set)
+//  4. Fallback to the only running VM when no active VM is configured
 //  5. Informative error if no VM could be resolved or the specified VM does not exist.
 func resolveTargetVM(opts VMResolveOptions) (name, dir string, err error) {
 	// 1. Explicit -vm flag
@@ -203,10 +194,6 @@ func resolveTargetVM(opts VMResolveOptions) (name, dir string, err error) {
 			if detectVMState(activeDir) == "running" {
 				return activeName, activeDir, nil
 			}
-			// Active VM is not running; check if there is a single running VM before failing.
-			if rName, rDir, rOK := singleRunningVM(); rOK {
-				return rName, rDir, nil
-			}
 			return "", "", vmNotRunningError(opts.Command, activeName, activeDir)
 		}
 		return activeName, activeDir, nil
@@ -214,15 +201,12 @@ func resolveTargetVM(opts VMResolveOptions) (name, dir string, err error) {
 
 	// 4. Stale active VM fallback or error
 	if _, staleTarget, isStale := vmconfig.StaleActiveLink(); isStale {
-		if rName, rDir, rOK := singleRunningVM(); rOK {
-			fmt.Fprintf(opts.stderr(), "warning: active VM pointer is stale (%s points to missing %s)\n  set active VM with: cove vm set <name>\n", vmconfig.CurrentLink(), staleTarget)
-			return rName, rDir, nil
-		}
 		return "", "", staleActiveVMError(opts.Command, staleTarget)
 	}
 
 	// 5. Fallback to the only running VM
 	if rName, rDir, rOK := singleRunningVM(); rOK {
+		fmt.Fprintf(opts.stderr(), "using only running VM %q; select explicitly with -vm %s\n", rName, rName)
 		return rName, rDir, nil
 	}
 

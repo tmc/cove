@@ -52,7 +52,7 @@ type shellSessionOptions struct {
 // Returns the guest exit code on a clean exit (0 propagated as nil) so
 // main.go can os.Exit(N) for non-zero results.
 func shellCommand(args []string) error {
-	vmFromArgs, cleanArgs := extractVMFlag(args)
+	activeCommand := hasCommandSeparator(args)
 	fs := flag.NewFlagSet("shell", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	fs.Usage = func() { printShellUsage(os.Stderr) }
@@ -61,7 +61,7 @@ func shellCommand(args []string) error {
 	var envFlag, secretEnvFlagVar secretEnvFlag
 	fs.Var(&envFlag, "env", "guest env NAME=value (repeatable; not redacted)")
 	fs.Var(&secretEnvFlagVar, "secret-env", "guest env NAME=value|env://VAR|file:///path (repeatable; redacted in run logs)")
-	if err := fs.Parse(cleanArgs); err != nil {
+	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
 		}
@@ -70,15 +70,12 @@ func shellCommand(args []string) error {
 	tail := fs.Args()
 	vmArg := vmFlag
 	if vmArg == "" {
-		vmArg = vmFromArgs
-	}
-	if vmArg == "" {
 		vmArg = vmName
 	}
 	var cmd []string
 	if vmArg != "" {
 		cmd = append([]string{}, tail...)
-	} else if len(tail) > 0 && tail[0] != "--" {
+	} else if len(tail) > 0 && !activeCommand {
 		vmArg = tail[0]
 		cmd = append([]string{}, tail[1:]...)
 	} else {

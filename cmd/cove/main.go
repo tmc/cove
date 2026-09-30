@@ -348,7 +348,10 @@ func main() {
 		return
 	}
 
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)).With(slog.String("component", "cove")))
+	if verbose {
+		coveLogLevel.Set(slog.LevelDebug)
+	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: &coveLogLevel})).With(slog.String("component", "cove")))
 
 	maybeStartPprofServer()
 
@@ -614,6 +617,8 @@ func main() {
 	handleDefaultAction()
 }
 
+var coveLogLevel slog.LevelVar
+
 type usageError struct {
 	err error
 }
@@ -630,6 +635,9 @@ func parseLateSubcommandArgs(cmd string, args []string) error {
 	parsedArgs := moveKnownFlagsFirst(args, flagSetTakesValue(flag.CommandLine))
 	if err := flag.CommandLine.Parse(parsedArgs); err != nil {
 		return &usageError{err}
+	}
+	if verbose {
+		coveLogLevel.Set(slog.LevelDebug)
 	}
 	if headlessMode && guiMode {
 		guiExplicit := false
@@ -668,6 +676,13 @@ func commandAcceptsPositionalVM(cmd string) bool {
 }
 
 func applyPositionalVMTarget(cmd string, posVM string) error {
+	if cmd == "run" && ephemeralForkParent != "" {
+		if ephemeralForkName != "" && ephemeralForkName != posVM {
+			return &usageError{fmt.Errorf("conflicting fork names: %s and %s", ephemeralForkName, posVM)}
+		}
+		ephemeralForkName = posVM
+		return nil
+	}
 	vmName = posVM
 	if cmd == "run" {
 		dir, err := requireExistingRunVMDir(vmName)
@@ -1337,34 +1352,29 @@ func applyNestedLinuxDefaults() {
 }
 
 var (
-	confirmStdinIsTerminal = func() bool { return term.IsTerminal(int(os.Stdin.Fd())) }
-	confirmStdin           io.Reader       = os.Stdin
-	confirmStderr          io.Writer       = os.Stderr
-	confirmExit                            = os.Exit
+	confirmStdinIsTerminal           = func() bool { return term.IsTerminal(int(os.Stdin.Fd())) }
+	confirmStdin           io.Reader = os.Stdin
+	confirmStderr          io.Writer = os.Stderr
 )
 
 func confirmDeletef(format string, args ...any) (bool, error) {
 	if !confirmStdinIsTerminal() {
 		fmt.Fprintln(confirmStderr, "deletion requires confirmation; use -y/--yes in non-interactive environments")
-		confirmExit(2)
-		return false, fmt.Errorf("deletion requires confirmation; use -y/--yes in non-interactive environments")
+		return false, &usageError{errors.New("deletion requires confirmation; use -y/--yes in non-interactive environments")}
 	}
 	fmt.Fprintf(confirmStderr, format, args...)
 	line, err := bufio.NewReader(confirmStdin).ReadString('\n')
 	if err != nil && len(strings.TrimSpace(line)) == 0 {
 		fmt.Fprintln(confirmStderr, "aborted")
-		confirmExit(1)
 		return false, fmt.Errorf("aborted")
 	}
 	answer := strings.TrimSpace(line)
 	if answer != "y" && answer != "Y" {
 		fmt.Fprintln(confirmStderr, "aborted")
-		confirmExit(1)
 		return false, fmt.Errorf("aborted")
 	}
 	return true, nil
 }
-
 
 func handleListTo(stdout io.Writer) error {
 	if listWorkerDelegationEnabled() {
@@ -2074,7 +2084,10 @@ Flags:`)
 		if !delYes {
 			ok, err := confirmDeletef("%s", prompt)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				var ue *usageError
+				if errors.As(err, &ue) {
+					os.Exit(2)
+				}
 				os.Exit(1)
 			}
 			if !ok {

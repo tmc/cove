@@ -191,3 +191,36 @@ func TestExecCommandWindowsQEMURejectsUnsupportedSessionFlags(t *testing.T) {
 		t.Fatalf("execCommand error = %v", err)
 	}
 }
+
+func TestParseExecArgsGuestVMFlag(t *testing.T) {
+	for _, args := range [][]string{
+		{"dev", "tool", "-vm", "guest"},
+		{"-vm", "dev", "tool", "--vm=guest"},
+	} {
+		_, vm, argv, err := parseExecArgsWithDefault(args, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if vm != "dev" || !reflect.DeepEqual(argv, args[len(args)-len(argv):]) {
+			t.Fatalf("parseExecArgs(%v) = %q, %v", args, vm, argv)
+		}
+	}
+}
+
+func TestExecTypoDoesNotUseActiveVM(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	writeTestVM(t, "active")
+	if err := vmconfig.SetActive("active"); err != nil {
+		t.Fatal(err)
+	}
+	_, vm, argv, err := parseExecArgsWithDefault([]string{"typo", "rm", "file"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if vm != "typo" || !reflect.DeepEqual(argv, []string{"rm", "file"}) {
+		t.Fatalf("parsed VM %q, command %v", vm, argv)
+	}
+	if _, err := resolveShellSocket(vm); err == nil {
+		t.Fatal("resolved typo VM")
+	}
+}

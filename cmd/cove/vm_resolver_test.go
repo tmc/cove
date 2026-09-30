@@ -196,7 +196,7 @@ func TestExecArgs_UnknownPositionalFallsBackToActiveVM(t *testing.T) {
 	}
 
 	// cove exec ls -la (without -vm) treats ls -la as command and falls back to active VM
-	opts, vm, argv, err := parseExecArgsWithDefault([]string{"ls", "-la"}, "")
+	opts, vm, argv, err := parseExecArgsWithDefault([]string{"--", "ls", "-la"}, "")
 	if err != nil {
 		t.Fatalf("parseExecArgsWithDefault error = %v", err)
 	}
@@ -212,7 +212,7 @@ func TestExecArgs_UnknownPositionalFallsBackToActiveVM(t *testing.T) {
 
 	// cove exec ls -la -vm custom
 	writeTestVM(t, "custom")
-	_, vm, argv, err = parseExecArgsWithDefault([]string{"ls", "-la", "-vm", "custom"}, "")
+	_, vm, argv, err = parseExecArgsWithDefault([]string{"-vm", "custom", "ls", "-la"}, "")
 	if err != nil {
 		t.Fatalf("parseExecArgsWithDefault with trailing -vm error = %v", err)
 	}
