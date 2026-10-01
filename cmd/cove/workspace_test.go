@@ -249,6 +249,48 @@ func TestWorkspaceFreshForkRetention(t *testing.T) {
 	}
 }
 
+func TestWorkspaceNeverReadyRetainsOwnedGuest(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"unavailable", errors.New("agent unavailable"), "prerequisite_failure"},
+		{"timeout", context.DeadlineExceeded, "timed_out"},
+		{"canceled", context.Canceled, "canceled"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			o := workspaceTestOptions(t)
+			o.From = "prepared-base"
+			o.Retain = "discard-success"
+			p, err := planGoWorkspace(o)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var steps []string
+			d := workspaceTestDeps(t, &steps)
+			resolves := 0
+			d.Resolve = func(workspacePlan) (string, bool, error) {
+				resolves++
+				return "/guest/owned", resolves > 1, nil
+			}
+			d.Ready = func(context.Context, workspacePlan, string) ([]byte, error) { return nil, tt.err }
+			d.Capture = func(context.Context, workspacePlan, string) ([]byte, error) {
+				return nil, errors.New("agent capture unavailable")
+			}
+			receipt, err := openGoWorkspace(context.Background(), o, p, d, commandEnv{Stdout: io.Discard})
+			if !errors.Is(err, tt.err) || receipt.FailedStep != "readiness" || receipt.Outcome != tt.want || receipt.Disposition != "retained" || receipt.GuestDirectory != "/guest/owned" {
+				t.Fatalf("receipt %+v, error %v", receipt, err)
+			}
+			for _, step := range steps {
+				if step == "task" || step == "discard" {
+					t.Fatalf("%s ran for a guest that never became ready", step)
+				}
+			}
+		})
+	}
+}
+
 func TestWorkspaceArgvNoShellInjection(t *testing.T) {
 	target := filepath.Join(t.TempDir(), "must-not-exist")
 	arg := "$(touch " + target + "); quoted ' value"
