@@ -30,10 +30,12 @@ func printDiskUsage(w io.Writer) {
 	fmt.Fprintln(w, `Usage: cove disk <command>
 
 Commands:
+  cove disk usage [-json] [-scan] <vm>
+  cove disk clean [-apply] <vm>
   cove disk resize <vm> <size>
   cove -vm <vm> disk resize <size>
 
-Resize stopped VM disk images.
+Inspect guest/host disk space, preview cache cleanup, or grow stopped VM disks.
 
 Use cove ctl -vm <vm> disk resize 0 <size> for running VMs. For macOS
 primary disks, the live ctl path also expands the guest APFS container.`)
@@ -41,6 +43,10 @@ primary disks, the live ctl path also expands the guest APFS container.`)
 
 func handleDiskCommand(env commandEnv, args []string) error {
 	switch args[0] {
+	case "usage", "status":
+		return runDiskUsage(env, args[1:])
+	case "clean":
+		return runDiskClean(env, args[1:])
 	case "resize":
 		if len(args) > 1 && isHelpArg(args[1]) {
 			printDiskResizeUsage(env.Stdout)

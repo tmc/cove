@@ -598,6 +598,41 @@ grows. If the guest APFS step cannot run, the command fails with no host-side
 change. If the backing image has already grown but the guest step fails, the
 error says so and prints the exact retry/manual recovery command.
 
+Inspect capacity before growing or deleting anything:
+
+```sh
+cove disk usage muse-lab
+cove disk usage -json -check muse-lab
+cove disk usage -scan-path /Users/tmc muse-lab
+cove disk clean muse-lab                       # preview Go build cache
+cove disk clean -cache go-modules muse-lab     # preview module downloads
+cove disk clean -cache go-build -apply muse-lab
+```
+
+`disk usage` separates guest free space, host free space, backing-file length,
+and host allocated blocks. Formatted image file length is not virtual capacity.
+Guest space below 1 GiB or 2% is critical; below 10 GiB or 10% is low.
+`-check` exits nonzero for low, critical, or unavailable guest capacity.
+Directory scans stay on one filesystem, take at most two minutes, and report
+incomplete scans rather than treating unreadable directories as empty.
+A stopped or disconnected VM still reports host information.
+
+Cleanup defaults to a preview and the signed-in user. `-apply` runs Go's cache
+cleanup command. Module cleanup requires downloading dependencies again.
+`-scope daemon` explicitly targets the standard root Go cache paths; it does
+not fall back to root when user cleanup fails. Source trees, model caches,
+Downloads, snapshots, and Recovery partitions are not cleanup targets.
+A failed cleanup can be partial; check free space again and review ownership
+if the command reports a permission error.
+
+For macOS, the report identifies a separate Recovery partition after the
+root container when present. Such a partition blocks ordinary APFS expansion:
+growing the backing image alone will not add guest space. Keep Recovery intact,
+reclaim selected caches, or move suitable data to a shared folder. Run the
+live resize with `--preflight` before attempting growth.
+`cove compact` prepares free blocks for smaller image uploads; it does not
+increase guest filesystem capacity or delete guest data.
+
 For a stopped VM, use:
 
 ```sh

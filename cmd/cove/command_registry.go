@@ -29,7 +29,7 @@ var commandRegistry = []covecli.Spec{
 	{Name: "ctl", Summary: "Control running VM via socket", Dispatch: covecli.DispatchEarly, Run: runCtlCommand},
 	{Name: "daemon", Summary: "Manage the cove background coordinator", Dispatch: covecli.DispatchEarly, Run: runDaemonCommand},
 	{Name: "diff", Summary: "Compare local image disk layer metadata", Dispatch: covecli.DispatchEarly, Run: runDiffCommand},
-	{Name: "disk", Summary: "Resize stopped VM disk images", Dispatch: covecli.DispatchEarly, Run: runDiskCommand},
+	{Name: "disk", Summary: "Inspect disk space, preview cache cleanup, and grow VM disks", Dispatch: covecli.DispatchEarly, Run: runDiskCommand},
 	{Name: "disk-detach", Summary: "Detach VM disk if stuck", Dispatch: covecli.DispatchEarly, Run: runDiskDetachCommand},
 	{Name: "disk-snapshot", Summary: "Manage disk-level snapshots", Dispatch: covecli.DispatchLate, Run: runDiskSnapshotCommand},
 	{Name: "export", Summary: "Export VM to tarball", Dispatch: covecli.DispatchLate, Run: runVMSubcommand},
