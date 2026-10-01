@@ -59,7 +59,8 @@ func materializeBuildRegistryBase(ctx context.Context, refText string, opts buil
 	}
 	plan := &pullPlan{
 		Ref:                ref,
-		VMName:             filepath.Base(dir) + ".covevm",
+		VMName:             "",
+		SuppressAliases:    true,
 		VMDir:              dir,
 		Manifest:           parsed,
 		ManifestRaw:        manifestRaw,

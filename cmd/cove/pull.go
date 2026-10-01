@@ -49,6 +49,7 @@ type pullOptions struct {
 type pullPlan struct {
 	Ref                  ociimage.Reference
 	VMName               string
+	SuppressAliases      bool
 	VMDir                string
 	Manifest             ociimage.ParsedManifest
 	ManifestRaw          []byte
@@ -868,21 +869,23 @@ func pullDisk(ctx context.Context, plan *pullPlan, opts pullOptions) error {
 	if len(plan.Manifest.DiskLayers) == 0 {
 		return fmt.Errorf("cove pull: manifest has no disk chunks")
 	}
-	if err := checkPullTarget(plan.VMDir, opts.Resume); err != nil {
+	publication, err := beginPullPublication(ctx, plan, opts)
+	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(plan.VMDir, 0755); err != nil {
-		return fmt.Errorf("create VM directory: %w", err)
-	}
-	if err := vmconfig.EnsureCompatibilityAlias(plan.VMName, plan.VMDir); err != nil {
-		return fmt.Errorf("create VM compatibility alias: %w", err)
-	}
+	defer publication.Close()
+
 	blobStore := store.New(opts.StoreDir)
 	unlock, err := blobStore.LockShared()
 	if err != nil {
 		return err
 	}
-	defer unlock()
+	storeLocked := true
+	defer func() {
+		if storeLocked {
+			unlock()
+		}
+	}()
 	if len(plan.ManifestRaw) > 0 {
 		if err := blobStore.StoreManifest(plan.ManifestDigest, plan.ManifestRaw); err != nil {
 			return err
@@ -894,9 +897,12 @@ func pullDisk(ctx context.Context, plan *pullPlan, opts pullOptions) error {
 	}
 
 	partialPath := filepath.Join(plan.VMDir, "disk.img.partial")
-	diskPath := filepath.Join(plan.VMDir, "disk.img")
 	disk, baseReuse, zeroExisting, err := createPullPartialDisk(partialPath, plan.Manifest.Annotations.UncompressedDiskSize, baseReuse, opts.Resume)
 	if err != nil {
+		return err
+	}
+	if err := publication.recordPartial(disk); err != nil {
+		disk.Close()
 		return err
 	}
 	recordPullBaseReuse(plan, baseReuse)
@@ -921,16 +927,11 @@ func pullDisk(ctx context.Context, plan *pullPlan, opts pullOptions) error {
 		return fmt.Errorf("close partial disk: %w", err)
 	}
 	closed = true
-	if err := os.Rename(partialPath, diskPath); err != nil {
-		return fmt.Errorf("rename partial disk: %w", err)
+	if err := unlock(); err != nil {
+		return fmt.Errorf("release pull store lock: %w", err)
 	}
-	if err := writePullProvenance(plan.VMDir, plan.ManifestDigest); err != nil {
-		return err
-	}
-	if err := syncPullDir(plan.VMDir); err != nil {
-		return fmt.Errorf("fsync VM directory: %w", err)
-	}
-	return nil
+	storeLocked = false
+	return publication.publish(ctx, plan.ManifestDigest)
 }
 
 func pullDiskChunks(ctx context.Context, client ociimage.RegistryClient, plan *pullPlan, disk io.WriterAt, blobStore store.Store, baseReuse *pullBaseReuse, zeroExisting bool) error {

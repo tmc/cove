@@ -43,14 +43,11 @@ func tartPullDisk(ctx context.Context, plan *pullPlan, opts pullOptions) error {
 	if len(plan.Manifest.Tart.DiskLayers) == 0 {
 		return fmt.Errorf("cove pull: tart manifest has no disk layers")
 	}
-	if err := os.MkdirAll(plan.VMDir, 0755); err != nil {
-		return fmt.Errorf("create VM directory: %w", err)
+	publication, err := beginPullPublication(ctx, plan, opts)
+	if err != nil {
+		return err
 	}
-	if plan.VMName != "" {
-		if err := vmconfig.EnsureCompatibilityAlias(plan.VMName, plan.VMDir); err != nil {
-			return fmt.Errorf("create VM compatibility alias: %w", err)
-		}
-	}
+	defer publication.Close()
 
 	client := pullRegistryClient(plan.Ref, opts)
 
@@ -69,9 +66,12 @@ func tartPullDisk(ctx context.Context, plan *pullPlan, opts pullOptions) error {
 	}
 
 	partialPath := filepath.Join(plan.VMDir, "disk.img.partial")
-	diskPath := filepath.Join(plan.VMDir, "disk.img")
 	disk, err := ociimage.CreatePartialDisk(partialPath, plan.Manifest.Tart.UncompressedDiskSize)
 	if err != nil {
+		return err
+	}
+	if err := publication.recordPartial(disk); err != nil {
+		disk.Close()
 		return err
 	}
 	closed := false
@@ -91,16 +91,7 @@ func tartPullDisk(ctx context.Context, plan *pullPlan, opts pullOptions) error {
 		return fmt.Errorf("close partial disk: %w", err)
 	}
 	closed = true
-	if err := os.Rename(partialPath, diskPath); err != nil {
-		return fmt.Errorf("rename partial disk: %w", err)
-	}
-	if err := writePullProvenance(plan.VMDir, plan.ManifestDigest); err != nil {
-		return err
-	}
-	if err := syncPullDir(plan.VMDir); err != nil {
-		return fmt.Errorf("fsync VM directory: %w", err)
-	}
-	return nil
+	return publication.publish(ctx, plan.ManifestDigest)
 }
 
 // tartPullSidecar fetches a single non-disk layer and writes the body

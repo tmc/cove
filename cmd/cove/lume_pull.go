@@ -40,14 +40,11 @@ func lumePullDisk(ctx context.Context, plan *pullPlan, opts pullOptions) error {
 	if len(plan.Manifest.Lume.DiskParts) == 0 {
 		return fmt.Errorf("cove pull: lume manifest has no disk parts")
 	}
-	if err := os.MkdirAll(plan.VMDir, 0755); err != nil {
-		return fmt.Errorf("create VM directory: %w", err)
+	publication, err := beginPullPublication(ctx, plan, opts)
+	if err != nil {
+		return err
 	}
-	if plan.VMName != "" {
-		if err := vmconfig.EnsureCompatibilityAlias(plan.VMName, plan.VMDir); err != nil {
-			return fmt.Errorf("create VM compatibility alias: %w", err)
-		}
-	}
+	defer publication.Close()
 
 	client := pullRegistryClient(plan.Ref, opts)
 
@@ -68,21 +65,10 @@ func lumePullDisk(ctx context.Context, plan *pullPlan, opts pullOptions) error {
 
 	// Stream the concatenated tar parts into a single tar reader.
 	partialPath := filepath.Join(plan.VMDir, "disk.img.partial")
-	diskPath := filepath.Join(plan.VMDir, "disk.img")
-	if err := lumeStreamDisk(ctx, client, plan, partialPath); err != nil {
-		os.Remove(partialPath)
+	if err := lumeStreamDisk(ctx, client, plan, partialPath, publication); err != nil {
 		return err
 	}
-	if err := os.Rename(partialPath, diskPath); err != nil {
-		return fmt.Errorf("rename partial disk: %w", err)
-	}
-	if err := writePullProvenance(plan.VMDir, plan.ManifestDigest); err != nil {
-		return err
-	}
-	if err := syncPullDir(plan.VMDir); err != nil {
-		return fmt.Errorf("fsync VM directory: %w", err)
-	}
-	return nil
+	return publication.publish(ctx, plan.ManifestDigest)
 }
 
 // lumePullSidecar fetches a non-disk layer and writes it under VMDir/name.
@@ -136,7 +122,7 @@ func lumePullSidecar(ctx context.Context, client ociimage.RegistryClient, plan *
 // lumeStreamDisk concatenates each tar part into a single tar reader and
 // extracts the single disk file into partialPath. Lume's tar parts are gzip-
 // wrapped; we sniff for the gzip magic on the first chunk and wrap accordingly.
-func lumeStreamDisk(ctx context.Context, client ociimage.RegistryClient, plan *pullPlan, partialPath string) error {
+func lumeStreamDisk(ctx context.Context, client ociimage.RegistryClient, plan *pullPlan, partialPath string, publication *pullPublication) error {
 	ctx, cancel := context.WithCancel(ctx)
 	pr, pw := io.Pipe()
 	done := make(chan struct{})
@@ -166,6 +152,10 @@ func lumeStreamDisk(ctx context.Context, client ociimage.RegistryClient, plan *p
 	out, err := os.OpenFile(partialPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
 		return fmt.Errorf("open partial disk: %w", err)
+	}
+	if err := publication.recordPartial(out); err != nil {
+		out.Close()
+		return err
 	}
 	closed := false
 	defer func() {
