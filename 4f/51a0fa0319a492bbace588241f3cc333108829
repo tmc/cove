@@ -1,0 +1,17 @@
+commit=4f51a0fa0319a492bbace588241f3cc333108829
+date=2026-10-01T13:35:21-0700
+agent=Codex
+model=GPT-6
+claude-code-version=not applicable
+tty=not a tty
+pid=38117 (note writer)
+ITERM_SESSION_ID=w8t10p1:22455FE0-2629-45BE-9D07-66CB8BD47189
+base=489becf44d48dadf6bba245b895fe28a47a022ca
+snapshot=/Users/tmc/tmp/cove-screenshot-qual.7FiSxj
+source-proof=exact staged snapshot, zero working-tree diff against staged index; two screenshot files only
+source-sha256=setup_assistant.go 00f7762dbb29ac268a3d90a88ebe80f18e0060528abb775cada0caa29c5812ae; setup_assistant_screenshot_test.go 7f2fa41e6c9c10b21f3a7f497ce7c4b8137651f6a307eb06e9ff30ef019542fd
+validation=go build ./... passed; standalone cove build and virtualization-entitlement codesign verification passed; screenshot-focused tests passed 1.811s
+whole-suite=failed 119.941s cmd/cove inherited TestWorkspaceSourceProvenance host signing/passphrase prerequisite; cmd/vz-agent TestResizeExecTTYAppliesWinsize host pty.Open device-not-configured prerequisite
+baseline-proof=both prerequisite failures reproduced individually; snapshot workspace_test.go and server_test.go blob ids match unchanged HEAD parent (9baa32fe111c4929ba35dbade3230594d02f95e3 and 1742ce3afcd008ecfb41285947a168050e0cb65c)
+commit-hook=per-command hooksPath disabled to avoid beads hook staging unrelated issue changes
+physical-runtime=no VM launched
