@@ -600,6 +600,7 @@ func (s *ControlServer) handlePITSwap(name string, ram bool) *controlpb.ControlR
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("swap pit disk attachment: %v", err)}
 	}
 
+	s.invalidateUISession()
 	return statusControlResponse(PITActionResponse{
 		Action:         "swap",
 		Snapshot:       info.Name,

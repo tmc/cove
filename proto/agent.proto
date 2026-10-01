@@ -291,6 +291,9 @@ service UserAgent {
   rpc UserExec(ExecRequest) returns (ExecResponse);
   // UserExecStream runs a command with streaming output as the logged-in user.
   rpc UserExecStream(ExecRequest) returns (stream ExecOutput);
+  rpc UIStatus(UIRequest) returns (UIResponse);
+  rpc InspectUI(UIRequest) returns (UIResponse);
+  rpc FindUI(UIRequest) returns (UIResponse);
 }
 
 // Power
@@ -303,3 +306,59 @@ message ShutdownResponse {}
 
 message RebootRequest {}
 message RebootResponse {}
+
+// User-session accessibility reads. Values and editable/static text are omitted.
+message UIRequest {
+  int32 pid = 1;
+  uint32 max_depth = 2;
+  uint32 max_nodes = 3;
+  uint32 max_bytes = 4;
+  uint32 timeout_ms = 5;
+  string role = 6;
+  string identifier = 7;
+  string label = 8;
+  string expected_generation = 9;
+  string host_generation = 10;
+}
+
+message UIStatus {
+  uint32 protocol_version = 1;
+  string backend = 2;
+  string session_id = 3;
+  string generation = 4;
+  string state = 5;
+  string permission_state = 6;
+  string session_state = 7;
+  repeated string operations = 8;
+  string reason = 9;
+}
+
+message UIBounds {
+  double x = 1;
+  double y = 2;
+  double width = 3;
+  double height = 4;
+}
+
+message UINode {
+  string handle = 1;
+  string parent_handle = 2;
+  string role = 3;
+  string subrole = 4;
+  string identifier = 5;
+  string label = 6;
+  optional bool enabled = 7;
+  optional bool focused = 8;
+  UIBounds bounds = 9;
+  bool value_omitted = 10;
+}
+
+message UIResponse {
+  UIStatus status = 1;
+  string observation_id = 2;
+  string observed_at = 3;
+  repeated UINode nodes = 4;
+  bool truncated = 5;
+  string truncation_reason = 6;
+  string match_state = 7;
+}

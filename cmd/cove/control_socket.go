@@ -46,6 +46,8 @@ var (
 
 // ControlServer manages the Unix socket for VM control
 type ControlServer struct {
+	uiMu                sync.Mutex
+	uiGeneration        string
 	socketPath          string
 	vmDir               string
 	authToken           string
@@ -1354,6 +1356,7 @@ func controlCapabilityCommands(linuxGuest, windowsGuest bool) []string {
 		"agent-exec-attach", "agent-exec-resize", "agent-exec-signal",
 		"agent-read", "agent-write", "agent-cp", "agent-shutdown", "agent-reboot",
 		"agent-sshd", "agent-mount-volumes", "agent-status",
+		"agent-ui-status", "agent-ui-inspect", "agent-ui-find",
 	}
 	if !linuxGuest && !windowsGuest {
 		commands = append(commands, "reboot-to-recovery")

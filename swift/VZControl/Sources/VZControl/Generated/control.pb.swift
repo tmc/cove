@@ -24,6 +24,8 @@ fileprivate struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobuf.ProtobufAP
 /// ControlRequest is the envelope for all control socket requests.
 /// Every JSON line sent to the socket is unmarshaled into this message.
 /// The "type" field selects the handler; the oneof carries the payload.
+/// Some requests, such as "vnc-status" and "debug-stub-status", are handled
+/// as flat request types and return JSON in ControlResponse.data.
 public struct VZControl_ControlRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -93,6 +95,14 @@ public struct VZControl_ControlRequest: Sendable {
     set {command = .ocr(newValue)}
   }
 
+  public var portForward: VZControl_PortForwardCommand {
+    get {
+      if case .portForward(let v)? = command {return v}
+      return VZControl_PortForwardCommand()
+    }
+    set {command = .portForward(newValue)}
+  }
+
   public var agentExec: VZControl_AgentExecCommand {
     get {
       if case .agentExec(let v)? = command {return v}
@@ -141,6 +151,22 @@ public struct VZControl_ControlRequest: Sendable {
     set {command = .agentCp(newValue)}
   }
 
+  public var operations: VZControl_OperationsCommand {
+    get {
+      if case .operations(let v)? = command {return v}
+      return VZControl_OperationsCommand()
+    }
+    set {command = .operations(newValue)}
+  }
+
+  public var agentUi: Vz_Agent_V1_UIRequest {
+    get {
+      if case .agentUi(let v)? = command {return v}
+      return Vz_Agent_V1_UIRequest()
+    }
+    set {command = .agentUi(newValue)}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public enum OneOf_Command: Equatable, Sendable {
@@ -151,12 +177,15 @@ public struct VZControl_ControlRequest: Sendable {
     case snapshot(VZControl_SnapshotCommand)
     case memory(VZControl_MemoryCommand)
     case ocr(VZControl_OCRCommand)
+    case portForward(VZControl_PortForwardCommand)
     case agentExec(VZControl_AgentExecCommand)
     case agentRead(VZControl_AgentFileReadCommand)
     case agentWrite(VZControl_AgentFileWriteCommand)
     case agentShutdown(VZControl_AgentShutdownCommand)
     case agentSshd(VZControl_AgentSSHDCommand)
     case agentCp(VZControl_AgentCopyCommand)
+    case operations(VZControl_OperationsCommand)
+    case agentUi(Vz_Agent_V1_UIRequest)
 
   }
 
@@ -166,139 +195,175 @@ public struct VZControl_ControlRequest: Sendable {
 /// ControlResponse is the envelope for all control socket responses.
 /// The "data" field (3) is kept for backward compatibility. New clients
 /// should read from the typed "result" oneof instead.
-public struct VZControl_ControlResponse: Sendable {
+public struct VZControl_ControlResponse: @unchecked Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  public var success: Bool = false
+  public var success: Bool {
+    get {_storage._success}
+    set {_uniqueStorage()._success = newValue}
+  }
 
-  public var error: String = String()
+  public var error: String {
+    get {_storage._error}
+    set {_uniqueStorage()._error = newValue}
+  }
 
   /// Legacy: opaque string carrying base64 images, JSON objects, or plain text.
-  public var data: String = String()
+  public var data: String {
+    get {_storage._data}
+    set {_uniqueStorage()._data = newValue}
+  }
 
   /// Typed response payload. New clients should prefer these fields.
-  public var result: VZControl_ControlResponse.OneOf_Result? = nil
+  public var result: OneOf_Result? {
+    get {return _storage._result}
+    set {_uniqueStorage()._result = newValue}
+  }
 
   public var status: VZControl_StatusResponse {
     get {
-      if case .status(let v)? = result {return v}
+      if case .status(let v)? = _storage._result {return v}
       return VZControl_StatusResponse()
     }
-    set {result = .status(newValue)}
+    set {_uniqueStorage()._result = .status(newValue)}
   }
 
   public var capabilities: VZControl_CapabilitiesResponse {
     get {
-      if case .capabilities(let v)? = result {return v}
+      if case .capabilities(let v)? = _storage._result {return v}
       return VZControl_CapabilitiesResponse()
     }
-    set {result = .capabilities(newValue)}
+    set {_uniqueStorage()._result = .capabilities(newValue)}
   }
 
   public var screenshotResult: VZControl_ScreenshotResponse {
     get {
-      if case .screenshotResult(let v)? = result {return v}
+      if case .screenshotResult(let v)? = _storage._result {return v}
       return VZControl_ScreenshotResponse()
     }
-    set {result = .screenshotResult(newValue)}
+    set {_uniqueStorage()._result = .screenshotResult(newValue)}
   }
 
   public var empty: VZControl_EmptyResponse {
     get {
-      if case .empty(let v)? = result {return v}
+      if case .empty(let v)? = _storage._result {return v}
       return VZControl_EmptyResponse()
     }
-    set {result = .empty(newValue)}
+    set {_uniqueStorage()._result = .empty(newValue)}
   }
 
   public var snapshotList: VZControl_SnapshotListResponse {
     get {
-      if case .snapshotList(let v)? = result {return v}
+      if case .snapshotList(let v)? = _storage._result {return v}
       return VZControl_SnapshotListResponse()
     }
-    set {result = .snapshotList(newValue)}
+    set {_uniqueStorage()._result = .snapshotList(newValue)}
   }
 
   public var snapshotAction: VZControl_SnapshotActionResponse {
     get {
-      if case .snapshotAction(let v)? = result {return v}
+      if case .snapshotAction(let v)? = _storage._result {return v}
       return VZControl_SnapshotActionResponse()
     }
-    set {result = .snapshotAction(newValue)}
+    set {_uniqueStorage()._result = .snapshotAction(newValue)}
   }
 
   public var message: VZControl_MessageResponse {
     get {
-      if case .message(let v)? = result {return v}
+      if case .message(let v)? = _storage._result {return v}
       return VZControl_MessageResponse()
     }
-    set {result = .message(newValue)}
+    set {_uniqueStorage()._result = .message(newValue)}
   }
 
   public var networkInfo: VZControl_NetworkInfoResponse {
     get {
-      if case .networkInfo(let v)? = result {return v}
+      if case .networkInfo(let v)? = _storage._result {return v}
       return VZControl_NetworkInfoResponse()
     }
-    set {result = .networkInfo(newValue)}
+    set {_uniqueStorage()._result = .networkInfo(newValue)}
   }
 
   public var memoryInfo: VZControl_MemoryInfoResponse {
     get {
-      if case .memoryInfo(let v)? = result {return v}
+      if case .memoryInfo(let v)? = _storage._result {return v}
       return VZControl_MemoryInfoResponse()
     }
-    set {result = .memoryInfo(newValue)}
+    set {_uniqueStorage()._result = .memoryInfo(newValue)}
   }
 
   public var agentExecResult: VZControl_AgentExecResponse {
     get {
-      if case .agentExecResult(let v)? = result {return v}
+      if case .agentExecResult(let v)? = _storage._result {return v}
       return VZControl_AgentExecResponse()
     }
-    set {result = .agentExecResult(newValue)}
+    set {_uniqueStorage()._result = .agentExecResult(newValue)}
   }
 
   public var agentFile: VZControl_AgentFileResponse {
     get {
-      if case .agentFile(let v)? = result {return v}
+      if case .agentFile(let v)? = _storage._result {return v}
       return VZControl_AgentFileResponse()
     }
-    set {result = .agentFile(newValue)}
+    set {_uniqueStorage()._result = .agentFile(newValue)}
   }
 
   public var agentInfo: VZControl_AgentInfoResponse {
     get {
-      if case .agentInfo(let v)? = result {return v}
+      if case .agentInfo(let v)? = _storage._result {return v}
       return VZControl_AgentInfoResponse()
     }
-    set {result = .agentInfo(newValue)}
+    set {_uniqueStorage()._result = .agentInfo(newValue)}
   }
 
   public var agentPing: VZControl_AgentPingResponse {
     get {
-      if case .agentPing(let v)? = result {return v}
+      if case .agentPing(let v)? = _storage._result {return v}
       return VZControl_AgentPingResponse()
     }
-    set {result = .agentPing(newValue)}
+    set {_uniqueStorage()._result = .agentPing(newValue)}
   }
 
   public var ocrText: VZControl_OCRTextResponse {
     get {
-      if case .ocrText(let v)? = result {return v}
+      if case .ocrText(let v)? = _storage._result {return v}
       return VZControl_OCRTextResponse()
     }
-    set {result = .ocrText(newValue)}
+    set {_uniqueStorage()._result = .ocrText(newValue)}
   }
 
   public var screenDetection: VZControl_ScreenDetectionResponse {
     get {
-      if case .screenDetection(let v)? = result {return v}
+      if case .screenDetection(let v)? = _storage._result {return v}
       return VZControl_ScreenDetectionResponse()
     }
-    set {result = .screenDetection(newValue)}
+    set {_uniqueStorage()._result = .screenDetection(newValue)}
+  }
+
+  public var operation: VZControl_OperationInfo {
+    get {
+      if case .operation(let v)? = _storage._result {return v}
+      return VZControl_OperationInfo()
+    }
+    set {_uniqueStorage()._result = .operation(newValue)}
+  }
+
+  public var operationsList: VZControl_OperationsListResponse {
+    get {
+      if case .operationsList(let v)? = _storage._result {return v}
+      return VZControl_OperationsListResponse()
+    }
+    set {_uniqueStorage()._result = .operationsList(newValue)}
+  }
+
+  public var agentUi: Vz_Agent_V1_UIResponse {
+    get {
+      if case .agentUi(let v)? = _storage._result {return v}
+      return Vz_Agent_V1_UIResponse()
+    }
+    set {_uniqueStorage()._result = .agentUi(newValue)}
   }
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -320,10 +385,15 @@ public struct VZControl_ControlResponse: Sendable {
     case agentPing(VZControl_AgentPingResponse)
     case ocrText(VZControl_OCRTextResponse)
     case screenDetection(VZControl_ScreenDetectionResponse)
+    case operation(VZControl_OperationInfo)
+    case operationsList(VZControl_OperationsListResponse)
+    case agentUi(Vz_Agent_V1_UIResponse)
 
   }
 
   public init() {}
+
+  fileprivate var _storage = _StorageClass.defaultInstance
 }
 
 /// KeyCommand sends a keyboard event to the VM.
@@ -414,6 +484,28 @@ public struct VZControl_SnapshotCommand: Sendable {
 
   public var name: String = String()
 
+  /// When true, the server returns immediately with a long-running operation
+  /// ID (in SnapshotActionResponse.op_id) and runs the save/restore in the
+  /// background. Clients poll OperationsCommand.get / get the op via the
+  /// gateway's /v1/operations/<id>. Only honored for action=save today.
+  public var async: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+/// OperationsCommand inspects long-running operations on the per-VM control
+/// socket. Action values: "get" (id required), "list" (id ignored).
+public struct VZControl_OperationsCommand: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var action: String = String()
+
+  public var id: String = String()
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -448,6 +540,26 @@ public struct VZControl_OCRCommand: Sendable {
 
   /// Timeout as a Go duration string (e.g. "10s", "1m").
   public var timeout: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+/// PortForwardCommand manages host TCP -> guest vsock port forwarding.
+public struct VZControl_PortForwardCommand: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// Action: "start", "stop", "list"
+  public var action: String = String()
+
+  /// Host TCP port to listen on.
+  public var hostPort: UInt32 = 0
+
+  /// Guest vsock port to forward to.
+  public var guestPort: UInt32 = 0
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -542,6 +654,8 @@ public struct VZControl_AgentCopyCommand: Sendable {
   public var toGuest: Bool = false
 
   public var mode: UInt32 = 0
+
+  public var overwrite: Bool = false
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -643,6 +757,51 @@ public struct VZControl_SnapshotActionResponse: Sendable {
   // methods supported on all messages.
 
   public var message: String = String()
+
+  /// op_id is set when the request was async (SnapshotCommand.async=true);
+  /// it identifies the long-running operation to poll via OperationsCommand.
+  public var opID: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+/// OperationInfo summarizes one long-running operation.
+public struct VZControl_OperationInfo: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var id: String = String()
+
+  public var resource: String = String()
+
+  /// pending|running|succeeded|failed
+  public var status: String = String()
+
+  /// RFC3339
+  public var createdAt: String = String()
+
+  /// RFC3339
+  public var updatedAt: String = String()
+
+  public var errorCode: String = String()
+
+  public var errorMessage: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+/// OperationsListResponse wraps a list of OperationInfo records.
+public struct VZControl_OperationsListResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var operations: [VZControl_OperationInfo] = []
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -871,7 +1030,7 @@ fileprivate let _protobuf_package = "vz.control.v1"
 
 extension VZControl_ControlRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ControlRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}type\0\u{3}auth_token\0\u{2}\u{8}key\0\u{1}mouse\0\u{1}text\0\u{1}screenshot\0\u{1}snapshot\0\u{1}memory\0\u{1}ocr\0\u{4}\u{4}agent_exec\0\u{3}agent_read\0\u{3}agent_write\0\u{3}agent_shutdown\0\u{3}agent_sshd\0\u{3}agent_cp\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}type\0\u{3}auth_token\0\u{2}\u{8}key\0\u{1}mouse\0\u{1}text\0\u{1}screenshot\0\u{1}snapshot\0\u{1}memory\0\u{1}ocr\0\u{3}port_forward\0\u{4}\u{3}agent_exec\0\u{3}agent_read\0\u{3}agent_write\0\u{3}agent_shutdown\0\u{3}agent_sshd\0\u{3}agent_cp\0\u{1}operations\0\u{3}agent_ui\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -972,6 +1131,19 @@ extension VZControl_ControlRequest: SwiftProtobuf.Message, SwiftProtobuf._Messag
           self.command = .ocr(v)
         }
       }()
+      case 17: try {
+        var v: VZControl_PortForwardCommand?
+        var hadOneofValue = false
+        if let current = self.command {
+          hadOneofValue = true
+          if case .portForward(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.command = .portForward(v)
+        }
+      }()
       case 20: try {
         var v: VZControl_AgentExecCommand?
         var hadOneofValue = false
@@ -1050,6 +1222,32 @@ extension VZControl_ControlRequest: SwiftProtobuf.Message, SwiftProtobuf._Messag
           self.command = .agentCp(v)
         }
       }()
+      case 26: try {
+        var v: VZControl_OperationsCommand?
+        var hadOneofValue = false
+        if let current = self.command {
+          hadOneofValue = true
+          if case .operations(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.command = .operations(v)
+        }
+      }()
+      case 27: try {
+        var v: Vz_Agent_V1_UIRequest?
+        var hadOneofValue = false
+        if let current = self.command {
+          hadOneofValue = true
+          if case .agentUi(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.command = .agentUi(v)
+        }
+      }()
       default: break
       }
     }
@@ -1095,6 +1293,10 @@ extension VZControl_ControlRequest: SwiftProtobuf.Message, SwiftProtobuf._Messag
       guard case .ocr(let v)? = self.command else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 16)
     }()
+    case .portForward?: try {
+      guard case .portForward(let v)? = self.command else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 17)
+    }()
     case .agentExec?: try {
       guard case .agentExec(let v)? = self.command else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 20)
@@ -1119,6 +1321,14 @@ extension VZControl_ControlRequest: SwiftProtobuf.Message, SwiftProtobuf._Messag
       guard case .agentCp(let v)? = self.command else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 25)
     }()
+    case .operations?: try {
+      guard case .operations(let v)? = self.command else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 26)
+    }()
+    case .agentUi?: try {
+      guard case .agentUi(let v)? = self.command else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 27)
+    }()
     case nil: break
     }
     try unknownFields.traverse(visitor: &visitor)
@@ -1135,302 +1345,395 @@ extension VZControl_ControlRequest: SwiftProtobuf.Message, SwiftProtobuf._Messag
 
 extension VZControl_ControlResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ControlResponse"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{1}error\0\u{1}data\0\u{2}\u{7}status\0\u{1}capabilities\0\u{3}screenshot_result\0\u{1}empty\0\u{3}snapshot_list\0\u{3}snapshot_action\0\u{1}message\0\u{3}network_info\0\u{3}memory_info\0\u{4}\u{2}agent_exec_result\0\u{3}agent_file\0\u{3}agent_info\0\u{3}agent_ping\0\u{3}ocr_text\0\u{3}screen_detection\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{1}error\0\u{1}data\0\u{2}\u{7}status\0\u{1}capabilities\0\u{3}screenshot_result\0\u{1}empty\0\u{3}snapshot_list\0\u{3}snapshot_action\0\u{1}message\0\u{3}network_info\0\u{3}memory_info\0\u{4}\u{2}agent_exec_result\0\u{3}agent_file\0\u{3}agent_info\0\u{3}agent_ping\0\u{3}ocr_text\0\u{3}screen_detection\0\u{1}operation\0\u{3}operations_list\0\u{3}agent_ui\0")
+
+  fileprivate class _StorageClass {
+    var _success: Bool = false
+    var _error: String = String()
+    var _data: String = String()
+    var _result: VZControl_ControlResponse.OneOf_Result?
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _success = source._success
+      _error = source._error
+      _data = source._data
+      _result = source._result
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularBoolField(value: &self.success) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.error) }()
-      case 3: try { try decoder.decodeSingularStringField(value: &self.data) }()
-      case 10: try {
-        var v: VZControl_StatusResponse?
-        var hadOneofValue = false
-        if let current = self.result {
-          hadOneofValue = true
-          if case .status(let m) = current {v = m}
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularBoolField(value: &_storage._success) }()
+        case 2: try { try decoder.decodeSingularStringField(value: &_storage._error) }()
+        case 3: try { try decoder.decodeSingularStringField(value: &_storage._data) }()
+        case 10: try {
+          var v: VZControl_StatusResponse?
+          var hadOneofValue = false
+          if let current = _storage._result {
+            hadOneofValue = true
+            if case .status(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._result = .status(v)
+          }
+        }()
+        case 11: try {
+          var v: VZControl_CapabilitiesResponse?
+          var hadOneofValue = false
+          if let current = _storage._result {
+            hadOneofValue = true
+            if case .capabilities(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._result = .capabilities(v)
+          }
+        }()
+        case 12: try {
+          var v: VZControl_ScreenshotResponse?
+          var hadOneofValue = false
+          if let current = _storage._result {
+            hadOneofValue = true
+            if case .screenshotResult(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._result = .screenshotResult(v)
+          }
+        }()
+        case 13: try {
+          var v: VZControl_EmptyResponse?
+          var hadOneofValue = false
+          if let current = _storage._result {
+            hadOneofValue = true
+            if case .empty(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._result = .empty(v)
+          }
+        }()
+        case 14: try {
+          var v: VZControl_SnapshotListResponse?
+          var hadOneofValue = false
+          if let current = _storage._result {
+            hadOneofValue = true
+            if case .snapshotList(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._result = .snapshotList(v)
+          }
+        }()
+        case 15: try {
+          var v: VZControl_SnapshotActionResponse?
+          var hadOneofValue = false
+          if let current = _storage._result {
+            hadOneofValue = true
+            if case .snapshotAction(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._result = .snapshotAction(v)
+          }
+        }()
+        case 16: try {
+          var v: VZControl_MessageResponse?
+          var hadOneofValue = false
+          if let current = _storage._result {
+            hadOneofValue = true
+            if case .message(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._result = .message(v)
+          }
+        }()
+        case 17: try {
+          var v: VZControl_NetworkInfoResponse?
+          var hadOneofValue = false
+          if let current = _storage._result {
+            hadOneofValue = true
+            if case .networkInfo(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._result = .networkInfo(v)
+          }
+        }()
+        case 18: try {
+          var v: VZControl_MemoryInfoResponse?
+          var hadOneofValue = false
+          if let current = _storage._result {
+            hadOneofValue = true
+            if case .memoryInfo(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._result = .memoryInfo(v)
+          }
+        }()
+        case 20: try {
+          var v: VZControl_AgentExecResponse?
+          var hadOneofValue = false
+          if let current = _storage._result {
+            hadOneofValue = true
+            if case .agentExecResult(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._result = .agentExecResult(v)
+          }
+        }()
+        case 21: try {
+          var v: VZControl_AgentFileResponse?
+          var hadOneofValue = false
+          if let current = _storage._result {
+            hadOneofValue = true
+            if case .agentFile(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._result = .agentFile(v)
+          }
+        }()
+        case 22: try {
+          var v: VZControl_AgentInfoResponse?
+          var hadOneofValue = false
+          if let current = _storage._result {
+            hadOneofValue = true
+            if case .agentInfo(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._result = .agentInfo(v)
+          }
+        }()
+        case 23: try {
+          var v: VZControl_AgentPingResponse?
+          var hadOneofValue = false
+          if let current = _storage._result {
+            hadOneofValue = true
+            if case .agentPing(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._result = .agentPing(v)
+          }
+        }()
+        case 24: try {
+          var v: VZControl_OCRTextResponse?
+          var hadOneofValue = false
+          if let current = _storage._result {
+            hadOneofValue = true
+            if case .ocrText(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._result = .ocrText(v)
+          }
+        }()
+        case 25: try {
+          var v: VZControl_ScreenDetectionResponse?
+          var hadOneofValue = false
+          if let current = _storage._result {
+            hadOneofValue = true
+            if case .screenDetection(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._result = .screenDetection(v)
+          }
+        }()
+        case 26: try {
+          var v: VZControl_OperationInfo?
+          var hadOneofValue = false
+          if let current = _storage._result {
+            hadOneofValue = true
+            if case .operation(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._result = .operation(v)
+          }
+        }()
+        case 27: try {
+          var v: VZControl_OperationsListResponse?
+          var hadOneofValue = false
+          if let current = _storage._result {
+            hadOneofValue = true
+            if case .operationsList(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._result = .operationsList(v)
+          }
+        }()
+        case 28: try {
+          var v: Vz_Agent_V1_UIResponse?
+          var hadOneofValue = false
+          if let current = _storage._result {
+            hadOneofValue = true
+            if case .agentUi(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._result = .agentUi(v)
+          }
+        }()
+        default: break
         }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.result = .status(v)
-        }
-      }()
-      case 11: try {
-        var v: VZControl_CapabilitiesResponse?
-        var hadOneofValue = false
-        if let current = self.result {
-          hadOneofValue = true
-          if case .capabilities(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.result = .capabilities(v)
-        }
-      }()
-      case 12: try {
-        var v: VZControl_ScreenshotResponse?
-        var hadOneofValue = false
-        if let current = self.result {
-          hadOneofValue = true
-          if case .screenshotResult(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.result = .screenshotResult(v)
-        }
-      }()
-      case 13: try {
-        var v: VZControl_EmptyResponse?
-        var hadOneofValue = false
-        if let current = self.result {
-          hadOneofValue = true
-          if case .empty(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.result = .empty(v)
-        }
-      }()
-      case 14: try {
-        var v: VZControl_SnapshotListResponse?
-        var hadOneofValue = false
-        if let current = self.result {
-          hadOneofValue = true
-          if case .snapshotList(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.result = .snapshotList(v)
-        }
-      }()
-      case 15: try {
-        var v: VZControl_SnapshotActionResponse?
-        var hadOneofValue = false
-        if let current = self.result {
-          hadOneofValue = true
-          if case .snapshotAction(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.result = .snapshotAction(v)
-        }
-      }()
-      case 16: try {
-        var v: VZControl_MessageResponse?
-        var hadOneofValue = false
-        if let current = self.result {
-          hadOneofValue = true
-          if case .message(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.result = .message(v)
-        }
-      }()
-      case 17: try {
-        var v: VZControl_NetworkInfoResponse?
-        var hadOneofValue = false
-        if let current = self.result {
-          hadOneofValue = true
-          if case .networkInfo(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.result = .networkInfo(v)
-        }
-      }()
-      case 18: try {
-        var v: VZControl_MemoryInfoResponse?
-        var hadOneofValue = false
-        if let current = self.result {
-          hadOneofValue = true
-          if case .memoryInfo(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.result = .memoryInfo(v)
-        }
-      }()
-      case 20: try {
-        var v: VZControl_AgentExecResponse?
-        var hadOneofValue = false
-        if let current = self.result {
-          hadOneofValue = true
-          if case .agentExecResult(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.result = .agentExecResult(v)
-        }
-      }()
-      case 21: try {
-        var v: VZControl_AgentFileResponse?
-        var hadOneofValue = false
-        if let current = self.result {
-          hadOneofValue = true
-          if case .agentFile(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.result = .agentFile(v)
-        }
-      }()
-      case 22: try {
-        var v: VZControl_AgentInfoResponse?
-        var hadOneofValue = false
-        if let current = self.result {
-          hadOneofValue = true
-          if case .agentInfo(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.result = .agentInfo(v)
-        }
-      }()
-      case 23: try {
-        var v: VZControl_AgentPingResponse?
-        var hadOneofValue = false
-        if let current = self.result {
-          hadOneofValue = true
-          if case .agentPing(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.result = .agentPing(v)
-        }
-      }()
-      case 24: try {
-        var v: VZControl_OCRTextResponse?
-        var hadOneofValue = false
-        if let current = self.result {
-          hadOneofValue = true
-          if case .ocrText(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.result = .ocrText(v)
-        }
-      }()
-      case 25: try {
-        var v: VZControl_ScreenDetectionResponse?
-        var hadOneofValue = false
-        if let current = self.result {
-          hadOneofValue = true
-          if case .screenDetection(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.result = .screenDetection(v)
-        }
-      }()
-      default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    // The use of inline closures is to circumvent an issue where the compiler
-    // allocates stack space for every if/case branch local when no optimizations
-    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
-    // https://github.com/apple/swift-protobuf/issues/1182
-    if self.success != false {
-      try visitor.visitSingularBoolField(value: self.success, fieldNumber: 1)
-    }
-    if !self.error.isEmpty {
-      try visitor.visitSingularStringField(value: self.error, fieldNumber: 2)
-    }
-    if !self.data.isEmpty {
-      try visitor.visitSingularStringField(value: self.data, fieldNumber: 3)
-    }
-    switch self.result {
-    case .status?: try {
-      guard case .status(let v)? = self.result else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 10)
-    }()
-    case .capabilities?: try {
-      guard case .capabilities(let v)? = self.result else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 11)
-    }()
-    case .screenshotResult?: try {
-      guard case .screenshotResult(let v)? = self.result else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 12)
-    }()
-    case .empty?: try {
-      guard case .empty(let v)? = self.result else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 13)
-    }()
-    case .snapshotList?: try {
-      guard case .snapshotList(let v)? = self.result else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 14)
-    }()
-    case .snapshotAction?: try {
-      guard case .snapshotAction(let v)? = self.result else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 15)
-    }()
-    case .message?: try {
-      guard case .message(let v)? = self.result else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 16)
-    }()
-    case .networkInfo?: try {
-      guard case .networkInfo(let v)? = self.result else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 17)
-    }()
-    case .memoryInfo?: try {
-      guard case .memoryInfo(let v)? = self.result else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 18)
-    }()
-    case .agentExecResult?: try {
-      guard case .agentExecResult(let v)? = self.result else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 20)
-    }()
-    case .agentFile?: try {
-      guard case .agentFile(let v)? = self.result else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 21)
-    }()
-    case .agentInfo?: try {
-      guard case .agentInfo(let v)? = self.result else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 22)
-    }()
-    case .agentPing?: try {
-      guard case .agentPing(let v)? = self.result else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 23)
-    }()
-    case .ocrText?: try {
-      guard case .ocrText(let v)? = self.result else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 24)
-    }()
-    case .screenDetection?: try {
-      guard case .screenDetection(let v)? = self.result else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 25)
-    }()
-    case nil: break
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      if _storage._success != false {
+        try visitor.visitSingularBoolField(value: _storage._success, fieldNumber: 1)
+      }
+      if !_storage._error.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._error, fieldNumber: 2)
+      }
+      if !_storage._data.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._data, fieldNumber: 3)
+      }
+      switch _storage._result {
+      case .status?: try {
+        guard case .status(let v)? = _storage._result else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 10)
+      }()
+      case .capabilities?: try {
+        guard case .capabilities(let v)? = _storage._result else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 11)
+      }()
+      case .screenshotResult?: try {
+        guard case .screenshotResult(let v)? = _storage._result else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 12)
+      }()
+      case .empty?: try {
+        guard case .empty(let v)? = _storage._result else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 13)
+      }()
+      case .snapshotList?: try {
+        guard case .snapshotList(let v)? = _storage._result else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 14)
+      }()
+      case .snapshotAction?: try {
+        guard case .snapshotAction(let v)? = _storage._result else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 15)
+      }()
+      case .message?: try {
+        guard case .message(let v)? = _storage._result else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 16)
+      }()
+      case .networkInfo?: try {
+        guard case .networkInfo(let v)? = _storage._result else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 17)
+      }()
+      case .memoryInfo?: try {
+        guard case .memoryInfo(let v)? = _storage._result else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 18)
+      }()
+      case .agentExecResult?: try {
+        guard case .agentExecResult(let v)? = _storage._result else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 20)
+      }()
+      case .agentFile?: try {
+        guard case .agentFile(let v)? = _storage._result else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 21)
+      }()
+      case .agentInfo?: try {
+        guard case .agentInfo(let v)? = _storage._result else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 22)
+      }()
+      case .agentPing?: try {
+        guard case .agentPing(let v)? = _storage._result else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 23)
+      }()
+      case .ocrText?: try {
+        guard case .ocrText(let v)? = _storage._result else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 24)
+      }()
+      case .screenDetection?: try {
+        guard case .screenDetection(let v)? = _storage._result else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 25)
+      }()
+      case .operation?: try {
+        guard case .operation(let v)? = _storage._result else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 26)
+      }()
+      case .operationsList?: try {
+        guard case .operationsList(let v)? = _storage._result else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 27)
+      }()
+      case .agentUi?: try {
+        guard case .agentUi(let v)? = _storage._result else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 28)
+      }()
+      case nil: break
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: VZControl_ControlResponse, rhs: VZControl_ControlResponse) -> Bool {
-    if lhs.success != rhs.success {return false}
-    if lhs.error != rhs.error {return false}
-    if lhs.data != rhs.data {return false}
-    if lhs.result != rhs.result {return false}
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._success != rhs_storage._success {return false}
+        if _storage._error != rhs_storage._error {return false}
+        if _storage._data != rhs_storage._data {return false}
+        if _storage._result != rhs_storage._result {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -1623,7 +1926,7 @@ extension VZControl_ScreenshotCommand: SwiftProtobuf.Message, SwiftProtobuf._Mes
 
 extension VZControl_SnapshotCommand: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".SnapshotCommand"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}action\0\u{1}name\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}action\0\u{1}name\0\u{1}async\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1633,6 +1936,7 @@ extension VZControl_SnapshotCommand: SwiftProtobuf.Message, SwiftProtobuf._Messa
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.action) }()
       case 2: try { try decoder.decodeSingularStringField(value: &self.name) }()
+      case 3: try { try decoder.decodeSingularBoolField(value: &self.async) }()
       default: break
       }
     }
@@ -1645,12 +1949,51 @@ extension VZControl_SnapshotCommand: SwiftProtobuf.Message, SwiftProtobuf._Messa
     if !self.name.isEmpty {
       try visitor.visitSingularStringField(value: self.name, fieldNumber: 2)
     }
+    if self.async != false {
+      try visitor.visitSingularBoolField(value: self.async, fieldNumber: 3)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: VZControl_SnapshotCommand, rhs: VZControl_SnapshotCommand) -> Bool {
     if lhs.action != rhs.action {return false}
     if lhs.name != rhs.name {return false}
+    if lhs.async != rhs.async {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension VZControl_OperationsCommand: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".OperationsCommand"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}action\0\u{1}id\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.action) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.id) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.action.isEmpty {
+      try visitor.visitSingularStringField(value: self.action, fieldNumber: 1)
+    }
+    if !self.id.isEmpty {
+      try visitor.visitSingularStringField(value: self.id, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: VZControl_OperationsCommand, rhs: VZControl_OperationsCommand) -> Bool {
+    if lhs.action != rhs.action {return false}
+    if lhs.id != rhs.id {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -1726,6 +2069,46 @@ extension VZControl_OCRCommand: SwiftProtobuf.Message, SwiftProtobuf._MessageImp
     if lhs.action != rhs.action {return false}
     if lhs.text != rhs.text {return false}
     if lhs.timeout != rhs.timeout {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension VZControl_PortForwardCommand: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".PortForwardCommand"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}action\0\u{3}host_port\0\u{3}guest_port\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.action) }()
+      case 2: try { try decoder.decodeSingularUInt32Field(value: &self.hostPort) }()
+      case 3: try { try decoder.decodeSingularUInt32Field(value: &self.guestPort) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.action.isEmpty {
+      try visitor.visitSingularStringField(value: self.action, fieldNumber: 1)
+    }
+    if self.hostPort != 0 {
+      try visitor.visitSingularUInt32Field(value: self.hostPort, fieldNumber: 2)
+    }
+    if self.guestPort != 0 {
+      try visitor.visitSingularUInt32Field(value: self.guestPort, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: VZControl_PortForwardCommand, rhs: VZControl_PortForwardCommand) -> Bool {
+    if lhs.action != rhs.action {return false}
+    if lhs.hostPort != rhs.hostPort {return false}
+    if lhs.guestPort != rhs.guestPort {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -1903,7 +2286,7 @@ extension VZControl_AgentSSHDCommand: SwiftProtobuf.Message, SwiftProtobuf._Mess
 
 extension VZControl_AgentCopyCommand: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".AgentCopyCommand"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}host_path\0\u{3}guest_path\0\u{3}to_guest\0\u{1}mode\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}host_path\0\u{3}guest_path\0\u{3}to_guest\0\u{1}mode\0\u{1}overwrite\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1915,6 +2298,7 @@ extension VZControl_AgentCopyCommand: SwiftProtobuf.Message, SwiftProtobuf._Mess
       case 2: try { try decoder.decodeSingularStringField(value: &self.guestPath) }()
       case 3: try { try decoder.decodeSingularBoolField(value: &self.toGuest) }()
       case 4: try { try decoder.decodeSingularUInt32Field(value: &self.mode) }()
+      case 5: try { try decoder.decodeSingularBoolField(value: &self.overwrite) }()
       default: break
       }
     }
@@ -1933,6 +2317,9 @@ extension VZControl_AgentCopyCommand: SwiftProtobuf.Message, SwiftProtobuf._Mess
     if self.mode != 0 {
       try visitor.visitSingularUInt32Field(value: self.mode, fieldNumber: 4)
     }
+    if self.overwrite != false {
+      try visitor.visitSingularBoolField(value: self.overwrite, fieldNumber: 5)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1941,6 +2328,7 @@ extension VZControl_AgentCopyCommand: SwiftProtobuf.Message, SwiftProtobuf._Mess
     if lhs.guestPath != rhs.guestPath {return false}
     if lhs.toGuest != rhs.toGuest {return false}
     if lhs.mode != rhs.mode {return false}
+    if lhs.overwrite != rhs.overwrite {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -2142,7 +2530,7 @@ extension VZControl_SnapshotListResponse: SwiftProtobuf.Message, SwiftProtobuf._
 
 extension VZControl_SnapshotActionResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".SnapshotActionResponse"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}message\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}message\0\u{3}op_id\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2151,6 +2539,7 @@ extension VZControl_SnapshotActionResponse: SwiftProtobuf.Message, SwiftProtobuf
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.message) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.opID) }()
       default: break
       }
     }
@@ -2160,11 +2549,105 @@ extension VZControl_SnapshotActionResponse: SwiftProtobuf.Message, SwiftProtobuf
     if !self.message.isEmpty {
       try visitor.visitSingularStringField(value: self.message, fieldNumber: 1)
     }
+    if !self.opID.isEmpty {
+      try visitor.visitSingularStringField(value: self.opID, fieldNumber: 2)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: VZControl_SnapshotActionResponse, rhs: VZControl_SnapshotActionResponse) -> Bool {
     if lhs.message != rhs.message {return false}
+    if lhs.opID != rhs.opID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension VZControl_OperationInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".OperationInfo"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}resource\0\u{1}status\0\u{3}created_at\0\u{3}updated_at\0\u{3}error_code\0\u{3}error_message\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.id) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.resource) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.status) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.createdAt) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.updatedAt) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.errorCode) }()
+      case 7: try { try decoder.decodeSingularStringField(value: &self.errorMessage) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.id.isEmpty {
+      try visitor.visitSingularStringField(value: self.id, fieldNumber: 1)
+    }
+    if !self.resource.isEmpty {
+      try visitor.visitSingularStringField(value: self.resource, fieldNumber: 2)
+    }
+    if !self.status.isEmpty {
+      try visitor.visitSingularStringField(value: self.status, fieldNumber: 3)
+    }
+    if !self.createdAt.isEmpty {
+      try visitor.visitSingularStringField(value: self.createdAt, fieldNumber: 4)
+    }
+    if !self.updatedAt.isEmpty {
+      try visitor.visitSingularStringField(value: self.updatedAt, fieldNumber: 5)
+    }
+    if !self.errorCode.isEmpty {
+      try visitor.visitSingularStringField(value: self.errorCode, fieldNumber: 6)
+    }
+    if !self.errorMessage.isEmpty {
+      try visitor.visitSingularStringField(value: self.errorMessage, fieldNumber: 7)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: VZControl_OperationInfo, rhs: VZControl_OperationInfo) -> Bool {
+    if lhs.id != rhs.id {return false}
+    if lhs.resource != rhs.resource {return false}
+    if lhs.status != rhs.status {return false}
+    if lhs.createdAt != rhs.createdAt {return false}
+    if lhs.updatedAt != rhs.updatedAt {return false}
+    if lhs.errorCode != rhs.errorCode {return false}
+    if lhs.errorMessage != rhs.errorMessage {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension VZControl_OperationsListResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".OperationsListResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}operations\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.operations) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.operations.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.operations, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: VZControl_OperationsListResponse, rhs: VZControl_OperationsListResponse) -> Bool {
+    if lhs.operations != rhs.operations {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

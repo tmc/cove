@@ -379,6 +379,7 @@ func (s *ControlServer) handleSnapshotCommand(cmd *controlpb.SnapshotCommand) *c
 		if cmd.Name == "" {
 			return &controlpb.ControlResponse{Error: "snapshot name required"}
 		}
+		s.invalidateUISession()
 		if err := mgr.Restore(s.vm, vmruntime.WrapQueue(s.vmQueue), cmd.Name); err != nil {
 			return &controlpb.ControlResponse{Error: err.Error()}
 		}

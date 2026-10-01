@@ -57,7 +57,7 @@ proto-swift:
 	@if command -v protoc-gen-swift >/dev/null 2>&1; then \
 		mkdir -p swift/VZControl/Sources/VZControl/Generated; \
 		cd proto && protoc --swift_out=../swift/VZControl/Sources/VZControl/Generated \
-			--swift_opt=Visibility=Public control.proto; \
+			--swift_opt=Visibility=Public control.proto agent.proto; \
 		echo "Swift proto generated."; \
 	else \
 		echo "protoc-gen-swift not found. Install: brew install swift-protobuf"; \

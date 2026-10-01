@@ -82,6 +82,7 @@ var commandRegistry = []covecli.Spec{
 	{Name: "support-bundle", Summary: "Create a redacted support bundle", Dispatch: covecli.DispatchEarly, Run: runSupportBundleAliasCommand},
 	{Name: "template", Summary: "Manage VM templates", Dispatch: covecli.DispatchLate, Run: runTemplateCommand},
 	{Name: "trace", Aliases: []string{"traces"}, Summary: "Manage eslogger guest traces", Dispatch: covecli.DispatchEarly, Run: runTraceCommand},
+	{Name: "ui", Summary: "Inspect guest user-session accessibility", Dispatch: covecli.DispatchEarly, Run: runUICommand},
 	{Name: "uiscript", Summary: "Deprecated alias for vzscript", Dispatch: covecli.DispatchEarly, Run: runUIScriptCommand},
 	{Name: "unpin", Summary: "Remove a storage pin", Dispatch: covecli.DispatchEarly, Run: runUnpinCommand},
 	{Name: "up", Summary: "Install + provision + boot in one command", Dispatch: covecli.DispatchEarly, Run: runUpCommand},

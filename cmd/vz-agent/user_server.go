@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"os/exec"
 	"time"
 
@@ -19,10 +20,11 @@ import (
 // It runs commands as the current user, inheriting the session's TCC/FDA grants.
 type userAgentServer struct {
 	agentpbconnect.UnimplementedUserAgentHandler
+	ui *userUIController
 }
 
 func newUserAgentServer() *userAgentServer {
-	return &userAgentServer{}
+	return &userAgentServer{ui: newUserUIController(newPlatformUIBackend())}
 }
 
 func (s *userAgentServer) UserExec(ctx context.Context, req *connect.Request[pb.ExecRequest]) (*connect.Response[pb.ExecResponse], error) {
@@ -32,6 +34,12 @@ func (s *userAgentServer) UserExec(ctx context.Context, req *connect.Request[pb.
 	}
 
 	cmd := exec.CommandContext(ctx, r.Args[0], r.Args[1:]...)
+	if len(r.Env) != 0 {
+		cmd.Env = os.Environ()
+		for key, value := range r.Env {
+			cmd.Env = append(cmd.Env, key+"="+value)
+		}
+	}
 	if r.WorkingDir != "" {
 		cmd.Dir = r.WorkingDir
 	}
@@ -76,6 +84,12 @@ func (s *userAgentServer) UserExecStream(ctx context.Context, req *connect.Reque
 	}
 
 	cmd := exec.CommandContext(ctx, r.Args[0], r.Args[1:]...)
+	if len(r.Env) != 0 {
+		cmd.Env = os.Environ()
+		for key, value := range r.Env {
+			cmd.Env = append(cmd.Env, key+"="+value)
+		}
+	}
 	if r.WorkingDir != "" {
 		cmd.Dir = r.WorkingDir
 	}

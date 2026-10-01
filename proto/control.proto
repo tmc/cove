@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+import "agent.proto";
+
 package vz.control.v1;
 
 option go_package = "github.com/tmc/cove/proto/controlpb";
@@ -32,6 +34,7 @@ message ControlRequest {
     AgentSSHDCommand agent_sshd = 24;
     AgentCopyCommand agent_cp = 25;
     OperationsCommand operations = 26;
+    vz.agent.v1.UIRequest agent_ui = 27;
   }
 }
 
@@ -63,6 +66,7 @@ message ControlResponse {
     ScreenDetectionResponse screen_detection = 25;
     OperationInfo operation = 26;
     OperationsListResponse operations_list = 27;
+    vz.agent.v1.UIResponse agent_ui = 28;
   }
 }
 

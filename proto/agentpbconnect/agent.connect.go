@@ -76,6 +76,12 @@ const (
 	// UserAgentUserExecStreamProcedure is the fully-qualified name of the UserAgent's UserExecStream
 	// RPC.
 	UserAgentUserExecStreamProcedure = "/vz.agent.v1.UserAgent/UserExecStream"
+	// UserAgentUIStatusProcedure is the fully-qualified name of the UserAgent's UIStatus RPC.
+	UserAgentUIStatusProcedure = "/vz.agent.v1.UserAgent/UIStatus"
+	// UserAgentInspectUIProcedure is the fully-qualified name of the UserAgent's InspectUI RPC.
+	UserAgentInspectUIProcedure = "/vz.agent.v1.UserAgent/InspectUI"
+	// UserAgentFindUIProcedure is the fully-qualified name of the UserAgent's FindUI RPC.
+	UserAgentFindUIProcedure = "/vz.agent.v1.UserAgent/FindUI"
 )
 
 // AgentClient is a client for the vz.agent.v1.Agent service.
@@ -626,6 +632,9 @@ type UserAgentClient interface {
 	UserExec(context.Context, *connect.Request[agentpb.ExecRequest]) (*connect.Response[agentpb.ExecResponse], error)
 	// UserExecStream runs a command with streaming output as the logged-in user.
 	UserExecStream(context.Context, *connect.Request[agentpb.ExecRequest]) (*connect.ServerStreamForClient[agentpb.ExecOutput], error)
+	UIStatus(context.Context, *connect.Request[agentpb.UIRequest]) (*connect.Response[agentpb.UIResponse], error)
+	InspectUI(context.Context, *connect.Request[agentpb.UIRequest]) (*connect.Response[agentpb.UIResponse], error)
+	FindUI(context.Context, *connect.Request[agentpb.UIRequest]) (*connect.Response[agentpb.UIResponse], error)
 }
 
 // NewUserAgentClient constructs a client for the vz.agent.v1.UserAgent service. By default, it uses
@@ -651,6 +660,24 @@ func NewUserAgentClient(httpClient connect.HTTPClient, baseURL string, opts ...c
 			connect.WithSchema(userAgentMethods.ByName("UserExecStream")),
 			connect.WithClientOptions(opts...),
 		),
+		uIStatus: connect.NewClient[agentpb.UIRequest, agentpb.UIResponse](
+			httpClient,
+			baseURL+UserAgentUIStatusProcedure,
+			connect.WithSchema(userAgentMethods.ByName("UIStatus")),
+			connect.WithClientOptions(opts...),
+		),
+		inspectUI: connect.NewClient[agentpb.UIRequest, agentpb.UIResponse](
+			httpClient,
+			baseURL+UserAgentInspectUIProcedure,
+			connect.WithSchema(userAgentMethods.ByName("InspectUI")),
+			connect.WithClientOptions(opts...),
+		),
+		findUI: connect.NewClient[agentpb.UIRequest, agentpb.UIResponse](
+			httpClient,
+			baseURL+UserAgentFindUIProcedure,
+			connect.WithSchema(userAgentMethods.ByName("FindUI")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -658,6 +685,9 @@ func NewUserAgentClient(httpClient connect.HTTPClient, baseURL string, opts ...c
 type userAgentClient struct {
 	userExec       *connect.Client[agentpb.ExecRequest, agentpb.ExecResponse]
 	userExecStream *connect.Client[agentpb.ExecRequest, agentpb.ExecOutput]
+	uIStatus       *connect.Client[agentpb.UIRequest, agentpb.UIResponse]
+	inspectUI      *connect.Client[agentpb.UIRequest, agentpb.UIResponse]
+	findUI         *connect.Client[agentpb.UIRequest, agentpb.UIResponse]
 }
 
 // UserExec calls vz.agent.v1.UserAgent.UserExec.
@@ -670,12 +700,30 @@ func (c *userAgentClient) UserExecStream(ctx context.Context, req *connect.Reque
 	return c.userExecStream.CallServerStream(ctx, req)
 }
 
+// UIStatus calls vz.agent.v1.UserAgent.UIStatus.
+func (c *userAgentClient) UIStatus(ctx context.Context, req *connect.Request[agentpb.UIRequest]) (*connect.Response[agentpb.UIResponse], error) {
+	return c.uIStatus.CallUnary(ctx, req)
+}
+
+// InspectUI calls vz.agent.v1.UserAgent.InspectUI.
+func (c *userAgentClient) InspectUI(ctx context.Context, req *connect.Request[agentpb.UIRequest]) (*connect.Response[agentpb.UIResponse], error) {
+	return c.inspectUI.CallUnary(ctx, req)
+}
+
+// FindUI calls vz.agent.v1.UserAgent.FindUI.
+func (c *userAgentClient) FindUI(ctx context.Context, req *connect.Request[agentpb.UIRequest]) (*connect.Response[agentpb.UIResponse], error) {
+	return c.findUI.CallUnary(ctx, req)
+}
+
 // UserAgentHandler is an implementation of the vz.agent.v1.UserAgent service.
 type UserAgentHandler interface {
 	// UserExec runs a command as the logged-in user, inheriting TCC and FDA.
 	UserExec(context.Context, *connect.Request[agentpb.ExecRequest]) (*connect.Response[agentpb.ExecResponse], error)
 	// UserExecStream runs a command with streaming output as the logged-in user.
 	UserExecStream(context.Context, *connect.Request[agentpb.ExecRequest], *connect.ServerStream[agentpb.ExecOutput]) error
+	UIStatus(context.Context, *connect.Request[agentpb.UIRequest]) (*connect.Response[agentpb.UIResponse], error)
+	InspectUI(context.Context, *connect.Request[agentpb.UIRequest]) (*connect.Response[agentpb.UIResponse], error)
+	FindUI(context.Context, *connect.Request[agentpb.UIRequest]) (*connect.Response[agentpb.UIResponse], error)
 }
 
 // NewUserAgentHandler builds an HTTP handler from the service implementation. It returns the path
@@ -697,12 +745,36 @@ func NewUserAgentHandler(svc UserAgentHandler, opts ...connect.HandlerOption) (s
 		connect.WithSchema(userAgentMethods.ByName("UserExecStream")),
 		connect.WithHandlerOptions(opts...),
 	)
+	userAgentUIStatusHandler := connect.NewUnaryHandler(
+		UserAgentUIStatusProcedure,
+		svc.UIStatus,
+		connect.WithSchema(userAgentMethods.ByName("UIStatus")),
+		connect.WithHandlerOptions(opts...),
+	)
+	userAgentInspectUIHandler := connect.NewUnaryHandler(
+		UserAgentInspectUIProcedure,
+		svc.InspectUI,
+		connect.WithSchema(userAgentMethods.ByName("InspectUI")),
+		connect.WithHandlerOptions(opts...),
+	)
+	userAgentFindUIHandler := connect.NewUnaryHandler(
+		UserAgentFindUIProcedure,
+		svc.FindUI,
+		connect.WithSchema(userAgentMethods.ByName("FindUI")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/vz.agent.v1.UserAgent/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case UserAgentUserExecProcedure:
 			userAgentUserExecHandler.ServeHTTP(w, r)
 		case UserAgentUserExecStreamProcedure:
 			userAgentUserExecStreamHandler.ServeHTTP(w, r)
+		case UserAgentUIStatusProcedure:
+			userAgentUIStatusHandler.ServeHTTP(w, r)
+		case UserAgentInspectUIProcedure:
+			userAgentInspectUIHandler.ServeHTTP(w, r)
+		case UserAgentFindUIProcedure:
+			userAgentFindUIHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -718,4 +790,16 @@ func (UnimplementedUserAgentHandler) UserExec(context.Context, *connect.Request[
 
 func (UnimplementedUserAgentHandler) UserExecStream(context.Context, *connect.Request[agentpb.ExecRequest], *connect.ServerStream[agentpb.ExecOutput]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("vz.agent.v1.UserAgent.UserExecStream is not implemented"))
+}
+
+func (UnimplementedUserAgentHandler) UIStatus(context.Context, *connect.Request[agentpb.UIRequest]) (*connect.Response[agentpb.UIResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("vz.agent.v1.UserAgent.UIStatus is not implemented"))
+}
+
+func (UnimplementedUserAgentHandler) InspectUI(context.Context, *connect.Request[agentpb.UIRequest]) (*connect.Response[agentpb.UIResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("vz.agent.v1.UserAgent.InspectUI is not implemented"))
+}
+
+func (UnimplementedUserAgentHandler) FindUI(context.Context, *connect.Request[agentpb.UIRequest]) (*connect.Response[agentpb.UIResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("vz.agent.v1.UserAgent.FindUI is not implemented"))
 }

@@ -11,6 +11,7 @@ import (
 	"image"
 	"image/jpeg"
 	"image/png"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -25,9 +26,10 @@ import (
 
 // Client provides programmatic access to the VM control socket.
 type Client struct {
-	socketPath string
-	timeout    time.Duration
-	authToken  string
+	socketPath    string
+	timeout       time.Duration
+	authToken     string
+	responseLimit int64
 }
 
 // New creates a new control client.
@@ -49,6 +51,12 @@ func New(socketPath string) *Client {
 // SetTimeout sets the command timeout.
 func (c *Client) SetTimeout(d time.Duration) {
 	c.timeout = d
+}
+
+// SetResponseLimit bounds bytes read for one request. Zero leaves responses unbounded.
+// Configure the limit before using the client concurrently.
+func (c *Client) SetResponseLimit(n int64) {
+	c.responseLimit = n
 }
 
 // SetGUIInputBackend switches the runtime automation input backend.
@@ -166,9 +174,18 @@ func (c *Client) SendRequestProgressCtx(ctx context.Context, req *controlpb.Cont
 	}
 
 	// Read response
-	reader := bufio.NewReaderSize(conn, 256*1024)
+	var source io.Reader = conn
+	if c.responseLimit > 0 {
+		source = io.LimitReader(conn, c.responseLimit+1)
+	}
+	reader := bufio.NewReaderSize(source, 256*1024)
+	var responseBytes int64
 	for {
 		respLine, err := reader.ReadString('\n')
+		responseBytes += int64(len(respLine))
+		if c.responseLimit > 0 && responseBytes > c.responseLimit {
+			return nil, fmt.Errorf("control %q: response exceeds %d bytes", req.Type, c.responseLimit)
+		}
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
