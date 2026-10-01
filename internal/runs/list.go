@@ -1,8 +1,8 @@
 package runs
 
 import (
-	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -15,7 +15,7 @@ import (
 
 const runCompleteEvent = "run_complete"
 
-// Summary describes one completed run.
+// Summary describes one run, including incomplete versioned bundles.
 type Summary struct {
 	RunID           string    `json:"run_id"`
 	ImageRef        string    `json:"image_ref,omitempty"`
@@ -36,7 +36,8 @@ type Filter struct {
 	Now    time.Time
 }
 
-// List returns completed runs under root, newest started_at first.
+// List returns runs under root, newest started_at first. Legacy metric-only
+// runs require a terminal event; versioned bundles can report interrupted state.
 func List(root string, filter Filter) ([]Summary, error) {
 	if root == "" {
 		return nil, fmt.Errorf("runs list: empty root")
@@ -78,61 +79,77 @@ func List(root string, filter Filter) ([]Summary, error) {
 }
 
 func readRun(dir, fallbackID string) (Summary, bool, error) {
-	f, err := os.Open(filepath.Join(dir, "metrics.jsonl"))
-	if err != nil {
-		if os.IsNotExist(err) {
+	var manifest *Manifest
+	data, err := readBoundedFile(filepath.Join(dir, "manifest.json"), MaxRecordBytes)
+	if err == nil {
+		var value Manifest
+		if err := json.Unmarshal(data, &value); err != nil {
+			return Summary{}, false, fmt.Errorf("parse run manifest: %w", err)
+		}
+		if value.SchemaVersion != 0 {
+			if value.SchemaVersion != SchemaVersion {
+				return Summary{}, false, fmt.Errorf("unsupported run schema: %d", value.SchemaVersion)
+			}
+			manifest = &value
+		}
+	} else if !os.IsNotExist(err) {
+		return Summary{}, false, err
+	}
+	events, err := readEvents(filepath.Join(dir, "metrics.jsonl"))
+	if err != nil && (!errors.Is(err, os.ErrNotExist) || manifest == nil) {
+		if errors.Is(err, os.ErrNotExist) {
 			return Summary{}, false, nil
 		}
-		return Summary{}, false, fmt.Errorf("runs list: open metrics: %w", err)
+		return Summary{}, false, err
 	}
-	defer f.Close()
-
-	var (
-		started      time.Time
-		complete     metrics.Event
-		found        bool
-		count        int
-		failedEvents int
-	)
-	scan := bufio.NewScanner(f)
-	for scan.Scan() {
-		var event metrics.Event
-		if err := json.Unmarshal(scan.Bytes(), &event); err != nil {
-			return Summary{}, false, fmt.Errorf("runs list: parse metrics: %w", err)
-		}
-		count++
+	var summary Summary
+	var complete metrics.Event
+	found := false
+	for _, event := range events {
+		summary.EventCount++
 		if event.Status != "" && event.Status != "ok" {
-			failedEvents++
+			summary.FailedEvents++
 		}
-		if started.IsZero() {
-			started = parseTime(event.Timestamp)
+		if summary.StartedAt.IsZero() {
+			summary.StartedAt = parseTime(event.Timestamp)
 		}
 		if event.EventType == runCompleteEvent {
 			complete = event
 			found = true
 		}
 	}
-	if err := scan.Err(); err != nil {
-		return Summary{}, false, fmt.Errorf("runs list: read metrics: %w", err)
+	if found {
+		summary.RunID = runID(fallbackID, complete.Extra)
+		summary.VMName = complete.VMName
+		summary.ImageRef = complete.ImageRef
+		summary.Status = complete.Status
+		summary.TotalDurationMS = complete.DurationMS
+		summary.ExitCode = exitCode(complete.Extra)
 	}
-	if !found {
-		return Summary{}, false, nil
+	if manifest != nil {
+		summary.RunID = runID(fallbackID, map[string]any{"run_id": manifest.RunID})
+		summary.VMName = manifest.VMName
+		summary.ImageRef = manifest.ForkFrom
+		summary.Status = manifest.Outcome
+		summary.StartedAt = parseTime(manifest.StartedAt)
+		if manifest.EndedAt == "" {
+			summary.Status = "interrupted"
+		}
+		if !ValidOutcome(summary.Status) {
+			return Summary{}, false, fmt.Errorf("invalid run outcome: %q", summary.Status)
+		}
+		if summary.Status == "success" {
+			summary.Status = "ok"
+		}
+		if !found && manifest.EndedAt != "" {
+			elapsed := parseTime(manifest.EndedAt).Sub(summary.StartedAt)
+			if !summary.StartedAt.IsZero() && elapsed > 0 {
+				summary.TotalDurationMS = elapsed.Milliseconds()
+			}
+		}
+		found = true
 	}
-	if started.IsZero() {
-		started = parseTime(complete.Timestamp)
-	}
-
-	return Summary{
-		RunID:           runID(fallbackID, complete.Extra),
-		ImageRef:        complete.ImageRef,
-		VMName:          complete.VMName,
-		Status:          complete.Status,
-		TotalDurationMS: complete.DurationMS,
-		ExitCode:        exitCode(complete.Extra),
-		StartedAt:       started,
-		EventCount:      count,
-		FailedEvents:    failedEvents,
-	}, true, nil
+	return summary, found, nil
 }
 
 func matchesFilter(summary Summary, filter Filter) bool {

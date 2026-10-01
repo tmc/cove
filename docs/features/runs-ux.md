@@ -40,7 +40,9 @@ line.
 : Prints one run's lifecycle, result, fork provenance summary, network policy
 summary, resource summary, and artifacts.
 `--json` emits the raw event array for compatibility; `--summary-json` emits
-the structured show object for scripts, including raw events.
+the structured show object for scripts, including raw metrics and an optional
+`task_record` with ordered steps, primary error, independent capture/cleanup
+errors and artifact availability. Inspection never reruns recorded tasks.
 
 `runs export`
 : Writes one run in a requested format. `json` emits structured run data,
@@ -56,7 +58,7 @@ Human-readable `runs list` output includes:
 | `run-id` | Short run-id prefix. |
 | `image_ref` | Source image or VM ref, when known. |
 | `vm_name` | VM name, when known. |
-| `status` | `ok` or `fail`. |
+| `status` | Legacy metric status, or task outcome; successful task bundles use `ok`, incomplete bundles use `interrupted`. |
 | `total_duration_ms` | Total measured run duration in milliseconds. |
 | `exit_code` | Process or guest command exit code, when recorded. |
 | `started_at` | Run start timestamp. |

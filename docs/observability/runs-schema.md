@@ -1,6 +1,6 @@
 ---
 title: Runs schema
-description: cove runs list/show/export reads metrics.jsonl files written by VM runs.
+description: Metrics and versioned task bundles inspected by cove runs.
 icon: chart-line
 ---
 # Runs schema
@@ -157,3 +157,58 @@ Adding new `event_type` values is backwards-compatible: `cove runs show`
 ignores unknown types in the lifecycle subset and `runs export json` passes
 them through as opaque records. Removing or renaming a type is a breaking
 change to log readers; do not do it without a release note.
+
+## Task bundle envelope (version 1)
+
+New `RunBundle` writers preserve the existing manifest fields and add
+`schema_version: 1`, `attempt_id`, `outcome`, `primary_error`, separate
+`capture_errors` and `cleanup_errors`, optional task provenance, and artifact
+availability records. The writer publishes an initial manifest on first use.
+A missing terminal timestamp is incomplete and is inspected as `interrupted`,
+even if a preceding metric suggests success. An atomic terminal manifest
+replaces the initial one; a failed final write can be retried without changing
+the first terminal outcome.
+
+Outcomes are `success`, `task_failure`, `prerequisite_failure`, `canceled`,
+`timed_out`, `interrupted`, and `cleanup_incomplete`. Capture failure does not
+change the primary task error. Successful work with cleanup errors has the
+`cleanup_incomplete` outcome. An incomplete record cannot establish whether a
+still-running producer has stopped.
+
+Task provenance records kind, provider when applicable, declared image/plan/source SHA-256 digests when
+explicit or verified, guest route, backend, session identity, capabilities, and retention
+intent. Unknown values remain absent. Input provenance records names and
+optional digests, never input values; secret inputs carry only a name and the
+secret marker, and reject a digest. An explicit image digest is a requested identity, not a receipt that the runner
+verified image bytes. These identities do not cover undeclared network inputs. Producers must redact event payloads, diagnostic bytes, and
+error text before recording them.
+
+Each new `events.jsonl` line retains existing event fields and adds schema,
+run and attempt identity, writer-assigned sequence, event kind, and timestamp.
+Task events can add step identity, duration, status, payload and artifact
+references. Sequence orders local events even when wall clocks move backwards.
+The current writer has one attempt and assigns its run ID as the attempt ID;
+remote producer fencing and attempt aggregation are not implemented here.
+
+Artifact status is `present`, `unavailable`, or `failed`. Present records have
+relative path, content type, byte size and SHA-256 digest; unavailable/failed
+records have a reason and do not claim content. New artifact writes use paths
+under `artifacts/`. The reader refuses traversal, symlink references, nonregular
+files and digest/size mismatches. It hashes content through bounded streams
+rather than loading artifact contents into memory. Limits are 32 MiB per
+artifact, 128 MiB verified content per run, 1,024 artifact records, 1 MiB per
+manifest/event record, and 64 MiB per event file.
+
+The reader accepts a valid final event without a newline and reports an
+unfinished JSON fragment at EOF as a truncated final event. Invalid earlier
+records, malformed complete records, unsupported versions and sequence gaps
+fail inspection. Legacy manifests and event objects remain readable; legacy
+metrics-only run summaries retain their existing behavior.
+
+`cove runs show` renders task steps, evidence availability and independent
+capture/cleanup failures. `--summary-json` adds `task_record`; `--json` and
+JSON export retain the metrics-array contract. Versioned manifest runs appear
+in `runs list` even without metrics; incomplete entries have `interrupted`
+status. Inspection reads recorded data and does not rerun the task. HTML
+inspection, run comparison and physical failure-capture qualification remain
+separate work.

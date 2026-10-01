@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "run_id": "task-run",
+  "attempt_id": "task-run",
+  "vm_name": "workspace",
+  "fork_from": "",
+  "started_at": "2026-09-30T00:00:00Z",
+  "ended_at": "2026-09-30T00:01:00Z",
+  "outcome": "task_failure",
+  "primary_error": "build failed",
+  "task": {"kind": "go-workspace", "guest_route": "user", "retention": "retain"},
+  "artifacts": [{"name": "screenshot", "status": "unavailable", "reason": "no user session"}]
+}

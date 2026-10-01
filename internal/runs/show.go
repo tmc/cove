@@ -1,7 +1,6 @@
 package runs
 
 import (
-	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/tmc/cove/internal/metrics"
@@ -42,6 +42,7 @@ type Show struct {
 	Resource      *ResourceSummary `json:"resource,omitempty"`
 	Artifacts     []string         `json:"artifacts"`
 	ArtifactBytes int64            `json:"artifact_bytes"`
+	TaskRecord    *Record          `json:"task_record,omitempty"`
 	Failure       Failure          `json:"failure,omitempty"`
 }
 
@@ -66,9 +67,19 @@ func LoadShow(root, prefix string) (Show, error) {
 	if err != nil {
 		return Show{}, err
 	}
-	events, err := readEvents(filepath.Join(dir, "metrics.jsonl"))
-	if err != nil {
-		return Show{}, err
+	events, metricErr := readEvents(filepath.Join(dir, "metrics.jsonl"))
+	var record *Record
+	_, manifestErr := os.Lstat(filepath.Join(dir, "manifest.json"))
+	_, eventErr := os.Lstat(filepath.Join(dir, "events.jsonl"))
+	if manifestErr == nil || eventErr == nil {
+		loaded, err := LoadRecord(dir)
+		if err != nil {
+			return Show{}, err
+		}
+		record = &loaded
+	}
+	if metricErr != nil && (!errors.Is(metricErr, os.ErrNotExist) || record == nil) {
+		return Show{}, metricErr
 	}
 	artifacts, artifactBytes, err := listArtifacts(dir)
 	if err != nil {
@@ -76,6 +87,7 @@ func LoadShow(root, prefix string) (Show, error) {
 	}
 	show := Show{
 		RunID:         filepath.Base(dir),
+		TaskRecord:    record,
 		Dir:           dir,
 		Events:        events,
 		Lifecycle:     lifecycle(events),
@@ -86,8 +98,16 @@ func LoadShow(root, prefix string) (Show, error) {
 		Artifacts:     artifacts,
 		ArtifactBytes: artifactBytes,
 	}
+	if record != nil && (record.Manifest.SchemaVersion != 0 || metricErr != nil) {
+		show.Result.Status = record.Manifest.Outcome
+		if record.Manifest.PrimaryError != "" {
+			show.Failure = Failure{Class: record.Manifest.Outcome, Reason: terminalText(record.Manifest.PrimaryError)}
+		}
+	}
 	if show.Result.Status != "" && show.Result.Status != "ok" {
-		show.Failure = failure(events)
+		if show.Failure.Class == "" {
+			show.Failure = failure(events)
+		}
 	}
 	return show, nil
 }
@@ -167,6 +187,11 @@ func RenderShow(w io.Writer, show Show) error {
 			return err
 		}
 	}
+	if show.TaskRecord != nil {
+		if err := renderTaskRecord(w, *show.TaskRecord); err != nil {
+			return err
+		}
+	}
 	if _, err := fmt.Fprintf(w, "\nArtifacts (%d bytes):\n", show.ArtifactBytes); err != nil {
 		return err
 	}
@@ -213,25 +238,60 @@ func matchRunDir(root, prefix string) (string, error) {
 }
 
 func readEvents(path string) ([]metrics.Event, error) {
-	f, err := os.Open(path)
+	var events []metrics.Event
+	_, err := readJSONLines(path, func(data []byte) error {
+		var event metrics.Event
+		if err := json.Unmarshal(data, &event); err != nil {
+			return err
+		}
+		events = append(events, event)
+		return nil
+	})
 	if err != nil {
 		return nil, fmt.Errorf("open metrics: %w", err)
 	}
-	defer f.Close()
-
-	var events []metrics.Event
-	scan := bufio.NewScanner(f)
-	for line := 1; scan.Scan(); line++ {
-		var e metrics.Event
-		if err := json.Unmarshal(scan.Bytes(), &e); err != nil {
-			return nil, fmt.Errorf("read metrics line %d: %w", line, err)
-		}
-		events = append(events, e)
-	}
-	if err := scan.Err(); err != nil {
-		return nil, fmt.Errorf("read metrics: %w", err)
-	}
 	return events, nil
+}
+
+func renderTaskRecord(w io.Writer, record Record) error {
+	manifest := record.Manifest
+	if _, err := fmt.Fprintf(w, "\nTask run: %s attempt=%s outcome=%s incomplete=%t\n", terminalText(manifest.RunID), terminalText(manifest.AttemptID), terminalText(manifest.Outcome), record.Incomplete); err != nil {
+		return err
+	}
+	if manifest.Task != nil {
+		task := manifest.Task
+		if _, err := fmt.Fprintf(w, "  kind=%s route=%s backend=%s retention=%s\n", terminalText(task.Kind), terminalText(task.GuestRoute), terminalText(task.Backend), terminalText(task.Retention)); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "  image=%s plan=%s source=%s\n", task.ImageDigest, task.PlanDigest, task.SourceDigest); err != nil {
+			return err
+		}
+	}
+	for _, event := range record.Events {
+		if _, err := fmt.Fprintf(w, "  #%d %s step=%s status=%s %dms\n", event.Sequence, terminalText(event.Kind), terminalText(event.StepID), terminalText(event.Status), event.DurationMS); err != nil {
+			return err
+		}
+	}
+	for _, artifact := range manifest.Artifacts {
+		if _, err := fmt.Fprintf(w, "  evidence %s: %s %s\n", terminalText(artifact.Name), terminalText(artifact.Status), terminalText(artifact.Reason)); err != nil {
+			return err
+		}
+	}
+	for _, message := range manifest.CaptureErrors {
+		if _, err := fmt.Fprintf(w, "  capture error: %s\n", terminalText(message)); err != nil {
+			return err
+		}
+	}
+	for _, message := range manifest.CleanupErrors {
+		if _, err := fmt.Fprintf(w, "  cleanup error: %s\n", terminalText(message)); err != nil {
+			return err
+		}
+	}
+	if record.TruncatedEvents {
+		_, err := fmt.Fprintln(w, "  final event line was interrupted")
+		return err
+	}
+	return nil
 }
 
 func lifecycle(events []metrics.Event) []metrics.Event {
@@ -340,4 +400,9 @@ func shortReason(s string) string {
 		return s[:117] + "..."
 	}
 	return s
+}
+
+func terminalText(value string) string {
+	quoted := strconv.Quote(value)
+	return quoted[1 : len(quoted)-1]
 }

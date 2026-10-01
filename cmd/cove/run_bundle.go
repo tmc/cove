@@ -11,7 +11,7 @@
 //
 // The directory is created lazily on first write, so `cove run` invocations
 // that exit before booting do not litter empty bundle dirs. The manifest is
-// written atomically (temp + rename) on shutdown — both success and failure
+// created on first write and replaced atomically (temp + rename) on shutdown — both success and failure
 // paths.
 //
 // Plain `cove run <vm>` (no -fork-from) does NOT create a bundle: long-lived
@@ -22,15 +22,19 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	runmetrics "github.com/tmc/cove/internal/metrics"
+	"github.com/tmc/cove/internal/runs"
 	"github.com/tmc/cove/internal/vmconfig"
 )
 
@@ -57,18 +61,19 @@ type RunBundle struct {
 	resourceSampled  map[string]bool
 	resourceSampler  *resourceSampler
 	resourceSampleN  int64
+	task             *runs.Task
+	attemptID        string
+	sequence         uint64
+	outcome          string
+	primaryError     string
+	cleanupErrors    []string
+	captureErrors    []string
+	artifacts        []runs.Artifact
 	screenshotN      int
 }
 
 // runManifest is the on-disk schema for manifest.json.
-type runManifest struct {
-	RunID      string `json:"run_id"`
-	VMName     string `json:"vm_name"`
-	ForkFrom   string `json:"fork_from"`
-	StartedAt  string `json:"started_at"`
-	EndedAt    string `json:"ended_at,omitempty"`
-	ExitStatus string `json:"exit_status,omitempty"`
-}
+type runManifest = runs.Manifest
 
 // NewRunBundle prepares a bundle for the given run. The bundle directory
 // itself is not created until the first write — call ensureDir explicitly
@@ -80,6 +85,7 @@ func NewRunBundle(runsRoot, vmName, forkFrom string) (*RunBundle, error) {
 	}
 	return &RunBundle{
 		id:        id,
+		attemptID: id,
 		dir:       filepath.Join(runsRoot, id),
 		vmName:    vmName,
 		forkFrom:  forkFrom,
@@ -126,21 +132,39 @@ func (b *RunBundle) ScreenshotsDir() string {
 // bundle directory and event file lazily on first call. It is safe to call
 // concurrently. A nil bundle no-ops.
 func (b *RunBundle) AppendEvent(event map[string]any) error {
-	if b == nil {
+	if b == nil || event == nil {
 		return nil
-	}
-	if event == nil {
-		return nil
-	}
-	if _, ok := event["ts"]; !ok {
-		event["ts"] = time.Now().UTC().Format(time.RFC3339Nano)
-	}
-	data, err := json.Marshal(event)
-	if err != nil {
-		return fmt.Errorf("marshal event: %w", err)
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.finalized || !b.endedAt.IsZero() {
+		return fmt.Errorf("run bundle is finalized")
+	}
+	copyEvent := make(map[string]any, len(event)+6)
+	for key, value := range event {
+		copyEvent[key] = value
+	}
+	if _, ok := copyEvent["ts"]; !ok {
+		copyEvent["ts"] = time.Now().UTC().Format(time.RFC3339Nano)
+	}
+	copyEvent["schema_version"] = runs.SchemaVersion
+	copyEvent["run_id"] = b.id
+	copyEvent["attempt_id"] = b.attemptID
+	copyEvent["sequence"] = b.sequence + 1
+	if kind, _ := copyEvent["kind"].(string); kind == "" {
+		kind, _ = copyEvent["event"].(string)
+		if kind == "" {
+			kind = "observation"
+		}
+		copyEvent["kind"] = kind
+	}
+	data, err := json.Marshal(copyEvent)
+	if err != nil {
+		return fmt.Errorf("marshal event: %w", err)
+	}
+	if len(data) >= runs.MaxRecordBytes {
+		return fmt.Errorf("event exceeds bounds")
+	}
 	if err := b.ensureDirLocked(); err != nil {
 		return err
 	}
@@ -154,7 +178,159 @@ func (b *RunBundle) AppendEvent(event map[string]any) error {
 	if _, err := b.eventsFile.Write(append(data, '\n')); err != nil {
 		return fmt.Errorf("write event: %w", err)
 	}
+	b.sequence++
 	return nil
+}
+
+// ConfigureTask fixes declared task provenance before the first event.
+func (b *RunBundle) ConfigureTask(task runs.Task) error {
+	if b == nil {
+		return nil
+	}
+	if err := runs.ValidateTask(task); err != nil {
+		return err
+	}
+	data, err := json.Marshal(task)
+	if err != nil {
+		return err
+	}
+	if len(data) > runs.MaxRecordBytes/2 {
+		return fmt.Errorf("task provenance exceeds bounds")
+	}
+	var copied runs.Task
+	if err := json.Unmarshal(data, &copied); err != nil {
+		return err
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.created || b.finalized || b.task != nil {
+		return fmt.Errorf("task provenance is already fixed")
+	}
+	b.task = &copied
+	return nil
+}
+
+// AppendTaskEvent records an event with writer-assigned identity and order.
+func (b *RunBundle) AppendTaskEvent(event runs.TaskEvent) error {
+	if b == nil {
+		return nil
+	}
+	if event.Kind == "" {
+		return fmt.Errorf("task event kind is empty")
+	}
+	data, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+	var values map[string]any
+	if err := json.Unmarshal(data, &values); err != nil {
+		return err
+	}
+	if event.Timestamp == "" {
+		delete(values, "ts")
+	}
+	return b.AppendEvent(values)
+}
+
+// RecordArtifact records a bounded diagnostic or its explicit unavailability.
+// File paths must be under artifacts/; data must already be redacted.
+func (b *RunBundle) RecordArtifact(artifact runs.Artifact, data []byte) error {
+	if b == nil {
+		return nil
+	}
+	if artifact.Status == "present" {
+		if !strings.HasPrefix(artifact.Path, "artifacts/") {
+			return fmt.Errorf("artifact path must be under artifacts/")
+		}
+		if int64(len(data)) > runs.MaxArtifactBytes {
+			return fmt.Errorf("artifact size exceeds bounds")
+		}
+		artifact.Size = int64(len(data))
+		digest := sha256.Sum256(data)
+		artifact.Digest = "sha256:" + hex.EncodeToString(digest[:])
+	} else if len(data) != 0 {
+		return fmt.Errorf("unavailable artifact must not include data")
+	}
+	if err := runs.ValidateArtifact(artifact); err != nil {
+		return err
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.finalized || !b.endedAt.IsZero() {
+		return fmt.Errorf("run bundle is finalized")
+	}
+	for _, existing := range b.artifacts {
+		if existing.Name == artifact.Name || (artifact.Path != "" && existing.Path == artifact.Path) {
+			return fmt.Errorf("artifact already recorded: %s", artifact.Name)
+		}
+	}
+	var artifactBytes int64
+	for _, existing := range b.artifacts {
+		artifactBytes += existing.Size
+	}
+	if artifactBytes+artifact.Size > 128<<20 {
+		return fmt.Errorf("artifact collection exceeds bounds")
+	}
+	if len(b.artifacts) >= 1024 {
+		return fmt.Errorf("too many artifacts")
+	}
+	if err := b.ensureDirLocked(); err != nil {
+		return err
+	}
+	if artifact.Status == "present" {
+		root, err := os.OpenRoot(b.dir)
+		if err != nil {
+			return err
+		}
+		defer root.Close()
+		path := filepath.FromSlash(artifact.Path)
+		if err := root.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			return err
+		}
+		componentPath := ""
+		for _, component := range strings.Split(artifact.Path, "/") {
+			componentPath = filepath.Join(componentPath, component)
+			info, err := root.Lstat(componentPath)
+			if os.IsNotExist(err) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			if info.Mode()&os.ModeSymlink != 0 {
+				return fmt.Errorf("artifact symlink refused")
+			}
+		}
+		id, err := generateRunID()
+		if err != nil {
+			return err
+		}
+		temporary := filepath.Join(filepath.Dir(path), ".artifact-"+id)
+		defer root.Remove(temporary)
+		file, err := root.OpenFile(temporary, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		if err != nil {
+			return err
+		}
+		_, writeErr := file.Write(data)
+		if writeErr == nil {
+			writeErr = file.Sync()
+		}
+		closeErr := file.Close()
+		if writeErr != nil {
+			return writeErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		if err := root.Rename(temporary, path); err != nil {
+			return err
+		}
+	}
+	b.artifacts = append(b.artifacts, artifact)
+	if artifact.Status == "failed" {
+		b.captureErrors = append(b.captureErrors, artifact.Name+": "+artifact.Reason)
+	}
+	return b.writeManifestLocked()
 }
 
 // RecordScreenshot copies pre-encoded image bytes into screenshots/<name>.
@@ -172,6 +348,9 @@ func (b *RunBundle) RecordScreenshot(name string, data []byte) error {
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.finalized || !b.endedAt.IsZero() {
+		return fmt.Errorf("run bundle is finalized")
+	}
 	if err := b.ensureDirLocked(); err != nil {
 		return err
 	}
@@ -208,8 +387,28 @@ func (b *RunBundle) StderrWriter() *bundleWriter {
 // open file handles. exitStatus is recorded as "ok" for nil err, otherwise
 // the err.Error() text. Safe to call once; subsequent calls no-op.
 func (b *RunBundle) Finalize(exitErr error) error {
+	outcome := "success"
+	if errors.Is(exitErr, context.Canceled) {
+		outcome = "canceled"
+	} else if errors.Is(exitErr, context.DeadlineExceeded) {
+		outcome = "timed_out"
+	} else if exitErr != nil {
+		outcome = "task_failure"
+	}
+	return b.FinalizeTask(outcome, exitErr, nil)
+}
+
+// FinalizeTask preserves the primary error separately from capture and cleanup.
+// A failed manifest publication can be retried without changing the first result.
+func (b *RunBundle) FinalizeTask(outcome string, exitErr error, cleanupErrors []string) error {
 	if b == nil {
 		return nil
+	}
+	if !runs.ValidOutcome(outcome) {
+		return fmt.Errorf("invalid task outcome: %q", outcome)
+	}
+	if outcome == "success" && exitErr != nil {
+		return fmt.Errorf("successful task must not have a primary error")
 	}
 	b.stopResourceSampler()
 	b.mu.Lock()
@@ -217,12 +416,20 @@ func (b *RunBundle) Finalize(exitErr error) error {
 	if b.finalized {
 		return nil
 	}
-	b.finalized = true
-	b.endedAt = time.Now().UTC()
-	if exitErr != nil {
-		b.exitStatus = exitErr.Error()
-	} else {
-		b.exitStatus = "ok"
+	if b.endedAt.IsZero() {
+		b.outcome = outcome
+		b.cleanupErrors = append([]string(nil), cleanupErrors...)
+		if outcome == "success" && len(cleanupErrors) != 0 {
+			b.outcome = "cleanup_incomplete"
+		}
+		b.endedAt = time.Now().UTC()
+		if exitErr != nil {
+			b.exitStatus = exitErr.Error()
+			b.primaryError = exitErr.Error()
+		} else {
+			b.exitStatus = "ok"
+		}
+
 	}
 
 	if b.eventsFile != nil {
@@ -243,11 +450,16 @@ func (b *RunBundle) Finalize(exitErr error) error {
 	}
 
 	if !b.created {
+		b.finalized = true
 		// No events ever recorded: keep the disk clean and skip the
 		// manifest. The run effectively never produced telemetry.
 		return nil
 	}
-	return b.writeManifestLocked()
+	if err := b.writeManifestLocked(); err != nil {
+		return err
+	}
+	b.finalized = true
+	return nil
 }
 
 // EmitMetric writes one structured metric event into metrics.jsonl.
@@ -257,7 +469,7 @@ func (b *RunBundle) EmitMetric(ctx context.Context, event runmetrics.Event) erro
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.finalized {
+	if b.finalized || !b.endedAt.IsZero() {
 		return nil
 	}
 	if err := b.ensureDirLocked(); err != nil {
@@ -275,16 +487,30 @@ func (b *RunBundle) EmitMetric(ctx context.Context, event runmetrics.Event) erro
 
 func (b *RunBundle) writeManifestLocked() error {
 	mf := runManifest{
-		RunID:      b.id,
-		VMName:     b.vmName,
-		ForkFrom:   b.forkFrom,
-		StartedAt:  b.startedAt.Format(time.RFC3339Nano),
-		EndedAt:    b.endedAt.Format(time.RFC3339Nano),
+		SchemaVersion: runs.SchemaVersion,
+		AttemptID:     b.attemptID,
+		Outcome:       b.outcome,
+		PrimaryError:  b.primaryError,
+		CleanupErrors: b.cleanupErrors,
+		CaptureErrors: b.captureErrors,
+		Task:          b.task,
+		Artifacts:     b.artifacts,
+		RunID:         b.id,
+		VMName:        b.vmName,
+		ForkFrom:      b.forkFrom,
+		StartedAt:     b.startedAt.Format(time.RFC3339Nano),
+
 		ExitStatus: b.exitStatus,
+	}
+	if !b.endedAt.IsZero() {
+		mf.EndedAt = b.endedAt.Format(time.RFC3339Nano)
 	}
 	data, err := json.MarshalIndent(mf, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal manifest: %w", err)
+	}
+	if len(data) >= runs.MaxRecordBytes {
+		return fmt.Errorf("run manifest exceeds bounds")
 	}
 	finalPath := filepath.Join(b.dir, "manifest.json")
 	tmpPath, err := atomicWriteFile(finalPath, append(data, '\n'), 0644)
@@ -303,10 +529,19 @@ func (b *RunBundle) ensureDirLocked() error {
 	if b.created {
 		return nil
 	}
-	if err := os.MkdirAll(b.dir, 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(b.dir), 0755); err != nil {
+		return fmt.Errorf("create runs root: %w", err)
+	}
+	if err := os.Mkdir(b.dir, 0700); err != nil {
 		return fmt.Errorf("create bundle dir: %w", err)
 	}
 	b.created = true
+	if err := b.writeManifestLocked(); err != nil {
+		b.created = false
+		os.Remove(b.dir)
+		return err
+	}
+
 	return nil
 }
 
@@ -328,7 +563,7 @@ func (w *bundleWriter) Write(p []byte) (int, error) {
 	}
 	w.bundle.mu.Lock()
 	defer w.bundle.mu.Unlock()
-	if w.bundle.finalized {
+	if w.bundle.finalized || !w.bundle.endedAt.IsZero() {
 		return len(p), nil
 	}
 	if err := w.bundle.ensureDirLocked(); err != nil {

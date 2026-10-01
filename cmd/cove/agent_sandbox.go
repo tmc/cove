@@ -22,6 +22,7 @@ import (
 	ocrx "github.com/tmc/apple/x/vzkit/ocr"
 	"github.com/tmc/cove/internal/agentsandbox"
 	runmetrics "github.com/tmc/cove/internal/metrics"
+	"github.com/tmc/cove/internal/runs"
 )
 
 type agentSandboxRunOptions struct {
@@ -411,6 +412,9 @@ func runAgentSandbox(ctx context.Context, opts agentSandboxRunOptions) (runErr e
 	if err != nil {
 		return err
 	}
+	if err := configureAgentSandboxBundle(bundle, opts); err != nil {
+		return err
+	}
 	if err := bundle.AppendEvent(map[string]any{
 		"event":    "agent_sandbox.start",
 		"run_id":   bundle.ID(),
@@ -560,6 +564,19 @@ func runAgentSandbox(ctx context.Context, opts agentSandboxRunOptions) (runErr e
 		fmt.Printf("agent-sandbox summary: %s\n", stats.SummaryPath)
 	}
 	return providerErr
+}
+
+func configureAgentSandboxBundle(bundle *RunBundle, opts agentSandboxRunOptions) error {
+	task := runs.Task{Kind: "agent_sandbox", Provider: opts.provider, GuestRoute: "control-socket", Retention: "discard-on-stop"}
+	if i := strings.LastIndex(opts.image, "@sha256:"); i >= 0 {
+		task.ImageDigest = opts.image[i+1:]
+	}
+	for _, requirement := range providerRequiredEnv(opts.provider) {
+		for _, name := range strings.Split(requirement, " or ") {
+			task.Inputs = append(task.Inputs, runs.Input{Name: strings.TrimSpace(name), Secret: true})
+		}
+	}
+	return bundle.ConfigureTask(task)
 }
 
 func writeAgentSandboxRunOutput(w io.Writer, out agentSandboxRunOutput) error {
