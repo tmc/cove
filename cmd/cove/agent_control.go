@@ -34,6 +34,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -43,6 +44,7 @@ import (
 	"github.com/tmc/cove/internal/controlserver"
 	"github.com/tmc/cove/internal/vmconfig"
 
+	pb "github.com/tmc/cove/proto/agentpb"
 	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
@@ -936,6 +938,14 @@ func (s *ControlServer) handleAgentCopy(cmd *controlpb.AgentCopyCommand) *contro
 	} else {
 		timeout = 30 * time.Minute
 	}
+	var ua *agentstate.UserAgentClient
+	if route == agentstate.RouteUser {
+		var err error
+		ua, err = s.getUserAgent()
+		if err != nil {
+			return &controlpb.ControlResponse{Error: fmt.Sprintf("copy requires the guest user agent; log in to the guest and retry: %v", err)}
+		}
+	}
 	a, err := s.getAgent()
 	if err != nil {
 		return &controlpb.ControlResponse{Error: err.Error()}
@@ -954,13 +964,6 @@ func (s *ControlServer) handleAgentCopy(cmd *controlpb.AgentCopyCommand) *contro
 			mode = hostInfo.Mode()
 		}
 
-		var ua *agentstate.UserAgentClient
-		if route == agentstate.RouteUser {
-			if client, err := s.getUserAgent(); err == nil {
-				ua = client
-			}
-		}
-
 		targetUser := s.targetUserForPath(cmd.GuestPath)
 
 		// Check if destination on guest is an existing directory
@@ -976,52 +979,37 @@ func (s *ControlServer) handleAgentCopy(cmd *controlpb.AgentCopyCommand) *contro
 			}
 		}
 
-		if ua != nil {
-			stagePath := fmt.Sprintf("/tmp/vz-cp-stage-%d-%08x", time.Now().UnixNano(), rand.Uint32())
-			defer func() {
-				ctxCleanup, cancel := s.timeoutContext(5 * time.Second)
-				defer cancel()
-				a.Exec(ctxCleanup, []string{"rm", "-f", stagePath}, nil, "")
-			}()
-
-			if err := a.CopyToGuest(ctx, cmd.HostPath, stagePath, 0644); err != nil {
+		stagePath := fmt.Sprintf("/tmp/vz-cp-stage-%d-%08x", time.Now().UnixNano(), rand.Uint32())
+		defer func() {
+			ctxCleanup, cancel := s.timeoutContext(5 * time.Second)
+			defer cancel()
+			a.Exec(ctxCleanup, []string{"rm", "-f", stagePath}, nil, "")
+		}()
+		if err := a.CopyToGuest(ctx, cmd.HostPath, stagePath, 0644); err != nil {
+			return &controlpb.ControlResponse{Error: fmt.Sprintf("cp stage: %v", err)}
+		}
+		if targetUser != "" {
+			if err := chownGuest(ctx, a, targetUser, stagePath, false); err != nil {
 				return &controlpb.ControlResponse{Error: fmt.Sprintf("cp stage: %v", err)}
 			}
-			if targetUser != "" {
-				if err := chownGuest(ctx, a, targetUser, stagePath, false); err != nil {
-					return &controlpb.ControlResponse{Error: fmt.Sprintf("cp stage: %v", err)}
-				}
-			}
-
-			destDir := guestDir(cmd.GuestPath)
-			script := `set -e
-destDir="$1"; case "$destDir" in "~/"*) destDir="$HOME/${destDir#\~/}" ;; esac
-destPath="$2"; case "$destPath" in "~/"*) destPath="$HOME/${destPath#\~/}" ;; esac
-mkdir -p "$destDir"
-if ! mv -f "$3" "$destPath" 2>/dev/null; then
-    cp -f "$3" "$destPath"
-    rm -f "$3"
-fi
-chmod "$4" "$destPath"`
-			args := []string{
-				"/bin/sh", "-c", script, "vz-cp-file",
-				destDir, cmd.GuestPath, stagePath, fmt.Sprintf("%o", mode&0o777),
-			}
-			result, err := ua.UserExec(ctx, args, nil, "")
-			if err != nil {
-				return &controlpb.ControlResponse{Error: fmt.Sprintf("cp: %v", err)}
-			}
-			if result.ExitCode != 0 {
-				return &controlpb.ControlResponse{Error: fmt.Sprintf("cp: exit %d: %s", result.ExitCode, strings.TrimSpace(string(result.Stderr)))}
-			}
+		}
+		args := []string{"/bin/sh", "-c", guestCopyInstallScript, "vz-cp-file", guestDir(cmd.GuestPath), cmd.GuestPath, stagePath, fmt.Sprintf("%o", mode&0o777), strconv.FormatBool(cmd.Overwrite)}
+		var result *pb.ExecResponse
+		if ua != nil {
+			result, err = ua.UserExec(ctx, args, nil, "")
 		} else {
-			if err := a.CopyToGuest(ctx, cmd.HostPath, cmd.GuestPath, mode); err != nil {
+			result, err = a.Exec(ctx, args, nil, "")
+		}
+		if err != nil {
+			return &controlpb.ControlResponse{Error: fmt.Sprintf("cp: %v", err)}
+		}
+		if result.ExitCode != 0 {
+			return &controlpb.ControlResponse{Error: fmt.Sprintf("cp: exit %d: %s", result.ExitCode, strings.TrimSpace(string(result.Stderr)))}
+		}
+
+		if ua == nil && targetUser != "" {
+			if err := chownGuest(ctx, a, targetUser, cmd.GuestPath, false); err != nil {
 				return &controlpb.ControlResponse{Error: fmt.Sprintf("cp: %v", err)}
-			}
-			if targetUser != "" {
-				if err := chownGuest(ctx, a, targetUser, cmd.GuestPath, false); err != nil {
-					return &controlpb.ControlResponse{Error: fmt.Sprintf("cp: %v", err)}
-				}
 			}
 		}
 
@@ -1036,13 +1024,6 @@ chmod "$4" "$destPath"`
 	// Guest to host
 	if err := checkCopyDestination(cmd.HostPath, cmd.Overwrite); err != nil {
 		return &controlpb.ControlResponse{Error: err.Error()}
-	}
-
-	var ua *agentstate.UserAgentClient
-	if route == agentstate.RouteUser {
-		if client, err := s.getUserAgent(); err == nil {
-			ua = client
-		}
 	}
 
 	// Check if guest path is a directory
@@ -1104,8 +1085,10 @@ func (s *ControlServer) handleAgentCopyDir(ctx context.Context, a *agentstate.Ag
 	var ua *agentstate.UserAgentClient
 	if route == agentstate.RouteUser {
 		slog.Debug(fmt.Sprintf("agent-route: cp dir %s -> user agent (TCC path)", guestDir))
-		if client, err := s.getUserAgent(); err == nil {
-			ua = client
+		var err error
+		ua, err = s.getUserAgent()
+		if err != nil {
+			return &controlpb.ControlResponse{Error: fmt.Sprintf("copy requires the guest user agent; log in to the guest and retry: %v", err)}
 		}
 	}
 
@@ -1163,9 +1146,14 @@ func (s *ControlServer) handleAgentCopyDir(ctx context.Context, a *agentstate.Ag
 		}
 		script := `set -e
 dest="$1"; case "$dest" in "~/"*) dest="$HOME/${dest#\~/}" ;; esac
-mkdir -p "$dest"
+if [ "$3" = true ]; then
+    mkdir -p "$dest"
+else
+    mkdir -p "$(dirname "$dest")"
+    mkdir "$dest"
+fi
 tar xf "$2" --no-same-owner --strip-components=1 -C "$dest"`
-		result, err := ua.UserExec(ctx, []string{"/bin/sh", "-c", script, "vz-cp-extract", guestDir, tmpTar}, nil, "")
+		result, err := ua.UserExec(ctx, []string{"/bin/sh", "-c", script, "vz-cp-extract", guestDir, tmpTar, strconv.FormatBool(overwrite)}, nil, "")
 		if err != nil {
 			return &controlpb.ControlResponse{Error: fmt.Sprintf("extract tar on guest: %v", err)}
 		}
@@ -1185,7 +1173,19 @@ tar xf "$2" --no-same-owner --strip-components=1 -C "$dest"`
 		}
 	}
 
-	if mkResult, err := a.Exec(ctx, []string{"mkdir", "-p", guestDir}, nil, ""); err != nil {
+	mkdirArgs := []string{"mkdir", guestDir}
+	if overwrite {
+		mkdirArgs = []string{"mkdir", "-p", guestDir}
+	} else {
+		parentResult, err := a.Exec(ctx, []string{"mkdir", "-p", path.Dir(guestDir)}, nil, "")
+		if err != nil {
+			return &controlpb.ControlResponse{Error: fmt.Sprintf("mkdir guest parent: %v", err)}
+		}
+		if parentResult.ExitCode != 0 {
+			return &controlpb.ControlResponse{Error: fmt.Sprintf("mkdir guest parent: exit %d: %s", parentResult.ExitCode, string(parentResult.Stderr))}
+		}
+	}
+	if mkResult, err := a.Exec(ctx, mkdirArgs, nil, ""); err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("mkdir guest dir: %v", err)}
 	} else if mkResult.ExitCode != 0 {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("mkdir guest dir: exit %d: %s", mkResult.ExitCode, string(mkResult.Stderr))}
@@ -1300,3 +1300,22 @@ tar cf "$2" -C "$dir" "$base"`
 		Result:  &controlpb.ControlResponse_AgentFile{AgentFile: &controlpb.AgentFileResponse{Message: msg}},
 	}
 }
+
+const guestCopyInstallScript = `set -e
+mkdir -p "$1"
+tmp=$(mktemp "$1/.cove-copy.XXXXXXXX")
+trap 'rm -f "$tmp"' EXIT HUP INT TERM
+cp "$3" "$tmp"
+chmod "$4" "$tmp"
+if [ "$5" = true ]; then
+    if [ -d "$2" ]; then
+        echo "destination is a directory" >&2
+        exit 1
+    fi
+    mv -f "$tmp" "$2"
+else
+    if ! link "$tmp" "$2"; then
+        echo "destination already exists or cannot be created (use -f to overwrite)" >&2
+        exit 1
+    fi
+fi`
