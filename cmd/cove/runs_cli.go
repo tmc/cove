@@ -37,6 +37,10 @@ func handleRunsCommand(env commandEnv, args []string) error {
 			return nil
 		}
 		return runRunsShow(env, rest)
+	case "inspect":
+		return runRunsInspect(env, rest)
+	case "compare":
+		return runRunsCompare(env, rest)
 	case "export":
 		if len(rest) > 0 && isHelpArg(rest[0]) {
 			printRunsExportUsage(env.Stdout)
@@ -55,6 +59,8 @@ func printRunsUsage(w io.Writer) {
 Subcommands:
   list [--limit N] [--since D] [--status ok|fail|all] [--json|--ndjson]
   show <run-id-prefix> [--json|--summary-json]
+  inspect <run-id-prefix> [--json|--html]
+  compare <left-run-prefix> <right-run-prefix> [--json]
   export <run-id-prefix> --format json|gha-summary|tar [--include-guest /path]`)
 }
 

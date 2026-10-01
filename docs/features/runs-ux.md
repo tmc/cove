@@ -145,3 +145,28 @@ cove runs export bench-20260506 --format json
 
 The checked-in JSON report is the table source. The run directory remains the
 inspectable evidence bundle for `cove runs list/show/export`.
+
+`cove runs inspect PREFIX` reads versioned task evidence as text. `--json`
+emits the same inspection projection; `--html` writes a standalone local
+HTML timeline to standard output. For example:
+
+```sh
+cove runs inspect PREFIX --html > "$HOME/tmp/run-inspection.html"
+cove runs compare LEFT RIGHT --json
+```
+
+Inspection shows the primary failure, ordered steps, capture availability,
+cleanup errors, cancellation and incomplete publication separately. Guest name
+and retention are recorded declarations; current guest existence is unverified.
+The timeline does not run commands, rerun tasks, embed artifact contents or serve
+files. Artifact names and paths identify recorded evidence; the bounded reader
+checks present files and digests before rendering. Source lines, action details
+and capabilities appear only when producers record supported metadata; this
+projection currently displays step identity, route and backend, and omits
+arbitrary event payloads and secret input provenance.
+
+Comparison requires equal verified image, plan, source and nonsecret input
+digests. Unknown identities, differing inputs and secret input equality produce
+an explicit incomparable result. Outcomes are displayed without ranking runs.
+Raw artifacts and error strings still require producer redaction; escaping HTML
+does not redact secrets that a producer wrote into an error.
