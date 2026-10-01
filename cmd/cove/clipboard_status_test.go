@@ -1,11 +1,29 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 	"time"
+
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
+
+func TestClipboardStatusPublicDispatch(t *testing.T) {
+	s := &ControlServer{vmDir: t.TempDir()}
+	response := s.Handle(&controlpb.ControlRequest{Type: "clipboard-status"})
+	if !response.Success {
+		t.Fatalf("clipboard-status failed: %s", response.Error)
+	}
+	var status clipboardSharingStatus
+	if err := json.Unmarshal([]byte(response.Data), &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.Native != "disabled" || status.HostToGuestText != "disabled" {
+		t.Fatalf("unexpected status: %+v", status)
+	}
+}
 
 func TestClipboardSharingState(t *testing.T) {
 	for _, tt := range []struct {

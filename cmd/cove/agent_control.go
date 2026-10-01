@@ -285,8 +285,6 @@ func (s *ControlServer) handleAgentCommand(req *controlpb.ControlRequest) (resp 
 		return s.handleAgentUserExec(cmd), true
 	case "agent-mount-volumes":
 		return s.handleAgentMountVolumes(), true
-	case "clipboard-status":
-		return statusControlResponse(s.clipboardStatus()), true
 	case "agent-status":
 		return s.handleAgentStatus(), true
 	default:
