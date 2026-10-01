@@ -680,6 +680,9 @@ func ctlCommand(args []string) error {
 	if cmdType == "exec" {
 		cmdType = "agent-exec"
 	}
+	if cmdType == "type" {
+		cmdType = "text"
+	}
 	if len(subArgs) > 0 && isHelpArg(subArgs[0]) {
 		if printCtlSubcommandUsage(os.Stdout, cmdType, subArgs) {
 			return nil

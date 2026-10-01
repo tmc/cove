@@ -51,6 +51,17 @@ func TestCtlCommandEarlyBranches(t *testing.T) {
 	})
 }
 
+func TestCtlTypeAlias(t *testing.T) {
+	for _, command := range []string{"text", "type"} {
+		t.Run(command, func(t *testing.T) {
+			err := ctlCommand([]string{"-socket", filepath.Join(t.TempDir(), "control.sock"), command})
+			if err == nil || !strings.Contains(err.Error(), "text command requires string") {
+				t.Fatalf("error = %v, want text argument error", err)
+			}
+		})
+	}
+}
+
 func TestControlAliasArgsGUIDefaultsToOpen(t *testing.T) {
 	tests := []struct {
 		name string
