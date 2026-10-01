@@ -710,15 +710,13 @@ func (s *agentServer) CopyOut(_ context.Context, req *connect.Request[pb.CopyOut
 	return nil
 }
 
-func (s *agentServer) Shutdown(_ context.Context, req *connect.Request[pb.ShutdownRequest]) (*connect.Response[pb.ShutdownResponse], error) {
+func (s *agentServer) Shutdown(_ context.Context, _ *connect.Request[pb.ShutdownRequest]) (*connect.Response[pb.ShutdownResponse], error) {
 	slog.Info("shutdown requested")
 	go func() {
 		time.Sleep(500 * time.Millisecond)
-		args := []string{"now"}
-		if req.Msg.Force {
-			args = []string{"-h", "now"}
+		if err := exec.Command("shutdown", "-h", "now").Run(); err != nil {
+			slog.Error("shutdown failed", "err", err)
 		}
-		exec.Command("shutdown", args...).Run()
 	}()
 	return connect.NewResponse(&pb.ShutdownResponse{}), nil
 }

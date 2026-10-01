@@ -2297,7 +2297,8 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 	}
 	statusItem = NewVMStatusItemController(app, vm, queue, controlServer, window, guiController, vmToolbar, quitRuntime, rc, hc)
 
-	closeController := &windowCloseController{
+	var closeController *windowCloseController
+	closeController = &windowCloseController{
 		vmState: func() (vz.VZVirtualMachineState, error) {
 			return currentVMState(vm, queue)
 		},
@@ -2336,6 +2337,48 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 		},
 		setForceStop: func() {
 			forceStop.Store(true)
+		},
+		shutDown: func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+			return gracefulWindowShutdown(ctx, func() error {
+				if a, err := controlServer.getAgent(); err == nil {
+					requestCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+					// Older agents require Force to select shutdown -h; this still asks the guest OS to halt.
+					err := a.Shutdown(requestCtx, true)
+					cancel()
+					if err == nil {
+						return nil
+					}
+				}
+				result := make(chan error, 1)
+				DispatchAsyncQueue(queue, func() {
+					ok, err := vm.RequestStopWithError()
+					if err == nil && !ok {
+						err = errors.New("guest declined shutdown; resume a paused VM and retry")
+					}
+					result <- err
+				})
+				select {
+				case err := <-result:
+					return err
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}, func() (vz.VZVirtualMachineState, error) { return currentVMState(vm, queue) })
+		},
+		clearTerminating: func() { terminating.Store(false) },
+		shutdownFailed: func(err error) {
+			alert := appkit.NewNSAlert()
+			alert.SetMessageText("The virtual machine did not shut down.")
+			alert.SetInformativeText(fmt.Sprintf("%v. Force Stop may lose unsaved work.", err))
+			alert.AddButtonWithTitle("Keep Running")
+			alert.AddButtonWithTitle("Force Stop")
+			alert.BeginSheetModalForWindowCompletionHandler(window, func(response appkit.NSModalResponse) {
+				if response == appkit.AlertSecondButtonReturn {
+					closeController.HandleChoice(windowCloseForceStop)
+				}
+			})
 		},
 		replyTerminate: func() {
 			if shouldTerminateReply.Load() {

@@ -14,6 +14,7 @@ const (
 	windowCloseKeepRunning
 	windowCloseSuspend
 	windowCloseShutDown
+	windowCloseForceStop
 )
 
 func (a windowCloseAction) String() string {
@@ -26,6 +27,8 @@ func (a windowCloseAction) String() string {
 		return "suspend"
 	case windowCloseShutDown:
 		return "shut-down"
+	case windowCloseForceStop:
+		return "force-stop"
 	default:
 		return "unknown"
 	}
@@ -81,19 +84,22 @@ func newWindowCloseAlert(canSuspend bool) appkit.NSAlert {
 }
 
 type windowCloseController struct {
-	vmState        func() (vz.VZVirtualMachineState, error)
-	canSuspend     func() bool
-	showAlert      func(canSuspend bool, onChoice func(windowCloseAction))
-	hideWindow     func()
-	closeWindow    func()
-	terminateApp   func()
-	doCleanup      func()
-	quitRuntime    func()
-	cleanupDone    func() bool
-	terminating    func() bool
-	setTerminating func()
-	setForceStop   func()
-	replyTerminate func()
+	vmState          func() (vz.VZVirtualMachineState, error)
+	canSuspend       func() bool
+	showAlert        func(canSuspend bool, onChoice func(windowCloseAction))
+	hideWindow       func()
+	closeWindow      func()
+	terminateApp     func()
+	doCleanup        func()
+	quitRuntime      func()
+	cleanupDone      func() bool
+	terminating      func() bool
+	setTerminating   func()
+	setForceStop     func()
+	shutDown         func() error
+	shutdownFailed   func(error)
+	clearTerminating func()
+	replyTerminate   func()
 }
 
 func (c *windowCloseController) ShouldClose() bool {
@@ -147,14 +153,28 @@ func (c *windowCloseController) HandleChoice(action windowCloseAction) {
 				}
 			})
 		}()
-	case windowCloseShutDown:
-		if c.setForceStop != nil {
-			c.setForceStop()
-		}
+	case windowCloseShutDown, windowCloseForceStop:
 		if c.setTerminating != nil {
 			c.setTerminating()
 		}
 		go func() {
+			if action != windowCloseForceStop && c.shutDown != nil {
+				if err := c.shutDown(); err != nil {
+					DispatchAsyncMain(func() {
+						if c.clearTerminating != nil {
+							c.clearTerminating()
+						}
+						if c.shutdownFailed != nil {
+							c.shutdownFailed(err)
+						}
+					})
+					return
+				}
+			}
+			if c.setForceStop != nil {
+				c.setForceStop()
+			}
+
 			if c.doCleanup != nil {
 				c.doCleanup()
 			}
