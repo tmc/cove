@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"io"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	ocrx "github.com/tmc/apple/x/vzkit/ocr"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 // SetupAssistant automates the macOS first-run experience using OCR-driven
@@ -954,16 +957,45 @@ func (s *SetupAssistant) typeText(text string) {
 
 // saveDebugScreenshot saves a screenshot for debugging.
 func (s *SetupAssistant) saveDebugScreenshot(name string) {
-	if s.saveDir == "" {
+	if s.saveDir == "" || s.transport == nil || name == "" || filepath.Base(name) != name || name == "." || name == ".." {
 		return
 	}
 
-	if err := os.MkdirAll(s.saveDir, 0755); err != nil {
-		s.log("warning: failed to create debug dir: %v", err)
+	path := filepath.Clean(s.saveDir)
+	parent, err := os.OpenRoot(filepath.Dir(path))
+	if err != nil {
+		s.log("warning: failed to open debug parent: %v", err)
 		return
 	}
-
-	if s.transport == nil {
+	defer parent.Close()
+	child := filepath.Base(path)
+	info, err := parent.Lstat(child)
+	if os.IsNotExist(err) {
+		openedParent, parentErr := parent.Stat(".")
+		vmParent, vmParentErr := os.Stat(vmconfig.BaseDir())
+		if parentErr != nil || vmParentErr == nil && os.SameFile(openedParent, vmParent) {
+			s.log("warning: refusing to create vm bundle for debug screenshot")
+			return
+		}
+		if err := parent.Mkdir(child, 0755); err != nil && !os.IsExist(err) {
+			s.log("warning: failed to create debug dir: %v", err)
+			return
+		}
+		info, err = parent.Lstat(child)
+	}
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		s.log("warning: debug path is not a real directory")
+		return
+	}
+	dir, err := parent.OpenRoot(child)
+	if err != nil {
+		s.log("warning: failed to open debug dir: %v", err)
+		return
+	}
+	defer dir.Close()
+	opened, err := dir.Stat(".")
+	if err != nil || !os.SameFile(info, opened) {
+		s.log("warning: debug directory changed while opening")
 		return
 	}
 	img, err := s.transport.Screenshot()
@@ -972,19 +1004,38 @@ func (s *SetupAssistant) saveDebugScreenshot(name string) {
 		return
 	}
 
-	path := filepath.Join(s.saveDir, fmt.Sprintf("%s_%d.png", name, time.Now().Unix()))
-	f, err := os.Create(path)
+	if img == nil || img.Bounds().Dx() <= 0 || img.Bounds().Dy() <= 0 || img.Bounds().Dx() > 16384 || img.Bounds().Dy() > 16384 {
+		s.log("warning: invalid debug screenshot dimensions")
+		return
+	}
+	filename := fmt.Sprintf("%s_%d.png", name, time.Now().Unix())
+	f, err := dir.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0600)
 	if err != nil {
 		s.log("warning: failed to create screenshot file: %v", err)
 		return
 	}
 	defer f.Close()
 
-	if err := png.Encode(f, img); err != nil {
+	if err := png.Encode(&debugScreenshotWriter{writer: f, remaining: 64 << 20}, img); err != nil {
 		s.log("warning: failed to encode screenshot: %v", err)
+		dir.Remove(filename)
 		return
 	}
-	s.log("Saved debug screenshot: %s", path)
+	s.log("Saved debug screenshot: %s", filepath.Join(path, filename))
+}
+
+type debugScreenshotWriter struct {
+	writer    io.Writer
+	remaining int
+}
+
+func (w *debugScreenshotWriter) Write(p []byte) (int, error) {
+	if len(p) > w.remaining {
+		return 0, fmt.Errorf("debug screenshot exceeds size limit")
+	}
+	n, err := w.writer.Write(p)
+	w.remaining -= n
+	return n, err
 }
 
 // log prints a message if verbose mode is enabled.
