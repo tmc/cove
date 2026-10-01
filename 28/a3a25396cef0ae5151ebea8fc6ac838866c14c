@@ -1,0 +1,5 @@
+commit=28a3a25396cef0ae5151ebea8fc6ac838866c14c
+date=2026-10-01T07:04:17.522317+00:00
+agent=Codex model=GPT-6 claude-code=2.1.284
+tty=non-tty pid=63347 ITERM_SESSION_ID=22455FE0-2629-45BE-9D07-66CB8BD47189
+validation=OCI red/green descriptor and full stream fixtures; focused race gate pass; physical registry boot pending
