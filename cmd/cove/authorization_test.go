@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -130,6 +131,8 @@ func TestRunElevatedManifestNativeRefusesUIThread(t *testing.T) {
 }
 
 func TestPreWarmRunsAuthorizationOffUIThread(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	oldAuthInitialized := authInitialized
 	oldAuthCreate := authCreate
 	oldAuthExecute := authExecute
@@ -148,7 +151,7 @@ func TestPreWarmRunsAuthorizationOffUIThread(t *testing.T) {
 	authInitialized = true
 	authCreate = func(_ uintptr, _ uintptr, _ uint32, authRef *uintptr) int32 {
 		if onUIThread() {
-			t.Fatal("authCreate ran on UI thread")
+			t.Error("authCreate ran on UI thread")
 		}
 		*authRef = 42
 		return 0
