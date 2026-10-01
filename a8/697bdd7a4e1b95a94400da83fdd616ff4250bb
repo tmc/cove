@@ -1,0 +1,1 @@
+Commit a8697bdd; date 2026-09-30. Agent Codex 0.159.3; model GPT-6 (exact runtime identifier unavailable); tty not a tty; note writer pid 50798; ITERM_SESSION_ID unavailable after host reboot. Full go build ./... and go test ./... passed; signed candidate verified. Usability hunt notes excluded in local-docs.
