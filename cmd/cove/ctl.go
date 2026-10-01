@@ -79,7 +79,7 @@ Commands:
   gui status            Report whether the VM is currently headed or headless
   gui open              Show the live VM window for a headless runtime
   gui close             Return the runtime to headless mode without stopping it
-  gui diagnose          Capture and summarize the current GUI screen
+  gui diagnose          Capture and summarize the Windows QEMU GUI screen
   gui backend <mode>    Set automation backend: auto, framebuffer, or window
   gui capture-backend <mode>  Set screenshot backend: auto, framebuffer, or window
   gui input-backend <mode>    Set input backend: auto, direct, or window
@@ -266,13 +266,15 @@ Send a mouse event to the guest.`)
 
 Type text into the guest.`)
 	case "agent-exec", "exec":
-		fmt.Fprintln(w, `Usage: cove ctl agent-exec [--stream] -- <cmd> [args...]
+		fmt.Fprintln(w, `Usage: cove ctl exec [--stream] [--daemon] [-o file] [--] <cmd> [args...]
 
-Run a command through the guest agent.`)
+Run a command through the guest agent. Cove flags must precede <cmd>;
+all arguments after <cmd> are passed to the guest unchanged.`)
 	case "agent-exec-stream":
 		fmt.Fprintln(w, `Usage: cove ctl agent-exec-stream [--daemon] <cmd> [args...]
 
-Stream command output through the guest agent.`)
+Stream command output through the guest agent. Cove flags must precede <cmd>;
+all arguments after <cmd> are passed to the guest unchanged.`)
 	case "agent-connect":
 		fmt.Fprintln(w, `Usage: cove ctl agent-connect
 
@@ -360,7 +362,7 @@ Check iTerm2 proxy status.`)
 	case "gui":
 		fmt.Fprintln(w, `Usage: cove ctl gui <status|open|close|backend|capture-backend|input-backend|terminal> [args]
 
-Inspect or control the VM GUI runtime.`)
+Inspect or control the VM GUI runtime. Windows QEMU VMs also support diagnose.`)
 	case "vnc":
 		fmt.Fprintln(w, `Usage: cove ctl vnc status
 
@@ -454,6 +456,29 @@ func extractCtlSubcommandFlags(subArgs []string, outputFile *string) ([]string, 
 		}
 	}
 	return out, useDaemon, stream
+}
+
+func extractCtlExecFlags(args []string, outputFile *string) ([]string, bool, bool) {
+	end := 0
+	for end < len(args) {
+		switch args[end] {
+		case "--":
+			flags, daemon, stream := extractCtlSubcommandFlags(args[:end+1], outputFile)
+			return append(flags, args[end+1:]...), daemon, stream
+		case "--daemon", "-daemon", "--stream", "-stream":
+			end++
+		case "-o":
+			if end+1 >= len(args) {
+				end = len(args)
+			} else {
+				end += 2
+			}
+		default:
+			flags, daemon, stream := extractCtlSubcommandFlags(args[:end], outputFile)
+			return append(flags, args[end:]...), daemon, stream
+		}
+	}
+	return extractCtlSubcommandFlags(args, outputFile)
 }
 
 const ctlShutdownDefaultWait = 30 * time.Second
@@ -678,7 +703,12 @@ func ctlCommand(args []string) error {
 		return ctlReady(sock, subArgs)
 	}
 
-	subArgs, useDaemon, stream := extractCtlSubcommandFlags(subArgs, outputFile)
+	var useDaemon, stream bool
+	if cmdType == "agent-exec" || cmdType == "agent-exec-stream" {
+		subArgs, useDaemon, stream = extractCtlExecFlags(subArgs, outputFile)
+	} else {
+		subArgs, useDaemon, stream = extractCtlSubcommandFlags(subArgs, outputFile)
+	}
 	if stream {
 		switch cmdType {
 		case "agent-exec":
@@ -785,6 +815,8 @@ func ctlCommand(args []string) error {
 			return ctlSimpleCommand(sock, "gui-input-backend-"+mode.inputString(), *timeout, *raw)
 		case "terminal":
 			return ctlGUITerminal(sock, subArgs[1:])
+		case "diagnose":
+			return fmt.Errorf("gui diagnose requires a Windows QEMU VM; use cove ctl screenshot and cove ctl detect for this VM")
 		default:
 			return fmt.Errorf("unknown gui action: %s (use status, open, close, backend, capture-backend, input-backend, or terminal)", action)
 		}

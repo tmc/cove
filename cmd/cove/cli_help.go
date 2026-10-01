@@ -269,12 +269,6 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 				return true, 0
 			}
 		}
-		if len(subargs) > 1 && isHelpArg(subargs[len(subargs)-1]) {
-			fs, _, _, _, _, _, _ := newCtlFlagSet()
-			fs.SetOutput(os.Stdout)
-			fs.Usage()
-			return true, 0
-		}
 	case "disk":
 		if len(subargs) == 0 || isHelpArg(subargs[0]) {
 			w, code := usageWriterAndCode(subargs)

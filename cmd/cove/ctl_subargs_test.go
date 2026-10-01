@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
 func TestExtractCtlSubcommandFlags(t *testing.T) {
@@ -156,5 +158,66 @@ func TestParseCtlScreenshotArgsFormat(t *testing.T) {
 				t.Fatalf("output = %q, want %q", output, tc.wantOutput)
 			}
 		})
+	}
+}
+
+func TestExtractCtlExecFlags(t *testing.T) {
+	tests := []struct {
+		name   string
+		args   []string
+		want   []string
+		output string
+		daemon bool
+		stream bool
+	}{
+		{name: "guest flags", args: []string{"tool", "--daemon", "--stream", "-o", "guest.txt", "--help"}, want: []string{"tool", "--daemon", "--stream", "-o", "guest.txt", "--help"}},
+		{name: "host prefix", args: []string{"--daemon", "--stream", "-o", "host.txt", "tool", "-o", "guest.txt"}, want: []string{"tool", "-o", "guest.txt"}, output: "host.txt", daemon: true, stream: true},
+		{name: "explicit separator", args: []string{"--daemon", "--", "tool", "--", "--stream"}, want: []string{"tool", "--", "--stream"}, daemon: true},
+		{name: "guest help", args: []string{"tool", "--help"}, want: []string{"tool", "--help"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			output := ""
+			got, daemon, stream := extractCtlExecFlags(append([]string(nil), tt.args...), &output)
+			if !reflect.DeepEqual(got, tt.want) || output != tt.output || daemon != tt.daemon || stream != tt.stream {
+				t.Fatalf("got (%v, %q, %v, %v), want (%v, %q, %v, %v)", got, output, daemon, stream, tt.want, tt.output, tt.daemon, tt.stream)
+			}
+		})
+	}
+}
+
+func TestEarlyCtlHelpPreservesGuestArguments(t *testing.T) {
+	for _, args := range [][]string{
+		{"ctl", "exec", "tool", "--help"},
+		{"ctl", "exec", "--daemon", "tool", "--help"},
+		{"ctl", "agent-exec", "--", "tool", "help"},
+		{"ctl", "agent-exec-stream", "tool", "-h"},
+		{"ctl", "-vm", "work", "exec", "tool", "--help"},
+	} {
+		if handled, _ := handleEarlyCLI(args); handled {
+			t.Errorf("guest arguments intercepted: %v", args)
+		}
+	}
+}
+
+func TestCtlExecPreservesGuestFlags(t *testing.T) {
+	vmDir := shortSharedFolderVMDir(t)
+	guestArgs := []string{"tool", "--daemon", "--stream", "-o", "guest.txt", "--", "--help"}
+	stop := serveSharedFolderControlSteps(t, vmDir, "token", []sharedFolderControlStep{{
+		wantType: "agent-exec-auto",
+		wantArgs: guestArgs,
+		resp:     &controlpb.ControlResponse{Success: true},
+	}})
+	defer stop()
+	args := append([]string{"-socket", GetControlSocketPathForVM(vmDir), "exec"}, guestArgs...)
+	if err := ctlCommand(args); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCtlGUIDiagnoseExplainsBackendLimit(t *testing.T) {
+	err := ctlCommand([]string{"-socket", "/nonexistent.sock", "gui", "diagnose"})
+	if err == nil || !strings.Contains(err.Error(), "Windows QEMU") || !strings.Contains(err.Error(), "screenshot") {
+		t.Fatalf("error = %v, want backend limit and screenshot alternative", err)
 	}
 }
