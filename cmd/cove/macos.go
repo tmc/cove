@@ -2681,7 +2681,7 @@ func bootOverlayMessageForRun(rc vmrun.RunConfig, target vmSelection) (title, su
 		return "Preparing macOS", "Completing user setup.", true
 	}
 	if creds := resolveLoginScreenWatchdogCredentialsForRun(rc, target); creds.Valid() {
-		return "Preparing macOS", "Finishing first boot and signing in.", true
+		return "Preparing macOS", "Waiting for macOS to start and sign in.", true
 	}
 	// A VM provisioned via the injected LaunchDaemon (the default `cove up` /
 	// `inject` path) self-creates the user and reboots once on first boot. That
