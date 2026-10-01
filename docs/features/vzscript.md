@@ -139,3 +139,37 @@ Common recipes: `homebrew`, `golang`, `developer-tools`, `claude-code`, `opencla
 ## Full Command Reference
 
 See [VZScript Commands](../reference/vzscript-commands.md) for the complete list of guest, UI automation, and standard commands.
+
+## Static planning
+
+Inspect recipes before choosing or starting a VM:
+
+```sh
+cove vzscript plan -os darwin golang
+cove vzscript validate ./custom.vzscript
+cove vzscript explain -json workstation
+```
+
+These commands read recipe sources and dependencies without invoking host or
+guest commands, evaluating live conditions, extracting archive files, changing
+shares, or looking up a running VM. `plan` reports dependency order, inclusion
+reasons, declared guest OS and execution route, mounts, injections, and unresolved
+checks. `explain` also reports registered commands and UI requirements. `validate`
+returns an error for static diagnostics; JSON diagnostics include the source,
+line, class, and suggested next action.
+
+Syntax inspection uses the same script engine and command registration as
+execution, with inert adapters. It checks quoted arguments, conditions, expected
+failure prefixes, command names, and archive filenames. Command argument
+semantics, condition outcomes, guest readiness, tools, and filesystem contents
+remain runtime checks. A guarded command is checked even when its condition
+would be false at runtime. No command arguments or environment values appear in
+the plan.
+
+Templates remain unresolved and produce a diagnostic. Render them with explicit
+inputs before validating the rendered recipe. Static planning does not read the
+host environment or infer missing template parameters. Existing execution
+metadata rules are preserved: mount and injection headers use unquoted paths;
+spaces in these paths require changing the recipe rather than guessing a new
+metadata grammar. Relative mount paths are shown as declared and remain
+unresolved until an execution workspace is chosen.

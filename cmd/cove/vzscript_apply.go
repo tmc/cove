@@ -39,8 +39,10 @@ func vzscriptCommand(args []string) error {
 		return vzscriptShow(args[1:])
 	case "run":
 		return vzscriptRun(args[1:])
+	case "plan", "validate", "explain":
+		return vzscriptPlanCommand(args[0], args[1:], os.Stdout)
 	default:
-		return fmt.Errorf("unknown vzscript command: %s\nValid commands: list, show, run", args[0])
+		return fmt.Errorf("unknown vzscript command: %s\nValid commands: list, show, run, plan, validate, explain", args[0])
 	}
 }
 
@@ -56,6 +58,8 @@ Commands:
   list [-os darwin|linux|windows] [-vm <name>]
                           List built-in recipes
   show <recipe>           Print recipe contents
+  plan|validate|explain [-json] [-os darwin|linux|windows] <recipe...>
+                          Inspect recipes without executing commands
   run [-v] [-timeout d] [-terminal|-terminal-gui] [-env KEY=VALUE] [-qemu-monitor path] [-qemu-agent host:port] <recipe...>
                           Run one or more recipes against a running VM
 
