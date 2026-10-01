@@ -1231,40 +1231,22 @@ func (s *ControlServer) handleAgentCopyDirFromGuest(ctx context.Context, a *agen
 		}
 	}
 
-	cleanGuestDir := path.Clean(guestDir)
-	tmpGuestTar := fmt.Sprintf("/tmp/vz-cp-%s-%d-%08x.tar", path.Base(cleanGuestDir), time.Now().UnixNano(), rand.Uint32())
-	defer func() {
-		ctxCleanup, cancel := s.timeoutContext(5 * time.Second)
-		defer cancel()
-		a.Exec(ctxCleanup, []string{"rm", "-f", tmpGuestTar}, nil, "")
-	}()
-
-	if ua != nil {
-		script := `set -e
-src="$1"; case "$src" in "~/"*) src="$HOME/${src#\~/}" ;; esac
-dir=$(dirname "$src")
-base=$(basename "$src")
-tar cf "$2" -C "$dir" "$base"`
-		result, err := ua.UserExec(ctx, []string{"/bin/sh", "-c", script, "vz-cp-tar", cleanGuestDir, tmpGuestTar}, nil, "")
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	args := []string{"/bin/sh", "-c", guestDirectoryExportScript, "vz-cp-tar", path.Clean(guestDir)}
+	if err := copyDirectoryToHost(ctx, hostDir, overwrite, func(w io.Writer) error {
+		var stream agentstate.ExecStreamReceiver
+		var err error
+		if ua != nil {
+			stream, err = ua.UserExecStream(ctx, args, nil, "")
+		} else {
+			stream, err = a.ExecStream(ctx, args, nil, "")
+		}
 		if err != nil {
-			return &controlpb.ControlResponse{Error: fmt.Sprintf("tar guest dir: %v", err)}
+			return fmt.Errorf("start guest tar: %w", err)
 		}
-		if result.ExitCode != 0 {
-			return &controlpb.ControlResponse{Error: fmt.Sprintf("tar guest dir: exit %d: %s", result.ExitCode, strings.TrimSpace(string(result.Stderr)))}
-		}
-	} else {
-		gDir := path.Dir(cleanGuestDir)
-		gBase := path.Base(cleanGuestDir)
-		result, err := a.Exec(ctx, []string{"tar", "cf", tmpGuestTar, "-C", gDir, gBase}, nil, "")
-		if err != nil {
-			return &controlpb.ControlResponse{Error: fmt.Sprintf("tar guest dir: %v", err)}
-		}
-		if result.ExitCode != 0 {
-			return &controlpb.ControlResponse{Error: fmt.Sprintf("tar guest dir: exit %d: %s", result.ExitCode, strings.TrimSpace(string(result.Stderr)))}
-		}
-	}
-
-	if err := copyDirectoryToHost(ctx, hostDir, overwrite, func(w io.Writer) error { return a.CopyWriterFromGuest(ctx, tmpGuestTar, w) }); err != nil {
+		return copyGuestDirectoryStream(agentstate.CopyProgressWriter(ctx, w), stream)
+	}); err != nil {
 		return &controlpb.ControlResponse{Error: err.Error()}
 	}
 
@@ -1273,6 +1255,43 @@ tar cf "$2" -C "$dir" "$base"`
 		Success: true,
 		Data:    msg,
 		Result:  &controlpb.ControlResponse_AgentFile{AgentFile: &controlpb.AgentFileResponse{Message: msg}},
+	}
+}
+
+const guestDirectoryExportScript = `set -e
+src="$1"; case "$src" in "~/"*) src="$HOME/${src#\~/}" ;; esac
+dir=$(dirname "$src")
+base=$(basename "$src")
+exec tar cf - -C "$dir" -- "$base"`
+
+func copyGuestDirectoryStream(w io.Writer, stream agentstate.ExecStreamReceiver) error {
+	var stderr []byte
+	for {
+		msg, err := stream.Recv()
+		if err == io.EOF {
+			return fmt.Errorf("guest tar stream ended without exit status")
+		}
+		if err != nil {
+			return fmt.Errorf("read guest tar: %w", err)
+		}
+		if msg.ExitCode != nil {
+			if *msg.ExitCode != 0 {
+				return fmt.Errorf("guest tar: exit %d: %s", *msg.ExitCode, strings.TrimSpace(string(stderr)))
+			}
+			return nil
+		}
+		if msg.Stream == pb.ExecOutput_STDERR {
+			n := min(len(msg.Data), 64*1024-len(stderr))
+			stderr = append(stderr, msg.Data[:n]...)
+			continue
+		}
+		n, err := w.Write(msg.Data)
+		if err == nil && n != len(msg.Data) {
+			err = io.ErrShortWrite
+		}
+		if err != nil {
+			return fmt.Errorf("write guest tar: %w", err)
+		}
 	}
 }
 

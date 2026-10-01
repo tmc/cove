@@ -389,7 +389,18 @@ type mockTarCopyOutHandler struct {
 }
 
 func (m *mockTarCopyOutHandler) Exec(context.Context, *connect.Request[pb.ExecRequest]) (*connect.Response[pb.ExecResponse], error) {
-	return connect.NewResponse(&pb.ExecResponse{ExitCode: 0}), nil
+	return connect.NewResponse(&pb.ExecResponse{ExitCode: 1, Stderr: []byte("guest disk full: staging forbidden")}), nil
+}
+
+func (m *mockTarCopyOutHandler) ExecStream(_ context.Context, req *connect.Request[pb.ExecRequest], stream *connect.ServerStream[pb.ExecOutput]) error {
+	if len(req.Msg.Args) < 3 || !strings.Contains(req.Msg.Args[2], `tar cf -`) {
+		return fmt.Errorf("directory export must stream tar to stdout")
+	}
+	if err := stream.Send(&pb.ExecOutput{Data: m.tarData}); err != nil {
+		return err
+	}
+	exit := int32(0)
+	return stream.Send(&pb.ExecOutput{ExitCode: &exit})
 }
 
 func (m *mockTarCopyOutHandler) CopyOut(_ context.Context, _ *connect.Request[pb.CopyOutRequest], stream *connect.ServerStream[pb.CopyOutChunk]) error {
@@ -462,5 +473,67 @@ func TestHandleAgentCopyUnresolvedHome(t *testing.T) {
 		if resp.Success || !strings.Contains(resp.Error, "cannot resolve guest home") {
 			t.Fatalf("copy to %q = %v", guestPath, resp)
 		}
+	}
+}
+
+type mockDirectoryUserStreamHandler struct {
+	agentpbconnect.UnimplementedUserAgentHandler
+	tarData []byte
+}
+
+func (m *mockDirectoryUserStreamHandler) UserExecStream(_ context.Context, req *connect.Request[pb.ExecRequest], stream *connect.ServerStream[pb.ExecOutput]) error {
+	if len(req.Msg.Args) != 5 || req.Msg.Args[4] != "~/source" {
+		return fmt.Errorf("unexpected user export arguments: %v", req.Msg.Args)
+	}
+	if err := stream.Send(&pb.ExecOutput{Data: m.tarData}); err != nil {
+		return err
+	}
+	exit := int32(0)
+	return stream.Send(&pb.ExecOutput{ExitCode: &exit})
+}
+
+func TestHandleAgentCopyDirFromGuestUserStream(t *testing.T) {
+	source := t.TempDir()
+	if err := os.WriteFile(filepath.Join(source, "data"), []byte("user data"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	archive, err := exec.Command("tar", "cf", "-", "-C", filepath.Dir(source), filepath.Base(source)).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, handler := agentpbconnect.NewUserAgentHandler(&mockDirectoryUserStreamHandler{tarData: archive})
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &http.Server{Handler: h2c.NewHandler(handler, &http2.Server{})}
+	go func() { _ = server.Serve(ln) }()
+	t.Cleanup(func() { _ = server.Close(); _ = ln.Close() })
+	client, err := agentstate.NewUserAgentClientWithDial(func(ctx context.Context) (net.Conn, error) {
+		var d net.Dialer
+		return d.DialContext(ctx, "tcp", ln.Addr().String())
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	dest := filepath.Join(t.TempDir(), "destination")
+	var transferred int64
+	ctx := agentstate.WithCopyProgress(context.Background(), func(bytes, total int64) {
+		transferred = bytes
+		if total != 0 {
+			t.Errorf("unexpected known total %d", total)
+		}
+	})
+	resp := (&ControlServer{}).handleAgentCopyDirFromGuest(ctx, nil, client, "~/source", dest, false)
+	if !resp.Success {
+		t.Fatalf("user export failed: %v", resp)
+	}
+	data, err := os.ReadFile(filepath.Join(dest, "data"))
+	if err != nil || string(data) != "user data" {
+		t.Fatalf("user copy = %q, %v", data, err)
+	}
+	if transferred != int64(len(archive)) {
+		t.Fatalf("progress = %d, want %d", transferred, len(archive))
 	}
 }

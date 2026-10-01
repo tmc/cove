@@ -11,6 +11,13 @@ guest agent remains reachable. For directory
 copies, `-f` replaces the entire destination tree; it does not merge directories.
 A concurrent destination creation prevents publication without `-f`.
 
+VZ guest directory downloads stream tar output directly to the host; they do
+not create a staging archive on the guest. The host needs space for the incoming
+directory beside its destination, including when replacing an existing tree.
+Copies read live files, not a filesystem snapshot. Stop writers before exporting
+consistent data, or copy from a snapshot. A reported guest tar error prevents
+publication, but changes to files already read may go undetected.
+
 Uploads require the guest agent's atomic publication helper. If Cove
 reports that the helper is unavailable, run `cove agent-upgrade` for the selected
 VM and retry. User-home copies require a logged-in guest user agent; Cove refuses
