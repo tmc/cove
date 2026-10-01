@@ -1,0 +1,1 @@
+Commit 623bbe06; date 2026-09-30. Agent Codex 0.159.3; model GPT-6 (exact runtime identifier unavailable); tty not a tty; note writer pid 7209; ITERM_SESSION_ID unavailable. APFS tree/plain parser regressions pass on host and inside muse-lab. Real Recovery blocker preserved; no host growth or Recovery deletion.
