@@ -1,0 +1,27 @@
+commit=2dbed6c74dba3696a69ad1440813c233a1de9300
+date=2026-10-01T13:45:24.862675-07:00
+agent=Codex
+model=GPT-6 (inherited)
+codex-version=codex-cli 0.159.3
+claude-code-version=not applicable
+tty=not a tty
+pid=44301 (note writer)
+ITERM_SESSION_ID=w8t10p1:22455FE0-2629-45BE-9D07-66CB8BD47189
+base=4f51a0fa0319a492bbace588241f3cc333108829
+snapshot=/Users/tmc/tmp/pull-land-20261001-133645/vz-macos
+source-proof=exact six-file snapshot/source/index/commit SHA256 equality; unrelated workspace, checkpoint, VM deletion, push and resize dirt excluded
+validation=standalone go build ./... and broad pull/Lume/Tart/cache-focused tests passed (4.873s) against previous HEAD489 snapshot; rebased exact command-package full suite passed104.089s
+qualification-env=TMPDIR=/Users/tmc/tmp/p; identical local go.work apple/macgo/cove dependencies; proper shared clone Git metadata with original HEAD4f; per-test GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=commit.gpgsign GIT_CONFIG_VALUE_0=false
+whole-suite=NOT GREEN: original go test ./... failed; cmd/cove105.684s included missing archive Git metadata(dev assertions) and inherited signing prerequisite; cmd/vz-agent TestResizeExecTTYAppliesWinsize failed pty.Open device not configured; internal/coved warm-pool test timed out
+followup-proof=restoring exact baseline Git metadata and controlling per-test signing made full cmd/cove pass104.089s; isolated TestFleetWorkerExecutesClaimedWarmPoolAssignment passed0.618s without source changes; host PTY remains unresolved
+unchanged-host-blocker-blobs=workspace_test.go 9baa32fe111c4929ba35dbade3230594d02f95e3; server_test.go 1742ce3afcd008ecfb41285947a168050e0cb65c
+receipts=qualification-files.json, qualification-index-proof.txt, qualification-full-tests.log, qualification-cove-full-tests.log, qualification-fleet-focused.log in snapshot; qualification-build.log and qualification-tests.log in /Users/tmc/tmp/pull-publication-qual-20261001-133047-root/vz-macos
+commit-hook=per-command gpgsign=false and hooksPath=/dev/null used to avoid beads hook staging unrelated issue changes
+physical-runtime=no VM launched or mutated
+remaining=cache final-directory promotion and invalidation guards outside batch; noncooperative external replacement during streaming opens is not hardened; cooperative mutation/run-lock coverage required
+source-sha256=cmd/cove/pull.go f8ab7a0571ef223ea20317fd73bf2b85a45836cc0c1097ee846cd772952dc6c0
+source-sha256=cmd/cove/lume_pull.go c2f14c876c40931db43a7023dd9ac4aa97388c2b36a979d23b638f821ab6a138
+source-sha256=cmd/cove/tart_pull.go af91788e251bcf31ef9a6dff8e303069f93ae2abea8f3523e206dd3fb70c58e3
+source-sha256=cmd/cove/build_registry_base.go 3720b84b68ed86c7b72ffa693cea9c036268447a5f34549246aad1b4e14a2cfb
+source-sha256=cmd/cove/pull_publication.go 93937b9f47dce4cd65c82dd8dea11901cfbf329ad5907a7af48c0fcc55588daa
+source-sha256=cmd/cove/pull_publication_test.go c10a7a8e14757026d76dde08b9cef8638bac9f95d5177fc7fed4bb5fd5bac7e6
