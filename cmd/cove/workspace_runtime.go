@@ -530,23 +530,22 @@ func mountWorkspaceShares(ctx context.Context, p workspacePlan, dir string) erro
 }
 
 func captureWorkspaceState(ctx context.Context, p workspacePlan, dir string) ([]byte, error) {
+	status := map[string]any{"daemon": "unknown", "user": "unknown"}
 	client := NewControlClient(GetControlSocketPathForVM(dir))
 	resp, err := client.SendRequestCtx(ctx, &controlpb.ControlRequest{Type: "agent-status"})
-	if err != nil {
-		return nil, err
+	observation := "unavailable"
+	if err == nil && resp != nil && resp.Success {
+		resp = ctlEnrichResponseForPrint(GetControlSocketPathForVM(dir), resp, "agent-status")
+		if len(resp.Data) <= 1<<20 && json.Unmarshal([]byte(resp.Data), &status) == nil && status != nil {
+			observation = "present"
+		} else {
+			status = map[string]any{"daemon": "unknown", "user": "unknown"}
+			observation = "invalid"
+		}
 	}
-	if !resp.Success {
-		return nil, fmt.Errorf("agent status unavailable")
-	}
-	resp = ctlEnrichResponseForPrint(GetControlSocketPathForVM(dir), resp, "agent-status")
-	if len(resp.Data) > 1<<20 || !json.Valid([]byte(resp.Data)) {
-		return nil, fmt.Errorf("agent status is oversized or invalid")
-	}
-	var out bytes.Buffer
-	if err := json.Indent(&out, []byte(resp.Data), "", "  "); err != nil {
-		return nil, err
-	}
-	return out.Bytes(), nil
+	status["lifecycle"] = workspaceLifecycleObservation(p.VM, dir)
+	status["agentObservation"] = observation
+	return json.MarshalIndent(status, "", "  ")
 }
 
 func discardWorkspaceGuest(p workspacePlan, dir string) error {
