@@ -29,6 +29,7 @@ var (
 	selAddSharedFolder        = objc.Sel("addSharedFolder:")
 	selRemoveSharedFolder     = objc.Sel("removeSharedFolder:")
 	selRemoveAllSharedFolders = objc.Sel("removeAllSharedFolders:")
+	selSharedFolderMode       = objc.Sel("setSharedFolderMode:")
 )
 
 func isVMStateBusy(state vz.VZVirtualMachineState) bool {
@@ -105,7 +106,7 @@ func validateVMMenuItem(action objc.SEL, state vz.VZVirtualMachineState, capture
 		enabled = !installing && !busy && (state == vz.VZVirtualMachineStateRunning || state == vz.VZVirtualMachineStatePaused || state == vz.VZVirtualMachineStateStopped)
 		return "", enabled, true
 
-	case selAddSharedFolder, selRemoveSharedFolder, selRemoveAllSharedFolders:
+	case selAddSharedFolder, selRemoveSharedFolder, selRemoveAllSharedFolders, selSharedFolderMode:
 		enabled = !busy
 		return "", enabled, true
 
@@ -124,10 +125,6 @@ const (
 	toolbarIDScreenshot   = "screenshot"
 	toolbarIDSharedFolder = "sharedFolder"
 )
-
-// sharedFolderMenuTag is the base tag for shared folder menu items.
-// Each folder's index is added to this base to identify it for removal.
-const sharedFolderMenuTag = 1000
 
 // SharedFoldersVirtioFSTag is the VirtioFS tag for the dedicated shared folders device.
 // This device is always created at boot so the toolbar can hotplug folders at runtime.
@@ -218,6 +215,7 @@ func (t *VMToolbar) registerDelegate() {
 			{Cmd: objc.RegisterName("takeScreenshot:"), Fn: t.handleScreenshot},
 			{Cmd: objc.RegisterName("addSharedFolder:"), Fn: t.handleAddSharedFolder},
 			{Cmd: objc.RegisterName("removeSharedFolder:"), Fn: t.handleRemoveSharedFolder},
+			{Cmd: objc.RegisterName("setSharedFolderMode:"), Fn: t.handleSharedFolderMode},
 			{Cmd: objc.RegisterName("removeAllSharedFolders:"), Fn: t.handleRemoveAllSharedFolders},
 			{Cmd: objc.RegisterName("menuNeedsUpdate:"), Fn: t.handleMenuNeedsUpdate},
 			{Cmd: objc.RegisterName("showVMWindow:"), Fn: t.handleShowWindow},
@@ -366,16 +364,35 @@ func (t *VMToolbar) createSharedFolderMenu() appkit.NSMenuToolbarItem {
 func (t *VMToolbar) populateSharedFolderMenu(menu appkit.NSMenu) {
 	folders := LoadSharedFolders(t.vmDirectory)
 	if len(folders) > 0 {
-		for i, f := range folders {
+		for _, f := range folders {
 			label := filepath.Base(f.Path)
 			if f.ReadOnly {
 				label += " (read-only)"
 			}
 			item := appkit.NewMenuItemWithTitleActionKeyEquivalent(label, 0, "")
 			item.SetToolTip(f.Path)
-			item.SetAction(objectivec.SEL(objc.Sel("removeSharedFolder:")))
-			item.SetTarget(objectivec.ObjectFromID(t.delegateID))
-			item.SetTag(sharedFolderMenuTag + i)
+			submenu := appkit.NewMenuWithTitle(label)
+			for _, choice := range []struct {
+				title    string
+				readOnly bool
+			}{{"Read Only", true}, {"Read & Write", false}} {
+				modeItem := appkit.NewMenuItemWithTitleActionKeyEquivalent(choice.title, objc.Sel("setSharedFolderMode:"), "")
+				modeItem.SetTarget(objectivec.ObjectFromID(t.delegateID))
+				modeItem.SetRepresentedObject(objectivec.ObjectFromID(objc.String(f.Tag)))
+				if choice.readOnly {
+					modeItem.SetTag(1)
+				}
+				if f.ReadOnly == choice.readOnly {
+					modeItem.SetState(appkit.NSControlStateValue(1))
+				}
+				submenu.AddItem(&modeItem)
+			}
+			addToolbarMenuSeparator(submenu)
+			remove := appkit.NewMenuItemWithTitleActionKeyEquivalent("Remove", objc.Sel("removeSharedFolder:"), "")
+			remove.SetTarget(objectivec.ObjectFromID(t.delegateID))
+			remove.SetRepresentedObject(objectivec.ObjectFromID(objc.String(f.Tag)))
+			submenu.AddItem(&remove)
+			item.SetSubmenu(&submenu)
 			folderImg := appkit.NewImageWithSystemSymbolNameAccessibilityDescription("folder.fill", label)
 			item.SetImage(&folderImg)
 			menu.AddItem(&item)
@@ -672,19 +689,36 @@ func (t *VMToolbar) handleAddSharedFolder(_ objc.ID, _ objc.SEL, _ objc.ID) {
 	t.saveAndApplySharedFolders(folders)
 }
 
-// handleRemoveSharedFolder removes a specific shared folder identified by menu item tag.
-func (t *VMToolbar) handleRemoveSharedFolder(_ objc.ID, _ objc.SEL, senderID objc.ID) {
-	tag := int(objc.Send[int64](senderID, objc.Sel("tag")))
-	idx := tag - sharedFolderMenuTag
-	folders := LoadSharedFolders(t.vmDirectory)
-	if idx < 0 || idx >= len(folders) {
+func sharedFolderMenuSelector(senderID objc.ID) string {
+	id := objc.Send[objc.ID](senderID, objc.Sel("representedObject"))
+	if id == 0 {
+		return ""
+	}
+	return foundation.NSStringFromID(id).UTF8String()
+}
+
+func (t *VMToolbar) handleSharedFolderMode(_ objc.ID, _ objc.SEL, senderID objc.ID) {
+	selector := sharedFolderMenuSelector(senderID)
+	readOnly := objc.Send[int64](senderID, objc.Sel("tag")) == 1
+	folders, _, err := setSharedFolderMode(LoadSharedFolders(t.vmDirectory), selector, readOnly)
+	if err != nil {
+		reportGUIError(t.window, "Shared Folder Error", err)
 		return
 	}
-
-	removed := folders[idx]
-	folders = append(folders[:idx], folders[idx+1:]...)
-	fmt.Printf("Toolbar: removed shared folder: %s\n", removed.Path)
 	t.saveAndApplySharedFolders(folders)
+}
+
+func (t *VMToolbar) handleRemoveSharedFolder(_ objc.ID, _ objc.SEL, senderID objc.ID) {
+	selector := sharedFolderMenuSelector(senderID)
+	folders := LoadSharedFolders(t.vmDirectory)
+	for i, f := range folders {
+		if f.Tag == selector {
+			folders = append(folders[:i:i], folders[i+1:]...)
+			t.saveAndApplySharedFolders(folders)
+			return
+		}
+	}
+	reportGUIError(t.window, "Shared Folder Error", fmt.Errorf("%w: %q", ErrSharedFolderNotFound, selector))
 }
 
 // handleRemoveAllSharedFolders removes all shared folders.
@@ -754,7 +788,7 @@ func (t *VMToolbar) saveAndApplySharedFoldersWithDone(folders []SharedFolderEntr
 				guestPath = filepath.Join(defaultSharedFoldersMountPoint, folders[0].Tag)
 			}
 			DispatchAsyncMain(func() {
-				setWindowSubtitle(t.window, "Shared Folders: " + guestPath)
+				setWindowSubtitle(t.window, "Shared Folders: "+guestPath)
 			})
 		}
 	}()
@@ -776,7 +810,7 @@ func (t *VMToolbar) applySharedFoldersToVM(folders []SharedFolderEntry) (int, er
 func (t *VMToolbar) ensureGuestSharedFoldersMounted() error {
 	var lastErr error
 	for attempt := 1; attempt <= 5; attempt++ {
-		mounted, err := mountSharedFoldersInGuest(t.vmDirectory, defaultSharedFoldersMountPoint)
+		mounted, err := refreshSharedFoldersInGuest(t.vmDirectory, defaultSharedFoldersMountPoint, defaultSharedFolderMountTimeouts(), true)
 		if err == nil {
 			if mounted {
 				fmt.Printf("Toolbar: mounted shared folders at %s\n", defaultSharedFoldersMountPoint)

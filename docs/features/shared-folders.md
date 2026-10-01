@@ -36,10 +36,24 @@ cove shared-folder status                  # check mount status
 cove shared-folder pending                 # list saved folders not mounted now
 cove shared-folder add ~/newdir            # add a folder
 cove shared-folder add ~/newdir mytag rw   # add with tag and mode
+cove shared-folder mode mytag ro          # make an existing share read-only
+cove shared-folder mode mytag rw          # allow reads and writes again
 cove shared-folder remove mytag            # remove by tag or path
 cove shared-folder clear                   # remove all folders
 cove shared-folder mount                   # mount in guest via agent
 ```
+
+The Shared Folders menu has a submenu for each folder with **Read Only**,
+**Read & Write**, and **Remove**. The checked access mode is the saved setting.
+Changing it replaces the running VirtioFS share and persists the choice for
+future boots. Host file permissions still apply in read/write mode.
+On macOS, applying changes refreshes the guest mount to discard cached folder
+permissions; open files can prevent the refresh and produce a mount warning.
+
+Use `cove -vm <name> shared-folder mode <tag-or-path> ro|rw` to target a
+specific VM. A stopped VM uses the saved mode on its next boot. If live apply
+fails, the command returns an error and reports that the mode was saved but
+not applied to the running VM.
 
 ## Persisted Configuration
 
@@ -106,7 +120,7 @@ corresponding VirtioFS device.
 ## Limitations
 
 > [!WARNING]
-> VirtioFS devices must be present at VM boot time. Folders added after suspend/resume require a VM reboot.
+> VirtioFS devices must be present at VM boot time. A saved VM state without the shared-folders device requires a fresh boot before live changes can apply.
 - TCC blocks `vz-agent` from accessing VirtioFS mounts as a daemon. The daemon lacks Full Disk Access. Cove routes path-aware `agent-exec` calls for `/Volumes/My Shared Files/...` through the user agent and uses `cove doctor tcc-fda` for FDA failures that remain after routing.
 - Clipboard sync is separate from screenshot, OCR, keyboard, and mouse control.
   Check `cove ctl -vm <vm> capabilities` before assuming host-to-guest or

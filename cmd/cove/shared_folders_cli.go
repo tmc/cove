@@ -99,6 +99,23 @@ func handleVMSharedFolderCommand(args []string) error {
 			return err
 		}
 		return handleVMSharedFolderAdd(targetDir, args[1:])
+	case "mode":
+		if len(args) > 1 && isHelpArg(args[1]) {
+			printSharedFolderUsage(os.Stdout)
+			return nil
+		}
+		if len(args) != 3 {
+			return fmt.Errorf("usage: cove shared-folder mode <tag-or-path> ro|rw")
+		}
+		readOnly, err := parseSharedFolderMode(args[2])
+		if err != nil {
+			return err
+		}
+		targetDir, err := sharedFolderCommandVMDir()
+		if err != nil {
+			return err
+		}
+		return handleVMSharedFolderMode(targetDir, args[1], readOnly)
 	case "remove":
 		if len(args) > 1 && isHelpArg(args[1]) {
 			printSharedFolderUsage(os.Stdout)
@@ -908,6 +925,10 @@ func unmountGuestMountPointWithTimeouts(client *ControlClient, mountPoint string
 }
 
 func mountSharedFoldersInGuestWithTimeouts(vmDirectory, mountPoint string, timeouts sharedFolderMountTimeouts) (bool, error) {
+	return refreshSharedFoldersInGuest(vmDirectory, mountPoint, timeouts, false)
+}
+
+func refreshSharedFoldersInGuest(vmDirectory, mountPoint string, timeouts sharedFolderMountTimeouts, refresh bool) (bool, error) {
 	if sharedFoldersUsePerTagMounts(vmDirectory, mountPoint) {
 		return mountSharedFolderTagsInGuestWithTimeouts(vmDirectory, timeouts)
 	}
@@ -931,7 +952,7 @@ func mountSharedFoldersInGuestWithTimeouts(vmDirectory, mountPoint string, timeo
 	linuxGuest := vmconfig.DetectOSType(vmDirectory) == "Linux"
 	if strings.Contains(mountRes.Stdout, " on "+mountPoint+" ") {
 		lsRes, lsErr := client.AgentExecTypedTimeout([]string{"ls", "-1", mountPoint}, nil, "", timeouts.listTags)
-		if sharedFoldersMountedAndSynced(mountRes.Stdout, mountPoint, tags, lsRes, lsErr) {
+		if !refresh && sharedFoldersMountedAndSynced(mountRes.Stdout, mountPoint, tags, lsRes, lsErr) {
 			return false, nil
 		}
 		if lsErr != nil {

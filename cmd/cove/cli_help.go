@@ -879,6 +879,7 @@ Commands:
   status [mount-point]              Show mount status in guest
   pending [vm]                      List saved folders not mounted now
   add <host-path> [tag] [ro|rw]     Save and live-apply when running
+  mode <tag-or-path> ro|rw           Change access mode and live-apply
   remove <tag-or-path>              Remove a saved folder
   clear                             Remove all saved folders
   mount [mount-point]               Retry guest mount via agent`)

@@ -68,7 +68,7 @@ func (s *ControlServer) handleSharedFoldersApply() *controlpb.ControlResponse {
 
 	var remountMsg string
 	mountRoot := defaultSharedFoldersMountRoot(s.effectiveVMDir())
-	if mounted, remountErr := mountSharedFoldersInGuest(s.effectiveVMDir(), mountRoot); remountErr != nil {
+	if mounted, remountErr := refreshSharedFoldersInGuest(s.effectiveVMDir(), mountRoot, defaultSharedFolderMountTimeouts(), true); remountErr != nil {
 		if !strings.Contains(remountErr.Error(), "guest agent unavailable") {
 			remountMsg = fmt.Sprintf("; guest remount warning: %v", remountErr)
 		}
