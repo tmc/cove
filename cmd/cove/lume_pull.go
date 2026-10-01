@@ -137,13 +137,20 @@ func lumePullSidecar(ctx context.Context, client ociimage.RegistryClient, plan *
 // extracts the single disk file into partialPath. Lume's tar parts are gzip-
 // wrapped; we sniff for the gzip magic on the first chunk and wrap accordingly.
 func lumeStreamDisk(ctx context.Context, client ociimage.RegistryClient, plan *pullPlan, partialPath string) error {
+	ctx, cancel := context.WithCancel(ctx)
 	pr, pw := io.Pipe()
-
+	done := make(chan struct{})
+	var feedErr error
 	go func() {
-		err := lumeFeedTarStream(ctx, client, plan, pw)
-		pw.CloseWithError(err)
+		feedErr = lumeFeedTarStream(ctx, client, plan, pw)
+		pw.CloseWithError(feedErr)
+		close(done)
 	}()
-	defer pr.Close()
+	defer func() {
+		cancel()
+		pr.Close()
+		<-done
+	}()
 
 	// Lume wraps each tar part in gzip. We read the combined byte stream
 	// through a single gzip.Reader; concatenated gzip members are valid
@@ -196,6 +203,16 @@ func lumeStreamDisk(ctx context.Context, client ociimage.RegistryClient, plan *p
 	}
 	if !wroteDisk {
 		return fmt.Errorf("lume tar contains no regular file")
+	}
+	if _, err := io.Copy(io.Discard, gz); err != nil {
+		return fmt.Errorf("finish lume gzip: %w", err)
+	}
+	<-done
+	if feedErr != nil {
+		return fmt.Errorf("finish lume parts: %w", feedErr)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	if err := out.Sync(); err != nil {
 		return fmt.Errorf("sync partial disk: %w", err)

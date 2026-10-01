@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -216,17 +217,30 @@ send:
 // trade RAM for code complexity; cove's pullChunkWorkers cap (4) bounds
 // peak usage to ~4 GiB which is acceptable.
 func tartPullDiskLayer(ctx context.Context, client ociimage.RegistryClient, ref ociimage.Reference, disk io.WriterAt, layer ociimage.TartDiskLayer) error {
+	if layer.Descriptor.Size < 0 || layer.Descriptor.Size == math.MaxInt64 {
+		return fmt.Errorf("tart disk layer %s: invalid compressed size %d", layer.Descriptor.Digest, layer.Descriptor.Size)
+	}
+
 	body, err := client.FetchBlob(ctx, ref, layer.Descriptor.Digest)
 	if err != nil {
 		return fmt.Errorf("fetch tart disk layer %s: %w", layer.Descriptor.Digest, err)
 	}
-	compressed, copyErr := io.ReadAll(body)
+	compressed, copyErr := io.ReadAll(io.LimitReader(body, layer.Descriptor.Size+1))
 	closeErr := body.Close()
 	if copyErr != nil {
 		return fmt.Errorf("read tart disk layer %s: %w", layer.Descriptor.Digest, copyErr)
 	}
 	if closeErr != nil {
 		return fmt.Errorf("close tart disk layer %s: %w", layer.Descriptor.Digest, closeErr)
+	}
+
+	if int64(len(compressed)) != layer.Descriptor.Size {
+		return fmt.Errorf("tart disk layer %s: compressed size %d, want %d", layer.Descriptor.Digest, len(compressed), layer.Descriptor.Size)
+	}
+	compressedSum := sha256.Sum256(compressed)
+	compressedDigest := "sha256:" + hex.EncodeToString(compressedSum[:])
+	if compressedDigest != layer.Descriptor.Digest {
+		return fmt.Errorf("tart disk layer %s: compressed digest %s, want %s", layer.Descriptor.Digest, compressedDigest, layer.Descriptor.Digest)
 	}
 
 	uncompressed, err := ociimage.DecompressAppleLZ4(compressed)
