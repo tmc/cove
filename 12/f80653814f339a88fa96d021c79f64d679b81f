@@ -1,0 +1,9 @@
+commit: 12f80653814f339a88fa96d021c79f64d679b81f
+date: 2026-10-01T09:30:49.484341+00:00
+agent: Codex
+claude-code version: not applicable
+model: GPT-6
+tty: ttys267
+pid: 81997
+ITERM_SESSION_ID: w8t10p1:22455FE0-2629-45BE-9D07-66CB8BD47189
+Validation: never-ready focused passed5.788s; cmd/cove whole package passed400.462s. Physical readiness timeout retained C runsfb5ed3e0 and5ededa02. No cleanup PID/pin/journal integration claim. Overall suite fails unrelated host PTY prerequisite.
