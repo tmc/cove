@@ -62,6 +62,21 @@ func TestCtlTypeAlias(t *testing.T) {
 	}
 }
 
+func TestCtlUserExecArguments(t *testing.T) {
+	for _, command := range []string{"agent-exec", "agent-user-exec"} {
+		t.Run(command, func(t *testing.T) {
+			err := ctlCommand([]string{"-socket", filepath.Join(t.TempDir(), "control.sock"), command})
+			if err == nil || !strings.Contains(err.Error(), "exec requires at least one argument") {
+				t.Fatalf("error = %v, want exec argument error", err)
+			}
+		})
+	}
+	err := ctlCommand([]string{"-socket", filepath.Join(t.TempDir(), "control.sock"), "agent-user-exec", "--daemon", "/usr/bin/true"})
+	if err == nil || !strings.Contains(err.Error(), "agent-user-exec cannot use --daemon") {
+		t.Fatalf("error = %v, want conflicting route error", err)
+	}
+}
+
 func TestControlAliasArgsGUIDefaultsToOpen(t *testing.T) {
 	tests := []struct {
 		name string

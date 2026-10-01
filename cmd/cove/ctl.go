@@ -276,6 +276,11 @@ all arguments after <cmd> are passed to the guest unchanged.`)
 
 Stream command output through the guest agent. Cove flags must precede <cmd>;
 all arguments after <cmd> are passed to the guest unchanged.`)
+	case "agent-user-exec":
+		fmt.Fprintln(w, `Usage: cove ctl agent-user-exec [-o file] [--] <cmd> [args...]
+
+Run a command through the logged-in user agent. Cove flags must precede <cmd>;
+all arguments after <cmd> are passed to the guest unchanged.`)
 	case "agent-connect":
 		fmt.Fprintln(w, `Usage: cove ctl agent-connect
 
@@ -713,7 +718,7 @@ func ctlCommand(args []string) error {
 	}
 
 	var useDaemon, stream bool
-	if cmdType == "agent-exec" || cmdType == "agent-exec-stream" {
+	if cmdType == "agent-exec" || cmdType == "agent-exec-stream" || cmdType == "agent-user-exec" {
 		subArgs, useDaemon, stream = extractCtlExecFlags(subArgs, outputFile)
 	} else {
 		subArgs, useDaemon, stream = extractCtlSubcommandFlags(subArgs, outputFile)
@@ -1047,11 +1052,14 @@ func ctlCommand(args []string) error {
 	case "agent-connect", "agent-ping", "agent-info", "agent-reboot", "agent-mount-volumes", "agent-status", "clipboard-status":
 		// No payload needed
 
-	case "agent-exec":
+	case "agent-exec", "agent-user-exec":
 		if len(subArgs) < 1 {
 			return fmt.Errorf("exec requires at least one argument")
 		}
-		if !useDaemon {
+		if cmdType == "agent-user-exec" && useDaemon {
+			return fmt.Errorf("agent-user-exec cannot use --daemon")
+		}
+		if cmdType == "agent-exec" && !useDaemon {
 			req.Type = "agent-exec-auto"
 		}
 		req.Command = &controlpb.ControlRequest_AgentExec{
