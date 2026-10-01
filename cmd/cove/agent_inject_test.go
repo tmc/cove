@@ -139,7 +139,7 @@ func TestAgentUpgradeReconnectBudget(t *testing.T) {
 	for _, want := range []string{
 		"agent installed and restart requested",
 		"within 95s",
-		"tried 30 reconnects",
+		"at most 30 reconnects",
 		"reconcile installed version and agent process state",
 		"cove ctl agent-ping",
 		"do not repeat agent-upgrade until the previous outcome is established",

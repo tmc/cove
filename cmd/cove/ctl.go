@@ -1729,7 +1729,19 @@ func ctlExecStream(sock string, req *controlpb.ControlRequest, timeout time.Dura
 
 // ctlSendRequest sends a proto request to the control socket and returns the response.
 func ctlSendRequest(sock string, req *controlpb.ControlRequest, timeout time.Duration, cmdType string) (*controlpb.ControlResponse, error) {
-	conn, err := net.DialTimeout("unix", sock, timeout)
+	return ctlSendRequestUntil(sock, req, timeout, cmdType, time.Time{})
+}
+
+func ctlSendRequestUntil(sock string, req *controlpb.ControlRequest, timeout time.Duration, cmdType string, deadline time.Time) (*controlpb.ControlResponse, error) {
+	dialTimeout := timeout
+	if !deadline.IsZero() {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return nil, fmt.Errorf("control request deadline: %w", os.ErrDeadlineExceeded)
+		}
+		dialTimeout = min(dialTimeout, remaining)
+	}
+	conn, err := net.DialTimeout("unix", sock, dialTimeout)
 	if err != nil {
 		return nil, ctlConnectError(sock, err)
 	}
@@ -1744,7 +1756,11 @@ func ctlSendRequest(sock string, req *controlpb.ControlRequest, timeout time.Dur
 	case "text":
 		readTimeout = 60 * time.Second
 	}
-	conn.SetDeadline(time.Now().Add(readTimeout))
+	readDeadline := time.Now().Add(readTimeout)
+	if !deadline.IsZero() && deadline.Before(readDeadline) {
+		readDeadline = deadline
+	}
+	conn.SetDeadline(readDeadline)
 
 	// Marshal and send request
 	reqToSend := req

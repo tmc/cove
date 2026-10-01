@@ -947,19 +947,26 @@ func upgradeAgentAt(sock string) error {
 
 	// Wait for the service manager to restart the agent.
 	fmt.Println("Waiting for new agent...")
+	reconnectDeadline := time.Now().Add(agentUpgradeReconnectInitialDelay + agentUpgradeReconnectAttempts*agentUpgradeReconnectDelay)
 	time.Sleep(agentUpgradeReconnectInitialDelay)
 
 	// Reconnect: the old vsock connection is dead, force a new one.
 	connectReq := &controlpb.ControlRequest{Type: "agent-connect"}
 	var connected bool
 	for attempt := 0; attempt < agentUpgradeReconnectAttempts; attempt++ {
-		resp, err = ctlSendRequest(sock, connectReq, agentUpgradeReconnectTimeout, "agent-connect")
+		remaining := time.Until(reconnectDeadline)
+		if remaining <= 0 {
+			break
+		}
+		resp, err = ctlSendRequestUntil(sock, connectReq, agentUpgradeReconnectTimeout, "agent-connect", reconnectDeadline)
 		if err == nil && resp.Error == "" {
 			connected = true
 			break
 		}
 		fmt.Printf("  reconnect attempt %d...\n", attempt+1)
-		time.Sleep(agentUpgradeReconnectDelay)
+		if remaining := time.Until(reconnectDeadline); remaining > 0 {
+			time.Sleep(min(agentUpgradeReconnectDelay, remaining))
+		}
 	}
 	if !connected {
 		return fmt.Errorf("%s", agentUpgradeReconnectTimeoutMessage())
@@ -967,7 +974,7 @@ func upgradeAgentAt(sock string) error {
 
 	resp, err = ctlSendRequest(sock, pingReq, 10*time.Second, "agent-ping")
 	if err != nil {
-		return fmt.Errorf("agent ping failed after upgrade: %w", err)
+		return fmt.Errorf("agent ping unavailable after upgrade; reconcile installed version and process state with read-only checks before another upgrade: %w", err)
 	}
 	if resp.Error != "" {
 		return fmt.Errorf("agent ping failed: %s", resp.Error)
@@ -1269,7 +1276,7 @@ func psSingleQuote(s string) string {
 
 func agentUpgradeReconnectTimeoutMessage() string {
 	window := agentUpgradeReconnectInitialDelay + agentUpgradeReconnectAttempts*agentUpgradeReconnectDelay
-	return fmt.Sprintf("agent installed and restart requested, but agent did not reconnect within %ds (tried %d reconnects); upgrade outcome is unknown; reconcile installed version and agent process state with read-only checks and cove ctl agent-ping; do not repeat agent-upgrade until the previous outcome is established", int(window/time.Second), agentUpgradeReconnectAttempts)
+	return fmt.Sprintf("agent installed and restart requested, but agent did not reconnect within %ds (at most %d reconnects); upgrade outcome is unknown; reconcile installed version and agent process state with read-only checks and cove ctl agent-ping; do not repeat agent-upgrade until the previous outcome is established", int(window/time.Second), agentUpgradeReconnectAttempts)
 }
 
 func linuxAgentUpgradeRestartScript() string {
