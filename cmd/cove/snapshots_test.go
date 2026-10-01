@@ -16,12 +16,12 @@ func TestValidateSnapshotName(t *testing.T) {
 		{"checkpoint1", false},
 		{"my-snapshot", false},
 		{"v2.0", false},
-		{"", true},          // empty
-		{"a/b", true},       // forward slash
-		{"a\\b", true},      // backslash
-		{".", true},          // current dir
-		{"..", true},         // parent dir
-		{".hidden", false},   // dotfile is fine
+		{"", true},            // empty
+		{"a/b", true},         // forward slash
+		{"a\\b", true},        // backslash
+		{".", true},           // current dir
+		{"..", true},          // parent dir
+		{".hidden", false},    // dotfile is fine
 		{"has spaces", false}, // spaces are ok
 	}
 	for _, tt := range tests {
@@ -47,7 +47,9 @@ func TestDiskSnapshotSaveAndList(t *testing.T) {
 	dir := t.TempDir()
 	mgr := NewDiskSnapshotManager(dir)
 
-	// Save should succeed even without a disk.img (it warns but creates metadata).
+	if err := os.WriteFile(filepath.Join(dir, "disk.img"), []byte("disk"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	if err := mgr.Save("test-snap", DiskSnapshotSystem, "test description"); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -105,6 +107,9 @@ func TestDiskSnapshotDeleteRejectsBadNames(t *testing.T) {
 func TestDiskSnapshotSaveDuplicate(t *testing.T) {
 	dir := t.TempDir()
 	mgr := NewDiskSnapshotManager(dir)
+	if err := os.WriteFile(filepath.Join(dir, "disk.img"), []byte("disk"), 0600); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := mgr.Save("dup", DiskSnapshotSystem, ""); err != nil {
 		t.Fatalf("first Save: %v", err)
@@ -140,6 +145,9 @@ func TestDiskSnapshotRestoreAndDeleteMissing(t *testing.T) {
 func TestDiskSnapshotDeleteHappyPath(t *testing.T) {
 	dir := t.TempDir()
 	mgr := NewDiskSnapshotManager(dir)
+	if err := os.WriteFile(filepath.Join(dir, "disk.img"), []byte("disk"), 0600); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := mgr.Save("gone", DiskSnapshotSystem, ""); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -159,6 +167,9 @@ func TestDiskSnapshotDeleteHappyPath(t *testing.T) {
 func TestHandleDiskSnapshotSaveArgs(t *testing.T) {
 	dir := t.TempDir()
 	mgr := NewDiskSnapshotManager(dir)
+	if err := os.WriteFile(filepath.Join(dir, "disk.img"), []byte("disk"), 0600); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := handleDiskSnapshotSave(mgr, nil); err == nil {
 		t.Error("save with no args should fail")
@@ -186,17 +197,17 @@ func TestHandleDiskSnapshotSaveArgs(t *testing.T) {
 func TestHandleDiskSnapshotRestoreSystemFlag(t *testing.T) {
 	dir := t.TempDir()
 	mgr := NewDiskSnapshotManager(dir)
+	if err := os.WriteFile(filepath.Join(dir, "disk.img"), []byte("disk"), 0600); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := handleDiskSnapshotSave(mgr, []string{"snap1"}); err != nil {
 		t.Fatalf("save: %v", err)
 	}
-	// -system selects DiskSnapshotSystem; restore reaches mgr.Restore which
-	// returns an error because there is no live disk to clobber. We only
-	// care that the arg branch executed without a parse-time failure.
-	err := handleDiskSnapshotRestore(mgr, []string{"snap1", "-system", "-y"})
-	if err == nil {
-		t.Skip("Restore unexpectedly succeeded with no live disk; skipping branch check")
+	if err := handleDiskSnapshotRestore(mgr, []string{"snap1", "-system", "-y"}); err != nil {
+		t.Fatalf("restore: %v", err)
 	}
+
 }
 
 func TestHandleDiskSnapshotRunArgs(t *testing.T) {

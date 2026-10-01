@@ -105,55 +105,123 @@ func validateSnapshotName(name string) error {
 	return nil
 }
 
-// Save creates a disk snapshot using APFS clonefile.
-// VM should be stopped for consistent snapshots.
+type diskSnapshotSaveDeps struct {
+	ownership     stoppedDiskResizeDeps
+	clone         func(string, string) error
+	writeMetadata func(string, []byte, os.FileMode) error
+	publish       func(string, string, bool) error
+}
+
+// Save snapshots disk.img only. The VM and disk must be stopped and closed.
 func (m *DiskSnapshotManager) Save(name string, target DiskSnapshotTarget, description string) error {
+	return m.save(name, target, description, diskSnapshotSaveDeps{})
+}
+
+func (m *DiskSnapshotManager) save(name string, target DiskSnapshotTarget, description string, deps diskSnapshotSaveDeps) error {
 	if err := validateSnapshotName(name); err != nil {
 		return err
+	}
+	if target != DiskSnapshotSystem {
+		return fmt.Errorf("unsupported disk snapshot target: %d", target)
+	}
+	deps.ownership = deps.ownership.withDefaults()
+	if deps.clone == nil {
+		deps.clone = m.cloneFileWithFallback
+	}
+	if deps.writeMetadata == nil {
+		deps.writeMetadata = os.WriteFile
+	}
+	if deps.publish == nil {
+		deps.publish = publishCopy
+	}
+	if controlSocketResponds(m.vmDir) {
+		return fmt.Errorf("vm must be stopped before saving a disk snapshot")
+	}
+	lock, err := deps.ownership.acquireRunLock(m.vmDir)
+	if err != nil {
+		return fmt.Errorf("lock vm before saving disk snapshot: %w", err)
+	}
+	defer lock.Release()
+	if proc, active, err := liveVMProcessForDirectory(m.vmDir, deps.ownership.processes); err != nil {
+		return fmt.Errorf("verify vm is stopped: %w", err)
+	} else if active {
+		return fmt.Errorf("vm is running in pid %d; stop it before saving a disk snapshot", proc.PID)
+	}
+	src := filepath.Join(m.vmDir, "disk.img")
+	sourceInfo, err := os.Stat(src)
+	if err != nil {
+		return fmt.Errorf("stat system disk: %w", err)
+	}
+	if !sourceInfo.Mode().IsRegular() {
+		return fmt.Errorf("system disk is not a regular file: %s", src)
+	}
+	holders, err := deps.ownership.fileHolders(src)
+	if err != nil {
+		return fmt.Errorf("verify system disk is closed: %w", err)
+	}
+	if len(holders) != 0 {
+		return fmt.Errorf("system disk is open by pid %d; stop the owner before saving a disk snapshot", holders[0])
 	}
 	if err := m.ensureDir(); err != nil {
 		return fmt.Errorf("create disk snapshots directory: %w", err)
 	}
-
-	snapDir := m.snapshotDir(name)
-	if _, err := os.Stat(snapDir); !os.IsNotExist(err) {
+	final := m.snapshotDir(name)
+	if _, err := os.Lstat(final); err == nil {
 		return fmt.Errorf("%w: %s", ErrDiskSnapshotExists, name)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("stat snapshot destination: %w", err)
 	}
-
-	if err := os.MkdirAll(snapDir, 0755); err != nil {
-		return fmt.Errorf("create snapshot directory: %w", err)
+	entries, err := os.ReadDir(m.vmDir)
+	if err != nil {
+		return fmt.Errorf("read snapshot staging directory: %w", err)
 	}
-
-	info := DiskSnapshotInfo{
-		Name:        name,
-		Created:     time.Now(),
-		Target:      target,
-		Description: description,
-		FilePath:    snapDir,
-	}
-
-	if target&DiskSnapshotSystem != 0 {
-		srcPath := filepath.Join(m.vmDir, "disk.img")
-		if _, err := os.Stat(srcPath); err == nil {
-			dstPath := filepath.Join(snapDir, "disk.img")
-			fmt.Printf("  Snapshotting system disk (clonefile)...\n")
-			if err := m.cloneFileWithFallback(srcPath, dstPath); err != nil {
-				os.RemoveAll(snapDir)
-				return fmt.Errorf("clone system disk: %w", err)
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".cove-disk-snapshot-stage-") {
+			if err := os.RemoveAll(filepath.Join(m.vmDir, entry.Name())); err != nil {
+				return fmt.Errorf("clean abandoned disk snapshot: %w", err)
 			}
-			if fi, err := os.Stat(srcPath); err == nil {
-				info.SystemSize = fi.Size()
-			}
-		} else {
-			fmt.Printf("  warning: system disk not found at %s\n", srcPath)
 		}
 	}
-
-	metaBytes, _ := json.MarshalIndent(info, "", "  ")
-	if err := os.WriteFile(m.metadataPath(name), metaBytes, 0644); err != nil {
+	stage, err := os.MkdirTemp(m.vmDir, ".cove-disk-snapshot-stage-")
+	if err != nil {
+		return fmt.Errorf("stage disk snapshot: %w", err)
+	}
+	defer os.RemoveAll(stage)
+	disk := filepath.Join(stage, "disk.img")
+	if err := deps.clone(src, disk); err != nil {
+		return fmt.Errorf("clone system disk: %w", err)
+	}
+	copied, err := os.Stat(disk)
+	if err != nil {
+		return fmt.Errorf("stat snapshot disk: %w", err)
+	}
+	current, err := os.Stat(src)
+	if err != nil {
+		return fmt.Errorf("recheck system disk: %w", err)
+	}
+	if !copied.Mode().IsRegular() || copied.Size() != sourceInfo.Size() || !os.SameFile(sourceInfo, current) || current.Size() != sourceInfo.Size() || !current.ModTime().Equal(sourceInfo.ModTime()) {
+		return fmt.Errorf("system disk changed while saving snapshot")
+	}
+	info := DiskSnapshotInfo{Name: name, Created: time.Now(), Target: target, SystemSize: copied.Size(), Description: description, FilePath: final}
+	metadata, err := json.MarshalIndent(info, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode snapshot metadata: %w", err)
+	}
+	metaPath := filepath.Join(stage, "metadata.json")
+	if err := deps.writeMetadata(metaPath, metadata, 0644); err != nil {
 		return fmt.Errorf("save snapshot metadata: %w", err)
 	}
-
+	for _, path := range []string{disk, metaPath, stage} {
+		if err := syncPullDir(path); err != nil {
+			return fmt.Errorf("sync disk snapshot: %w", err)
+		}
+	}
+	if err := deps.publish(stage, final, false); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("%w: %s", ErrDiskSnapshotExists, name)
+		}
+		return fmt.Errorf("publish disk snapshot: %w", err)
+	}
 	fmt.Printf("Disk snapshot '%s' created\n", name)
 	return nil
 }
@@ -454,38 +522,38 @@ func handleDiskSnapshotCommand(args []string) error {
 
 	mgr := NewDiskSnapshotManager(targetDir)
 	switch subcmd {
-		case "save":
-			if len(subargs) > 0 && isHelpArg(subargs[0]) {
-				printDiskSnapshotSaveUsage()
-				return nil
-			}
-			return handleDiskSnapshotSave(mgr, subargs)
-		case "run":
-			if len(subargs) > 0 && isHelpArg(subargs[0]) {
-				printDiskSnapshotUsage()
-				return nil
-			}
-			return handleDiskSnapshotRun(subargs)
-		case "restore":
-			if len(subargs) > 0 && isHelpArg(subargs[0]) {
-				printDiskSnapshotRestoreUsage()
-				return nil
-			}
-			return handleDiskSnapshotRestore(mgr, subargs)
-		case "list":
-			if len(subargs) > 0 && isHelpArg(subargs[0]) {
-				printDiskSnapshotListUsage()
-				return nil
-			}
-			return handleDiskSnapshotList(mgr)
-		case "delete":
-			if len(subargs) > 0 && isHelpArg(subargs[0]) {
-				printDiskSnapshotDeleteUsage()
-				return nil
-			}
-			return handleDiskSnapshotDelete(mgr, subargs)
+	case "save":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printDiskSnapshotSaveUsage()
+			return nil
 		}
-		return nil
+		return handleDiskSnapshotSave(mgr, subargs)
+	case "run":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printDiskSnapshotUsage()
+			return nil
+		}
+		return handleDiskSnapshotRun(subargs)
+	case "restore":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printDiskSnapshotRestoreUsage()
+			return nil
+		}
+		return handleDiskSnapshotRestore(mgr, subargs)
+	case "list":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printDiskSnapshotListUsage()
+			return nil
+		}
+		return handleDiskSnapshotList(mgr)
+	case "delete":
+		if len(subargs) > 0 && isHelpArg(subargs[0]) {
+			printDiskSnapshotDeleteUsage()
+			return nil
+		}
+		return handleDiskSnapshotDelete(mgr, subargs)
+	}
+	return nil
 }
 
 func printDiskSnapshotUsage() {
@@ -523,13 +591,14 @@ Examples:
   # List all disk snapshots
   cove disk-snapshot list
 
-Note: VM should be stopped for consistent disk snapshots.`)
+Note: disk snapshots capture disk.img only; the VM must be stopped.`)
 }
 
 func printDiskSnapshotSaveUsage() {
 	fmt.Println(`Usage: cove disk-snapshot save <name> [-system] [-desc "..."]
 
-Save an APFS copy-on-write disk snapshot for the selected VM.`)
+Save an APFS copy-on-write snapshot of disk.img. The VM must be stopped.
+Additional drives, firmware and memory are not included.`)
 }
 
 func printDiskSnapshotRestoreUsage() {
