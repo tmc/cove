@@ -1,0 +1,8 @@
+commit: a3b8faf82760b21709ce60f8b29c6bd79b8447d0
+date: 2026-10-01T06:14:51.191942+00:00
+claude-code version: 2.1.284
+agent/model: Codex GPT-6
+tty: non-tty tool shell
+pid: 69992
+ITERM_SESSION_ID: 22455FE0-2629-45BE-9D07-66CB8BD47189
+validation: alias regression failed before fix and passed after; full build/tests passed
