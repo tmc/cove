@@ -50,6 +50,9 @@ func handleVerifyWithOutput(args []string, w io.Writer) error {
 	if len(args) > 0 && args[0] == "tcc-preauth" {
 		return runPreAuth(args[1:])
 	}
+	if len(args) > 0 && args[0] == "tcc-network-volumes" {
+		return runTCCNetworkVolumes(args[1:])
+	}
 	if len(args) > 0 && args[0] == "tcc-fda" {
 		return runTCCFDAAuthorize(args[1:])
 	}
@@ -220,6 +223,7 @@ func printVerifyUsage(w io.Writer, fs *flag.FlagSet) {
        cove doctor host [-json]
        cove doctor vm-processes
        cove doctor tcc-fda -tcc-path /Volumes/work [-password pass] [-upgrade-agent]
+       cove doctor tcc-network-volumes [-vm name] [-enable|-disable]
        cove doctor clear-stale-locks [vm] [-n]
        cove doctor qemu [-json]
 

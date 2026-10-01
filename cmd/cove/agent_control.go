@@ -395,6 +395,7 @@ func resolveAgentHealthInterval() time.Duration {
 // agentHealthMonitor runs the proactive health monitor for the bridge.
 func (s *ControlServer) agentHealthMonitor() {
 	go s.monitorHostClipboard()
+	go s.monitorNetworkVolumeApproval()
 	s.bridge.HealthMonitor(resolveAgentHealthInterval())
 }
 
