@@ -58,6 +58,14 @@ cove run -clipboard=false    # disable
 ```
 
 Requires `spice-vdagent` in the guest. macOS 15+ guests have native support.
+For macOS guests with clipboard sharing enabled, Cove also checks new host text
+against the guest clipboard. If SPICE has not delivered it, Cove sends the text
+through the logged-in user agent. This fallback retries when the user agent
+reconnects, including after suspend/resume. It transfers plain text up to 1 MiB;
+images, files, rich formatting and guest-to-host sharing still depend on SPICE.
+`-clipboard=false` disables the fallback as well as SPICE sharing.
+
+Verify sharing by copying new text on the host and pasting it in the guest.
 
 ## Proxy Configuration
 

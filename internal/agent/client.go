@@ -654,6 +654,11 @@ func logCopyDone(name string, sent int64, start time.Time) {
 
 // UserExec runs a command in the user session context (inherits TCC/FDA).
 func (c *UserAgentClient) UserExec(ctx context.Context, args []string, env map[string]string, workDir string) (*pb.ExecResponse, error) {
+	return c.UserExecWithStdin(ctx, args, env, workDir, nil)
+}
+
+// UserExecWithStdin runs a command in the user session with the supplied standard input.
+func (c *UserAgentClient) UserExecWithStdin(ctx context.Context, args []string, env map[string]string, workDir string, stdin []byte) (*pb.ExecResponse, error) {
 	if err := checkAgentExecArgv(args); err != nil {
 		return nil, err
 	}
@@ -661,6 +666,7 @@ func (c *UserAgentClient) UserExec(ctx context.Context, args []string, env map[s
 		Args:       args,
 		Env:        env,
 		WorkingDir: workDir,
+		Stdin:      stdin,
 	}))
 	if err != nil {
 		return nil, err
