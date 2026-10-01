@@ -1081,10 +1081,28 @@ func sharedFoldersVirtioFSMountArgs(vmDirectory, mountPoint string) []string {
 }
 
 func sharedFolderVirtioFSMountArgs(vmDirectory, tag, mountPoint string) []string {
-	linuxGuest := vmconfig.DetectOSType(vmDirectory) == "Linux"
-	return virtioFSMountArgsWithOwner(vmconfig.VolumeMount{
+	guestOS := vmconfig.DetectOSType(vmDirectory)
+	if guestOS == "Linux" {
+		return virtioFSMountArgsWithOwner(vmconfig.VolumeMount{Tag: tag}, mountPoint, true, linuxVirtioFSOwner(vmDirectory))
+	}
+	args := virtioFSMountArgsWithOwner(vmconfig.VolumeMount{
 		Tag: tag,
-	}, mountPoint, linuxGuest, linuxVirtioFSOwner(vmDirectory))
+	}, mountPoint, false, virtioFSOwner{})
+	if guestOS != "macOS" {
+		return args
+	}
+	cfg, err := vmconfig.Load(vmDirectory)
+	if err != nil {
+		return args
+	}
+	ownerArgs := []string{args[0]}
+	if cfg.GuestUserUID != 0 {
+		ownerArgs = append(ownerArgs, "-u", strconv.FormatUint(uint64(cfg.GuestUserUID), 10))
+	}
+	if cfg.GuestUserGID != 0 {
+		ownerArgs = append(ownerArgs, "-g", strconv.FormatUint(uint64(cfg.GuestUserGID), 10))
+	}
+	return append(ownerArgs, args[1:]...)
 }
 
 func sharedFoldersUsePerTagMounts(vmDirectory, mountPoint string) bool {
