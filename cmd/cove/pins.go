@@ -33,14 +33,12 @@ func handlePinCommand(env commandEnv, args []string) error {
 		return fmt.Errorf("pin: %w", err)
 	}
 	root := coveRoot()
-	f, err := storagepins.Load(root)
-	if err != nil {
-		return fmt.Errorf("pin: %w", err)
-	}
-	if err := f.Add(cat, id, time.Now().UTC()); err != nil {
-		return fmt.Errorf("pin: %w", err)
-	}
-	if err := storagepins.Save(root, f); err != nil {
+	if err := storagepins.Update(root, func(f *storagepins.File) (bool, error) {
+		if err := f.Add(cat, id, time.Now().UTC()); err != nil {
+			return false, err
+		}
+		return true, nil
+	}); err != nil {
 		return fmt.Errorf("pin: %w", err)
 	}
 	fmt.Fprintf(env.Stdout, "pinned %s:%s\n", cat, id)
@@ -68,20 +66,17 @@ func handleUnpinCommand(env commandEnv, args []string) error {
 		return fmt.Errorf("unpin: %w", err)
 	}
 	root := coveRoot()
-	f, err := storagepins.Load(root)
-	if err != nil {
-		return fmt.Errorf("unpin: %w", err)
-	}
-	removed, err := f.Remove(cat, id)
-	if err != nil {
+	removed := false
+	if err := storagepins.Update(root, func(f *storagepins.File) (bool, error) {
+		var err error
+		removed, err = f.Remove(cat, id)
+		return removed, err
+	}); err != nil {
 		return fmt.Errorf("unpin: %w", err)
 	}
 	if !removed {
 		fmt.Fprintf(env.Stdout, "not pinned: %s:%s\n", cat, id)
 		return nil
-	}
-	if err := storagepins.Save(root, f); err != nil {
-		return fmt.Errorf("unpin: %w", err)
 	}
 	fmt.Fprintf(env.Stdout, "unpinned %s:%s\n", cat, id)
 	return nil

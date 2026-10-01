@@ -12,6 +12,7 @@ import (
 	identityx "github.com/tmc/apple/x/vzkit/identity"
 	networkx "github.com/tmc/apple/x/vzkit/network"
 	platformx "github.com/tmc/apple/x/vzkit/platform"
+	"github.com/tmc/cove/internal/mutationguard"
 	"github.com/tmc/cove/internal/vmconfig"
 	"golang.org/x/sys/unix"
 )
@@ -36,6 +37,18 @@ type CloneOptions struct {
 
 // CloneVM creates a copy of a VM.
 func CloneVM(opts CloneOptions) error {
+	guard, err := mutationguard.Acquire(coveRoot())
+	if err != nil {
+		return fmt.Errorf("guard vm clone: %w", err)
+	}
+	defer guard.Release()
+	return cloneVMLocked(guard, opts)
+}
+
+func cloneVMLocked(guard *mutationguard.Guard, opts CloneOptions) error {
+	if err := guard.Check(coveRoot()); err != nil {
+		return err
+	}
 	// Validate source exists
 	srcPath := vmconfig.Path(opts.Source)
 	if !vmconfig.Validate(srcPath) {
@@ -54,7 +67,7 @@ func CloneVM(opts CloneOptions) error {
 	if err := os.MkdirAll(dstPath, 0755); err != nil {
 		return fmt.Errorf("create target dir: %w", err)
 	}
-	if err := vmconfig.EnsureCompatibilityAlias(opts.Target, dstPath); err != nil {
+	if err := vmconfig.EnsureCompatibilityAliasWithGuard(opts.Target, dstPath, guard); err != nil {
 		os.RemoveAll(dstPath)
 		return fmt.Errorf("create target compatibility alias: %w", err)
 	}

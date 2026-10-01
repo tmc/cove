@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
+
+	"github.com/tmc/cove/internal/mutationguard"
 )
 
 // Info holds information about a virtual machine.
@@ -66,12 +68,28 @@ func NameForPath(dir string) string {
 // VMs are aliased into BaseDir on first sight so subsequent lists see them
 // through the regular BaseDir scan.
 func List(state StateFunc) ([]Info, error) {
+	guard, err := mutationguard.Acquire(StateDir())
+	if err != nil {
+		return nil, err
+	}
+	defer guard.Release()
+	return listVMs(state, true)
+}
+
+// ListReadOnly lists registered and legacy VMs without migrating or creating aliases.
+func ListReadOnly(state StateFunc) ([]Info, error) {
+	return listVMs(state, false)
+}
+
+func listVMs(state StateFunc, mutate bool) ([]Info, error) {
 	baseDir := BaseDir()
-	if err := os.MkdirAll(baseDir, 0755); err != nil {
-		return nil, fmt.Errorf("create base dir: %w", err)
+	if mutate {
+		if err := os.MkdirAll(baseDir, 0755); err != nil {
+			return nil, fmt.Errorf("create base dir: %w", err)
+		}
 	}
 	entries, err := os.ReadDir(baseDir)
-	if err != nil {
+	if err != nil && !(os.IsNotExist(err) && !mutate) {
 		return nil, fmt.Errorf("read base dir: %w", err)
 	}
 
@@ -101,10 +119,12 @@ func List(state StateFunc) ([]Info, error) {
 			}
 			seenPath[realPath] = true
 		}
-		if packaged, err := EnsurePackageLayout(info.Name, info.Path); err == nil {
+		if mutate {
+			packaged, err := ensurePackageLayoutLocked(info.Name, info.Path)
+			if err != nil {
+				return nil, err
+			}
 			info.Path = packaged
-		} else {
-			return nil, err
 		}
 		seen[info.Name] = true
 		vms = append(vms, *info)
@@ -134,7 +154,9 @@ func List(state StateFunc) ([]Info, error) {
 			if err != nil {
 				continue
 			}
-			_ = EnsureAlias(name, legacyPath)
+			if mutate {
+				_ = ensureAliasLocked(name, legacyPath)
+			}
 			seen[info.Name] = true
 			vms = append(vms, *info)
 		}
@@ -143,8 +165,10 @@ func List(state StateFunc) ([]Info, error) {
 	sort.Slice(vms, func(i, j int) bool {
 		return vms[i].Name < vms[j].Name
 	})
-	if err := EnsurePackageAliases(vms); err != nil {
-		return nil, err
+	if mutate {
+		if err := ensurePackageAliasesLocked(vms); err != nil {
+			return nil, err
+		}
 	}
 	return vms, nil
 }

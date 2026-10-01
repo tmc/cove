@@ -4,10 +4,29 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/tmc/cove/internal/mutationguard"
 )
 
 // MigrateIfNeeded migrates from the legacy flat VM layout to a default VM.
 func MigrateIfNeeded() error {
+	guard, err := mutationguard.Acquire(StateDir())
+	if err != nil {
+		return err
+	}
+	defer guard.Release()
+	return MigrateIfNeededWithGuard(guard)
+}
+
+// MigrateIfNeededWithGuard migrates legacy files under an acquired root guard.
+func MigrateIfNeededWithGuard(guard *mutationguard.Guard) error {
+	if err := guard.Check(StateDir()); err != nil {
+		return err
+	}
+	return migrateIfNeededLocked()
+}
+
+func migrateIfNeededLocked() error {
 	baseDir := BaseDir()
 	diskPath := filepath.Join(baseDir, "disk.img")
 	if _, err := os.Stat(diskPath); os.IsNotExist(err) {
@@ -59,9 +78,9 @@ func MigrateIfNeeded() error {
 	if err := SetActive("default"); err != nil {
 		fmt.Printf("  warning: could not set active VM: %v\n", err)
 	}
-	if packaged, err := EnsurePackageLayout("default", defaultDir); err != nil {
+	if packaged, err := ensurePackageLayoutLocked("default", defaultDir); err != nil {
 		fmt.Printf("  warning: could not create Finder VM package: %v\n", err)
-	} else if err := EnsurePackageAlias("default", packaged); err != nil {
+	} else if err := ensurePackageAliasLocked("default", packaged); err != nil {
 		fmt.Printf("  warning: could not create Finder VM package alias: %v\n", err)
 	}
 
@@ -71,6 +90,23 @@ func MigrateIfNeeded() error {
 
 // EnsureAlias creates a registry alias for a VM resolved outside BaseDir.
 func EnsureAlias(name, resolvedDir string) error {
+	guard, err := mutationguard.Acquire(StateDir())
+	if err != nil {
+		return err
+	}
+	defer guard.Release()
+	return EnsureAliasWithGuard(name, resolvedDir, guard)
+}
+
+// EnsureAliasWithGuard updates aliases while the caller holds the storage root guard.
+func EnsureAliasWithGuard(name, resolvedDir string, guard *mutationguard.Guard) error {
+	if err := guard.Check(StateDir()); err != nil {
+		return err
+	}
+	return ensureAliasLocked(name, resolvedDir)
+}
+
+func ensureAliasLocked(name, resolvedDir string) error {
 	if name == "" {
 		return nil
 	}
@@ -96,6 +132,23 @@ func EnsureAlias(name, resolvedDir string) error {
 // EnsurePackageLayout renames a registered VM directory to a .covevm package
 // and leaves a compatibility symlink at the old path.
 func EnsurePackageLayout(name, resolvedDir string) (string, error) {
+	guard, err := mutationguard.Acquire(StateDir())
+	if err != nil {
+		return "", err
+	}
+	defer guard.Release()
+	return EnsurePackageLayoutWithGuard(name, resolvedDir, guard)
+}
+
+// EnsurePackageLayoutWithGuard packages a VM under an acquired root guard.
+func EnsurePackageLayoutWithGuard(name, resolvedDir string, guard *mutationguard.Guard) (string, error) {
+	if err := guard.Check(StateDir()); err != nil {
+		return "", err
+	}
+	return ensurePackageLayoutLocked(name, resolvedDir)
+}
+
+func ensurePackageLayoutLocked(name, resolvedDir string) (string, error) {
 	if name == "" || resolvedDir == "" {
 		return resolvedDir, nil
 	}
@@ -104,7 +157,7 @@ func EnsurePackageLayout(name, resolvedDir string) (string, error) {
 		if err := markFinderPackage(targetPath); err != nil {
 			return "", err
 		}
-		if err := EnsureCompatibilityAlias(name, targetPath); err != nil {
+		if err := ensureCompatibilityAliasLocked(name, targetPath); err != nil {
 			return "", err
 		}
 		return targetPath, nil
@@ -125,7 +178,7 @@ func EnsurePackageLayout(name, resolvedDir string) (string, error) {
 	if err := markFinderPackage(packagePath); err != nil {
 		return "", err
 	}
-	if err := EnsureCompatibilityAlias(name, packagePath); err != nil {
+	if err := ensureCompatibilityAliasLocked(name, packagePath); err != nil {
 		return "", err
 	}
 	return resolvePath(packagePath), nil
@@ -133,6 +186,23 @@ func EnsurePackageLayout(name, resolvedDir string) (string, error) {
 
 // EnsureCompatibilityAlias leaves the old extensionless VM path usable.
 func EnsureCompatibilityAlias(name, packageDir string) error {
+	guard, err := mutationguard.Acquire(StateDir())
+	if err != nil {
+		return err
+	}
+	defer guard.Release()
+	return EnsureCompatibilityAliasWithGuard(name, packageDir, guard)
+}
+
+// EnsureCompatibilityAliasWithGuard updates aliases while the caller holds the storage root guard.
+func EnsureCompatibilityAliasWithGuard(name, packageDir string, guard *mutationguard.Guard) error {
+	if err := guard.Check(StateDir()); err != nil {
+		return err
+	}
+	return ensureCompatibilityAliasLocked(name, packageDir)
+}
+
+func ensureCompatibilityAliasLocked(name, packageDir string) error {
 	if name == "" || name == PackageName(name) {
 		return nil
 	}
@@ -169,6 +239,23 @@ func EnsureCompatibilityAlias(name, packageDir string) error {
 
 // RemoveCompatibilityAlias removes the extensionless VM compatibility symlink.
 func RemoveCompatibilityAlias(name string) error {
+	guard, err := mutationguard.Acquire(StateDir())
+	if err != nil {
+		return err
+	}
+	defer guard.Release()
+	return RemoveCompatibilityAliasWithGuard(name, guard)
+}
+
+// RemoveCompatibilityAliasWithGuard updates aliases while the caller holds the storage root guard.
+func RemoveCompatibilityAliasWithGuard(name string, guard *mutationguard.Guard) error {
+	if err := guard.Check(StateDir()); err != nil {
+		return err
+	}
+	return removeCompatibilityAliasLocked(name)
+}
+
+func removeCompatibilityAliasLocked(name string) error {
 	aliasPath := filepath.Join(BaseDir(), name)
 	info, err := os.Lstat(aliasPath)
 	if err != nil {
@@ -188,6 +275,23 @@ func RemoveCompatibilityAlias(name string) error {
 
 // EnsurePackageAlias creates a Finder-openable .covevm alias for a VM.
 func EnsurePackageAlias(name, resolvedDir string) error {
+	guard, err := mutationguard.Acquire(StateDir())
+	if err != nil {
+		return err
+	}
+	defer guard.Release()
+	return EnsurePackageAliasWithGuard(name, resolvedDir, guard)
+}
+
+// EnsurePackageAliasWithGuard updates aliases while the caller holds the storage root guard.
+func EnsurePackageAliasWithGuard(name, resolvedDir string, guard *mutationguard.Guard) error {
+	if err := guard.Check(StateDir()); err != nil {
+		return err
+	}
+	return ensurePackageAliasLocked(name, resolvedDir)
+}
+
+func ensurePackageAliasLocked(name, resolvedDir string) error {
 	if name == "" || resolvedDir == "" {
 		return nil
 	}
@@ -234,8 +338,25 @@ func PackageName(name string) string {
 
 // EnsurePackageAliases creates Finder-openable .covevm aliases for VMs.
 func EnsurePackageAliases(vms []Info) error {
+	guard, err := mutationguard.Acquire(StateDir())
+	if err != nil {
+		return err
+	}
+	defer guard.Release()
+	return EnsurePackageAliasesWithGuard(vms, guard)
+}
+
+// EnsurePackageAliasesWithGuard updates aliases while the caller holds the storage root guard.
+func EnsurePackageAliasesWithGuard(vms []Info, guard *mutationguard.Guard) error {
+	if err := guard.Check(StateDir()); err != nil {
+		return err
+	}
+	return ensurePackageAliasesLocked(vms)
+}
+
+func ensurePackageAliasesLocked(vms []Info) error {
 	for _, vm := range vms {
-		if err := EnsurePackageAlias(vm.Name, vm.Path); err != nil {
+		if err := ensurePackageAliasLocked(vm.Name, vm.Path); err != nil {
 			return err
 		}
 	}
@@ -249,6 +370,23 @@ func PackageAliasPath(name string) string {
 
 // RemovePackageAlias removes the Finder-openable .covevm alias for name.
 func RemovePackageAlias(name string) error {
+	guard, err := mutationguard.Acquire(StateDir())
+	if err != nil {
+		return err
+	}
+	defer guard.Release()
+	return RemovePackageAliasWithGuard(name, guard)
+}
+
+// RemovePackageAliasWithGuard updates aliases while the caller holds the storage root guard.
+func RemovePackageAliasWithGuard(name string, guard *mutationguard.Guard) error {
+	if err := guard.Check(StateDir()); err != nil {
+		return err
+	}
+	return removePackageAliasLocked(name)
+}
+
+func removePackageAliasLocked(name string) error {
 	aliasPath := PackageAliasPath(name)
 	info, err := os.Lstat(aliasPath)
 	if err != nil {

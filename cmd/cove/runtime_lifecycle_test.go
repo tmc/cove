@@ -18,6 +18,13 @@ import (
 
 func TestRunCurrentVMWithDisposableClone(t *testing.T) {
 	hooks, _ := stubAcquireRunLockHook(t)
+	var runtimeLock *RunLock
+	lockDir := t.TempDir()
+	hooks.AcquireRunLock = func(string) (*RunLock, error) {
+		var err error
+		runtimeLock, err = AcquireRunLock(lockDir)
+		return runtimeLock, err
+	}
 	oldVMName := vmName
 	oldVMDir := vmDir
 	oldDisposableMode := disposableMode
@@ -65,6 +72,14 @@ func TestRunCurrentVMWithDisposableClone(t *testing.T) {
 		return nil
 	})
 	hooks.CleanupDisposableClone = func(path string) error {
+		if runtimeLock == nil || runtimeLock.f != nil {
+			t.Fatal("runtime run lock still held during cleanup")
+		}
+		lock, err := AcquireRunLock(lockDir)
+		if err != nil {
+			t.Fatalf("cleanup acquire released runtime lock: %v", err)
+		}
+		lock.Release()
 		gotCleanupPath = path
 		return nil
 	}
@@ -427,6 +442,13 @@ func TestRunCurrentVMWithTemporaryRAMSystemDiskAttachment(t *testing.T) {
 
 func TestRunEphemeralForkUsesLinkedCloneForMacOSVMParent(t *testing.T) {
 	hooks, _ := stubAcquireRunLockHook(t)
+	var runtimeLock *RunLock
+	lockDir := t.TempDir()
+	hooks.AcquireRunLock = func(string) (*RunLock, error) {
+		var err error
+		runtimeLock, err = AcquireRunLock(lockDir)
+		return runtimeLock, err
+	}
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	parent := "identity-parent"
@@ -477,6 +499,14 @@ func TestRunEphemeralForkUsesLinkedCloneForMacOSVMParent(t *testing.T) {
 	})
 	var cleanupPath string
 	hooks.CleanupEphemeralFork = func(path string) error {
+		if runtimeLock == nil || runtimeLock.f != nil {
+			t.Fatal("runtime run lock still held during ephemeral cleanup")
+		}
+		lock, err := AcquireRunLock(lockDir)
+		if err != nil {
+			t.Fatalf("cleanup acquire released runtime lock: %v", err)
+		}
+		lock.Release()
 		cleanupPath = path
 		return nil
 	}

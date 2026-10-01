@@ -382,8 +382,8 @@ func runWindowsVMWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig, bundle *Run
 		return err
 	}
 
-	if err := os.MkdirAll(hc.VMDir, 0755); err != nil {
-		return fmt.Errorf("create VM directory: %w", err)
+	if err := requireVMDirectory(hc.VMDir); err != nil {
+		return err
 	}
 	saveHardwareConfig(hc.VMDir)
 
@@ -434,15 +434,17 @@ func installWindowsVM(quotaWarnings io.Writer) error {
 	} else if backend == windowsBackendQEMU {
 		return installWindowsQEMUVMWithConfig(rc, hc, quotaWarnings)
 	}
-	warnWindowsVZBackend(os.Stderr)
-	fmt.Println("=== Windows VM Installer (vz, experimental) ===")
 	if err := validateVMSettings(); err != nil {
 		return err
 	}
 
-	if err := os.MkdirAll(hc.VMDir, 0755); err != nil {
-		return fmt.Errorf("create VM directory: %w", err)
+	lock, err := acquireInstallerRunLock(hc.VMDir)
+	if err != nil {
+		return err
 	}
+	defer lock.Release()
+	warnWindowsVZBackend(os.Stderr)
+	fmt.Println("=== Windows VM Installer (vz, experimental) ===")
 	saveHardwareConfig(hc.VMDir)
 	persistInstallQuota(quotaWarnings, hc.VMDir)
 	if err := applyInstallDiskQuota(quotaWarnings, hc.VMDir); err != nil {

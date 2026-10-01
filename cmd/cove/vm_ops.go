@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tmc/cove/internal/mutationguard"
 	"github.com/tmc/cove/internal/vmconfig"
 )
 
@@ -55,6 +56,15 @@ func DeleteVM(name string) error {
 // deletion is refused with a list of dependent children. With
 // Cascade, children are deleted first (recursively).
 func DeleteVMWithOptions(name string, opts DeleteVMOptions) error {
+	guard, err := mutationguard.Acquire(coveRoot())
+	if err != nil {
+		return fmt.Errorf("guard VM deletion: %w", err)
+	}
+	defer guard.Release()
+	return deleteVMWithOptionsLocked(guard, name, opts)
+}
+
+func deleteVMWithOptionsLocked(guard *mutationguard.Guard, name string, opts DeleteVMOptions) error {
 	vmPath := vmconfig.Path(name)
 	info, err := os.Stat(vmPath)
 	if err != nil {
@@ -86,7 +96,7 @@ func DeleteVMWithOptions(name string, opts DeleteVMOptions) error {
 		// Cascade: delete children first. This refuses if any child
 		// is itself running, surfacing the original error.
 		for _, child := range children {
-			if err := DeleteVMWithOptions(child, opts); err != nil {
+			if err := deleteVMWithOptionsLocked(guard, child, opts); err != nil {
 				return fmt.Errorf("cascade delete child '%s': %w", child, err)
 			}
 		}
@@ -102,10 +112,10 @@ func DeleteVMWithOptions(name string, opts DeleteVMOptions) error {
 	if err := os.RemoveAll(vmPath); err != nil {
 		return fmt.Errorf("delete VM: %w", err)
 	}
-	if err := vmconfig.RemoveCompatibilityAlias(name); err != nil {
+	if err := vmconfig.RemoveCompatibilityAliasWithGuard(name, guard); err != nil {
 		fmt.Printf("warning: remove VM compatibility alias: %v\n", err)
 	}
-	if err := vmconfig.RemovePackageAlias(name); err != nil {
+	if err := vmconfig.RemovePackageAliasWithGuard(name, guard); err != nil {
 		fmt.Printf("warning: remove Finder VM package alias: %v\n", err)
 	}
 
@@ -136,7 +146,7 @@ func waitForVMNotRunning(vmPath string, timeout time.Duration) bool {
 // matches parent. An empty slice (no children) means delete is
 // safe with respect to lineage.
 func childVMNames(parent string) ([]string, error) {
-	vms, err := vmconfig.List(nil)
+	vms, err := vmconfig.ListReadOnly(nil)
 	if err != nil {
 		return nil, fmt.Errorf("list VMs: %w", err)
 	}
@@ -160,6 +170,12 @@ func childVMNames(parent string) ([]string, error) {
 
 // RenameVM renames a VM.
 func RenameVM(oldName, newName string) error {
+	guard, err := mutationguard.Acquire(coveRoot())
+	if err != nil {
+		return fmt.Errorf("guard VM rename: %w", err)
+	}
+	defer guard.Release()
+
 	oldPath := vmconfig.Path(oldName)
 	newPath := vmconfig.Path(newName)
 
@@ -175,16 +191,16 @@ func RenameVM(oldName, newName string) error {
 	if err := os.Rename(oldPath, newPath); err != nil {
 		return fmt.Errorf("rename VM: %w", err)
 	}
-	if err := vmconfig.RemovePackageAlias(oldName); err != nil {
+	if err := vmconfig.RemovePackageAliasWithGuard(oldName, guard); err != nil {
 		fmt.Printf("warning: remove old Finder VM package alias: %v\n", err)
 	}
-	if err := vmconfig.RemoveCompatibilityAlias(oldName); err != nil {
+	if err := vmconfig.RemoveCompatibilityAliasWithGuard(oldName, guard); err != nil {
 		fmt.Printf("warning: remove old VM compatibility alias: %v\n", err)
 	}
-	if err := vmconfig.EnsureCompatibilityAlias(newName, newPath); err != nil {
+	if err := vmconfig.EnsureCompatibilityAliasWithGuard(newName, newPath, guard); err != nil {
 		fmt.Printf("warning: create VM compatibility alias: %v\n", err)
 	}
-	if err := vmconfig.EnsurePackageAlias(newName, newPath); err != nil {
+	if err := vmconfig.EnsurePackageAliasWithGuard(newName, newPath, guard); err != nil {
 		fmt.Printf("warning: create Finder VM package alias: %v\n", err)
 	}
 
@@ -283,6 +299,12 @@ func ExportVM(name, destPath string) error {
 
 // ImportVM imports a VM from a tar.gz archive.
 func ImportVM(archivePath, name string) error {
+	guard, err := mutationguard.Acquire(coveRoot())
+	if err != nil {
+		return fmt.Errorf("guard VM import: %w", err)
+	}
+	defer guard.Release()
+
 	// Validate archive exists
 	if _, err := os.Stat(archivePath); os.IsNotExist(err) {
 		return fmt.Errorf("archive not found: %s", archivePath)
@@ -317,7 +339,7 @@ func ImportVM(archivePath, name string) error {
 	if err := os.MkdirAll(vmPath, 0755); err != nil {
 		return fmt.Errorf("create VM dir: %w", err)
 	}
-	if err := vmconfig.EnsureCompatibilityAlias(name, vmPath); err != nil {
+	if err := vmconfig.EnsureCompatibilityAliasWithGuard(name, vmPath, guard); err != nil {
 		os.RemoveAll(vmPath)
 		return fmt.Errorf("create VM compatibility alias: %w", err)
 	}

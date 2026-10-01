@@ -66,7 +66,7 @@ type vmProcessVMInfo struct {
 
 var (
 	vmProcessListVMs = func() ([]vmconfig.Info, error) {
-		return vmconfig.List(nil)
+		return vmconfig.ListReadOnly(nil)
 	}
 	vmProcessServerInfo = serverInfoForVMProcess
 )

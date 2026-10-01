@@ -35,6 +35,7 @@ import (
 	"time"
 
 	"github.com/tmc/cove/internal/imagestore"
+	"github.com/tmc/cove/internal/mutationguard"
 	"github.com/tmc/cove/internal/vmconfig"
 )
 
@@ -425,6 +426,18 @@ type MaterializeImageOptions struct {
 // dropped so the existing fork_ephemeral.go cleanup + GC sweeps the
 // child after stop.
 func MaterializeImage(opts MaterializeImageOptions) (string, error) {
+	guard, err := mutationguard.Acquire(coveRoot())
+	if err != nil {
+		return "", fmt.Errorf("guard image materialization: %w", err)
+	}
+	defer guard.Release()
+	return materializeImageGuarded(guard, opts)
+}
+
+func materializeImageGuarded(guard *mutationguard.Guard, opts MaterializeImageOptions) (string, error) {
+	if err := guard.Check(coveRoot()); err != nil {
+		return "", err
+	}
 	if !ImageExists(opts.Ref) {
 		return "", fmt.Errorf("materialize: image %s not found", opts.Ref)
 	}
@@ -456,7 +469,7 @@ func MaterializeImage(opts MaterializeImageOptions) (string, error) {
 		return "", fmt.Errorf("materialize: create child dir: %w", err)
 	}
 	cleanup := func() { os.RemoveAll(childDir) }
-	if err := vmconfig.EnsureCompatibilityAlias(opts.ChildName, childDir); err != nil {
+	if err := vmconfig.EnsureCompatibilityAliasWithGuard(opts.ChildName, childDir, guard); err != nil {
 		cleanup()
 		return "", fmt.Errorf("materialize: create compatibility alias: %w", err)
 	}

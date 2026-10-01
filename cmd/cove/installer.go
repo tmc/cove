@@ -487,16 +487,17 @@ func installMacOSLikeVZWithProvision(ctx context.Context, quotaWarnings io.Write
 		rc = vmrunRunConfig(vmrun.GuestMacOS)
 	}
 	fmt.Println("=== macOS Installation ===")
+	lock, err := acquireInstallerRunLock(hc.VMDir)
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
 
 	// Safety check: refuse to overwrite existing VM disk unless -force is specified.
 	if err := checkExistingVMWithForce(hc.VMDir, "disk.img", rc.ForceInstall); err != nil {
 		return err
 	}
 
-	// Step 1: Create VM bundle directory
-	if err := os.MkdirAll(hc.VMDir, 0755); err != nil {
-		return fmt.Errorf("create VM directory: %w", err)
-	}
 	saveHardwareConfigWith(hc.VMDir, rc.CPUCount, rc.MemoryGB)
 	persistInstallQuota(quotaWarnings, hc.VMDir)
 	if err := applyInstallDiskQuota(quotaWarnings, hc.VMDir); err != nil {

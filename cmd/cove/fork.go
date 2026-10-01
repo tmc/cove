@@ -18,6 +18,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/tmc/cove/internal/mutationguard"
 	"github.com/tmc/cove/internal/vmconfig"
 )
 
@@ -65,6 +66,18 @@ func ForkVMDisk(parent, child string) error {
 // This is a thin convenience wrapper over CloneVM that hard-codes
 // fork semantics: linked-by-default (CoW) and never copy machine.id.
 func ForkVM(parent, child string) error {
+	guard, err := mutationguard.Acquire(coveRoot())
+	if err != nil {
+		return fmt.Errorf("guard vm fork: %w", err)
+	}
+	defer guard.Release()
+	return forkVMLocked(guard, parent, child)
+}
+
+func forkVMLocked(guard *mutationguard.Guard, parent, child string) error {
+	if err := guard.Check(coveRoot()); err != nil {
+		return err
+	}
 	if parent == "" {
 		return errors.New("fork: parent VM name required")
 	}
@@ -77,7 +90,7 @@ func ForkVM(parent, child string) error {
 	if !vmconfig.Validate(vmconfig.Path(parent)) {
 		return fmt.Errorf("fork: parent VM not found: %s", parent)
 	}
-	if err := CloneVM(CloneOptions{
+	if err := cloneVMLocked(guard, CloneOptions{
 		Source:        parent,
 		Target:        child,
 		Linked:        true,
@@ -138,8 +151,20 @@ type ForkVMOptions struct {
 // When Snapshot is empty, this defers to ForkVM and inherits its
 // best-effort semantics against a running parent (no lock acquired).
 func ForkVMWithSnapshot(opts ForkVMOptions) error {
+	guard, err := mutationguard.Acquire(coveRoot())
+	if err != nil {
+		return fmt.Errorf("guard snapshot fork: %w", err)
+	}
+	defer guard.Release()
+	return forkVMWithSnapshotLocked(guard, opts)
+}
+
+func forkVMWithSnapshotLocked(guard *mutationguard.Guard, opts ForkVMOptions) error {
+	if err := guard.Check(coveRoot()); err != nil {
+		return err
+	}
 	if opts.Snapshot == "" {
-		return ForkVM(opts.Parent, opts.Child)
+		return forkVMLocked(guard, opts.Parent, opts.Child)
 	}
 	if opts.Parent == "" {
 		return errors.New("fork: parent VM name required")
@@ -186,7 +211,7 @@ func ForkVMWithSnapshot(opts ForkVMOptions) error {
 	// removes any leftover suspend.vmstate from the child for
 	// deterministic cold boot. We re-seed suspend.vmstate from the
 	// parent's snapshot afterwards.
-	if err := CloneVM(CloneOptions{
+	if err := cloneVMLocked(guard, CloneOptions{
 		Source:        opts.Parent,
 		Target:        opts.Child,
 		Linked:        true,

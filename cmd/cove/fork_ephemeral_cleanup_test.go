@@ -22,6 +22,7 @@ func TestCleanupEphemeralForkRefusesRoot(t *testing.T) {
 }
 
 func TestCleanupEphemeralForkRemovesWithSentinel(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	dir := filepath.Join(t.TempDir(), "child")
 	if err := os.Mkdir(dir, 0755); err != nil {
 		t.Fatalf("Mkdir: %v", err)

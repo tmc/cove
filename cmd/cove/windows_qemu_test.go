@@ -171,6 +171,9 @@ func TestWindowsQEMUConfigDefaultsSerialToLog(t *testing.T) {
 	t.Setenv("COVE_QEMU_EFI_VARS_TEMPLATE", vars)
 
 	vmDir := filepath.Join(dir, "vm.covevm")
+	if err := os.Mkdir(vmDir, 0755); err != nil {
+		t.Fatal(err)
+	}
 	cfg, err := windowsQEMUConfigFromRun(vmrun.RunConfig{
 		CPUCount:     2,
 		MemoryGB:     4,

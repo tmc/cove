@@ -40,6 +40,7 @@ func CloneName(base string, now time.Time) string {
 }
 
 func ParseCloneName(name string) (base string, createdAt time.Time, ok bool) {
+	name = strings.TrimSuffix(name, ".covevm")
 	idx := strings.LastIndex(name, "-d-")
 	if idx <= 0 {
 		return "", time.Time{}, false
@@ -84,17 +85,36 @@ func GC(opts GCOptions) (GCResult, error) {
 	}
 
 	var result GCResult
+	seen := make(map[string]bool)
 	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
 		name := entry.Name()
 		_, createdAt, ok := ParseCloneName(name)
 		if !ok {
 			continue
 		}
-		result.Scanned++
 		path := filepath.Join(opts.BaseDir, name)
+		canonical, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			continue
+		}
+		canonical, err = filepath.Abs(canonical)
+		if err != nil {
+			continue
+		}
+		info, err := os.Stat(canonical)
+		if err != nil || !info.IsDir() || seen[canonical] {
+			continue
+		}
+		if strings.TrimSuffix(filepath.Base(canonical), ".covevm") != strings.TrimSuffix(name, ".covevm") {
+			continue
+		}
+		path = filepath.Join(opts.BaseDir, filepath.Base(canonical))
+		resolved, err := filepath.EvalSymlinks(path)
+		if err != nil || resolved != canonical {
+			continue
+		}
+		seen[canonical] = true
+		result.Scanned++
 		if opts.IsActive(path) {
 			result.SkippedAlive++
 			continue

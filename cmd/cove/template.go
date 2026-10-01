@@ -23,6 +23,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/tmc/cove/internal/mutationguard"
 	"github.com/tmc/cove/internal/vmconfig"
 	"golang.org/x/sys/unix"
 )
@@ -100,6 +101,11 @@ func SaveTemplateFast(vmName, templateName string) error {
 
 // SaveTemplateWithOptions saves a VM as a template with configurable options.
 func SaveTemplateWithOptions(opts SaveTemplateOptions) error {
+	guard, err := mutationguard.Acquire(coveRoot())
+	if err != nil {
+		return fmt.Errorf("guard template save: %w", err)
+	}
+	defer guard.Release()
 	// Validate source VM
 	vmPath := vmconfig.Path(opts.VMName)
 	if !vmconfig.Validate(vmPath) {
@@ -286,6 +292,11 @@ func CreateFromTemplate(templateName, vmName string) error {
 
 // CreateFromTemplateWithOptions creates a new VM from a template with configurable options.
 func CreateFromTemplateWithOptions(opts CreateFromTemplateOptions) error {
+	guard, err := mutationguard.Acquire(coveRoot())
+	if err != nil {
+		return fmt.Errorf("guard template creation: %w", err)
+	}
+	defer guard.Release()
 	// Validate template exists
 	templatePath := filepath.Join(vmconfig.TemplateDir(), opts.TemplateName)
 	templateInfo, err := getTemplateInfo(templatePath)
@@ -367,6 +378,11 @@ func CreateFromTemplateWithOptions(opts CreateFromTemplateOptions) error {
 
 // DeleteTemplate deletes a template.
 func DeleteTemplate(templateName string) error {
+	guard, err := mutationguard.Acquire(coveRoot())
+	if err != nil {
+		return fmt.Errorf("guard template deletion: %w", err)
+	}
+	defer guard.Release()
 	templatePath := filepath.Join(vmconfig.TemplateDir(), templateName)
 
 	// Verify it's a valid template

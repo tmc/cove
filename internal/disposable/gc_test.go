@@ -41,6 +41,7 @@ func TestParseCloneNameRejectsAndAccepts(t *testing.T) {
 		{name: "stamp wrong length", in: "vm-d-20240101-1200", wantOK: false},
 		{name: "stamp unparseable", in: "vm-d-XXXXXXXX-XXXXXX", wantOK: false},
 		{name: "happy path with base", in: "myvm-d-20240315-103045", wantOK: true, wantBase: "myvm"},
+		{name: "package", in: "myvm-d-20240315-103045.covevm", wantOK: true, wantBase: "myvm"},
 		{name: "happy path with whitespace base", in: "  spaced  -d-20240315-103045", wantOK: true, wantBase: "spaced"},
 		{name: "blank base falls back to vm", in: "   -d-20240315-103045", wantOK: true, wantBase: "vm"},
 		{name: "base with dashes is preserved", in: "my-vm-d-20240315-103045", wantOK: true, wantBase: "my-vm"},
@@ -118,5 +119,51 @@ func TestGC(t *testing.T) {
 	}
 	if _, err := os.Stat(activePath); err != nil {
 		t.Fatalf("active disposable clone missing: %v", err)
+	}
+}
+
+func TestGCPackageAliases(t *testing.T) {
+	base := t.TempDir()
+	name := CloneName("base", time.Now().Add(-time.Hour))
+	path := filepath.Join(base, name+".covevm")
+	if err := os.Mkdir(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(path, filepath.Join(base, name)); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	result, err := GC(GCOptions{
+		BaseDir:  base,
+		IsActive: func(string) bool { return false },
+		RemoveAll: func(target string) error {
+			calls++
+			if target != path {
+				t.Fatalf("target = %q, want package %q", target, path)
+			}
+			return nil
+		},
+	})
+	if err != nil || calls != 1 || result.Scanned != 1 || result.Removed != 1 {
+		t.Fatalf("gc = %#v, calls = %d, error = %v, want one package", result, calls, err)
+	}
+}
+
+func TestGCRejectsAliasToDifferentGuest(t *testing.T) {
+	base := t.TempDir()
+	path := filepath.Join(base, "retained.covevm")
+	if err := os.Mkdir(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	name := CloneName("old", time.Now().Add(-time.Hour))
+	if err := os.Symlink(path, filepath.Join(base, name)); err != nil {
+		t.Fatal(err)
+	}
+	result, err := GC(GCOptions{BaseDir: base, IsActive: func(string) bool { return false }})
+	if err != nil || result.Scanned != 0 {
+		t.Fatalf("gc = %#v, %v, want no disposable guests", result, err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal(err)
 	}
 }

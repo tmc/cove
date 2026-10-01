@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/tmc/cove/internal/disposable"
+	"github.com/tmc/cove/internal/mutationguard"
+	"github.com/tmc/cove/internal/storagepins"
 	"github.com/tmc/cove/internal/vmconfig"
 )
 
@@ -95,16 +97,92 @@ func CleanupDisposableClone(path string) error {
 	if clean == "." || clean == string(filepath.Separator) {
 		return fmt.Errorf("%w: %q", ErrDisposableUnsafePath, path)
 	}
-	return os.RemoveAll(path)
+	guard, err := mutationguard.Acquire(coveRoot())
+	if err != nil {
+		return fmt.Errorf("guard disposable cleanup: %w", err)
+	}
+	defer guard.Release()
+	return cleanupDisposableCloneGuarded(guard, clean, os.RemoveAll)
+}
+
+func cleanupDisposableCloneGuarded(guard *mutationguard.Guard, path string, remove func(string) error) error {
+	if err := guard.Check(coveRoot()); err != nil {
+		return err
+	}
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return nil
+	}
+	canonical, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return err
+	}
+	root, err := filepath.EvalSymlinks(coveRoot())
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(root, canonical)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("%w: outside storage root", ErrDisposableUnsafePath)
+	}
+	name := vmconfig.NameForPath(path)
+	registered, err := filepath.EvalSymlinks(vmconfig.Path(name))
+	if err != nil || registered != canonical {
+		return fmt.Errorf("%w: vm registration differs", ErrDisposableUnsafePath)
+	}
+	pins, err := storagepins.Load(coveRoot())
+	if err != nil {
+		return fmt.Errorf("load disposable cleanup pins: %w", err)
+	}
+	if pins.IsPinned("vm", name) {
+		return fmt.Errorf("disposable clone is pinned; retained")
+	}
+	alias := filepath.Join(vmconfig.BaseDir(), name)
+	removeAlias := false
+	if info, err := os.Lstat(alias); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		target, err := filepath.EvalSymlinks(alias)
+		removeAlias = err == nil && target == canonical
+	}
+	path = canonical
+	lock, err := AcquireRunLock(path)
+	if err != nil {
+		return fmt.Errorf("lock disposable cleanup: %w", err)
+	}
+	defer lock.Release()
+	if disposableCloneHasControlSocket(path) {
+		return fmt.Errorf("disposable clone is active; retained")
+	}
+	if err := remove(path); err != nil {
+		return err
+	}
+	if removeAlias {
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			if err := os.Remove(alias); err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("remove disposable compatibility alias: %w", err)
+			}
+		}
+	}
+	return nil
 }
 
 // GCDisposableClones removes disposable clones older than OlderThan.
 func GCDisposableClones(opts disposable.GCOptions) (disposable.GCResult, error) {
+	guard, err := mutationguard.Acquire(coveRoot())
+	if err != nil {
+		return disposable.GCResult{}, fmt.Errorf("guard disposable gc: %w", err)
+	}
+	defer guard.Release()
 	if opts.BaseDir == "" {
 		opts.BaseDir = vmconfig.BaseDir()
 	}
 	if opts.IsActive == nil {
 		opts.IsActive = disposableCloneIsActive
+	}
+	remove := opts.RemoveAll
+	if remove == nil {
+		remove = os.RemoveAll
+	}
+	opts.RemoveAll = func(path string) error {
+		return cleanupDisposableCloneGuarded(guard, path, remove)
 	}
 	return disposable.GC(opts)
 }
@@ -113,6 +191,10 @@ func disposableCloneIsActive(path string) bool {
 	if isVMRunningAt(path) {
 		return true
 	}
+	return disposableCloneHasControlSocket(path)
+}
+
+func disposableCloneHasControlSocket(path string) bool {
 	sock := GetControlSocketPathForVM(path)
 	if sock == "" {
 		return false

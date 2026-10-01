@@ -1,4 +1,4 @@
-// Package storagepins persists operator-supplied "keep this" markers
+// Package storagepins persists operator and generation-owned task pins
 // for objects under ~/.vz/. A pinned object is exempt from the storage
 // budget's eviction loop.
 //
@@ -20,13 +20,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
+
+	"github.com/tmc/cove/internal/mutationguard"
 )
 
 // Filename is the basename of the pins file under the cove root.
@@ -47,12 +51,13 @@ func (p Pin) Ref() string { return p.Category + ":" + p.ID }
 
 // File is the on-disk pin set. The zero value is a valid empty set.
 type File struct {
-	mu   sync.Mutex
-	pins map[string]Pin // key is canonical "category:id"
+	mu       sync.Mutex
+	pins     map[string]Pin // key is canonical "category:id"
+	taskPins map[string]TaskPin
 }
 
 // New returns an empty File.
-func New() *File { return &File{pins: map[string]Pin{}} }
+func New() *File { return &File{pins: map[string]Pin{}, taskPins: map[string]TaskPin{}} }
 
 // ParseRef splits an operator-supplied "category:id" reference into its
 // parts and validates both. Whitespace around the reference is rejected:
@@ -129,11 +134,19 @@ func (f *File) Remove(category, id string) (bool, error) {
 func (f *File) IsPinned(category, id string) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	_, ok := f.pins[category+":"+id]
-	return ok
+	ref := category + ":" + id
+	if _, ok := f.pins[ref]; ok {
+		return true
+	}
+	for _, pin := range f.taskPins {
+		if pin.Ref() == ref {
+			return true
+		}
+	}
+	return false
 }
 
-// List returns the pin set sorted by category then id.
+// List returns operator pins sorted by category then id.
 func (f *File) List() []Pin {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -159,11 +172,15 @@ func (f *File) RefSet() map[string]bool {
 	for k := range f.pins {
 		out[k] = true
 	}
+	for _, pin := range f.taskPins {
+		out[pin.Ref()] = true
+	}
 	return out
 }
 
 type onDisk struct {
-	Pins []Pin `json:"pins"`
+	Pins     []Pin     `json:"pins"`
+	TaskPins []TaskPin `json:"task_pins,omitempty"`
 }
 
 // Load reads ~/.vz/pins.json from root. A missing file yields an empty
@@ -171,12 +188,27 @@ type onDisk struct {
 // "pins file not yet written".
 func Load(root string) (*File, error) {
 	path := filepath.Join(root, Filename)
-	data, err := os.ReadFile(path)
+	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return New(), nil
 		}
 		return nil, fmt.Errorf("read pins: %w", err)
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || info.Size() > maxPinFileBytes {
+		return nil, fmt.Errorf("pins file is not a bounded regular file")
+	}
+	data, err := io.ReadAll(io.LimitReader(file, maxPinFileBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxPinFileBytes {
+		return nil, fmt.Errorf("pins file exceeds bounds")
 	}
 	var d onDisk
 	if err := json.Unmarshal(data, &d); err != nil {
@@ -192,21 +224,101 @@ func Load(root string) (*File, error) {
 		}
 		f.pins[p.Ref()] = p
 	}
+	if len(d.TaskPins) > maxTaskPins {
+		return nil, fmt.Errorf("task pin count exceeds bounds")
+	}
+	for _, pin := range d.TaskPins {
+		if err := validateTaskPin(pin); err != nil {
+			return nil, fmt.Errorf("invalid task pin: %w", err)
+		}
+		key := taskPinKey(pin.Category, pin.ID, pin.Owner.Generation)
+		if _, exists := f.taskPins[key]; exists {
+			return nil, fmt.Errorf("duplicate task pin generation")
+		}
+		f.taskPins[key] = pin
+	}
 	return f, nil
 }
 
 // Save writes f to ~/.vz/pins.json under root. The cove root is created
 // if missing. The write is atomic: a sibling tempfile is created and
-// renamed into place after fsync.
+// renamed into place after fsync. Persisted task pins are preserved; use Update
+// or UpdateWithGuard for task-pin removal.
 func Save(root string, f *File) error {
+	guard, err := mutationguard.Acquire(root)
+	if err != nil {
+		return err
+	}
+	defer guard.Release()
+	if f == nil {
+		return fmt.Errorf("pin file required")
+	}
+	current, err := Load(root)
+	if err != nil {
+		return err
+	}
+	merged := New()
+	for _, pin := range f.List() {
+		merged.pins[pin.Ref()] = pin
+	}
+	for _, pins := range [][]TaskPin{current.TaskPins(), f.TaskPins()} {
+		for _, pin := range pins {
+			if err := merged.AddTask(pin); err != nil {
+				return err
+			}
+		}
+	}
+	return saveLocked(root, merged)
+}
+
+// Update loads and changes pins while holding the root mutation guard.
+// The callback returns whether its changes should be saved.
+func Update(root string, change func(*File) (bool, error)) error {
+	if change == nil {
+		return fmt.Errorf("pin update callback required")
+	}
+	guard, err := mutationguard.Acquire(root)
+	if err != nil {
+		return err
+	}
+	defer guard.Release()
+	return UpdateWithGuard(root, guard, change)
+}
+
+// UpdateWithGuard updates pins while the caller holds the root mutation guard.
+func UpdateWithGuard(root string, guard *mutationguard.Guard, change func(*File) (bool, error)) error {
+	if change == nil {
+		return fmt.Errorf("pin update callback required")
+	}
+	if err := guard.Check(root); err != nil {
+		return err
+	}
+	pins, err := Load(root)
+	if err != nil {
+		return err
+	}
+	changed, err := change(pins)
+	if err != nil || !changed {
+		return err
+	}
+	return saveLocked(root, pins)
+}
+
+func saveLocked(root string, f *File) error {
+	if f == nil {
+		return fmt.Errorf("pin file required")
+	}
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return fmt.Errorf("ensure cove root: %w", err)
 	}
 	pins := f.List()
-	d := onDisk{Pins: pins}
+	d := onDisk{Pins: pins, TaskPins: f.TaskPins()}
 	data, err := json.MarshalIndent(d, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode pins: %w", err)
+	}
+	if len(data) > maxPinFileBytes {
+		return fmt.Errorf("pins file exceeds bounds")
 	}
 	path := filepath.Join(root, Filename)
 	tmp, err := os.CreateTemp(root, ".pins.json.")
@@ -233,5 +345,10 @@ func Save(root string, f *File) error {
 		cleanup()
 		return fmt.Errorf("rename pins tempfile: %w", err)
 	}
-	return nil
+	directory, err := os.Open(root)
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	return directory.Sync()
 }

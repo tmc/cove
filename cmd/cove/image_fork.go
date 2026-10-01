@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/tmc/cove/internal/imagestore"
+	"github.com/tmc/cove/internal/mutationguard"
 	"github.com/tmc/cove/internal/vmconfig"
 )
 
@@ -87,7 +88,12 @@ func runImageForkFromWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 	cfg = runConfigForImageManifest(cfg, manifest)
 
 	forkStarted := time.Now()
-	childPath, err := MaterializeImage(MaterializeImageOptions{
+	guard, err := mutationguard.Acquire(coveRoot())
+	if err != nil {
+		return fmt.Errorf("guard image fork: %w", err)
+	}
+	defer guard.Release()
+	childPath, err := materializeImageGuarded(guard, MaterializeImageOptions{
 		Ref:       ref,
 		ChildName: cfg.EphemeralForkName,
 		Ephemeral: cfg.Ephemeral,
@@ -136,7 +142,6 @@ func runImageForkFromWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 
 	lock, err := hooks.AcquireRunLock(vmDir)
 	if err != nil {
-		os.RemoveAll(childPath)
 		return fmt.Errorf("cove run -fork-from <image>: %w", err)
 	}
 	defer func() {
@@ -144,6 +149,9 @@ func runImageForkFromWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 			fmt.Fprintf(os.Stderr, "warning: release run.lock: %v\n", releaseErr)
 		}
 	}()
+	if err := guard.Release(); err != nil {
+		return fmt.Errorf("release image fork guard: %w", err)
+	}
 
 	var runErr error
 	if cfg.Linux {
@@ -159,6 +167,9 @@ func runImageForkFromWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 	if cfg.EphemeralForkKeep {
 		fmt.Printf("Ephemeral image fork retained: %s\n", childName)
 		return runErr
+	}
+	if err := lock.Release(); err != nil {
+		return fmt.Errorf("release image fork run lock before cleanup: %w", err)
 	}
 	if cleanupErr := hooks.CleanupEphemeralFork(childPath); cleanupErr != nil {
 		// The cleanup helper refuses any path missing the .ephemeral

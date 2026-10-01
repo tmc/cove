@@ -1,12 +1,16 @@
 package vmconfig
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"github.com/tmc/cove/internal/mutationguard"
 )
 
 const StateDirEnv = "COVE_STATE_DIR"
@@ -106,7 +110,26 @@ func ResolveDir(vmName, currentDir string) string {
 
 // EnsureDir ensures the resolved VM directory exists and returns its real path.
 func EnsureDir(vmName, currentDir string) (string, error) {
-	if err := MigrateIfNeeded(); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	guard, err := mutationguard.AcquireContext(ctx, StateDir())
+	if err != nil {
+		return "", err
+	}
+	defer guard.Release()
+	return EnsureDirWithGuard(vmName, currentDir, guard)
+}
+
+// EnsureDirWithGuard ensures a VM directory while the caller holds its root guard.
+func EnsureDirWithGuard(vmName, currentDir string, guard *mutationguard.Guard) (string, error) {
+	if err := guard.Check(StateDir()); err != nil {
+		return "", err
+	}
+	return ensureDirLocked(vmName, currentDir)
+}
+
+func ensureDirLocked(vmName, currentDir string) (string, error) {
+	if err := migrateIfNeededLocked(); err != nil {
 		return "", fmt.Errorf("migration failed: %w", err)
 	}
 	resolvedDir := ResolveDir(vmName, currentDir)
@@ -129,11 +152,11 @@ func EnsureDir(vmName, currentDir string) (string, error) {
 			return "", err
 		}
 	}
-	if err := EnsureAlias(vmName, resolvedDir); err != nil {
+	if err := ensureAliasLocked(vmName, resolvedDir); err != nil {
 		return "", err
 	}
 	if vmName != "" {
-		if err := EnsureCompatibilityAlias(vmName, resolvedDir); err != nil {
+		if err := ensureCompatibilityAliasLocked(vmName, resolvedDir); err != nil {
 			return "", err
 		}
 	}

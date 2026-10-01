@@ -132,10 +132,7 @@ func installWindowsQEMUVMWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig, quo
 	}
 	fmt.Println("=== Windows VM Installer (QEMU/HVF) ===")
 
-	if err := os.MkdirAll(hc.VMDir, 0755); err != nil {
-		return fmt.Errorf("create VM directory: %w", err)
-	}
-	lock, err := AcquireRunLock(hc.VMDir)
+	lock, err := acquireInstallerRunLock(hc.VMDir)
 	if err != nil {
 		return fmt.Errorf("cove install -windows -windows-backend qemu: %w", err)
 	}
@@ -227,9 +224,6 @@ func runWindowsQEMUVM() error {
 func runWindowsQEMUVMWithConfig(rc vmrun.RunConfig, hc vmrun.HostConfig) error {
 	fmt.Println("=== Windows VM Runner (QEMU/HVF) ===")
 
-	if err := os.MkdirAll(hc.VMDir, 0755); err != nil {
-		return fmt.Errorf("create VM directory: %w", err)
-	}
 	lock, err := AcquireRunLock(hc.VMDir)
 	if err != nil {
 		return fmt.Errorf("cove run -windows -windows-backend qemu: %w", err)
@@ -376,7 +370,13 @@ func windowsQEMUConfigFromRun(rc vmrun.RunConfig, hc vmrun.HostConfig, install b
 		cfg.UserAgentHostPort = userAgentForward.hostPort
 		cfg.UserAgentGuestPort = userAgentForward.guestPort
 	}
-	return cfg, os.MkdirAll(qemuDir, 0755)
+	if err := os.Mkdir(qemuDir, 0755); err != nil && !os.IsExist(err) {
+		return windowsQEMUConfig{}, err
+	}
+	if err := requireVMDirectory(qemuDir); err != nil {
+		return windowsQEMUConfig{}, err
+	}
+	return cfg, nil
 }
 
 func windowsQEMUProvisionConfigFromFlags(agentPath string, agentPort, userAgentPort int) (winsetup.ProvisionConfig, error) {
@@ -403,8 +403,11 @@ func windowsQEMUProvisionConfigFromFlags(agentPath string, agentPort, userAgentP
 }
 
 func ensureWindowsQEMUAgentExecutable(vmDir string) (string, error) {
+	if err := requireVMDirectory(vmDir); err != nil {
+		return "", err
+	}
 	path := filepath.Join(vmDir, "qemu", "vz-agent-windows-arm64.exe")
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := os.Mkdir(filepath.Dir(path), 0755); err != nil && !os.IsExist(err) {
 		return "", fmt.Errorf("create windows agent directory: %w", err)
 	}
 	cmd := exec.Command("go", "build", "-trimpath", "-ldflags", agentBuildLDFlagsForOS("windows"), "-o", path, "./cmd/vz-agent")
@@ -504,7 +507,7 @@ func ensureWindowsQEMUDisk(cfg windowsQEMUConfig) error {
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("stat Windows QEMU disk image: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(cfg.DiskPath), 0755); err != nil {
+	if err := requireVMDirectory(filepath.Dir(cfg.DiskPath)); err != nil {
 		return fmt.Errorf("create Windows QEMU disk directory: %w", err)
 	}
 	if cfg.DiskFormat != "qcow2" {
@@ -531,7 +534,7 @@ func ensureWindowsQEMUEFIVars(varsPath, templatePath string) error {
 	} else if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("stat QEMU EFI vars: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(varsPath), 0755); err != nil {
+	if err := requireVMDirectory(filepath.Dir(varsPath)); err != nil {
 		return fmt.Errorf("create QEMU EFI vars directory: %w", err)
 	}
 

@@ -16,6 +16,7 @@ import (
 
 	"github.com/tmc/cove/internal/disposable"
 	"github.com/tmc/cove/internal/lifecycle"
+	"github.com/tmc/cove/internal/mutationguard"
 	"github.com/tmc/cove/internal/vmconfig"
 	"github.com/tmc/cove/internal/vmpolicy"
 	"github.com/tmc/cove/internal/vmrun"
@@ -79,6 +80,15 @@ func defaultRunHooks() RunHooks {
 		AcquireRunLock:                   AcquireRunLock,
 		ConsumeRunBudget:                 lifecycle.ConsumeRunBudget,
 	}
+}
+
+func acquireRuntimeRunLock(dir string, hooks RunHooks) (*RunLock, error) {
+	guard, err := mutationguard.Acquire(coveRoot())
+	if err != nil {
+		return nil, fmt.Errorf("guard runtime admission: %w", err)
+	}
+	defer guard.Release()
+	return hooks.AcquireRunLock(dir)
 }
 
 func (h RunHooks) withDefaults() RunHooks {
@@ -295,7 +305,7 @@ func runVMWithConfig(cfg RunConfig) error {
 		}()
 	}
 
-	lock, err := hooks.AcquireRunLock(vmDir)
+	lock, err := acquireRuntimeRunLock(vmDir, hooks)
 	if err != nil {
 		return fmt.Errorf("cove run: %w", err)
 	}
@@ -324,6 +334,9 @@ func runVMWithConfig(cfg RunConfig) error {
 	}
 
 	if temporaryClone {
+		if err := lock.Release(); err != nil {
+			return errors.Join(runErr, fmt.Errorf("release disposable run lock before cleanup: %w", err))
+		}
 		if cleanupErr := hooks.CleanupDisposableClone(clone.Path); cleanupErr != nil {
 			fmt.Fprintf(cfg.Stderr, "warning: cleanup disposable clone: %v\n", cleanupErr)
 		} else if cfg.RollbackSnapshot != "" {
@@ -602,7 +615,7 @@ func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 	// LOCK_EX, the parent is running and we refuse to attach to its
 	// disk.img. Validation #1 showed VZ takes no file lock at attach
 	// time, so this guard is enforced on our side.
-	parentLock, err := hooks.AcquireRunLock(parentDir)
+	parentLock, err := acquireRuntimeRunLock(parentDir, hooks)
 	if err != nil {
 		if errors.Is(err, ErrRunLockHeld) {
 			return fmt.Errorf("cove run -fork-from: parent VM %q is running; ephemeral fork requires parent stopped", cfg.EphemeralForkParent)
@@ -664,7 +677,7 @@ func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 		vmDir = originalVMDir
 	}()
 
-	lock, err := hooks.AcquireRunLock(vmDir)
+	lock, err := acquireRuntimeRunLock(vmDir, hooks)
 	if err != nil {
 		cleanupClone()
 		return fmt.Errorf("cove run -fork-from: %w", err)
@@ -689,6 +702,9 @@ func runEphemeralForkWithConfig(cfg RunConfig, originalVMName, originalVMDir str
 	if cfg.EphemeralForkKeep {
 		fmt.Fprintf(cfg.Stdout, "Ephemeral fork retained (-keep): %s\n", clone.Path)
 		return runErr
+	}
+	if err := lock.Release(); err != nil {
+		return errors.Join(runErr, fmt.Errorf("release ephemeral run lock before cleanup: %w", err))
 	}
 	if cleanupErr := hooks.CleanupEphemeralFork(clone.Path); cleanupErr != nil {
 		fmt.Fprintf(cfg.Stderr, "warning: cleanup ephemeral fork: %v\n", cleanupErr)

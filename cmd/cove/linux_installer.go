@@ -255,6 +255,11 @@ func installLinuxVMWithConfig(quotaWarnings io.Writer, provConfig LinuxProvision
 		quotaWarnings = io.Discard
 	}
 	fmt.Println("=== Linux VM Installer ===")
+	lock, err := acquireInstallerRunLock(vmDir)
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
 
 	resolvedDiskPath := diskPath
 	if resolvedDiskPath == "" {
@@ -297,10 +302,6 @@ func installLinuxVMWithConfig(quotaWarnings io.Writer, provConfig LinuxProvision
 		}
 	}
 
-	// Ensure VM directory exists
-	if err := os.MkdirAll(vmDir, 0755); err != nil {
-		return fmt.Errorf("create VM directory: %w", err)
-	}
 	saveHardwareConfig(vmDir)
 	persistInstallQuota(quotaWarnings, vmDir)
 	if err := applyInstallDiskQuota(quotaWarnings, vmDir); err != nil {

@@ -34,6 +34,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/tmc/cove/internal/mutationguard"
 	"github.com/tmc/cove/internal/vmconfig"
 	"github.com/tmc/cove/internal/vmidentity"
 )
@@ -73,6 +74,18 @@ type EphemeralForkOptions struct {
 // sentinel is dropped so cove gc can sweep orphaned siblings after
 // host crashes.
 func SetupEphemeralFork(opts EphemeralForkOptions) (EphemeralFork, error) {
+	guard, err := mutationguard.Acquire(coveRoot())
+	if err != nil {
+		return EphemeralFork{}, fmt.Errorf("guard ephemeral fork: %w", err)
+	}
+	defer guard.Release()
+	return setupEphemeralForkLocked(guard, opts)
+}
+
+func setupEphemeralForkLocked(guard *mutationguard.Guard, opts EphemeralForkOptions) (EphemeralFork, error) {
+	if err := guard.Check(coveRoot()); err != nil {
+		return EphemeralFork{}, err
+	}
 	if opts.Parent == "" {
 		return EphemeralFork{}, errors.New("ephemeral fork: parent VM name required")
 	}
@@ -122,7 +135,7 @@ func SetupEphemeralFork(opts EphemeralForkOptions) (EphemeralFork, error) {
 	cleanup := func() {
 		os.RemoveAll(childDir)
 	}
-	if err := vmconfig.EnsureCompatibilityAlias(name, childDir); err != nil {
+	if err := vmconfig.EnsureCompatibilityAliasWithGuard(name, childDir, guard); err != nil {
 		cleanup()
 		return EphemeralFork{}, fmt.Errorf("ephemeral fork: create compatibility alias: %w", err)
 	}
@@ -176,6 +189,11 @@ func CleanupEphemeralFork(path string) error {
 	if clean == "." || clean == string(filepath.Separator) {
 		return fmt.Errorf("ephemeral fork: refusing to remove %q", path)
 	}
+	guard, err := mutationguard.Acquire(coveRoot())
+	if err != nil {
+		return fmt.Errorf("guard ephemeral cleanup: %w", err)
+	}
+	defer guard.Release()
 	if _, err := os.Stat(filepath.Join(clean, ephemeralSentinel)); err != nil {
 		return fmt.Errorf("ephemeral fork: %s lacks .ephemeral sentinel; refusing to remove", clean)
 	}
@@ -203,6 +221,15 @@ type EphemeralGCResult struct {
 // releasable (no live process holding it). Marker is the .ephemeral
 // sentinel; presence is required (and sufficient) for sweeping.
 func GCEphemeralForks(opts EphemeralGCOptions) (EphemeralGCResult, error) {
+	guard, err := mutationguard.Acquire(coveRoot())
+	if err != nil {
+		return EphemeralGCResult{}, fmt.Errorf("guard ephemeral gc: %w", err)
+	}
+	defer guard.Release()
+	return gcEphemeralForksLocked(opts)
+}
+
+func gcEphemeralForksLocked(opts EphemeralGCOptions) (EphemeralGCResult, error) {
 	baseDir := opts.BaseDir
 	if baseDir == "" {
 		baseDir = vmconfig.BaseDir()

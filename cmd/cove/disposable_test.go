@@ -137,7 +137,8 @@ func TestSetupDisposableCloneUsesExplicitTarget(t *testing.T) {
 }
 
 func TestCleanupDisposableClone(t *testing.T) {
-	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	dir := vmconfig.BaseDir()
 	target := filepath.Join(dir, "clone")
 	if err := os.MkdirAll(target, 0755); err != nil {
 		t.Fatal(err)
