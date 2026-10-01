@@ -55,3 +55,29 @@ func TestWorkspaceLifecycleMetadataBounds(t *testing.T) {
 		})
 	}
 }
+
+func TestWorkspaceLifecycleDiagnosticPointer(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		data string
+		want bool
+	}{
+		{"latest launch", `{"directory":"workspace-runtime-123"}`, true},
+		{"traversal", `{"directory":"../workspace-runtime-123"}`, false},
+		{"absolute", `{"directory":"/workspace-runtime-123"}`, false},
+		{"unrelated", `{"directory":"disk.img"}`, false},
+		{"oversized", strings.Repeat(" ", 1025), false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "workspace-runtime-diagnostics.json"), []byte(tt.data), 0600); err != nil {
+				t.Fatal(err)
+			}
+			state := workspaceLifecycleObservation("retained", dir)
+			_, got := state["runtime_diagnostics_directory"]
+			if got != tt.want || state["owner_identity"] != "unverified" {
+				t.Fatalf("observation = %v", state)
+			}
+		})
+	}
+}

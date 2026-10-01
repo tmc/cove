@@ -5,12 +5,24 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 )
 
 func workspaceLifecycleObservation(vm, dir string) map[string]any {
 	out := map[string]any{"vm": vm, "guest_directory": dir, "observed_at": time.Now().UTC().Format(time.RFC3339Nano), "owner_identity": "unverified", "pid_presence": "unknown", "runtime_metadata": "unavailable"}
+	if file, err := os.Open(filepath.Join(dir, "workspace-runtime-diagnostics.json")); err == nil {
+		data, readErr := io.ReadAll(io.LimitReader(file, 1025))
+		file.Close()
+		var pointer struct {
+			Directory string `json:"directory"`
+		}
+		if readErr == nil && len(data) <= 1024 && json.Unmarshal(data, &pointer) == nil && filepath.Base(pointer.Directory) == pointer.Directory && strings.HasPrefix(pointer.Directory, "workspace-runtime-") {
+			out["runtime_diagnostics_directory"] = filepath.Join(dir, pointer.Directory)
+			out["runtime_diagnostics_qualification"] = "latest launch observation; owner identity unverified"
+		}
+	}
 	file, err := os.Open(filepath.Join(dir, "runtime.json"))
 	if err != nil {
 		return out

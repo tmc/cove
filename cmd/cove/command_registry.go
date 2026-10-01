@@ -14,6 +14,7 @@ import (
 )
 
 var commandRegistry = []covecli.Spec{
+	{Name: "__workspace-runtime", Dispatch: covecli.DispatchEarly, Run: runWorkspaceRuntimeCommand, Hidden: true},
 	{Name: "__run-worker", Summary: "Hidden App Sandbox run-worker proof", Dispatch: covecli.DispatchEarly, Run: runWorkerCommand, Hidden: true},
 	{Name: "action", Summary: "Preflight helpers for private GitHub Actions runner images", Dispatch: covecli.DispatchPreUI, Run: runActionCommand},
 	{Name: "agent-sandbox", Summary: "Run a computer-use provider loop in a fresh VM fork", Dispatch: covecli.DispatchEarly, Run: runAgentSandboxCommand},

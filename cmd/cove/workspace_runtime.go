@@ -394,7 +394,7 @@ func startWorkspaceGuest(p workspacePlan, dir string) error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(exe, "-vm", p.VM, "-headless", "run")
+	cmd := exec.Command(exe, "__workspace-runtime", p.VM, dir)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	null, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
 	if err != nil {
