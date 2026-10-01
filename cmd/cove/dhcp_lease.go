@@ -1,10 +1,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
-	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -63,9 +63,13 @@ func isLocalServeListenAddr(addr string) bool {
 }
 
 func readBootPDDefaults() (string, error) {
-	out, err := exec.Command("/usr/bin/defaults", "read", bootpdDefaultsPath, "bootpd").CombinedOutput()
+	return readBootPDDefaultsContext(context.Background())
+}
+
+func readBootPDDefaultsContext(ctx context.Context) (string, error) {
+	out, err := runHostInspection(ctx, hostInspectionTimeout, "/usr/bin/defaults", "read", bootpdDefaultsPath, "bootpd")
 	if err != nil {
-		return "", nil
+		return "", fmt.Errorf("read bootpd defaults: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return string(out), nil
 }

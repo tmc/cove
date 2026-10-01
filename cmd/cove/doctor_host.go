@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -8,12 +9,12 @@ import (
 	"io"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/tmc/cove/internal/bytefmt"
 	"github.com/tmc/cove/internal/vmconfig"
@@ -36,7 +37,7 @@ type hostDoctorReport struct {
 }
 
 var hostDoctorRunCommand = func(name string, args ...string) ([]byte, error) {
-	return exec.Command(name, args...).CombinedOutput()
+	return runHostInspection(context.Background(), 5*time.Second, name, args...)
 }
 
 func handleDoctorHost(args []string, w io.Writer) error {
@@ -168,7 +169,7 @@ func hostDoctorCodesignCheck() hostDoctorCheck {
 	out, err := hostDoctorRunCommand("codesign", "-d", "--entitlements", ":-", exe)
 	text := string(out)
 	if err != nil {
-		return hostDoctorCheck{"virtualization-entitlement", "fail", "codesign inspection failed: " + strings.TrimSpace(text)}
+		return hostDoctorCheck{"virtualization-entitlement", "fail", fmt.Sprintf("codesign inspection failed: %v: %s", err, strings.TrimSpace(text))}
 	}
 	if !strings.Contains(text, "com.apple.security.virtualization") {
 		return hostDoctorCheck{"virtualization-entitlement", "fail", "missing com.apple.security.virtualization entitlement"}
@@ -265,7 +266,7 @@ func hostDoctorXcodeCheck() hostDoctorCheck {
 	}
 	out, err := hostDoctorRunCommand("xcode-select", "-p")
 	if err != nil {
-		return hostDoctorCheck{"xcode-cli", "warn", "Xcode Command Line Tools not found; run xcode-select --install if cove prompts for toolchain support"}
+		return hostDoctorCheck{"xcode-cli", "warn", fmt.Sprintf("inspect Xcode Command Line Tools: %v: %s; run xcode-select --install if tools are missing", err, strings.TrimSpace(string(out)))}
 	}
 	path := strings.TrimSpace(string(out))
 	if path == "" {

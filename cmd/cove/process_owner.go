@@ -1,8 +1,8 @@
 package main
 
 import (
+	"context"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -48,10 +48,16 @@ type hostProcessInfo struct {
 }
 
 func processInfo(pid int) (hostProcessInfo, bool) {
+	return processInfoContext(context.Background(), pid)
+}
+
+func processInfoContext(ctx context.Context, pid int) (hostProcessInfo, bool) {
+	ctx, cancel := context.WithTimeout(ctx, hostInspectionTimeout)
+	defer cancel()
 	if pid <= 0 {
 		return hostProcessInfo{}, false
 	}
-	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "ppid=,sess=,command=").Output()
+	out, err := runHostInspection(ctx, hostInspectionTimeout, "ps", "-p", strconv.Itoa(pid), "-o", "ppid=,sess=,command=")
 	if err != nil {
 		return hostProcessInfo{}, false
 	}
@@ -70,7 +76,7 @@ func processInfo(pid int) (hostProcessInfo, bool) {
 	return hostProcessInfo{
 		PPID:      ppid,
 		SessionID: sessionID,
-		StartedAt: processStartedAt(pid),
+		StartedAt: processStartedAtContext(ctx, pid),
 		Command:   strings.Join(fields[2:], " "),
 	}, true
 }
@@ -83,10 +89,14 @@ func processCommand(pid int) string {
 }
 
 func processStartedAt(pid int) time.Time {
+	return processStartedAtContext(context.Background(), pid)
+}
+
+func processStartedAtContext(ctx context.Context, pid int) time.Time {
 	if pid <= 0 {
 		return time.Time{}
 	}
-	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "lstart=").Output()
+	out, err := runHostInspection(ctx, hostInspectionTimeout, "ps", "-p", strconv.Itoa(pid), "-o", "lstart=")
 	if err != nil {
 		return time.Time{}
 	}
