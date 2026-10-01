@@ -1,0 +1,14 @@
+commit: b5324b4eb85592aaab89abe2dd53116615337478
+date: 2026-10-01T21:11:20.962731+00:00
+agent: Codex CLI 0.159.3
+model: GPT-6 family (session designation)
+claude-code version: N/A
+tty: not a tty
+pid: 64018 (note writer)
+ITERM_SESSION_ID: w8t10p1:22455FE0-2629-45BE-9D07-66CB8BD47189
+
+Qualified exact staged/committed Git tree fd7f48814ed90998da7532732a5c5e8ef27028ad in isolated local-dependency workspace at ~/tmp/cove-outstanding-20261001/workspace-final-source.
+Final go build -p 1 ./... PASS; final go test -p 1 ./... PASS (cmd/cove111.761s). Full log workspace-land-suite.log; build workspace-land-build.log. Earlier candidates retained actual host PTY failures; final host suite passes, not rewritten history.
+Independent fork-ownership/source replacement review and regression passed. Rooted supervisor diagnostics, durable task journal/generation and identity-bound quarantine deletion, independent operator/task pins, live attachment/holder/stop gates, post-durable-discard release, and cleanup_unknown reporting tested.
+Physical Muse retained Go workflow e50906c0 succeeded on earlier recorded source snapshot, actual guest test exit0/final_result_received, RO source write denied, fixture source hashes unchanged. Guest actual PTY resize regression passed separately. This is not physical owned-discard qualification and not proof of later rooted-supervisor activation. AX protocol1/active session previously denied guest Accessibility; successful inspect/find remains unqualified, session currently locked.
+Concurrent checkpoint/resize/push work and all binary files excluded.
