@@ -162,7 +162,7 @@ func parseDiskutilAPFSPhysicalStore(out string) (string, error) {
 
 func parseDiskutilColonLine(out, prefix string) string {
 	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimSpace(line)
+		line = strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(line), "| +-<>"))
 		if !strings.HasPrefix(line, prefix) {
 			continue
 		}

@@ -43,6 +43,20 @@ APFS Container (1 found)
 	}
 }
 
+func TestParseDiskutilAPFSPhysicalStoreTree(t *testing.T) {
+	for _, tt := range []struct{ name, input, want string }{
+		{"tree", "    |   APFS Physical Store Disk:   disk0s2\n", "disk0s2"},
+		{"plain", "   APFS Physical Store Disk: disk0s2\n", "disk0s2"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseDiskutilAPFSPhysicalStore(tt.input)
+			if err != nil || got != tt.want {
+				t.Fatalf("store = %q, %v; want %q", got, err, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseDiskutilPartitionID(t *testing.T) {
 	disk, part, err := parseDiskutilPartitionID("disk0s2")
 	if err != nil {
