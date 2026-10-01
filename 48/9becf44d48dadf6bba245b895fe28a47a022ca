@@ -1,0 +1,9 @@
+commit=489becf44d48dadf6bba245b895fe28a47a022ca
+date=2026-10-01T13:17:08-07:00
+agent=Codex
+model=GPT-6
+claude-code-version=not applicable
+tty=not a tty
+pid=25727 (note writer)
+ITERM_SESSION_ID=w8t10p1:22455FE0-2629-45BE-9D07-66CB8BD47189
+validation=exact staged snapshot all-package build passed; whole cove package passed96.122s; internal packages passed; whole suite sole unchanged host pty.Open prerequisite failure, reproduced; staged packages absent from vz-agent dependency graph
