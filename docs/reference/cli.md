@@ -1763,6 +1763,8 @@ cove build <name> --base <ref> --script <step> [flags]
 | `--tag <ref>` | | Output OCI image tag (repeatable) |
 | `--push` | false | Push output tags after build |
 | `--dry-run` | false | Print the resolved build plan and cache keys only |
+| `--explain` | false | Explain declared inputs and local cache without network requests or VMs |
+| `--json` | false | JSON output with `--explain` |
 | `--no-cache` | false | Re-run every step instead of restoring cached layers |
 | `--cache-from <ref>` | | Import an OCI build cache before cache hit evaluation (repeatable) |
 | `--cache-to <ref>` | | Export build cache entries after a successful build (repeatable) |
@@ -1777,6 +1779,22 @@ cove build macos-workstation --base ghcr.io/me/base@sha256:... --script homebrew
 cove build macos-agent --base ~/.vz/base-vm --script ./agent.vzscript --tag ghcr.io/me/macos-agent:v1
 cove build macos-agent --base ~/.vz/base-vm --script ./agent.vzscript --tag ghcr.io/me/macos-agent:v1 --push
 ```
+
+Use `--explain --json` for a read-only explanation. It uses the existing cache
+key calculation for resolved inputs, identifies missing, expired, disabled or
+matching local entries, and reports parent, recipe, agent protocol, compaction
+and declared input contributors. It does not import registry caches or fetch
+remote tags and URL content. Those inputs and dependent step identities remain
+unresolved. Environment values and their individual fingerprints, secret values,
+and URL credentials/query strings are omitted. Secret-like or declared secret
+`cache-env` inputs also suppress the cache key; use `# secret:` for those inputs.
+A matching cache entry does not
+verify its blobs or establish guest compatibility; execution checks those later.
+
+Recipes read arbitrary network and time-dependent state unless they avoid it or
+explicitly declare inputs. A resolved cache key alone does not establish recipe
+reproducibility. Existing cache metadata does not record older input values, so
+an absent current key cannot identify which previous input changed.
 
 `--push` requires at least one `--tag` and pushes the reported final VM
 directory after a successful build. Registry-base builds leave the materialized

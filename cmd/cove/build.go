@@ -21,6 +21,8 @@ type buildOptions struct {
 	Tags             []string
 	Push             bool
 	DryRun           bool
+	Explain          bool
+	JSON             bool
 	NoCache          bool
 	CacheFrom        []string
 	CacheTo          []string
@@ -48,6 +50,8 @@ func handleBuild(args []string) (err error) {
 	fs.Var(&tags, "tag", "output OCI image tag (repeatable)")
 	fs.BoolVar(&opts.Push, "push", false, "push output tags after build")
 	fs.BoolVar(&opts.DryRun, "dry-run", false, "print plan and cache keys without running VMs")
+	fs.BoolVar(&opts.Explain, "explain", false, "explain current inputs and local cache without network or VMs")
+	fs.BoolVar(&opts.JSON, "json", false, "JSON output with --explain")
 	fs.BoolVar(&opts.NoCache, "no-cache", false, "run every step even when a cache entry exists")
 	fs.Var(&cacheFrom, "cache-from", "OCI build cache ref to import (repeatable)")
 	fs.Var(&cacheTo, "cache-to", "OCI build cache ref to export after build (repeatable)")
@@ -95,8 +99,18 @@ func handleBuild(args []string) (err error) {
 	if opts.Push && len(opts.Tags) == 0 {
 		return fmt.Errorf("cove build: --push requires at least one --tag")
 	}
+	if opts.JSON && !opts.Explain {
+		return fmt.Errorf("build: --json requires --explain")
+	}
 	ctx := context.Background()
 	blobStore := store.New(opts.StoreDir)
+	if opts.Explain {
+		out, err := explainBuild(ctx, posArgs[0], opts, blobStore)
+		if err != nil {
+			return err
+		}
+		return printBuildExplanation(os.Stdout, out, opts.JSON)
+	}
 	plan, err := buildPlanWithoutCache(ctx, posArgs[0], opts, http.DefaultClient)
 	if err != nil {
 		return err
@@ -171,6 +185,8 @@ func splitBuildArgs(args []string) (flagArgs, posArgs []string, err error) {
 	boolFlags := map[string]bool{
 		"push":              true,
 		"dry-run":           true,
+		"explain":           true,
+		"json":              true,
 		"no-cache":          true,
 		"keep-intermediate": true,
 	}
@@ -444,6 +460,8 @@ Flags:
   --tag <ref>               Output image tag. Repeat for multiple tags.
   --push                    Push output tags after build.
   --dry-run                 Print the resolved build plan and cache keys only.
+  --explain                 Explain declared inputs and local cache without network or VMs.
+  --json                    JSON explanation output (requires --explain).
   --no-cache                Re-run every step instead of restoring cached layers.
   --cache-from <ref>        Import an OCI build cache before cache hit evaluation. Repeatable.
   --cache-to <ref>          Export build cache entries after a successful build. Repeatable.
