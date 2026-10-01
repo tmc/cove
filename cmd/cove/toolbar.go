@@ -510,6 +510,10 @@ func (t *VMToolbar) UpdateState(state vz.VZVirtualMachineState) {
 	paused := state == vz.VZVirtualMachineStatePaused
 	stopped := state == vz.VZVirtualMachineStateStopped
 	busy := isVMStateBusy(state)
+	if !running && t.captureEnabled {
+		t.captureEnabled = false
+		t.vmView.SetCapturesSystemKeys(false)
+	}
 
 	// During installation, disable all VM control items.
 	// Only screenshot and shared folder remain usable.
@@ -531,7 +535,6 @@ func (t *VMToolbar) UpdateState(state vz.VZVirtualMachineState) {
 		item.SetEnabled((running || paused) && !busy)
 	}
 	if item, ok := t.items[toolbarIDStartPause]; ok {
-		item.SetEnabled(!busy)
 		if running {
 			img := appkit.NewImageWithSystemSymbolNameAccessibilityDescription("pause.fill", "Pause")
 			item.SetImage(&img)
@@ -545,9 +548,10 @@ func (t *VMToolbar) UpdateState(state vz.VZVirtualMachineState) {
 		} else {
 			img := appkit.NewImageWithSystemSymbolNameAccessibilityDescription("play.fill", "Start")
 			item.SetImage(&img)
-			item.SetLabel("Start")
-			item.SetToolTip("Start")
+			item.SetLabel(vmRunStateTitle(state))
+			item.SetToolTip(vmRunStateTitle(state))
 		}
+		item.SetEnabled(vmRunStateEnabled(state))
 	}
 	if item, ok := t.items[toolbarIDRestart]; ok {
 		item.SetEnabled(running && !busy)
@@ -556,9 +560,7 @@ func (t *VMToolbar) UpdateState(state vz.VZVirtualMachineState) {
 		item.SetEnabled((running || paused || stopped) && !busy)
 	}
 	if item, ok := t.items[toolbarIDCaptureInput]; ok {
-		item.SetEnabled(running && !busy)
-		if !running && t.captureEnabled {
-			t.captureEnabled = false
+		if !running {
 			img := appkit.NewImageWithSystemSymbolNameAccessibilityDescription("keyboard", "Capture Input")
 			item.SetImage(&img)
 			item.SetLabel("Capture Input")
@@ -569,6 +571,7 @@ func (t *VMToolbar) UpdateState(state vz.VZVirtualMachineState) {
 			item.SetLabel("Release Input (Ctrl-Opt)")
 			item.SetToolTip("Release Input (Ctrl-Opt)")
 		}
+		item.SetEnabled(running && !busy)
 	}
 	if item, ok := t.items[toolbarIDScreenshot]; ok {
 		item.SetEnabled(running && !busy)

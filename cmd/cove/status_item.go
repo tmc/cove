@@ -308,6 +308,10 @@ func statusItemStatePresentation(state vz.VZVirtualMachineState) statusItemPrese
 		return statusItemPresentation{Prefix: "Up:", Label: "starting", Busy: true}
 	case vz.VZVirtualMachineStateStopping:
 		return statusItemPresentation{Prefix: "Dn:", Label: "stopping", Busy: true}
+	case vz.VZVirtualMachineStatePausing:
+		return statusItemPresentation{Prefix: "Pau:", Label: "pausing", Busy: true}
+	case vz.VZVirtualMachineStateResuming:
+		return statusItemPresentation{Prefix: "Res:", Label: "resuming", Busy: true}
 	case vz.VZVirtualMachineStateSaving:
 		return statusItemPresentation{Prefix: "Sav:", Label: "saving", Busy: true}
 	case vz.VZVirtualMachineStateRestoring:
