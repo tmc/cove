@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/tmc/cove/internal/mutationguard"
+	"github.com/tmc/cove/internal/storagepins"
 	"github.com/tmc/cove/internal/vmconfig"
 )
 
@@ -65,6 +66,10 @@ func DeleteVMWithOptions(name string, opts DeleteVMOptions) error {
 }
 
 func deleteVMWithOptionsLocked(guard *mutationguard.Guard, name string, opts DeleteVMOptions) error {
+	return deleteVMWithOptionsGuarded(guard, name, opts, defaultVMDeletionDeps())
+}
+
+func deleteVMWithOptionsGuarded(guard *mutationguard.Guard, name string, opts DeleteVMOptions, deps vmDeletionDeps) error {
 	vmPath := vmconfig.Path(name)
 	info, err := os.Stat(vmPath)
 	if err != nil {
@@ -84,6 +89,11 @@ func deleteVMWithOptionsLocked(guard *mutationguard.Guard, name string, opts Del
 	if isVMRunningAt(vmPath) && !waitForVMNotRunning(vmPath, 3*time.Second) {
 		return fmt.Errorf("cannot delete VM %q: it is currently running\n  request stop: cove ctl -vm %s request-stop\n  check status: cove list\n  if still running: cove ctl -vm %s stop\n  then retry: cove vm delete %s", name, name, name, name)
 	}
+	lock, err := admitVMDeletion(guard, name, vmPath, deps)
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
 
 	children, err := childVMNames(name)
 	if err != nil {
@@ -96,7 +106,7 @@ func deleteVMWithOptionsLocked(guard *mutationguard.Guard, name string, opts Del
 		// Cascade: delete children first. This refuses if any child
 		// is itself running, surfacing the original error.
 		for _, child := range children {
-			if err := deleteVMWithOptionsLocked(guard, child, opts); err != nil {
+			if err := deleteVMWithOptionsGuarded(guard, child, opts, deps); err != nil {
 				return fmt.Errorf("cascade delete child '%s': %w", child, err)
 			}
 		}
@@ -108,6 +118,18 @@ func deleteVMWithOptionsLocked(guard *mutationguard.Guard, name string, opts Del
 		fmt.Printf("Deleting orphan VM directory '%s' (no disk image found)...\n", name)
 	} else {
 		fmt.Printf("Deleting VM '%s'...\n", name)
+	}
+	if live, err := deps.live(vmPath); err != nil {
+		return fmt.Errorf("recheck vm deletion owner: %w", err)
+	} else if live {
+		return fmt.Errorf("vm %q has a live runtime owner; retained", name)
+	}
+	if err := checkVMDeletionFileHolders(vmPath, deps.holders); err != nil {
+		return err
+	}
+	current, err := os.Stat(vmPath)
+	if err != nil || !os.SameFile(info, current) {
+		return fmt.Errorf("vm deletion directory identity changed; retained")
 	}
 	if err := os.RemoveAll(vmPath); err != nil {
 		return fmt.Errorf("delete VM: %w", err)
@@ -178,6 +200,15 @@ func RenameVM(oldName, newName string) error {
 
 	oldPath := vmconfig.Path(oldName)
 	newPath := vmconfig.Path(newName)
+	pins, err := storagepins.Load(coveRoot())
+	if err != nil {
+		return fmt.Errorf("load vm rename pins: %w", err)
+	}
+	for _, name := range []string{oldName, newName, vmconfig.NameForPath(oldPath), vmconfig.NameForPath(newPath)} {
+		if pins.IsPinned("vm", vmconfig.NameForPath(name)) {
+			return fmt.Errorf("vm %q is pinned; rename refused", name)
+		}
+	}
 
 	if !vmconfig.Validate(oldPath) {
 		return fmt.Errorf("%w: %s\n  list VMs: cove list\n  create a VM: cove up -user <name>", ErrVMNotFound, oldName)
