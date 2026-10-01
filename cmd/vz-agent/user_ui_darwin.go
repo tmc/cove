@@ -103,7 +103,7 @@ func (b *darwinUIBackend) Status(ctx context.Context) *pb.UIStatus {
 		}
 		return cf.CFBooleanGetValue(cf.CFBooleanRef(uintptr(value))), true
 	}
-	onConsole, onConsoleKnown := boolean("kCGSessionOnConsoleKey")
+	onConsole, onConsoleKnown := boolean("kCGSSessionOnConsoleKey")
 	loggedIn, loginKnown := boolean("kCGSessionLoginDoneKey")
 	if !onConsoleKnown || !loginKnown || !onConsole || !loggedIn {
 		status.State = "no_user_session"
