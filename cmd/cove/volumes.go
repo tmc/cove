@@ -444,15 +444,27 @@ func mountTaggedVolumesOnce(ctx context.Context, cs *ControlServer, tagged []vmc
 						}
 						continue
 					}
-					// Dead/stale mount point: force unmount
+					// Permission failures and lost RPCs do not establish a stale mount.
+					if probeErr != nil || probeResult == nil || !staleMountError(string(probeResult.Stderr)) {
+						if verbose {
+							fmt.Printf("  %s at %s: access probe failed; leaving mount in place\n", m.Tag, mountPoint)
+						}
+						continue
+					}
 					if verbose {
 						fmt.Printf("  %s at %s is dead/stale; recovering...\n", m.Tag, mountPoint)
 					}
 					cs.mu.Lock()
 					umountCtx, umountCancel := context.WithTimeout(ctx, 10*time.Second)
-					_, _ = a.Exec(umountCtx, []string{"umount", "-f", mountPoint}, nil, "")
+					unmountResult, unmountErr := a.Exec(umountCtx, []string{"umount", "-f", mountPoint}, nil, "")
 					umountCancel()
 					cs.mu.Unlock()
+					if unmountErr != nil || unmountResult == nil || unmountResult.ExitCode != 0 {
+						fmt.Printf("  auto-mount %s: stale mount could not be unmounted; will retry\n", m.Tag)
+						continue
+					}
+				} else {
+					continue
 				}
 			}
 		}
@@ -473,11 +485,16 @@ func mountTaggedVolumesOnce(ctx context.Context, cs *ControlServer, tagged []vmc
 		}
 		cs.mu.Lock()
 		mkdirCtx, mkdirCancel := context.WithTimeout(ctx, 10*time.Second)
-		_, mkdirErr := a.Exec(mkdirCtx, []string{"mkdir", "-p", mountPoint}, nil, "")
+		mkdirResult, mkdirErr := a.Exec(mkdirCtx, []string{"mkdir", "-p", mountPoint}, nil, "")
 		mkdirCancel()
 		cs.mu.Unlock()
 		if mkdirErr != nil {
 			fmt.Printf("  auto-mount %s: mkdir failed: %v\n", m.Tag, mkdirErr)
+			continue
+		}
+
+		if mkdirResult == nil || mkdirResult.ExitCode != 0 {
+			fmt.Printf("  auto-mount %s: could not create mount point %s\n", m.Tag, mountPoint)
 			continue
 		}
 
@@ -508,6 +525,20 @@ func mountTaggedVolumesOnce(ctx context.Context, cs *ControlServer, tagged []vmc
 			go warnWhenTCCFDABlocked(ctx, mountPoint)
 		}
 	}
+}
+
+func staleMountError(stderr string) bool {
+	for _, message := range []string{
+		"Input/output error",
+		"Device not configured",
+		"Transport endpoint is not connected",
+		"Stale file handle",
+	} {
+		if strings.Contains(stderr, message) {
+			return true
+		}
+	}
+	return false
 }
 
 func warnWhenTCCFDABlocked(ctx context.Context, guestPath string) {

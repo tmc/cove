@@ -264,3 +264,25 @@ func assertDoesNotPanic(t *testing.T, fn func()) {
 	}()
 	fn()
 }
+
+func TestStaleMountError(t *testing.T) {
+	for _, tt := range []struct {
+		name, input string
+		want        bool
+	}{
+		{"permission", "ls: /Volumes/work: Operation not permitted", false},
+		{"unix permission", "ls: /mnt/work: Permission denied", false},
+		{"missing", "ls: /mnt/work: No such file or directory", false},
+		{"empty", "", false},
+		{"io", "ls: /Volumes/work: Input/output error", true},
+		{"device", "ls: /Volumes/work: Device not configured", true},
+		{"transport", "ls: /mnt/work: Transport endpoint is not connected", true},
+		{"stale", "ls: /mnt/work: Stale file handle", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := staleMountError(tt.input); got != tt.want {
+				t.Fatalf("staleMountError(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
