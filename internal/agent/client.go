@@ -413,6 +413,7 @@ func (c *AgentClient) CopyToGuest(ctx context.Context, localPath, guestPath stri
 				return fmt.Errorf("send data: %w", sendErr)
 			}
 			sent += int64(n)
+			reportCopyProgress(ctx, sent, total)
 			if now := time.Now(); now.Sub(lastLog) >= 3*time.Second {
 				logCopyProgress(localPath, sent, total, start)
 				lastLog = now
@@ -461,6 +462,7 @@ func (c *AgentClient) CopyReaderToGuest(ctx context.Context, r io.Reader, guestP
 				return fmt.Errorf("send data: %w", sendErr)
 			}
 			sent += int64(n)
+			reportCopyProgress(ctx, sent, 0)
 			if now := time.Now(); now.Sub(lastLog) >= 3*time.Second {
 				logCopyProgress(guestPath, sent, 0, start)
 				lastLog = now
@@ -499,12 +501,15 @@ func (c *AgentClient) CopyWriterFromGuest(ctx context.Context, guestPath string,
 		return fmt.Errorf("expected init message")
 	}
 
+	var received int64
 	for stream.Receive() {
 		chunk := stream.Msg()
 		if data := chunk.GetData(); len(data) > 0 {
 			if _, err := w.Write(data); err != nil {
 				return fmt.Errorf("write: %w", err)
 			}
+			received += int64(len(data))
+			reportCopyProgress(ctx, received, int64(first.GetInit().TotalSize))
 		}
 	}
 	if err := stream.Err(); err != nil {
@@ -552,12 +557,15 @@ func (c *AgentClient) CopyFromGuest(ctx context.Context, guestPath, localPath st
 		}
 	}()
 
+	var received int64
 	for stream.Receive() {
 		chunk := stream.Msg()
 		if data := chunk.GetData(); len(data) > 0 {
 			if _, err := f.Write(data); err != nil {
 				return fmt.Errorf("write local: %w", err)
 			}
+			received += int64(len(data))
+			reportCopyProgress(ctx, received, int64(init.TotalSize))
 		}
 	}
 	if err := stream.Err(); err != nil {

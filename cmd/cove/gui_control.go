@@ -175,7 +175,7 @@ func controllerWindowTitle(target vmSelection) string {
 }
 
 func (c *vmGUIController) newVMView() vz.VZVirtualMachineView {
-	vmView := vz.NewVZVirtualMachineView()
+	vmView := newCopyDropVMView(c.vmDirectory)
 	vmView.SetVirtualMachine(&c.vm)
 	vmView.SetCapturesSystemKeys(false)
 	vmView.SetAutomaticallyReconfiguresDisplay(true)

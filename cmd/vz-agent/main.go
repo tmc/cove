@@ -45,6 +45,10 @@ func main() {
 	mode := flag.String("mode", "", "run mode: daemon (root, port 1024) or agent (user, port 1025)")
 	port := flag.Int("port", 0, "vsock port to listen on (overrides mode default)")
 	tcpListen := flag.String("tcp-listen", os.Getenv("VZ_AGENT_TCP_LISTEN"), "TCP address to listen on (windows default :port)")
+	copyPublishCapable := flag.Bool("copy-publish-capable", false, "report atomic copy publication support and exit")
+	copyPublish := flag.String("copy-publish", "", "publish a staged copy and exit")
+	copyDestination := flag.String("copy-destination", "", "destination for copy-publish")
+	copyOverwrite := flag.Bool("copy-overwrite", false, "replace the destination of copy-publish")
 	showVersion := flag.Bool("version", false, "print version information")
 	clipboardGet := flag.Bool("clipboard-get", false, "print the user clipboard as UTF-8 text and exit")
 	clipboardSetBase64 := flag.String("clipboard-set-base64", "", "set the user clipboard from base64 UTF-8 text and exit")
@@ -58,6 +62,17 @@ func main() {
 	flag.Var(&udpReverseRelays, "udp-reverse-relay", "reverse UDP relay: udpPort:vsockPort (e.g. 5353:25353)")
 	flag.Parse()
 
+	if *copyPublishCapable {
+		fmt.Println("true")
+		return
+	}
+	if *copyPublish != "" {
+		if err := publishAgentCopy(*copyPublish, *copyDestination, *copyOverwrite); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if *showVersion {
 		fmt.Println(agentVersionInfo())
 		return

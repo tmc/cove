@@ -7,10 +7,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
+	agentstate "github.com/tmc/cove/internal/agent"
 	"github.com/tmc/cove/internal/vmconfig"
 	controlpb "github.com/tmc/cove/proto/controlpb"
 )
@@ -45,7 +48,9 @@ type qemuWindowsCpAgent struct {
 }
 
 func handleCpCommand(args []string) error {
-	return runCp(context.Background(), args, newControlCpAgent)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+	return runCp(ctx, args, newControlCpAgent)
 }
 
 func runCp(ctx context.Context, args []string, newAgent func(string) cpAgent) error {
@@ -74,6 +79,22 @@ func runCp(ctx context.Context, args []string, newAgent func(string) cpAgent) er
 		return err
 	}
 	agent := newAgent(spec.VM)
+	var progressMu sync.Mutex
+	var lastProgress time.Time
+	ctx = agentstate.WithCopyProgress(ctx, func(bytes, total int64) {
+		progressMu.Lock()
+		defer progressMu.Unlock()
+		now := time.Now()
+		if now.Sub(lastProgress) < time.Second && (total == 0 || bytes < total) {
+			return
+		}
+		lastProgress = now
+		if total > 0 {
+			fmt.Fprintf(os.Stderr, "Copying… %d of %d bytes transferred\n", bytes, total)
+		} else {
+			fmt.Fprintf(os.Stderr, "Copying… %d bytes transferred\n", bytes)
+		}
+	})
 	switch spec.Direction {
 	case cpHostToGuest:
 		return agent.CopyToGuest(ctx, spec.HostPath, spec.GuestPath, force)
@@ -92,6 +113,7 @@ Copy files between the host and a running guest through the VM control socket.
 The VM selected by -vm must match the vm:/path endpoint when both are present.
 The -vm and -f flags may appear before or after the copy operands.
 For Windows QEMU VMs, use vm:/C:/path or vm:/c/path for guest paths.
+Copies show progress; press Ctrl-C to cancel the transfer.
 
 Examples:
   cove cp ./app.log work-vm:/tmp/app.log
@@ -246,7 +268,7 @@ func newControlCpAgent(vm string) cpAgent {
 	return controlCpAgent{client: client, vm: vm}
 }
 
-func (a qemuWindowsCpAgent) CopyToGuest(ctx context.Context, hostPath, guestPath string, _ bool) error {
+func (a qemuWindowsCpAgent) CopyToGuest(ctx context.Context, hostPath, guestPath string, overwrite bool) error {
 	if strings.TrimSpace(a.address) == "" {
 		return fmt.Errorf("cp: qemu windows agent endpoint is unavailable for %q", a.vm)
 	}
@@ -259,7 +281,24 @@ func (a qemuWindowsCpAgent) CopyToGuest(ctx context.Context, hostPath, guestPath
 		return err
 	}
 	defer client.Close()
-	return client.CopyToGuest(ctx, hostPath, path, 0644)
+	stage := path + fmt.Sprintf(".cove-copy-%d", time.Now().UnixNano())
+	defer func() {
+		cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		client.Exec(cleanup, []string{"powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "Remove-Item -LiteralPath '" + psSingleQuote(stage) + "' -Force -ErrorAction SilentlyContinue"}, nil, "")
+	}()
+	if err := client.CopyToGuest(ctx, hostPath, stage, 0644); err != nil {
+		return err
+	}
+	script := windowsCopyPublishScript(stage, path, overwrite)
+	result, err := client.Exec(ctx, []string{"powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script}, nil, "")
+	if err != nil {
+		return fmt.Errorf("cp publish: %w", err)
+	}
+	if result.ExitCode != 0 {
+		return fmt.Errorf("cp publish: %s", strings.TrimSpace(string(result.Stderr)))
+	}
+	return nil
 }
 
 func (a qemuWindowsCpAgent) CopyFromGuest(ctx context.Context, guestPath, hostPath string, overwrite bool) error {
@@ -279,7 +318,7 @@ func (a qemuWindowsCpAgent) CopyFromGuest(ctx context.Context, guestPath, hostPa
 		return err
 	}
 	defer client.Close()
-	return client.CopyFromGuest(ctx, path, hostPath)
+	return copyFileToHost(ctx, hostPath, overwrite, func(dest string) error { return client.CopyFromGuest(ctx, path, dest) })
 }
 
 func normalizeWindowsQEMUCopyPath(path string) (string, error) {
@@ -297,12 +336,14 @@ func isASCIILetter(b byte) bool {
 	return ('a' <= b && b <= 'z') || ('A' <= b && b <= 'Z')
 }
 
-func (a controlCpAgent) CopyToGuest(_ context.Context, hostPath, guestPath string, overwrite bool) error {
+func (a controlCpAgent) CopyToGuest(ctx context.Context, hostPath, guestPath string, overwrite bool) error {
+	ctx, cancel := context.WithTimeout(ctx, a.client.Timeout())
+	defer cancel()
 	if _, err := requireExistingVMForControl(a.vm); err != nil {
 		return err
 	}
 	req := &controlpb.ControlRequest{
-		Type: "agent-cp",
+		Type: "agent-cp-stream",
 		Command: &controlpb.ControlRequest_AgentCp{AgentCp: &controlpb.AgentCopyCommand{
 			HostPath:  hostPath,
 			GuestPath: guestPath,
@@ -310,7 +351,7 @@ func (a controlCpAgent) CopyToGuest(_ context.Context, hostPath, guestPath strin
 			Overwrite: overwrite,
 		}},
 	}
-	resp, err := a.client.sendRequest(req)
+	resp, err := a.client.SendRequestProgressCtx(ctx, req, func(status string) { fmt.Fprintln(os.Stderr, status) })
 	if err != nil {
 		return err
 	}
@@ -327,12 +368,14 @@ func (a controlCpAgent) CopyToGuest(_ context.Context, hostPath, guestPath strin
 	return nil
 }
 
-func (a controlCpAgent) CopyFromGuest(_ context.Context, guestPath, hostPath string, overwrite bool) error {
+func (a controlCpAgent) CopyFromGuest(ctx context.Context, guestPath, hostPath string, overwrite bool) error {
+	ctx, cancel := context.WithTimeout(ctx, a.client.Timeout())
+	defer cancel()
 	if _, err := requireExistingVMForControl(a.vm); err != nil {
 		return err
 	}
 	req := &controlpb.ControlRequest{
-		Type: "agent-cp",
+		Type: "agent-cp-stream",
 		Command: &controlpb.ControlRequest_AgentCp{AgentCp: &controlpb.AgentCopyCommand{
 			HostPath:  hostPath,
 			GuestPath: guestPath,
@@ -340,7 +383,7 @@ func (a controlCpAgent) CopyFromGuest(_ context.Context, guestPath, hostPath str
 			Overwrite: overwrite,
 		}},
 	}
-	resp, err := a.client.sendRequest(req)
+	resp, err := a.client.SendRequestProgressCtx(ctx, req, func(status string) { fmt.Fprintln(os.Stderr, status) })
 	if err != nil {
 		return err
 	}

@@ -1949,7 +1949,7 @@ func runVMWithGUI(vm vz.VZVirtualMachine, queue dispatch.Queue, bundle *RunBundl
 	}
 
 	// Create VM view
-	vmView := vz.NewVZVirtualMachineView()
+	vmView := newCopyDropVMView(hc.VMDir)
 	vmView.SetVirtualMachine(&vm)
 	vmView.SetCapturesSystemKeys(false) // start with system keys going to macOS; toggle via toolbar (Cmd+K)
 	vmView.SetAutomaticallyReconfiguresDisplay(true)

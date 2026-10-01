@@ -57,7 +57,16 @@ func TestGuestCopyInstall(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			out, err := exec.Command("/bin/sh", "-c", guestCopyInstallScript, "test", dir, dest, src, "640", strconv.FormatBool(tt.overwrite)).CombinedOutput()
+			helper := filepath.Join(dir, "copy-helper")
+			executable, err := os.Executable()
+			if err != nil {
+				t.Fatal(err)
+			}
+			script := "#!/bin/sh\nif [ \"$1\" = -copy-publish-capable ]; then exit 0; fi\nexport COVE_COPY_TEST_STAGE=\"$2\" COVE_COPY_TEST_DEST=\"$4\" COVE_COPY_TEST_OVERWRITE=\"$5\"\nexec \"" + executable + "\" -test.run=^TestGuestCopyPublishHelper$\n"
+			if err := os.WriteFile(helper, []byte(script), 0700); err != nil {
+				t.Fatal(err)
+			}
+			out, err := exec.Command("/bin/sh", "-c", guestCopyInstallScript, "test", dir, dest, src, "640", strconv.FormatBool(tt.overwrite), helper, filepath.Join(dir, ".cove-copy-stage")).CombinedOutput()
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("install error = %v, want error %v: %s", err, tt.wantErr, out)
 			}
@@ -111,4 +120,15 @@ func TestCopyRequiresUserAgent(t *testing.T) {
 	if !strings.Contains(response.Error, "copy requires the guest user agent") {
 		t.Fatal(response)
 	}
+}
+
+func TestGuestCopyPublishHelper(t *testing.T) {
+	stage := os.Getenv("COVE_COPY_TEST_STAGE")
+	if stage == "" {
+		return
+	}
+	if err := publishCopy(stage, os.Getenv("COVE_COPY_TEST_DEST"), os.Getenv("COVE_COPY_TEST_OVERWRITE") == "-copy-overwrite"); err != nil {
+		os.Exit(1)
+	}
+	os.Exit(0)
 }

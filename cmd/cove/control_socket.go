@@ -431,6 +431,10 @@ func (s *ControlServer) Authorize(token string) bool {
 }
 
 func (s *ControlServer) HandleStream(conn net.Conn, req *controlpb.ControlRequest, raw []byte) (bool, bool) {
+	if req.Type == "agent-cp-stream" {
+		s.handleCopyStream(conn, req)
+		return true, true
+	}
 	if req.Type == "agent-exec-stream" || req.Type == "agent-user-exec-stream" {
 		if err := conn.SetDeadline(time.Time{}); err != nil {
 			return true, true

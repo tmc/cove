@@ -122,6 +122,11 @@ func (c *Client) SendRequest(req *controlpb.ControlRequest) (*controlpb.ControlR
 
 // SendRequestCtx sends a proto request and returns the proto response.
 func (c *Client) SendRequestCtx(ctx context.Context, req *controlpb.ControlRequest) (*controlpb.ControlResponse, error) {
+	return c.SendRequestProgressCtx(ctx, req, nil)
+}
+
+// SendRequestProgressCtx reports copy status frames while waiting for a final response.
+func (c *Client) SendRequestProgressCtx(ctx context.Context, req *controlpb.ControlRequest, progress func(string)) (*controlpb.ControlResponse, error) {
 	var d net.Dialer
 	conn, err := d.DialContext(ctx, "unix", c.socketPath)
 	if err != nil {
@@ -162,25 +167,38 @@ func (c *Client) SendRequestCtx(ctx context.Context, req *controlpb.ControlReque
 
 	// Read response
 	reader := bufio.NewReaderSize(conn, 256*1024)
-	respLine, err := reader.ReadString('\n')
-	if err != nil {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
+	for {
+		respLine, err := reader.ReadString('\n')
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			if timeoutErr, ok := err.(net.Error); ok && timeoutErr.Timeout() {
+				if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
+					return nil, context.DeadlineExceeded
+				}
+			}
+			return nil, fmt.Errorf("control %q: read: %w", req.Type, err)
 		}
-		if timeoutErr, ok := err.(net.Error); ok && timeoutErr.Timeout() {
-			if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
-				return nil, context.DeadlineExceeded
+
+		var resp controlpb.ControlResponse
+		if err := control.ProtoJSONUnmarshaler.Unmarshal([]byte(respLine), &resp); err != nil {
+			return nil, fmt.Errorf("control %q: parse: %w", req.Type, err)
+		}
+
+		if req.Type == "agent-cp-stream" {
+			var frame struct {
+				CopyProgress string `json:"copyProgress"`
+			}
+			if json.Unmarshal([]byte(resp.Data), &frame) == nil && frame.CopyProgress != "" {
+				if progress != nil {
+					progress(frame.CopyProgress)
+				}
+				continue
 			}
 		}
-		return nil, fmt.Errorf("control %q: read: %w", req.Type, err)
+		return &resp, nil
 	}
-
-	var resp controlpb.ControlResponse
-	if err := control.ProtoJSONUnmarshaler.Unmarshal([]byte(respLine), &resp); err != nil {
-		return nil, fmt.Errorf("control %q: parse: %w", req.Type, err)
-	}
-
-	return &resp, nil
 }
 
 func (c *Client) Timeout() time.Duration {
