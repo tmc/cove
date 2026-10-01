@@ -26,16 +26,18 @@ type GUISession struct {
 
 // AgentHealthState tracks proactive agent health monitoring.
 type AgentHealthState struct {
-	DaemonStatus     string // "connected", "disconnected", "reconnecting"
-	UserStatus       string // "connected", "disconnected", "unknown"
-	GUISession       GUISession
-	GUISessionActive bool
-	LastPing         time.Time // last successful daemon ping
-	DisconnectAt     time.Time // first ping failure since the last successful ping; zero when connected
-	LastErr          string    // last ping error (empty if healthy)
-	Version          string    // agent version from last successful ping
-	VersionChecked   bool      // true after first version comparison
-	UpgradeAttempted bool      // true after auto-upgrade attempt
+	DaemonStatus         string // "connected", "disconnected", "reconnecting"
+	UserStatus           string // "connected", "disconnected", "unknown"
+	GUISession           GUISession
+	GUISessionActive     bool
+	LastPing             time.Time // last successful daemon ping
+	LastUserPing         time.Time // last successful user execution probe
+	ConnectionGeneration uint64
+	DisconnectAt         time.Time // first ping failure since the last successful ping; zero when connected
+	LastErr              string    // last ping error (empty if healthy)
+	Version              string    // agent version from last successful ping
+	VersionChecked       bool      // true after first version comparison
+	UpgradeAttempted     bool      // true after auto-upgrade attempt
 }
 
 // AgentHealthSummary returns a short status string suitable for UI

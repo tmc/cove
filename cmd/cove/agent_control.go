@@ -253,6 +253,12 @@ func (s *ControlServer) handleAgentCommand(req *controlpb.ControlRequest) (resp 
 			return &controlpb.ControlResponse{Error: "missing agent-read command payload"}, true
 		}
 		return s.handleAgentRead(cmd), true
+	case "agent-upgrade-stage":
+		cmd := req.GetAgentCp()
+		if cmd == nil {
+			return &controlpb.ControlResponse{Error: "missing upgrade stage payload"}, true
+		}
+		return s.handleAgentUpgradeStage(cmd.HostPath), true
 	case "agent-write":
 		cmd := req.GetAgentWrite()
 		if cmd == nil {
@@ -337,6 +343,7 @@ func (s *ControlServer) handleAgentConnect() *controlpb.ControlResponse {
 
 func (s *ControlServer) handleAgentStatus() *controlpb.ControlResponse {
 	h := s.bridge.HealthSnapshot()
+	now := time.Now()
 	info := resolvedVersion()
 
 	status := map[string]any{
@@ -348,10 +355,15 @@ func (s *ControlServer) handleAgentStatus() *controlpb.ControlResponse {
 		"clipboard":      s.clipboardStatus(),
 		"runtimeVersion": map[string]string{"version": info.Version, "commit": info.Commit, "date": info.Date},
 		"readiness": map[string]any{
-			"daemon":     h.DaemonStatus == "connected",
-			"user":       h.UserStatus == "connected",
-			"guiSession": h.GUISessionActive,
-			"unlocked":   "unknown",
+			"daemon":               h.DaemonStatus == "connected" && agentObservationFresh(h.LastPing, now),
+			"user":                 h.DaemonStatus == "connected" && h.UserStatus == "connected" && agentObservationFresh(h.LastPing, now) && agentObservationFresh(h.LastUserPing, now),
+			"guiSession":           h.GUISessionActive,
+			"unlocked":             "unknown",
+			"connectionGeneration": h.ConnectionGeneration,
+			"daemonObservedAt":     h.LastPing.Format(time.RFC3339Nano),
+			"userObservedAt":       h.LastUserPing.Format(time.RFC3339Nano),
+			"maxAgeSeconds":        45,
+			"policy":               "recent successful probes; task admission requires fresh execution checks",
 		},
 		"agentVersions": map[string]string{"daemon": h.Version, "user": "unknown"},
 	}
@@ -375,6 +387,11 @@ func (s *ControlServer) handleAgentStatus() *controlpb.ControlResponse {
 		Data:    string(data),
 		Result:  &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: string(data)}},
 	}
+}
+
+func agentObservationFresh(observed, now time.Time) bool {
+	age := now.Sub(observed)
+	return !observed.IsZero() && age >= 0 && age <= 45*time.Second
 }
 
 // defaultAgentHealthInterval is the tick cadence the agent health monitor
@@ -1355,3 +1372,42 @@ else
     /usr/local/bin/vz-agent -copy-publish "$stage" -copy-destination "$dest"
 fi
 `
+
+func (s *ControlServer) handleAgentUpgradeStage(hostPath string) *controlpb.ControlResponse {
+	info, err := os.Stat(hostPath)
+	if err != nil || !info.Mode().IsRegular() {
+		return &controlpb.ControlResponse{Error: "upgrade binary must be a regular file"}
+	}
+	a, err := s.getAgent()
+	if err != nil {
+		return &controlpb.ControlResponse{Error: err.Error()}
+	}
+	ctx, cancel := s.timeoutContext(2 * time.Minute)
+	defer cancel()
+	rootTmp := "/var/root/tmp"
+	if linuxMode {
+		rootTmp = "/root/tmp"
+	}
+	result, err := a.Exec(ctx, []string{"/bin/sh", "-c", `set -eu; umask 077; mkdir -p "$1"; mktemp -d "$1/cove-agent-upgrade.XXXXXXXX"`, "cove-upgrade-stage", rootTmp}, nil, "")
+	if err != nil {
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("create upgrade stage: %v", err)}
+	}
+	if result == nil {
+		return &controlpb.ControlResponse{Error: "upgrade staging returned no execution result"}
+	}
+	if result.ExitCode != 0 {
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("create upgrade stage: exit %d: %.4096s", result.ExitCode, result.Stderr)}
+	}
+	dir := strings.TrimSpace(string(result.Stdout))
+	if !path.IsAbs(dir) || !strings.HasPrefix(path.Base(dir), "cove-agent-upgrade.") || strings.ContainsAny(dir, "\r\n") {
+		return &controlpb.ControlResponse{Error: "invalid upgrade staging directory"}
+	}
+	staged := path.Join(dir, "vz-agent")
+	if err := a.CopyToGuest(ctx, hostPath, staged, 0755); err != nil {
+		cleanup, done := s.timeoutContext(5 * time.Second)
+		defer done()
+		a.Exec(cleanup, []string{"/bin/rm", "-rf", dir}, nil, "")
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("stage upgrade binary: %v", err)}
+	}
+	return &controlpb.ControlResponse{Success: true, Data: staged, Result: &controlpb.ControlResponse_AgentFile{AgentFile: &controlpb.AgentFileResponse{Message: staged}}}
+}

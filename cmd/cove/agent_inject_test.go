@@ -140,7 +140,9 @@ func TestAgentUpgradeReconnectBudget(t *testing.T) {
 		"agent installed and restart requested",
 		"within 95s",
 		"tried 30 reconnects",
-		"retry cove ctl agent-ping or cove agent-upgrade",
+		"reconcile installed version and agent process state",
+		"cove ctl agent-ping",
+		"do not repeat agent-upgrade until the previous outcome is established",
 	} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("agentUpgradeReconnectTimeoutMessage() = %q, missing %q", msg, want)

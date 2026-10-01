@@ -812,34 +812,56 @@ func upgradeAgentAt(sock string) error {
 	targetOS := agentBuildTargetOS(guestOS)
 
 	// Build new agent binary.
-	tmpBinary := filepath.Join(os.TempDir(), agentBinaryName)
-	defer os.Remove(tmpBinary)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("upgrade workspace: %w", err)
+	}
+	workRoot := filepath.Join(home, "tmp")
+	if err := os.MkdirAll(workRoot, 0700); err != nil {
+		return fmt.Errorf("upgrade workspace: %w", err)
+	}
+	workDir, err := os.MkdirTemp(workRoot, "cove-agent-upgrade-")
+	if err != nil {
+		return fmt.Errorf("upgrade workspace: %w", err)
+	}
+	defer os.RemoveAll(workDir)
+	tmpBinary := filepath.Join(workDir, agentBinaryName)
 	if err := buildAgentBinaryForOS(tmpBinary, targetOS); err != nil {
 		return err
 	}
 
-	// Copy to guest via agent-cp.
+	// Stage through the existing streaming RPC; the installed agent need not
+	// implement the newer copy publication helper.
 	absPath, _ := filepath.Abs(tmpBinary)
-	guestTmpPath := fmt.Sprintf("/tmp/%s-upgrade-%d", agentBinaryName, time.Now().UnixNano())
 	fmt.Println("Copying agent to guest...")
 	cpReq := &controlpb.ControlRequest{
-		Type: "agent-cp",
+		Type: "agent-upgrade-stage",
 		Command: &controlpb.ControlRequest_AgentCp{
 			AgentCp: &controlpb.AgentCopyCommand{
-				HostPath:  absPath,
-				GuestPath: guestTmpPath,
-				ToGuest:   true,
-				Mode:      0755,
+				HostPath: absPath,
+				ToGuest:  true,
+				Mode:     0755,
 			},
 		},
 	}
-	resp, err = ctlSendRequest(sock, cpReq, 2*time.Minute, "agent-cp")
+	resp, err = ctlSendRequest(sock, cpReq, 2*time.Minute, "agent-upgrade-stage")
 	if err != nil {
 		return fmt.Errorf("copy agent: %w", err)
 	}
 	if resp.Error != "" {
 		return fmt.Errorf("copy agent: %s", resp.Error)
 	}
+	if !resp.Success || resp.GetAgentFile() == nil {
+		return fmt.Errorf("upgrade staging returned no path")
+	}
+	guestTmpPath := resp.GetAgentFile().Message
+	if !filepath.IsAbs(guestTmpPath) || filepath.Base(guestTmpPath) != "vz-agent" || !strings.HasPrefix(filepath.Base(filepath.Dir(guestTmpPath)), "cove-agent-upgrade.") {
+		return fmt.Errorf("invalid upgrade stage path")
+	}
+	defer func() {
+		req := &controlpb.ControlRequest{Type: "agent-exec", Command: &controlpb.ControlRequest_AgentExec{AgentExec: &controlpb.AgentExecCommand{Args: []string{"/bin/sh", "-c", `rm -f "$1"; rmdir "$2"`, "cove-upgrade-cleanup", guestTmpPath, filepath.Dir(guestTmpPath)}}}}
+		ctlSendRequest(sock, req, 5*time.Second, "agent-exec")
+	}()
 	fmt.Println("Copied.")
 
 	installReq := &controlpb.ControlRequest{
@@ -888,14 +910,25 @@ func upgradeAgentAt(sock string) error {
 						"sh", "-c",
 						fmt.Sprintf(`uid=$(stat -f %%u /dev/console); `+
 							`if [ -n "$uid" ] && [ "$uid" != "0" ]; then `+
-							`  launchctl asuser "$uid" launchctl kickstart -k "gui/$uid/%s" 2>/dev/null || true; `+
+							`  launchctl kickstart -k "gui/$uid/%s"; `+
 							`fi`, agentLaunchAgentLabel),
 					},
 				},
 			},
 		}
-		if _, err := ctlSendRequest(sock, bounceUserAgent, 10*time.Second, "agent-exec"); err != nil && verbose {
-			fmt.Printf("warning: bounce user agent: %v\n", err)
+		userResp, err := ctlSendRequest(sock, bounceUserAgent, 10*time.Second, "agent-exec")
+		if err != nil {
+			return fmt.Errorf("user agent restart outcome unknown; reconcile service state before retrying: %w", err)
+		}
+		if !userResp.Success {
+			return fmt.Errorf("restart user agent: %s", userResp.Error)
+		}
+		result := userResp.GetAgentExecResult()
+		if result == nil {
+			return fmt.Errorf("user agent restart returned no result")
+		}
+		if result.ExitCode != 0 {
+			return fmt.Errorf("restart user agent: exit %d: %s", result.ExitCode, strings.TrimSpace(result.Stderr))
 		}
 
 		// Restart the agent daemon via launchctl kickstart.
@@ -1236,7 +1269,7 @@ func psSingleQuote(s string) string {
 
 func agentUpgradeReconnectTimeoutMessage() string {
 	window := agentUpgradeReconnectInitialDelay + agentUpgradeReconnectAttempts*agentUpgradeReconnectDelay
-	return fmt.Sprintf("agent installed and restart requested, but agent did not reconnect within %ds (tried %d reconnects); VM may still be restarting the agent, retry cove ctl agent-ping or cove agent-upgrade", int(window/time.Second), agentUpgradeReconnectAttempts)
+	return fmt.Sprintf("agent installed and restart requested, but agent did not reconnect within %ds (tried %d reconnects); upgrade outcome is unknown; reconcile installed version and agent process state with read-only checks and cove ctl agent-ping; do not repeat agent-upgrade until the previous outcome is established", int(window/time.Second), agentUpgradeReconnectAttempts)
 }
 
 func linuxAgentUpgradeRestartScript() string {

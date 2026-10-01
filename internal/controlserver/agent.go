@@ -481,22 +481,32 @@ func (b *AgentBridge) healthCheckOnce(ctx context.Context, failCount *int) {
 		pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		agentVer, err := a.Ping(pingCtx)
 		cancel()
+		b.mu.RLock()
+		if a != b.agent {
+			b.mu.RUnlock()
+			return
+		}
 		if err == nil {
 			*failCount = 0
 			b.MarkAgentConnected(agentVer)
+			b.mu.RUnlock()
 			b.checkAgentVersion(agentVer)
 			b.healthCheckUserAgent(ctx)
 			b.healthCheckGUISession(ctx)
 			return
 		}
+		b.mu.RUnlock()
 		slog.Warn("agent-health: ping failed",
 			"err", err, "attempt", *failCount+1)
 	}
 
+	b.mu.Lock()
+	if a != b.agent {
+		b.mu.Unlock()
+		return
+	}
 	*failCount++
 	b.MarkAgentReconnecting(fmt.Sprintf("ping failed (attempt %d)", *failCount))
-
-	b.mu.Lock()
 	if b.agent != nil {
 		b.agent.Close()
 		b.agent = nil
@@ -517,15 +527,22 @@ func (b *AgentBridge) healthCheckOnce(ctx context.Context, failCount *int) {
 		pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		agentVer, err := a.Ping(pingCtx)
 		cancel()
+		b.mu.RLock()
+		if a != b.agent {
+			b.mu.RUnlock()
+			return
+		}
 		if err == nil {
 			*failCount = 0
 			b.MarkAgentConnected(agentVer)
+			b.mu.RUnlock()
 			b.checkAgentVersion(agentVer)
 			b.healthCheckUserAgent(ctx)
 			b.healthCheckGUISession(ctx)
 			return
 		}
 		b.SetHealthStatus("disconnected", "", fmt.Sprintf("reconnected but ping failed: %v", err))
+		b.mu.RUnlock()
 	}
 }
 
@@ -567,6 +584,8 @@ func (b *AgentBridge) MarkAgentReconnecting(reason string) {
 	if b.health.DisconnectAt.IsZero() {
 		b.health.DisconnectAt = now
 	}
+	b.health.ConnectionGeneration++
+	b.health.LastUserPing = time.Time{}
 	b.health.DaemonStatus = "reconnecting"
 	b.health.UserStatus = "unknown"
 	b.health.GUISession = GUISession{}
@@ -624,47 +643,52 @@ func (b *AgentBridge) checkAgentVersion(agentVer string) {
 }
 
 func (b *AgentBridge) healthCheckUserAgent(ctx context.Context) {
+	generation := b.HealthSnapshot().ConnectionGeneration
 	ua, err := b.GetUserAgent()
 	if err != nil {
-		b.healthMu.Lock()
-		b.health.UserStatus = "disconnected"
-		b.healthMu.Unlock()
+		b.recordUserProbe(generation, false)
 		return
 	}
-
 	pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	_, err = ua.UserExec(pingCtx, []string{"true"}, nil, "")
+	result, err := ua.UserExec(pingCtx, []string{"true"}, nil, "")
 	cancel()
+	b.recordUserProbe(generation, err == nil && result != nil && result.ExitCode == 0)
+}
+
+func (b *AgentBridge) recordUserProbe(generation uint64, success bool) {
 	b.healthMu.Lock()
-	if err == nil {
-		b.health.UserStatus = "connected"
-	} else {
-		b.health.UserStatus = "disconnected"
+	defer b.healthMu.Unlock()
+	if generation != b.health.ConnectionGeneration {
+		return
 	}
-	b.healthMu.Unlock()
+	b.health.LastUserPing = time.Time{}
+	b.health.UserStatus = "disconnected"
+	if success {
+		b.health.UserStatus = "connected"
+		b.health.LastUserPing = b.now()
+	}
 }
 
 func (b *AgentBridge) healthCheckGUISession(ctx context.Context) {
+	generation := b.HealthSnapshot().ConnectionGeneration
 	b.mu.RLock()
 	a := b.agent
 	b.mu.RUnlock()
 	if a == nil || b.host == nil {
 		return
 	}
-
 	session, ok, err := b.host.ProbeGUISession(ctx, a)
 	if err != nil {
 		slog.Debug("agent-health: gui session probe failed", "err", err)
-		b.healthMu.Lock()
-		b.health.GUISession = GUISession{}
-		b.health.GUISessionActive = false
-		b.healthMu.Unlock()
-		return
+		session, ok = GUISession{}, false
 	}
 	b.healthMu.Lock()
+	defer b.healthMu.Unlock()
+	if generation != b.health.ConnectionGeneration {
+		return
+	}
 	b.health.GUISession = session
 	b.health.GUISessionActive = ok
-	b.healthMu.Unlock()
 }
 
 // Summary returns a short status string for UI display. Thread-safe.
@@ -715,6 +739,8 @@ func (b *AgentBridge) SetHealthStatus(status, version, lastErr string) {
 		b.health.LastPing = now
 		b.health.DisconnectAt = time.Time{}
 	case "disconnected", "reconnecting":
+		b.health.ConnectionGeneration++
+		b.health.LastUserPing = time.Time{}
 		b.health.UserStatus = "unknown"
 		b.health.GUISession = GUISession{}
 		b.health.GUISessionActive = false
