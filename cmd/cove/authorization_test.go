@@ -97,11 +97,11 @@ func TestRunElevatedManifestNativeTimesOutWithPromptPending(t *testing.T) {
 	}
 }
 
-func TestRunElevatedManifestNativeTimesOutExecuteWithoutPrompt(t *testing.T) {
+func TestExecuteAuthorizedToolTimesOutWithoutPrompt(t *testing.T) {
 	restore := stubAuthorizationExecute(t, false)
 	defer restore()
 
-	err := runElevatedManifestNative("/tmp/manifest.json", "abc123", "Provision VM")
+	err := executeAuthorizedTool(42, 0, 0)
 	if err == nil {
 		t.Fatal("runElevatedManifestNative succeeded, want execute timeout")
 	}
