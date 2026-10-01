@@ -146,6 +146,7 @@ Guest agent (gRPC over vsock):
   agent-sshd <on|off|start|stop|enable|status>  Manage SSH remote login
   agent-mount-volumes         Mount tagged VirtioFS volumes in guest
   agent-status                Agent health status (daemon + user agent)
+  clipboard-status            Clipboard transports and text fallback readiness
   ready [--require <names>]   Run readiness checks (xcode-cli, go, homebrew, ...)
                               Exit 0 = all pass, 1 = some failed, 2 = agent unreachable
 
@@ -315,6 +316,11 @@ Copy files through the guest agent.`)
 		fmt.Fprintln(w, `Usage: cove ctl agent-mount-volumes
 
 Mount tagged VirtioFS volumes in the guest.`)
+	case "clipboard-status":
+		fmt.Fprintln(w, `Usage: cove ctl clipboard-status
+
+Show clipboard configuration, text fallback readiness, and transfer limits.
+Native SPICE transfer remains unverified until tested in both directions.`)
 	case "agent-status":
 		fmt.Fprintln(w, `Usage: cove ctl agent-status
 
@@ -1035,7 +1041,7 @@ func ctlCommand(args []string) error {
 		}
 
 	// Agent commands
-	case "agent-connect", "agent-ping", "agent-info", "agent-reboot", "agent-mount-volumes", "agent-status":
+	case "agent-connect", "agent-ping", "agent-info", "agent-reboot", "agent-mount-volumes", "agent-status", "clipboard-status":
 		// No payload needed
 
 	case "agent-exec":

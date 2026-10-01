@@ -46,42 +46,44 @@ var (
 
 // ControlServer manages the Unix socket for VM control
 type ControlServer struct {
-	socketPath        string
-	vmDir             string
-	authToken         string
-	controlServer     *controlx.Server
-	listener          net.Listener
-	vmView            vz.VZVirtualMachineView
-	window            appkit.NSWindow
-	vm                vz.VZVirtualMachine
-	vmQueue           dispatch.Queue
-	mu                sync.Mutex
-	running           atomic.Bool
-	capture           controlserver.Capture       // diff cache + lazy OCR service, self-guarded
-	bridge            controlserver.AgentBridge   // agent clients + health state (owns its own mutexes)
+	socketPath          string
+	vmDir               string
+	authToken           string
+	controlServer       *controlx.Server
+	listener            net.Listener
+	vmView              vz.VZVirtualMachineView
+	window              appkit.NSWindow
+	vm                  vz.VZVirtualMachine
+	vmQueue             dispatch.Queue
+	mu                  sync.Mutex
+	running             atomic.Bool
+	capture             controlserver.Capture       // diff cache + lazy OCR service, self-guarded
+	bridge              controlserver.AgentBridge   // agent clients + health state (owns its own mutexes)
 	consoleUserOverride func() (string, int, error) // for tests or overrides
-	network           controlserver.NetworkBridge // iterm2 proxy, port forwards, HTTP listeners, VNC/debug status
-	input             controlserver.InputBridge   // mouse/keyboard delivery
-	windowNum         int                         // cached window number for thread-safe screenshot
-	viewContentHeight int                         // cached view content height in pixels (excludes title bar)
-	windowTitleMu     sync.RWMutex
-	windowTitleBase   string
-	windowTitleState  string
-	windowTitleLabel  string
-	life              controlserver.Lifecycle // policy counters
-	lifeMu            sync.RWMutex
-	lifeDone          chan struct{}
-	gui               VMGUIController
-	captureMode       atomic.Int32
-	inputMode         atomic.Int32
-	runBundleMu       sync.RWMutex
-	runBundle         *RunBundle
-	metrics           runMetricRecorder
-	runConfig         vmrun.RunConfig
-	hostConfig        vmrun.HostConfig
+	network             controlserver.NetworkBridge // iterm2 proxy, port forwards, HTTP listeners, VNC/debug status
+	input               controlserver.InputBridge   // mouse/keyboard delivery
+	windowNum           int                         // cached window number for thread-safe screenshot
+	viewContentHeight   int                         // cached view content height in pixels (excludes title bar)
+	windowTitleMu       sync.RWMutex
+	windowTitleBase     string
+	windowTitleState    string
+	windowTitleLabel    string
+	life                controlserver.Lifecycle // policy counters
+	lifeMu              sync.RWMutex
+	lifeDone            chan struct{}
+	gui                 VMGUIController
+	captureMode         atomic.Int32
+	inputMode           atomic.Int32
+	runBundleMu         sync.RWMutex
+	runBundle           *RunBundle
+	metrics             runMetricRecorder
+	runConfig           vmrun.RunConfig
+	hostConfig          vmrun.HostConfig
 
 	opsMu  sync.Mutex                    // guards opsReg lazy init
 	opsReg *operations.OperationRegistry // file-backed at <vmDir>/operations/, lazy
+
+	clipboardMonitor clipboardMonitorStatus
 
 	versionWarnMu  sync.Mutex
 	warnedVersions map[string]bool

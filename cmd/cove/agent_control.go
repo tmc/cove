@@ -286,6 +286,8 @@ func (s *ControlServer) handleAgentCommand(req *controlpb.ControlRequest) (resp 
 		return s.handleAgentUserExec(cmd), true
 	case "agent-mount-volumes":
 		return s.handleAgentMountVolumes(), true
+	case "clipboard-status":
+		return statusControlResponse(s.clipboardStatus()), true
 	case "agent-status":
 		return s.handleAgentStatus(), true
 	default:
@@ -337,11 +339,12 @@ func (s *ControlServer) handleAgentStatus() *controlpb.ControlResponse {
 	h := s.bridge.HealthSnapshot()
 
 	status := map[string]any{
-		"daemon":   h.DaemonStatus,
-		"user":     h.UserStatus,
-		"lastPing": h.LastPing.Format(time.RFC3339),
-		"summary":  controlserver.AgentHealthSummary(h),
-		"version":  h.Version,
+		"daemon":    h.DaemonStatus,
+		"user":      h.UserStatus,
+		"lastPing":  h.LastPing.Format(time.RFC3339),
+		"summary":   controlserver.AgentHealthSummary(h),
+		"version":   h.Version,
+		"clipboard": s.clipboardStatus(),
 	}
 	if h.GUISessionActive {
 		status["guiSession"] = map[string]string{

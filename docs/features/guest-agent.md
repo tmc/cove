@@ -65,7 +65,16 @@ reconnects, including after suspend/resume. It transfers plain text up to 1 MiB;
 images, files, rich formatting and guest-to-host sharing still depend on SPICE.
 `-clipboard=false` disables the fallback as well as SPICE sharing.
 
+Check configuration and fallback readiness with `cove ctl clipboard-status`
+(or the `clipboard` field in `cove ctl agent-status`). A connected user agent
+means the plain text fallback is ready; it does not prove SPICE clipboard
+transfer. The status reports native transfer as unverified, and records the
+last successful text comparison or write without including clipboard contents.
+If the fallback is waiting, finish logging into the guest and check the user
+agent. Failed text syncs retry automatically.
+
 Verify sharing by copying new text on the host and pasting it in the guest.
+Test the reverse direction and each other format you need separately.
 
 ## Proxy Configuration
 

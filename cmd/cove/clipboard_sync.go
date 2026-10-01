@@ -84,7 +84,9 @@ func (s *ControlServer) monitorHostClipboard() {
 		if err := state.sync(text, func(value string) error {
 			callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
-			return s.pushHostClipboardText(callCtx, text.change, value)
+			err := s.pushHostClipboardText(callCtx, text.change, value)
+			s.clipboardMonitor.record(err)
+			return err
 		}); err != nil {
 			slog.Debug("clipboard: host text sync unavailable", "error", err)
 		}

@@ -175,6 +175,13 @@ func (c *VMStatusItemController) handleMenuNeedsUpdate(_ objc.ID, _ objc.SEL, me
 	stateItem := appkit.NewMenuItemWithTitleActionKeyEquivalent("State: "+presentation.Label+" ("+c.presentationModeWithWindow(window)+")", 0, "")
 	stateItem.SetEnabled(false)
 	menu.AddItem(&stateItem)
+	if provider, ok := c.screenshots.(interface{ clipboardStatus() clipboardSharingStatus }); ok {
+		status := provider.clipboardStatus()
+		item := appkit.NewMenuItemWithTitleActionKeyEquivalent("Clipboard: "+status.HostToGuestText+"; native "+status.Native, 0, "")
+		item.SetEnabled(false)
+		item.SetToolTip(status.Summary)
+		menu.AddItem(&item)
+	}
 
 	addToolbarMenuSeparator(menu)
 
