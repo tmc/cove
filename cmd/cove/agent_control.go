@@ -797,7 +797,12 @@ func (s *ControlServer) handleAgentExecStreamConnection(conn net.Conn, req *cont
 		return
 	}
 
+	forwardAgentExecStream(conn, stream)
+}
+
+func forwardAgentExecStream(conn net.Conn, stream agentstate.ExecStreamReceiver) {
 	var finalExitCode int32
+	sawExitCode := false
 	for {
 		out, err := stream.Recv()
 		if err == io.EOF {
@@ -824,9 +829,14 @@ func (s *ControlServer) handleAgentExecStreamConnection(conn net.Conn, req *cont
 
 		if out.ExitCode != nil {
 			finalExitCode = *out.ExitCode
+			sawExitCode = true
 		}
 	}
 
+	if !sawExitCode {
+		writeResponse(conn, &controlpb.ControlResponse{Error: "guest exec stream closed before final exit status; outcome unknown"})
+		return
+	}
 	donePayload, _ := json.Marshal(map[string]any{
 		"done":     true,
 		"exitCode": finalExitCode,

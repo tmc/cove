@@ -91,6 +91,7 @@ var commandRegistry = []covecli.Spec{
 	{Name: "version", Summary: "Print version information", Dispatch: covecli.DispatchEarly, Run: runVersionCommand},
 	{Name: "vnc", Summary: "Inspect private VNC server state", Dispatch: covecli.DispatchEarly, Run: runControlAliasCommand},
 	{Name: "vm", Summary: "Manage VMs", Dispatch: covecli.DispatchLate, Run: runVMCommandSpec},
+	{Name: "workspace", Summary: "Plan and run a Go workspace with retained run evidence", Dispatch: covecli.DispatchEarly, Run: runWorkspaceCommand},
 	{Name: "vzscript", Summary: "Run guest-agent and UI automation scripts", Dispatch: covecli.DispatchEarly, Run: runVZScriptCommand},
 }
 

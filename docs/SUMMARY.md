@@ -34,6 +34,7 @@ icon: list
 
 ## Provision and automate a guest
 * [Provision a guest](guides/provisioning.md)
+* [Run Go workspaces](features/workspace.md)
 * [Write and run vzscripts](features/vzscript.md)
 * [Talk to the guest agent](features/guest-agent.md)
 * [Manage SIP](features/sip.md)
