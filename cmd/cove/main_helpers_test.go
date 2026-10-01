@@ -130,10 +130,11 @@ func TestHandleListReportsMissingDiskDirectories(t *testing.T) {
 	}
 	out := buf.String()
 	for _, want := range []string{
-		"Missing-disk VM directories hidden from the main list:",
-		"broken-vm\t(no disk image found)",
-		"These are filesystem cleanup entries, not fork-lineage orphans from vm tree --orphans.",
-		"Remove with: cove vm delete <name>",
+		"Incomplete VM directories hidden from the main list:",
+		"broken-vm\t(incomplete VM: " + filepath.Join(base, "broken-vm") + ")",
+		"Check these directories and any external disk volumes for missing disk or identity files.",
+		"These entries are separate from fork-lineage orphans shown by cove vm tree --orphans.",
+		"After confirming the VM is no longer needed, remove with: cove vm delete <name>",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("list output missing %q:\n%s", want, out)

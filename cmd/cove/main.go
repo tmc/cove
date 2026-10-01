@@ -1442,16 +1442,15 @@ func handleListTo(stdout io.Writer) error {
 		}
 	}
 
-	// Surface orphan VM directories (dirs without a valid disk image)
-	// so users can clean them up with `cove vm delete <name>`.
 	if orphans, err := vmconfig.ListOrphans(); err == nil && len(orphans) > 0 {
 		fmt.Fprintln(stdout)
-		fmt.Fprintln(stdout, "Missing-disk VM directories hidden from the main list:")
+		fmt.Fprintln(stdout, "Incomplete VM directories hidden from the main list:")
 		for _, name := range orphans {
-			fmt.Fprintf(stdout, "  %s\t(no disk image found)\n", name)
+			fmt.Fprintf(stdout, "  %s\t(incomplete VM: %s)\n", name, filepath.Join(vmconfig.BaseDir(), name))
 		}
-		fmt.Fprintln(stdout, "These are filesystem cleanup entries, not fork-lineage orphans from vm tree --orphans.")
-		fmt.Fprintln(stdout, "Remove with: cove vm delete <name>")
+		fmt.Fprintln(stdout, "Check these directories and any external disk volumes for missing disk or identity files.")
+		fmt.Fprintln(stdout, "These entries are separate from fork-lineage orphans shown by cove vm tree --orphans.")
+		fmt.Fprintln(stdout, "After confirming the VM is no longer needed, remove with: cove vm delete <name>")
 	}
 	return nil
 }
