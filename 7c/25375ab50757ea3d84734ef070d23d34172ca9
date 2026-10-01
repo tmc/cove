@@ -1,0 +1,18 @@
+commit=7c25375ab50757ea3d84734ef070d23d34172ca9
+date=2026-10-01T14:01:16-0700
+agent=Codex
+model=GPT-6
+claude-code-version=not applicable
+tty=not a tty
+pid=58217 (note writer)
+ITERM_SESSION_ID=w8t10p1:22455FE0-2629-45BE-9D07-66CB8BD47189
+base=2dbed6c74dba3696a69ad1440813c233a1de9300
+snapshot=/Users/tmc/tmp/cove-delete-qual.mPkXpg/source (isolated clone with proper git metadata and local dependency go.work)
+source-proof=exact three staged files; isolated clone had zero working-tree diff against staged parent index; matching SHA256 hashes
+source-sha256=vm_ops.go bceb7385a3e688a07ed65394e3084497925994cc11954c36bd94650157b4e51c; vm_delete_guard.go c083e47b2981e9e3a9138a6eedf0904d4dcb107038b6ab03d29d5a0580def044; vm_delete_guard_test.go d6a6cc3ab5523f260b1f5b190f348ee9cf6eb8a256a7c828d0ca489d90ae488b
+validation=go build ./... passed; standalone cove build and virtualization-entitlement codesign verification passed; focused deletion and rename tests passed 11.071s
+whole-suite=go test -json ./... run once with per-command GIT_CONFIG_COUNT=1 commit.gpgsign=false; cmd/cove whole package passed192.237s; only failure cmd/vz-agent TestResizeExecTTYAppliesWinsize pty.Open device-not-configured (known host prerequisite)
+receipt=/Users/tmc/tmp/cove-delete-qual.mPkXpg/whole-suite.jsonl
+commit-hook=per-command hooksPath disabled to prevent unrelated beads staging; signing disabled per authorized manual fallback
+physical-runtime=no VM launched, live Muse untouched
+excluded=dirty workspace, task/pins CLI, checkpoint, resize source; other index/worktree state preserved
