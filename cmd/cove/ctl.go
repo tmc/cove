@@ -1258,6 +1258,21 @@ func ctlEnrichResponseForPrint(sock string, resp *controlpb.ControlResponse, cmd
 		return ctlEnrichServerInfoResponse(resp)
 	case "status":
 		return ctlEnrichStatusResponse(sock, resp)
+	case "agent-status":
+		var status map[string]any
+		if err := json.Unmarshal([]byte(resp.Data), &status); err != nil {
+			return resp
+		}
+		info := resolvedVersion()
+		status["cliVersion"] = map[string]string{"version": info.Version, "commit": info.Commit, "date": info.Date}
+		data, err := json.Marshal(status)
+		if err != nil {
+			return resp
+		}
+		out := proto.Clone(resp).(*controlpb.ControlResponse)
+		out.Data = string(data)
+		out.Result = &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: out.Data}}
+		return out
 	default:
 		return resp
 	}

@@ -381,24 +381,41 @@ func (b *AgentBridge) connectAgentLocked() error {
 	}
 	ctx, cancel := b.timeoutContext(5 * time.Second)
 	defer cancel()
-	if _, err := client.Ping(ctx); err != nil {
+	version, err := client.Ping(ctx)
+	if err != nil {
 		client.Close()
 		return err
 	}
 	b.agent = client
+	b.MarkAgentConnected(version)
 	return nil
 }
 
-// ForceReconnect drops any cached daemon agent connection and dials
-// a fresh one. Used by the agent-connect control command.
+// ForceReconnect drops both cached agent connections and dials a fresh
+// daemon connection. User-session readiness is re-established separately.
 func (b *AgentBridge) ForceReconnect() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.MarkAgentReconnecting("explicit reconnect")
+	b.healthMu.Lock()
+	b.health.UserStatus = "unknown"
+	b.health.GUISession = GUISession{}
+	b.health.GUISessionActive = false
+	b.health.VersionChecked = false
+	b.healthMu.Unlock()
+	if b.userAgent != nil {
+		b.userAgent.Close()
+		b.userAgent = nil
+	}
 	if b.agent != nil {
 		b.agent.Close()
 		b.agent = nil
 	}
-	return b.connectAgentLocked()
+	if err := b.connectAgentLocked(); err != nil {
+		b.SetHealthStatus("disconnected", "", err.Error())
+		return err
+	}
+	return nil
 }
 
 // HealthMonitor runs in the background pinging the agent. It polls
@@ -551,6 +568,9 @@ func (b *AgentBridge) MarkAgentReconnecting(reason string) {
 		b.health.DisconnectAt = now
 	}
 	b.health.DaemonStatus = "reconnecting"
+	b.health.UserStatus = "unknown"
+	b.health.GUISession = GUISession{}
+	b.health.GUISessionActive = false
 	b.health.LastErr = reason
 	b.healthMu.Unlock()
 }
@@ -635,6 +655,10 @@ func (b *AgentBridge) healthCheckGUISession(ctx context.Context) {
 	session, ok, err := b.host.ProbeGUISession(ctx, a)
 	if err != nil {
 		slog.Debug("agent-health: gui session probe failed", "err", err)
+		b.healthMu.Lock()
+		b.health.GUISession = GUISession{}
+		b.health.GUISessionActive = false
+		b.healthMu.Unlock()
 		return
 	}
 	b.healthMu.Lock()
@@ -691,6 +715,9 @@ func (b *AgentBridge) SetHealthStatus(status, version, lastErr string) {
 		b.health.LastPing = now
 		b.health.DisconnectAt = time.Time{}
 	case "disconnected", "reconnecting":
+		b.health.UserStatus = "unknown"
+		b.health.GUISession = GUISession{}
+		b.health.GUISessionActive = false
 		if b.health.DisconnectAt.IsZero() {
 			b.health.DisconnectAt = now
 		}

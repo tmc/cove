@@ -329,19 +329,29 @@ func (s *ControlServer) handleAgentConnect() *controlpb.ControlResponse {
 	if err := s.bridge.ForceReconnect(); err != nil {
 		return &controlpb.ControlResponse{Error: err.Error()}
 	}
-	return &controlpb.ControlResponse{Success: true, Data: "connected to guest agent", Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: "connected to guest agent"}}}
+	message := "daemon agent connected; user-session readiness will be checked separately"
+	return &controlpb.ControlResponse{Success: true, Data: message, Result: &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: message}}}
 }
 
 func (s *ControlServer) handleAgentStatus() *controlpb.ControlResponse {
 	h := s.bridge.HealthSnapshot()
+	info := resolvedVersion()
 
 	status := map[string]any{
-		"daemon":    h.DaemonStatus,
-		"user":      h.UserStatus,
-		"lastPing":  h.LastPing.Format(time.RFC3339),
-		"summary":   controlserver.AgentHealthSummary(h),
-		"version":   h.Version,
-		"clipboard": s.clipboardStatus(),
+		"daemon":         h.DaemonStatus,
+		"user":           h.UserStatus,
+		"lastPing":       h.LastPing.Format(time.RFC3339),
+		"summary":        controlserver.AgentHealthSummary(h),
+		"version":        h.Version,
+		"clipboard":      s.clipboardStatus(),
+		"runtimeVersion": map[string]string{"version": info.Version, "commit": info.Commit, "date": info.Date},
+		"readiness": map[string]any{
+			"daemon":     h.DaemonStatus == "connected",
+			"user":       h.UserStatus == "connected",
+			"guiSession": h.GUISessionActive,
+			"unlocked":   "unknown",
+		},
+		"agentVersions": map[string]string{"daemon": h.Version, "user": "unknown"},
 	}
 	if h.GUISessionActive {
 		status["guiSession"] = map[string]string{

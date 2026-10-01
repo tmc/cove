@@ -690,7 +690,7 @@ container through the guest agent.
 
 | Command | Description |
 |---------|-------------|
-| `agent-connect` | Connect to guest agent |
+| `agent-connect` | Drop cached daemon/user connections and reconnect the daemon |
 | `agent-ping` | Ping guest agent |
 | `agent-info` | Guest system info |
 | `exec <cmd> [args]` | Low-level alias used by `cove ctl`; prefer top-level `cove exec` for Docker-shaped use |
@@ -711,6 +711,13 @@ container through the guest agent.
 | `agent-sshd <on\|off\|status>` | Manage SSH |
 | `agent-mount-volumes` | Mount VirtioFS volumes |
 | `agent-status` | Agent health |
+
+`agent-connect` preserves VM state and does not repeat previous commands.
+User-session readiness is checked separately after reconnect. `agent-status`
+reports observed daemon, user and GUI-session readiness separately; a connected
+daemon does not establish a logged-in or unlocked desktop. Unlock state and
+unavailable user-agent version information are reported as unknown. CLI and
+running-runtime build identities are separate from the guest-agent identity.
 
 ### Port Forwarding
 

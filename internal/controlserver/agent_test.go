@@ -3,12 +3,38 @@ package controlserver
 import (
 	"context"
 	"errors"
+	"net"
 	"strings"
 	"testing"
 	"time"
 
 	vz "github.com/tmc/apple/virtualization"
+	agentstate "github.com/tmc/cove/internal/agent"
 )
+
+func TestForceReconnectInvalidatesBothSessions(t *testing.T) {
+	closed := false
+	user, err := agentstate.NewUserAgentClientWithDial(func(context.Context) (net.Conn, error) {
+		return nil, errors.New("unexpected user dial")
+	}, func() { closed = true })
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := &AgentBridge{userAgent: user, health: AgentHealthState{
+		DaemonStatus: "connected", UserStatus: "connected", GUISessionActive: true,
+		GUISession: GUISession{User: "previous"}, Version: "old",
+	}}
+	if err := b.ForceReconnect(); err == nil {
+		t.Fatal("reconnect without host succeeded")
+	}
+	if !closed || b.userAgent != nil {
+		t.Fatal("reconnect retained the previous user connection")
+	}
+	h := b.HealthSnapshot()
+	if h.DaemonStatus != "disconnected" || h.UserStatus != "unknown" || h.GUISessionActive || h.GUISession != (GUISession{}) {
+		t.Fatalf("stale readiness after failed reconnect: %+v", h)
+	}
+}
 
 // TestAgentBridgeMarkReconnectingRecordsFirstFailure verifies the
 // disconnect-edge invariant on the bridge: the first failure stamps
