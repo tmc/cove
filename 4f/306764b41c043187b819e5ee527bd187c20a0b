@@ -1,0 +1,8 @@
+commit: 4f306764b41c043187b819e5ee527bd187c20a0b
+date: 2026-10-01T06:15:33.697224+00:00
+claude-code version: 2.1.284
+agent/model: Codex GPT-6
+tty: non-tty tool shell
+pid: 72297
+ITERM_SESSION_ID: 22455FE0-2629-45BE-9D07-66CB8BD47189
+validation: full build/tests and binary stream/ENOSPC/interruption/final-status fixtures passed; signed guest export pending
