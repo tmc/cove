@@ -68,6 +68,7 @@ func TestRunHintForSocket(t *testing.T) {
 		want string
 	}{
 		{"named_vm", "/Users/x/.vz/vms/demo/control.sock", "cove -vm demo run"},
+		{"package_vm", "/Users/x/.vz/vms/demo.covevm/control.sock", "cove -vm demo run"},
 		{"empty", "", "cove run"},
 		{"root", "/control.sock", "cove run"},
 	}

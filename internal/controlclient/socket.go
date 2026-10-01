@@ -35,7 +35,7 @@ func FormatDialError(sock string, err error) error {
 	}
 
 	if strings.Contains(msg, "connection refused") {
-		vmName := filepath.Base(filepath.Dir(sock))
+		vmName := strings.TrimSuffix(filepath.Base(filepath.Dir(sock)), ".covevm")
 		if _, statErr := os.Stat(sock); statErr == nil {
 			return fmt.Errorf("vm %q control socket exists but is not accepting connections at %s\n  vm may still be booting or may have exited uncleanly\n  if booting: retry in a few seconds\n  if exited: restart with: %s", vmName, sock, runHint)
 		}
@@ -52,7 +52,7 @@ func FormatDialError(sock string, err error) error {
 }
 
 func RunHintForSocket(sock string) string {
-	vmName := filepath.Base(filepath.Dir(sock))
+	vmName := strings.TrimSuffix(filepath.Base(filepath.Dir(sock)), ".covevm")
 	if vmName == "" || vmName == "." || vmName == string(filepath.Separator) {
 		return "cove run"
 	}
