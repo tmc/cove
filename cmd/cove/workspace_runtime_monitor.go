@@ -2,7 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/tmc/cove/internal/mutationguard"
+	"github.com/tmc/cove/internal/vmconfig"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,7 +17,8 @@ const workspaceRuntimeTailLimit = 64 << 10
 
 type workspaceRuntimeTail struct {
 	mu   sync.Mutex
-	path string
+	root *os.Root
+	name string
 	data []byte
 	err  error
 }
@@ -32,7 +36,7 @@ func (w *workspaceRuntimeTail) Write(p []byte) (int, error) {
 		}
 		w.data = append(w.data, p...)
 	}
-	if err := writeWorkspaceRuntimeDiagnostic(w.path, w.data); err != nil {
+	if err := writeWorkspaceRuntimeDiagnostic(w.root, w.name, w.data); err != nil {
 		w.err = err
 	}
 	// A diagnostic write failure must not interrupt the guest owner.
@@ -40,6 +44,7 @@ func (w *workspaceRuntimeTail) Write(p []byte) (int, error) {
 }
 
 type workspaceRuntimeExit struct {
+	Generation       string `json:"generation"`
 	PID              int    `json:"pid"`
 	StartedAt        string `json:"started_at"`
 	EndedAt          string `json:"ended_at"`
@@ -49,31 +54,62 @@ type workspaceRuntimeExit struct {
 }
 
 func runWorkspaceRuntimeCommand(env commandEnv, _ string, args []string) int {
-	if len(args) != 2 {
-		return commandError(env, fmt.Errorf("workspace runtime requires VM name and directory"))
+	if len(args) != 3 || !validWorkspaceRuntimeGeneration(args[2]) {
+		return commandError(env, fmt.Errorf("workspace runtime requires VM name, directory and generation"))
 	}
 	exe, err := os.Executable()
 	if err != nil {
 		return commandError(env, err)
 	}
-	dir, err := os.MkdirTemp(args[1], "workspace-runtime-")
+	guest, diagnostic, name, err := admitWorkspaceRuntimeDiagnostics(coveRoot(), args[0], args[1])
 	if err != nil {
-		return commandError(env, fmt.Errorf("create runtime diagnostics: %w", err))
+		return commandError(env, err)
 	}
-	// This is an observation pointer, not authority to stop or remove a guest.
-	writeWorkspaceRuntimeDiagnostic(filepath.Join(args[1], "workspace-runtime-diagnostics.json"), []byte(fmt.Sprintf("{\"directory\":%q}\n", filepath.Base(dir))))
+	defer guest.Close()
+	defer diagnostic.Close()
+	// This pointer is observation only; receipts provide generation authority.
+	pointerErr := writeWorkspaceRuntimeDiagnostic(guest, "workspace-runtime-diagnostics.json", []byte(fmt.Sprintf("{\"directory\":%q}\n", name)))
 	cmd := exec.Command(exe, "-vm", args[0], "-headless", "run")
-	return commandError(env, monitorWorkspaceRuntime(cmd, dir))
+	return commandError(env, monitorWorkspaceRuntimeRoot(cmd, diagnostic, args[2], pointerErr))
 }
 
-func monitorWorkspaceRuntime(cmd *exec.Cmd, dir string) error {
-	stdout := &workspaceRuntimeTail{path: filepath.Join(dir, "stdout-tail.log")}
-	stderr := &workspaceRuntimeTail{path: filepath.Join(dir, "stderr-tail.log")}
+func monitorWorkspaceRuntime(cmd *exec.Cmd, dir, generation string) error {
+	if !validWorkspaceRuntimeGeneration(generation) {
+		return fmt.Errorf("invalid runtime generation")
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	return monitorWorkspaceRuntimeRoot(cmd, root, generation, nil)
+}
+
+func monitorWorkspaceRuntimeRoot(cmd *exec.Cmd, root *os.Root, generation string, diagnosticErr error) error {
+	if !validWorkspaceRuntimeGeneration(generation) {
+		return fmt.Errorf("invalid runtime generation")
+	}
+	stdout := &workspaceRuntimeTail{root: root, name: "stdout-tail.log"}
+	stderr := &workspaceRuntimeTail{root: root, name: "stderr-tail.log"}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
-	state := workspaceRuntimeExit{StartedAt: time.Now().UTC().Format(time.RFC3339Nano), ExitCode: -1}
+	state := workspaceRuntimeExit{Generation: generation, StartedAt: time.Now().UTC().Format(time.RFC3339Nano), ExitCode: -1}
+	if diagnosticErr != nil {
+		state.DiagnosticsError = diagnosticErr.Error()
+	}
 	err := cmd.Start()
 	if err == nil {
 		state.PID = cmd.Process.Pid
+		started := processStartedAt(state.PID)
+		if started.IsZero() {
+			state.DiagnosticsError = "runtime process start observation unavailable"
+		} else {
+			state.StartedAt = started.UTC().Format(time.RFC3339Nano)
+			owner := workspaceRuntimeOwner{Generation: generation, PID: state.PID, StartedAt: state.StartedAt}
+			data, _ := json.Marshal(owner)
+			if writeErr := writeWorkspaceRuntimeDiagnostic(root, "running.json", data); writeErr != nil {
+				state.DiagnosticsError = writeErr.Error()
+			}
+		}
 		err = cmd.Wait()
 		state.ExitCode = cmd.ProcessState.ExitCode()
 	}
@@ -90,16 +126,78 @@ func monitorWorkspaceRuntime(cmd *exec.Cmd, dir string) error {
 	if marshalErr != nil {
 		return marshalErr
 	}
-	if writeErr := writeWorkspaceRuntimeDiagnostic(filepath.Join(dir, "exit.json"), append(data, '\n')); writeErr != nil {
+	if writeErr := writeWorkspaceRuntimeDiagnostic(root, "exit.json", append(data, '\n')); writeErr != nil {
 		return fmt.Errorf("record runtime exit: %w", writeErr)
 	}
 	return err
 }
 
-func writeWorkspaceRuntimeDiagnostic(path string, data []byte) error {
-	tmp, err := atomicWriteFile(path, data, 0600)
-	if tmp != "" {
-		os.Remove(tmp)
+func writeWorkspaceRuntimeDiagnostic(root *os.Root, name string, data []byte) error {
+	if root == nil || filepath.Base(name) != name || name == "." || name == "" {
+		return fmt.Errorf("invalid diagnostic target")
 	}
-	return err
+	id, err := generateRunID()
+	if err != nil {
+		return err
+	}
+	temporary := "." + name + "-" + id
+	file, err := root.OpenFile(temporary, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	defer root.Remove(temporary)
+	_, writeErr := file.Write(data)
+	if err := errors.Join(writeErr, file.Sync(), file.Close()); err != nil {
+		return err
+	}
+	if err := root.Rename(temporary, name); err != nil {
+		return err
+	}
+	return syncWorkspaceRoot(root)
+}
+
+func admitWorkspaceRuntimeDiagnostics(storageRoot, name, path string) (*os.Root, *os.Root, string, error) {
+	guard, err := mutationguard.Acquire(storageRoot)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	defer guard.Release()
+	canonical, err := filepath.EvalSymlinks(path)
+	if err != nil || canonical != path {
+		return nil, nil, "", fmt.Errorf("runtime guest path must be canonical and existing")
+	}
+	resolved, exists := vmconfig.ExistingPath(name)
+	if !exists || resolved != path {
+		return nil, nil, "", fmt.Errorf("runtime guest name identity differs")
+	}
+	identity, err := identifyTaskGuest(path)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	guest, err := os.OpenRoot(path)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	fail := func(err error) (*os.Root, *os.Root, string, error) { guest.Close(); return nil, nil, "", err }
+	if err := checkWorkspaceRootIdentity(guest, ".", identity); err != nil {
+		return fail(err)
+	}
+	id, err := generateRunID()
+	if err != nil {
+		return fail(err)
+	}
+	child := "workspace-runtime-" + id
+	if err := guest.Mkdir(child, 0700); err != nil {
+		return fail(err)
+	}
+	diagnostic, err := guest.OpenRoot(child)
+	if err != nil {
+		return fail(err)
+	}
+	current, err := identifyTaskGuest(path)
+	if err != nil || current != identity {
+		diagnostic.Close()
+		return fail(fmt.Errorf("runtime guest admission identity changed"))
+	}
+	return guest, diagnostic, child, nil
 }

@@ -88,6 +88,10 @@ func workspaceTestDeps(t *testing.T, steps *[]string) workspaceDeps {
 	dir := t.TempDir()
 	ok := func(name string) error { *steps = append(*steps, name); return nil }
 	return workspaceDeps{
+		SourceDirectory: func(string) (string, error) { return t.TempDir(), nil },
+		IdentifyGuest: func(path string) (taskGuestIdentity, error) {
+			return taskGuestIdentity{Path: path, Device: 123, Inode: 456}, nil
+		},
 		Resolve: func(workspacePlan) (string, bool, error) { return dir, true, ok("resolve") },
 		Fork:    func(string, string) error { return ok("fork") }, HostStorage: func(workspacePlan) error { return ok("host-storage") }, ConfigureShares: func(workspacePlan, string) error { return ok("shares") }, Start: func(workspacePlan, string) error { return ok("start") },
 		Ready: func(context.Context, workspacePlan, string) ([]byte, error) {
@@ -239,7 +243,7 @@ func TestWorkspaceFreshForkRetention(t *testing.T) {
 	resolves = 0
 	d.Discard = func(workspacePlan, string) error { return errors.New("stop failed") }
 	receipt, err = openGoWorkspace(context.Background(), o, p, d, commandEnv{Stdout: io.Discard})
-	if err == nil || receipt.Outcome != "cleanup_incomplete" || receipt.Disposition != "retained" {
+	if err == nil || receipt.Outcome != "cleanup_incomplete" || receipt.Disposition != "cleanup_unknown" {
 		t.Fatalf("receipt %+v, error %v", receipt, err)
 	}
 	d.Resolve = func(workspacePlan) (string, bool, error) { return "/guest/existing", true, nil }
@@ -275,12 +279,38 @@ func TestWorkspaceNeverReadyRetainsOwnedGuest(t *testing.T) {
 				return "/guest/owned", resolves > 1, nil
 			}
 			d.Ready = func(context.Context, workspacePlan, string) ([]byte, error) { return nil, tt.err }
+			pinned := false
+			d.PinOwned = func(state taskDisposition, runDir string) error {
+				if state.State != "preparing" || !state.Owned || state.Guest == nil || runDir == "" {
+					t.Fatalf("invalid pin admission: %+v", state)
+				}
+				pinned = true
+				return nil
+			}
+			d.StartOwned = func(_ workspacePlan, dir, generation string) error {
+				state, _ := workspaceDispositionForTest(t, d.RunsRoot)
+				if generation != state.Generation || state.Guest == nil || dir != state.Guest.Path {
+					t.Fatalf("runtime generation differs from durable owner: %+v", state)
+				}
+				if !pinned {
+					t.Fatal("guest started before task protection")
+				}
+				return nil
+			}
+			d.Start = func(workspacePlan, string) error {
+				t.Fatal("owned guest used unbound startup")
+				return nil
+			}
 			d.Capture = func(context.Context, workspacePlan, string) ([]byte, error) {
 				return nil, errors.New("agent capture unavailable")
 			}
 			receipt, err := openGoWorkspace(context.Background(), o, p, d, commandEnv{Stdout: io.Discard})
 			if !errors.Is(err, tt.err) || receipt.FailedStep != "readiness" || receipt.Outcome != tt.want || receipt.Disposition != "retained" || receipt.GuestDirectory != "/guest/owned" {
 				t.Fatalf("receipt %+v, error %v", receipt, err)
+			}
+			disposition, e := readTaskDisposition(receipt.Bundle)
+			if e != nil || disposition.State != "retained" || !disposition.Owned || disposition.TaskSucceeded || disposition.Guest == nil {
+				t.Fatalf("never-ready disposition %+v, error %v", disposition, e)
 			}
 			for _, step := range steps {
 				if step == "task" || step == "discard" {
@@ -373,6 +403,7 @@ func TestWorkspaceSourceProvenance(t *testing.T) {
 	run("init", "-q")
 	run("config", "user.name", "Workspace Test")
 	run("config", "user.email", "workspace@example.invalid")
+	run("config", "commit.gpgsign", "false")
 	if err := os.WriteFile(filepath.Join(source, "source.go"), []byte("package example\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -634,5 +665,223 @@ func TestWorkspaceServerStreamExitStatus(t *testing.T) {
 				t.Fatalf("guest evidence lost: %+v", result)
 			}
 		})
+	}
+}
+
+func workspaceDispositionForTest(t *testing.T, root string) (taskDisposition, string) {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join(root, "*", "task-disposition.json"))
+	if err != nil || len(files) != 1 {
+		t.Fatalf("dispositions %v, error %v", files, err)
+	}
+	dir := filepath.Dir(files[0])
+	state, err := readTaskDisposition(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return state, dir
+}
+
+func TestWorkspaceDispositionPhases(t *testing.T) {
+	o := workspaceTestOptions(t)
+	p, _ := planGoWorkspace(o)
+	var steps []string
+	d := workspaceTestDeps(t, &steps)
+	originalResolve := d.Resolve
+	d.Resolve = func(p workspacePlan) (string, bool, error) {
+		state, _ := workspaceDispositionForTest(t, d.RunsRoot)
+		if state.State != "resolving" {
+			t.Fatalf("resolve state %s", state.State)
+		}
+		return originalResolve(p)
+	}
+	d.Ready = func(context.Context, workspacePlan, string) ([]byte, error) {
+		state, _ := workspaceDispositionForTest(t, d.RunsRoot)
+		if state.State != "preparing" || state.Guest == nil || state.Owned {
+			t.Fatalf("readiness state %+v", state)
+		}
+		return []byte(`{}`), nil
+	}
+	d.Task = func(context.Context, workspaceOptions, workspacePlan, string, commandEnv) (*controlpb.AgentExecResponse, error) {
+		state, _ := workspaceDispositionForTest(t, d.RunsRoot)
+		if state.State != "executing" || state.TaskSucceeded {
+			t.Fatalf("task state %+v", state)
+		}
+		return &controlpb.AgentExecResponse{}, nil
+	}
+	receipt, err := openGoWorkspace(context.Background(), o, p, d, commandEnv{Stdout: io.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := readTaskDisposition(receipt.Bundle)
+	if err != nil || state.State != "retained" || !state.TaskSucceeded || state.Owned {
+		t.Fatalf("final state %+v, error %v", state, err)
+	}
+}
+
+func TestWorkspaceDispositionPersistenceFailureRetains(t *testing.T) {
+	o := workspaceTestOptions(t)
+	o.From = "base"
+	o.Retain = "discard-success"
+	p, _ := planGoWorkspace(o)
+	var steps []string
+	d := workspaceTestDeps(t, &steps)
+	resolves := 0
+	d.Resolve = func(workspacePlan) (string, bool, error) { resolves++; return "/guest/owned", resolves > 1, nil }
+	d.Start = func(workspacePlan, string) error {
+		_, dir := workspaceDispositionForTest(t, d.RunsRoot)
+		path := filepath.Join(dir, "task-disposition.json")
+		if err := os.Remove(path); err != nil {
+			t.Fatal(err)
+		}
+		return os.Mkdir(path, 0700)
+	}
+	d.Task = func(context.Context, workspaceOptions, workspacePlan, string, commandEnv) (*controlpb.AgentExecResponse, error) {
+		t.Fatal("task ran after persistence failure")
+		return nil, nil
+	}
+	d.Discard = func(workspacePlan, string) error { t.Fatal("discard ran after persistence failure"); return nil }
+	receipt, err := openGoWorkspace(context.Background(), o, p, d, commandEnv{Stdout: io.Discard})
+	if err == nil || receipt.Disposition != "retained" || receipt.FailedStep != "readiness" || len(receipt.CleanupErrors) == 0 {
+		t.Fatalf("receipt %+v, error %v", receipt, err)
+	}
+}
+
+func TestWorkspaceDispositionSourceFailurePreventsFork(t *testing.T) {
+	o := workspaceTestOptions(t)
+	o.From = "base"
+	p, _ := planGoWorkspace(o)
+	var steps []string
+	d := workspaceTestDeps(t, &steps)
+	d.SourceDirectory = func(string) (string, error) { return "", errors.New("base identity unavailable") }
+	_, err := openGoWorkspace(context.Background(), o, p, d, commandEnv{Stdout: io.Discard})
+	if err == nil || len(steps) != 0 {
+		t.Fatalf("steps %v, error %v", steps, err)
+	}
+}
+
+func TestWorkspaceGoCheckPreservesFailure(t *testing.T) {
+	o := workspaceTestOptions(t)
+	p, err := planGoWorkspace(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var steps []string
+	d := workspaceTestDeps(t, &steps)
+	d.GoCheck = func(context.Context, workspacePlan, string) (string, error) {
+		return "", context.DeadlineExceeded
+	}
+	receipt, err := openGoWorkspace(context.Background(), o, p, d, commandEnv{})
+	if !errors.Is(err, context.DeadlineExceeded) || receipt.FailedStep != "go" || receipt.Outcome != "timed_out" {
+		t.Fatalf("receipt = %+v, error = %v", receipt, err)
+	}
+	for _, step := range steps {
+		if step == "task" {
+			t.Fatal("dispatched task after failed go check")
+		}
+	}
+}
+
+func TestWorkspacePinFailurePreventsStart(t *testing.T) {
+	o := workspaceTestOptions(t)
+	o.From = "base"
+	o.Retain = "discard-success"
+	p, err := planGoWorkspace(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var steps []string
+	d := workspaceTestDeps(t, &steps)
+	resolves := 0
+	d.Resolve = func(workspacePlan) (string, bool, error) { resolves++; return "/guest/owned", resolves > 1, nil }
+	failure := errors.New("pin persistence failed")
+	d.PinOwned = func(taskDisposition, string) error { return failure }
+	receipt, err := openGoWorkspace(context.Background(), o, p, d, commandEnv{Stdout: io.Discard})
+	if !errors.Is(err, failure) || receipt.FailedStep != "protect" || receipt.Disposition != "retained" {
+		t.Fatalf("receipt %+v, error %v", receipt, err)
+	}
+	for _, step := range steps {
+		if step == "start" || step == "task" || step == "discard" {
+			t.Fatalf("%s after pin failure", step)
+		}
+	}
+	state, err := readTaskDisposition(receipt.Bundle)
+	if err != nil || state.State != "retained" || !state.Owned {
+		t.Fatalf("state %+v, error %v", state, err)
+	}
+}
+
+func TestWorkspaceDiscardFinalizationFollowsDurableDisposition(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		finalizeErr error
+		wantOutcome string
+	}{
+		{"released", nil, "success"},
+		{"release-failed", errors.New("pin store unavailable"), "cleanup_incomplete"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			o := workspaceTestOptions(t)
+			o.From = "prepared-base"
+			o.Retain = "discard-success"
+			p, err := planGoWorkspace(o)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var steps []string
+			d := workspaceTestDeps(t, &steps)
+			resolves := 0
+			d.Resolve = func(workspacePlan) (string, bool, error) { resolves++; return "/guest/owned", resolves > 1, nil }
+			deleted := false
+			d.DiscardOwned = func(_ context.Context, state taskDisposition, generation string) error {
+				if state.State != "stopping" || generation != state.Generation {
+					t.Fatalf("cleanup state %+v", state)
+				}
+				deleted = true
+				return nil
+			}
+			finalized := false
+			d.FinalizeDiscardOwned = func(state taskDisposition, generation string) error {
+				durable, _ := workspaceDispositionForTest(t, d.RunsRoot)
+				if !deleted || state.State != "discarded" || durable.State != "discarded" || durable.Generation != generation {
+					t.Fatalf("release before durable discard: %+v, %+v", state, durable)
+				}
+				finalized = true
+				return tt.finalizeErr
+			}
+			receipt, err := openGoWorkspace(context.Background(), o, p, d, commandEnv{Stdout: io.Discard})
+			if !finalized || receipt.Disposition != "discarded" || receipt.Outcome != tt.wantOutcome || (err != nil) != (tt.finalizeErr != nil) {
+				t.Fatalf("receipt %+v, finalized %v, error %v", receipt, finalized, err)
+			}
+		})
+	}
+}
+
+func TestWorkspaceDiscardFailureKeepsTaskProtection(t *testing.T) {
+	o := workspaceTestOptions(t)
+	o.From = "prepared-base"
+	o.Retain = "discard-success"
+	p, err := planGoWorkspace(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var steps []string
+	d := workspaceTestDeps(t, &steps)
+	resolves := 0
+	d.Resolve = func(workspacePlan) (string, bool, error) {
+		resolves++
+		return "/guest/owned", resolves > 1, nil
+	}
+	d.DiscardOwned = func(context.Context, taskDisposition, string) error {
+		return errors.New("quarantine deletion unverified")
+	}
+	d.FinalizeDiscardOwned = func(taskDisposition, string) error {
+		t.Fatal("released task protection after unverified deletion")
+		return nil
+	}
+	receipt, err := openGoWorkspace(context.Background(), o, p, d, commandEnv{Stdout: io.Discard})
+	state, journalErr := readTaskDisposition(receipt.Bundle)
+	if err == nil || journalErr != nil || state.State != "cleanup_unknown" || receipt.Disposition != "cleanup_unknown" || receipt.Outcome != "cleanup_incomplete" {
+		t.Fatalf("receipt %+v, state %+v, errors %v, %v", receipt, state, err, journalErr)
 	}
 }

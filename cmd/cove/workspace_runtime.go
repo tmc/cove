@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -19,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/tmc/cove/internal/mutationguard"
 	"github.com/tmc/cove/internal/runs"
 	"github.com/tmc/cove/internal/vmconfig"
 	controlpb "github.com/tmc/cove/proto/controlpb"
@@ -35,20 +37,27 @@ type workspaceReceipt struct {
 }
 
 type workspaceDeps struct {
-	Resolve         func(workspacePlan) (string, bool, error)
-	Fork            func(string, string) error
-	HostStorage     func(workspacePlan) error
-	ConfigureShares func(workspacePlan, string) error
-	Start           func(workspacePlan, string) error
-	Ready           func(context.Context, workspacePlan, string) ([]byte, error)
-	GuestStorage    func(workspacePlan, string) error
-	GoCheck         func(context.Context, workspacePlan, string) (string, error)
-	Prepare         func(context.Context, workspacePlan, string) error
-	Mount           func(context.Context, workspacePlan, string) error
-	Task            func(context.Context, workspaceOptions, workspacePlan, string, commandEnv) (*controlpb.AgentExecResponse, error)
-	Capture         func(context.Context, workspacePlan, string) ([]byte, error)
-	Discard         func(workspacePlan, string) error
-	RunsRoot        string
+	SourceDirectory      func(string) (string, error)
+	IdentifyGuest        func(string) (taskGuestIdentity, error)
+	PinOwned             func(taskDisposition, string) error
+	Resolve              func(workspacePlan) (string, bool, error)
+	Fork                 func(string, string) error
+	ForkOwned            func(string, string, taskGuestIdentity) (taskGuestIdentity, error)
+	HostStorage          func(workspacePlan) error
+	ConfigureShares      func(workspacePlan, string) error
+	Start                func(workspacePlan, string) error
+	StartOwned           func(workspacePlan, string, string) error
+	Ready                func(context.Context, workspacePlan, string) ([]byte, error)
+	GuestStorage         func(workspacePlan, string) error
+	GoCheck              func(context.Context, workspacePlan, string) (string, error)
+	Prepare              func(context.Context, workspacePlan, string) error
+	Mount                func(context.Context, workspacePlan, string) error
+	Task                 func(context.Context, workspaceOptions, workspacePlan, string, commandEnv) (*controlpb.AgentExecResponse, error)
+	Capture              func(context.Context, workspacePlan, string) ([]byte, error)
+	Discard              func(workspacePlan, string) error
+	DiscardOwned         func(context.Context, taskDisposition, string) error
+	FinalizeDiscardOwned func(taskDisposition, string) error
+	RunsRoot             string
 }
 
 func openGoWorkspace(ctx context.Context, o workspaceOptions, p workspacePlan, d workspaceDeps, env commandEnv) (receipt workspaceReceipt, primary error) {
@@ -62,8 +71,40 @@ func openGoWorkspace(ctx context.Context, o workspaceOptions, p workspacePlan, d
 	if err := b.ConfigureTask(runs.Task{PlanDigest: "sha256:" + hex.EncodeToString(planHash[:]), Kind: "go-workspace", GuestRoute: "user", Backend: "virtualization", Retention: p.Retention, Inputs: []runs.Input{{Name: "source"}, {Name: "output"}, {Name: "task-argv", Secret: true}}}); err != nil {
 		return receipt, err
 	}
+	source := ""
+	if p.From != "" {
+		if d.SourceDirectory == nil {
+			return receipt, fmt.Errorf("workspace source identity dependency unavailable")
+		}
+		source, err = d.SourceDirectory(p.From)
+		if err != nil {
+			return receipt, fmt.Errorf("resolve workspace source identity: %w", err)
+		}
+	}
+	if err := b.AppendTaskEvent(runs.TaskEvent{Kind: "disposition", Status: "started"}); err != nil {
+		return receipt, fmt.Errorf("initialize workspace receipt: %w", err)
+	}
+	journal, err := newTaskDispositionJournal(b.Dir(), b.ID(), source, p.Retention)
+	if err != nil {
+		return receipt, fmt.Errorf("create task disposition: %w", err)
+	}
+	defer journal.Close()
+	var guest *taskGuestIdentity
+	taskSucceeded := false
+	journalFailed := false
 	var dir string
 	created := false
+	persist := func(state string) error {
+		if journalFailed {
+			return fmt.Errorf("task disposition persistence unavailable")
+		}
+		if err := journal.transition(state, guest, created && guest != nil, taskSucceeded); err != nil {
+			journalFailed = true
+			receipt.CleanupErrors = append(receipt.CleanupErrors, "task disposition could not be persisted; guest retained")
+			return fmt.Errorf("persist task disposition: %w", err)
+		}
+		return nil
+	}
 	step := func(name string, fn func() error) error {
 		if err := ctx.Err(); err != nil {
 			receipt.FailedStep = name
@@ -129,14 +170,44 @@ func openGoWorkspace(ctx context.Context, o workspaceOptions, p workspacePlan, d
 				receipt.CleanupErrors = append(receipt.CleanupErrors, "failure evidence could not be recorded")
 			}
 		}
-		if primary == nil && created && p.Retention == "discard-success" {
-			if e := d.Discard(p, dir); e != nil {
-				receipt.CleanupErrors = append(receipt.CleanupErrors, "owned guest cleanup failed; guest retained")
+		if !journalFailed {
+			if e := persist("collecting"); e != nil && primary == nil {
+				primary = e
+			}
+		}
+		terminal := "retained"
+		if primary == nil && len(receipt.CleanupErrors) == 0 && created && p.Retention == "discard-success" {
+			if e := persist("stopping"); e != nil {
+				primary = e
+			} else if e := func() error {
+				if d.DiscardOwned != nil {
+					cleanupCtx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+					defer cancel()
+					return d.DiscardOwned(cleanupCtx, journal.state, journal.state.Generation)
+				}
+				return d.Discard(p, dir)
+			}(); e != nil {
+				receipt.CleanupErrors = append(receipt.CleanupErrors, "owned guest cleanup could not be verified; inspect the disposition receipt")
+				receipt.Disposition = "cleanup_unknown"
+				terminal = "cleanup_unknown"
 			} else {
+				terminal = "discarded"
 				receipt.Disposition = "discarded"
 			}
 		}
-		if len(receipt.CleanupErrors) > 0 && primary == nil {
+		if !journalFailed {
+			if e := persist(terminal); e != nil {
+				if primary == nil {
+					primary = e
+				}
+				receipt.Disposition = "cleanup_unknown"
+			} else if terminal == "discarded" && d.FinalizeDiscardOwned != nil {
+				if e := d.FinalizeDiscardOwned(journal.state, journal.state.Generation); e != nil {
+					receipt.CleanupErrors = append(receipt.CleanupErrors, "guest discarded but task protection could not be released")
+				}
+			}
+		}
+		if len(receipt.CleanupErrors) > 0 && outcome == "success" {
 			outcome = "cleanup_incomplete"
 		}
 		receipt.Outcome = outcome
@@ -147,7 +218,7 @@ func openGoWorkspace(ctx context.Context, o workspaceOptions, p workspacePlan, d
 			receipt.Outcome = "cleanup_incomplete"
 		}
 		if primary == nil && len(receipt.CleanupErrors) > 0 {
-			primary = fmt.Errorf("workspace task completed but cleanup is incomplete; guest retained")
+			primary = fmt.Errorf("workspace task completed but cleanup is incomplete; inspect the disposition receipt")
 		}
 	}()
 	if err := step("resolve", func() error {
@@ -164,7 +235,19 @@ func openGoWorkspace(ctx context.Context, o workspaceOptions, p workspacePlan, d
 			if p.From == "" {
 				return fmt.Errorf("workspace VM does not exist; prepare a base with cove up, then use -from or an existing guest")
 			}
-			if e = d.Fork(p.From, p.VM); e != nil {
+			if d.ForkOwned != nil {
+				if journal.state.SourceGuest == nil {
+					return fmt.Errorf("recorded workspace source identity unavailable")
+				}
+				identity, err := d.ForkOwned(p.From, p.VM, *journal.state.SourceGuest)
+				if err != nil {
+					return fmt.Errorf("create owned workspace fork: %w", err)
+				}
+				if !validTaskGuestIdentity(&identity) {
+					return fmt.Errorf("created workspace guest identity unavailable")
+				}
+				guest = &identity
+			} else if e = d.Fork(p.From, p.VM); e != nil {
 				return fmt.Errorf("create workspace fork: %w", e)
 			}
 			created = true
@@ -176,9 +259,33 @@ func openGoWorkspace(ctx context.Context, o workspaceOptions, p workspacePlan, d
 				return fmt.Errorf("created workspace guest is unavailable")
 			}
 		}
+		identify := d.IdentifyGuest
+		if identify == nil {
+			identify = identifyTaskGuest
+		}
+		identity, e := identify(dir)
+		if e != nil {
+			return fmt.Errorf("identify workspace guest: %w", e)
+		}
+		if guest != nil && identity != *guest {
+			return fmt.Errorf("created workspace guest identity changed before preparation")
+		}
+		if guest == nil {
+			guest = &identity
+		}
+		if err := persist("preparing"); err != nil {
+			return err
+		}
 		return nil
 	}); err != nil {
 		return receipt, err
+	}
+	if created && d.PinOwned != nil {
+		if err := step("protect", func() error {
+			return d.PinOwned(journal.state, b.Dir())
+		}); err != nil {
+			return receipt, fmt.Errorf("protect owned workspace guest: %w", err)
+		}
 	}
 	if err := step("host-storage", func() error { return d.HostStorage(p) }); err != nil {
 		return receipt, err
@@ -186,7 +293,12 @@ func openGoWorkspace(ctx context.Context, o workspaceOptions, p workspacePlan, d
 	if err := step("configure-shares", func() error { return d.ConfigureShares(p, dir) }); err != nil {
 		return receipt, err
 	}
-	if err := step("start", func() error { return d.Start(p, dir) }); err != nil {
+	if err := step("start", func() error {
+		if created && d.StartOwned != nil {
+			return d.StartOwned(p, dir, journal.state.Generation)
+		}
+		return d.Start(p, dir)
+	}); err != nil {
 		return receipt, err
 	}
 	if err := step("readiness", func() error {
@@ -194,7 +306,10 @@ func openGoWorkspace(ctx context.Context, o workspaceOptions, p workspacePlan, d
 		if e != nil {
 			return e
 		}
-		return b.RecordArtifact(runs.Artifact{Name: "readiness", Status: "present", Path: "artifacts/readiness.json", ContentType: "application/json"}, data)
+		if e := b.RecordArtifact(runs.Artifact{Name: "readiness", Status: "present", Path: "artifacts/readiness.json", ContentType: "application/json"}, data); e != nil {
+			return e
+		}
+		return persist("ready")
 	}); err != nil {
 		return receipt, err
 	}
@@ -205,7 +320,7 @@ func openGoWorkspace(ctx context.Context, o workspaceOptions, p workspacePlan, d
 		version, e := d.GoCheck(ctx, p, dir)
 		if e != nil {
 			if len(p.Preparation.Recipes) == 0 {
-				return fmt.Errorf("user Go readiness failed; prepare Go explicitly with -prepare golang or the existing vzscript route")
+				return fmt.Errorf("user go readiness failed: %w", e)
 			}
 			if e := d.Prepare(ctx, p, dir); e != nil {
 				return fmt.Errorf("workspace preparation: %w", e)
@@ -230,6 +345,9 @@ func openGoWorkspace(ctx context.Context, o workspaceOptions, p workspacePlan, d
 		return receipt, err
 	}
 	if err := step("task", func() error {
+		if err := persist("executing"); err != nil {
+			return err
+		}
 		var result *controlpb.AgentExecResponse
 		var e error
 		result, e = d.Task(ctx, o, p, dir, env)
@@ -248,6 +366,7 @@ func openGoWorkspace(ctx context.Context, o workspaceOptions, p workspacePlan, d
 		} else if result.ExitCode != 0 {
 			taskErr = fmt.Errorf("workspace task exited with status %d", result.ExitCode)
 		}
+		taskSucceeded = e == nil && result != nil && result.ExitCode == 0
 		var captureErr error
 		if result != nil {
 			var exitCode *int32
@@ -287,9 +406,48 @@ func openGoWorkspace(ctx context.Context, o workspaceOptions, p workspacePlan, d
 	return receipt, nil
 }
 
+func pinOwnedWorkspaceGuest(state taskDisposition, runDir string) error {
+	guard, err := mutationguard.Acquire(coveRoot())
+	if err != nil {
+		return err
+	}
+	defer guard.Release()
+	if state.Guest == nil {
+		return fmt.Errorf("owned workspace identity unavailable")
+	}
+	guest, err := identifyTaskGuest(state.Guest.Path)
+	if err != nil || guest != *state.Guest {
+		return fmt.Errorf("owned workspace identity changed")
+	}
+	run, err := identifyTaskGuest(runDir)
+	if err != nil {
+		return fmt.Errorf("identify workspace receipt: %w", err)
+	}
+	return addWorkspaceTaskPinsWithGuard(coveRoot(), guard, state, state.Generation, []workspaceTaskPinTarget{
+		{Category: "vm", ID: vmconfig.NameForPath(guest.Path), Identity: guest},
+		{Category: "run", ID: state.RunID, Identity: run},
+	})
+}
+
 func defaultWorkspaceDeps() workspaceDeps {
 	return workspaceDeps{
-		Resolve: resolveWorkspaceGuest, Fork: forkWorkspaceGuest, HostStorage: workspaceHostStorage, ConfigureShares: configureWorkspaceShares, Start: startWorkspaceGuest, Ready: waitWorkspaceReady, GuestStorage: workspaceGuestStorage, GoCheck: checkWorkspaceGo, Prepare: prepareWorkspaceGo, Mount: mountWorkspaceShares, Task: executeWorkspaceTask, Capture: captureWorkspaceState, Discard: discardWorkspaceGuest, RunsRoot: filepath.Join(coveRoot(), "runs"),
+		PinOwned: pinOwnedWorkspaceGuest,
+		StartOwned: func(p workspacePlan, dir, generation string) error {
+			return startWorkspaceGuestWithGeneration(p, dir, generation, true)
+		},
+		DiscardOwned: func(ctx context.Context, state taskDisposition, generation string) error {
+			return cleanupWorkspaceGuest(ctx, state, generation, productionWorkspaceCleanupDeps())
+		},
+		FinalizeDiscardOwned: finalizeDiscardedWorkspaceGuest,
+		SourceDirectory: func(name string) (string, error) {
+			dir, exists := vmconfig.ExistingPath(name)
+			if !exists {
+				return "", fmt.Errorf("base guest missing")
+			}
+			identity, err := identifyTaskGuest(dir)
+			return identity.Path, err
+		}, IdentifyGuest: identifyTaskGuest,
+		Resolve: resolveWorkspaceGuest, Fork: forkWorkspaceGuest, ForkOwned: forkOwnedWorkspaceGuest, HostStorage: workspaceHostStorage, ConfigureShares: configureWorkspaceShares, Start: startWorkspaceGuest, Ready: waitWorkspaceReady, GuestStorage: workspaceGuestStorage, GoCheck: checkWorkspaceGo, Prepare: prepareWorkspaceGo, Mount: mountWorkspaceShares, Task: executeWorkspaceTask, Capture: captureWorkspaceState, Discard: discardWorkspaceGuest, RunsRoot: filepath.Join(coveRoot(), "runs"),
 	}
 }
 
@@ -310,24 +468,58 @@ func forkWorkspaceGuest(from, to string) error {
 	if !ok {
 		return fmt.Errorf("base guest missing; prepare it with cove up")
 	}
-	lock, err := AcquireRunLock(dir)
-	if err != nil {
-		return fmt.Errorf("base must be stopped: %w", err)
-	}
-	defer lock.Release()
-	if _, active, e := liveVMProcessForDirectory(dir, defaultVMProcessCollector()); e != nil {
-		return e
-	} else if active {
-		return fmt.Errorf("base guest has a live runtime; stop it before forking")
-	}
-	holders, err := openFileHolderPIDs(vmPrimaryDiskPath(dir))
+	identity, err := identifyTaskGuest(dir)
 	if err != nil {
 		return err
 	}
-	if len(holders) > 0 {
-		return fmt.Errorf("base disk is open; stop its owner before forking")
+	_, err = forkOwnedWorkspaceGuest(from, to, identity)
+	return err
+}
+
+func forkOwnedWorkspaceGuest(from, to string, expectedSource taskGuestIdentity) (taskGuestIdentity, error) {
+	var none taskGuestIdentity
+	guard, err := mutationguard.Acquire(coveRoot())
+	if err != nil {
+		return none, fmt.Errorf("guard workspace fork: %w", err)
 	}
-	return ForkVM(from, to)
+	defer guard.Release()
+	dir, ok := vmconfig.ExistingPath(from)
+	if !ok {
+		return none, fmt.Errorf("base guest missing; prepare it with cove up")
+	}
+	identity, err := identifyTaskGuest(dir)
+	if err != nil || identity != expectedSource {
+		return none, fmt.Errorf("workspace source identity changed before fork")
+	}
+	lock, err := AcquireRunLock(dir)
+	if err != nil {
+		return none, fmt.Errorf("base must be stopped: %w", err)
+	}
+	defer lock.Release()
+	if _, active, e := liveVMProcessForDirectory(dir, defaultVMProcessCollector()); e != nil {
+		return none, e
+	} else if active {
+		return none, fmt.Errorf("base guest has a live runtime; stop it before forking")
+	}
+	holders, err := openFileHolderPIDs(vmPrimaryDiskPath(dir))
+	if err != nil {
+		return none, err
+	}
+	if len(holders) > 0 {
+		return none, fmt.Errorf("base disk is open; stop its owner before forking")
+	}
+	if err := forkVMLocked(guard, from, to); err != nil {
+		return none, err
+	}
+	child, exists := vmconfig.ExistingPath(to)
+	if !exists {
+		return none, fmt.Errorf("created workspace guest is unavailable")
+	}
+	identity, err = identifyTaskGuest(child)
+	if err != nil {
+		return none, fmt.Errorf("identify created workspace guest: %w", err)
+	}
+	return identity, nil
 }
 
 func workspaceHostStorage(p workspacePlan) error {
@@ -382,7 +574,18 @@ func configureWorkspaceShares(p workspacePlan, dir string) error {
 }
 
 func startWorkspaceGuest(p workspacePlan, dir string) error {
+	var token [16]byte
+	if _, err := rand.Read(token[:]); err != nil {
+		return fmt.Errorf("create workspace runtime generation: %w", err)
+	}
+	return startWorkspaceGuestWithGeneration(p, dir, hex.EncodeToString(token[:]), false)
+}
+
+func startWorkspaceGuestWithGeneration(p workspacePlan, dir, generation string, fresh bool) error {
 	if controlSocketResponds(dir) {
+		if fresh {
+			return fmt.Errorf("owned workspace runtime already exists; guest retained")
+		}
 		return nil
 	}
 	if _, active, err := liveVMProcessForDirectory(dir, defaultVMProcessCollector()); err != nil {
@@ -394,7 +597,7 @@ func startWorkspaceGuest(p workspacePlan, dir string) error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(exe, "__workspace-runtime", p.VM, dir)
+	cmd := exec.Command(exe, "__workspace-runtime", p.VM, dir, generation)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	null, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
 	if err != nil {
@@ -475,8 +678,18 @@ func checkWorkspaceGo(ctx context.Context, p workspacePlan, dir string) (string,
 	if err != nil {
 		return "", err
 	}
+	if r == nil {
+		return "", fmt.Errorf("go version check returned no result in the user session")
+	}
 	if r.ExitCode != 0 || !strings.Contains(r.Stdout, "go version go") {
-		return "", fmt.Errorf("Go version check failed in the user session")
+		detail := strings.TrimSpace(r.Stderr)
+		if detail == "" {
+			detail = strings.TrimSpace(r.Stdout)
+		}
+		if len(detail) > 1024 {
+			detail = detail[:1024]
+		}
+		return "", fmt.Errorf("go version check failed in the user session (exit %d): %s", r.ExitCode, detail)
 	}
 	return strings.TrimSpace(r.Stdout), nil
 }
@@ -502,6 +715,10 @@ func mountWorkspaceShares(ctx context.Context, p workspacePlan, dir string) erro
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	changed, err := configureWorkspaceGuestOwner(ctx, p, dir)
+	if err != nil {
+		return err
+	}
 	client := NewControlClient(GetControlSocketPathForVM(dir))
 	client.SetTimeout(15 * time.Second)
 	status, err := client.SharedFoldersRuntimeStatus()
@@ -514,8 +731,8 @@ func mountWorkspaceShares(ctx context.Context, p workspacePlan, dir string) erro
 	if _, err := client.SharedFoldersApply(); err != nil {
 		return fmt.Errorf("apply workspace shares: %w", err)
 	}
-	if _, err := mountSharedFoldersInGuest(dir, defaultSharedFoldersMountRoot(dir)); err != nil {
-		return fmt.Errorf("mount workspace shares: %w", err)
+	if _, err := refreshSharedFoldersInGuest(dir, defaultSharedFoldersMountRoot(dir), defaultSharedFolderMountTimeouts(), changed); err != nil {
+		return fmt.Errorf("mount workspace shares for intended user: %w; stop and restart the guest explicitly before retrying", err)
 	}
 	for _, want := range []struct {
 		path     string
@@ -549,19 +766,7 @@ func captureWorkspaceState(ctx context.Context, p workspacePlan, dir string) ([]
 }
 
 func discardWorkspaceGuest(p workspacePlan, dir string) error {
-	client := NewControlClient(GetControlSocketPathForVM(dir))
-	client.SetTimeout(10 * time.Second)
-	resp, err := client.SendRequest(&controlpb.ControlRequest{Type: "request-stop"})
-	if err != nil {
-		return err
-	}
-	if !resp.Success {
-		return fmt.Errorf("owned guest stop failed")
-	}
-	if err := ctlWaitForVMStopped(GetControlSocketPathForVM(dir), 30*time.Second); err != nil {
-		return err
-	}
-	return DeleteVM(p.VM)
+	return fmt.Errorf("owned guest cleanup requires verified identity, live owner, and pin gates; guest retained")
 }
 
 func workspaceUserArgs(args []string) []string {

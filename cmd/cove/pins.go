@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"sort"
 	"text/tabwriter"
 	"time"
 
@@ -67,12 +68,26 @@ func handleUnpinCommand(env commandEnv, args []string) error {
 	}
 	root := coveRoot()
 	removed := false
+	protected := false
 	if err := storagepins.Update(root, func(f *storagepins.File) (bool, error) {
 		var err error
 		removed, err = f.Remove(cat, id)
+		for _, pin := range f.TaskPins() {
+			if pin.Category == cat && pin.ID == id {
+				protected = true
+			}
+		}
 		return removed, err
 	}); err != nil {
 		return fmt.Errorf("unpin: %w", err)
+	}
+	if protected {
+		if removed {
+			fmt.Fprintf(env.Stdout, "removed operator pin %s:%s; task protection remains (cove pins list)\n", cat, id)
+		} else {
+			fmt.Fprintf(env.Stdout, "no operator pin: %s:%s; task protection remains (cove pins list)\n", cat, id)
+		}
+		return nil
 	}
 	if !removed {
 		fmt.Fprintf(env.Stdout, "not pinned: %s:%s\n", cat, id)
@@ -133,7 +148,26 @@ Flags:`)
 	if err != nil {
 		return fmt.Errorf("pins list: %w", err)
 	}
-	pins := f.List()
+	pins := []pinsListRow{}
+	for _, pin := range f.List() {
+		pins = append(pins, pinsListRow{Pin: pin, Source: "operator"})
+	}
+	for _, pin := range f.TaskPins() {
+		owner, identity := pin.Owner, pin.Identity
+		pins = append(pins, pinsListRow{Pin: storagepins.Pin{Category: pin.Category, ID: pin.ID, AddedAt: pin.AddedAt}, Source: "task", Owner: &owner, Identity: &identity})
+	}
+	sort.Slice(pins, func(i, j int) bool {
+		if pins[i].Ref() != pins[j].Ref() {
+			return pins[i].Ref() < pins[j].Ref()
+		}
+		if pins[i].Source != pins[j].Source {
+			return pins[i].Source < pins[j].Source
+		}
+		if pins[i].Owner == nil || pins[j].Owner == nil {
+			return false
+		}
+		return pins[i].Owner.Generation < pins[j].Owner.Generation
+	})
 	if *asJSON {
 		enc := json.NewEncoder(env.Stdout)
 		enc.SetIndent("", "  ")
@@ -144,13 +178,26 @@ Flags:`)
 		return err
 	}
 	tw := tabwriter.NewWriter(env.Stdout, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(tw, "REF\tADDED"); err != nil {
+	if _, err := fmt.Fprintln(tw, "REF\tSOURCE\tADDED\tRUN\tGENERATION\tPID"); err != nil {
 		return err
 	}
 	for _, p := range pins {
-		if _, err := fmt.Fprintf(tw, "%s\t%s\n", p.Ref(), p.AddedAt.Format(time.RFC3339)); err != nil {
+		run, generation, pid := "-", "-", "-"
+		if p.Owner != nil {
+			run = p.Owner.RunID
+			generation = p.Owner.Generation
+			pid = fmt.Sprint(p.Owner.PID)
+		}
+		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", p.Ref(), p.Source, p.AddedAt.Format(time.RFC3339), run, generation, pid); err != nil {
 			return err
 		}
 	}
 	return tw.Flush()
+}
+
+type pinsListRow struct {
+	storagepins.Pin
+	Source   string                         `json:"source"`
+	Owner    *storagepins.TaskOwner         `json:"owner,omitempty"`
+	Identity *storagepins.DirectoryIdentity `json:"identity,omitempty"`
 }
