@@ -16,11 +16,12 @@ import (
 const workspaceRuntimeTailLimit = 64 << 10
 
 type workspaceRuntimeTail struct {
-	mu   sync.Mutex
-	root *os.Root
-	name string
-	data []byte
-	err  error
+	mu    sync.Mutex
+	root  *os.Root
+	name  string
+	data  []byte
+	err   error
+	crash *workspaceRuntimeCrash
 }
 
 func (w *workspaceRuntimeTail) Write(p []byte) (int, error) {
@@ -38,6 +39,11 @@ func (w *workspaceRuntimeTail) Write(p []byte) (int, error) {
 	}
 	if err := writeWorkspaceRuntimeDiagnostic(w.root, w.name, w.data); err != nil {
 		w.err = err
+	}
+	if w.crash != nil && w.crash.append(p) {
+		if err := writeWorkspaceRuntimeDiagnostic(w.root, "stderr-crash-context.log", w.crash.context); err != nil {
+			w.err = err
+		}
 	}
 	// A diagnostic write failure must not interrupt the guest owner.
 	return n, nil
@@ -90,7 +96,7 @@ func monitorWorkspaceRuntimeRoot(cmd *exec.Cmd, root *os.Root, generation string
 		return fmt.Errorf("invalid runtime generation")
 	}
 	stdout := &workspaceRuntimeTail{root: root, name: "stdout-tail.log"}
-	stderr := &workspaceRuntimeTail{root: root, name: "stderr-tail.log"}
+	stderr := &workspaceRuntimeTail{root: root, name: "stderr-tail.log", crash: new(workspaceRuntimeCrash)}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	state := workspaceRuntimeExit{Generation: generation, StartedAt: time.Now().UTC().Format(time.RFC3339Nano), ExitCode: -1}
 	if diagnosticErr != nil {

@@ -94,25 +94,36 @@ func (s *ControlServer) handleServerInfo() *controlpb.ControlResponse {
 	})
 }
 
-// DisplayStatus reports read-only metrics from the private PGDisplay
-// object owned by the VZ graphics stack. Available is false (with
-// Reason set) when the display cannot be located; that is a structured
-// result, not an error.
+// DisplayStatus reports configured display geometry separately from live metrics.
+// Private display observation is unavailable until a safe retained display
+// handle exists. ConfiguredDisplays describes explicit run configuration, not
+// the guest's current display mode.
 type DisplayStatus struct {
-	Available             bool                `json:"available"`
-	Reason                string              `json:"reason,omitempty"`
-	Class                 string              `json:"class,omitempty"`
-	Path                  string              `json:"path,omitempty"`
-	Name                  string              `json:"name,omitempty"`
-	SerialNum             uint32              `json:"serial_num,omitempty"`
-	Port                  uint64              `json:"port,omitempty"`
-	GuestPresentCount     uint64              `json:"guest_present_count"`
-	HostPresentCount      uint64              `json:"host_present_count"`
-	CursorX               uint16              `json:"cursor_x"`
-	CursorY               uint16              `json:"cursor_y"`
-	SizeMillimetersWidth  float64             `json:"size_mm_width,omitempty"`
-	SizeMillimetersHeight float64             `json:"size_mm_height,omitempty"`
-	Modes                 []DisplayModeStatus `json:"modes,omitempty"`
+	LiveMetricsAvailable        bool                      `json:"live_metrics_available"`
+	ConfigurationSource         string                    `json:"configuration_source,omitempty"`
+	ConfiguredDisplays          []ConfiguredDisplayStatus `json:"configured_displays,omitempty"`
+	ConfiguredDisplaysTruncated bool                      `json:"configured_displays_truncated,omitempty"`
+	Available                   bool                      `json:"available"`
+	Reason                      string                    `json:"reason,omitempty"`
+	Class                       string                    `json:"class,omitempty"`
+	Path                        string                    `json:"path,omitempty"`
+	Name                        string                    `json:"name,omitempty"`
+	SerialNum                   uint32                    `json:"serial_num,omitempty"`
+	Port                        uint64                    `json:"port,omitempty"`
+	GuestPresentCount           uint64                    `json:"guest_present_count"`
+	HostPresentCount            uint64                    `json:"host_present_count"`
+	CursorX                     uint16                    `json:"cursor_x"`
+	CursorY                     uint16                    `json:"cursor_y"`
+	SizeMillimetersWidth        float64                   `json:"size_mm_width,omitempty"`
+	SizeMillimetersHeight       float64                   `json:"size_mm_height,omitempty"`
+	Modes                       []DisplayModeStatus       `json:"modes,omitempty"`
+}
+
+// ConfiguredDisplayStatus describes one explicitly configured scanout.
+type ConfiguredDisplayStatus struct {
+	Width         int `json:"width"`
+	Height        int `json:"height"`
+	PixelsPerInch int `json:"pixels_per_inch,omitempty"`
 }
 
 // DisplayModeStatus describes one entry of the PGDisplay mode list.
