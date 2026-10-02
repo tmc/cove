@@ -1,0 +1,9 @@
+commit: 169acf38d05beac57af98dbf933f532dba3b7579
+date: 2026-10-02T11:17:37.781510+00:00
+agent: Codex CLI 0.159.3
+model: GPT-6 family
+claude-code: N/A
+tty: not a tty
+pid: 6365
+ITERM_SESSION_ID: unavailable
+qualification: treeac5e47b1509a77c84fbfa5b4c9e815bbac6fec4a build/full suite PASS; physical cold/resumed profile remains permission blocked
