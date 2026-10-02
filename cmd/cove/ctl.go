@@ -67,7 +67,7 @@ Commands:
   status                Get VM state and capabilities
   server-info           Show the cove process that owns this VM socket
   capabilities          Get machine-readable control protocol capabilities
-  display               Report VZ graphics display status (present counts, mode)
+  display               Report configured display geometry (live metrics unavailable)
   screenshot            Capture VM screen (base64 JPEG)
   screenshot -o file    Save screenshot to file
   pause                 Pause VM
@@ -227,9 +227,10 @@ capture path is used as a fallback.`)
 	case "display":
 		fmt.Fprintln(w, `Usage: cove ctl display
 
-Report VZ graphics display status (guest/host present counts, mode, cursor)
-read from the live paravirtualized display. Read-only; reports
-available=false when the display cannot be located.`)
+Report explicit run-configured display geometry with configuration_source=run_config.
+This is configuration, not the guest's current mode. Empty configuration does
+not infer default geometry. Live metrics (present counts, mode, cursor) are
+unavailable: available=false and live_metrics_available=false.`)
 	case "pause":
 		fmt.Fprintln(w, `Usage: cove ctl pause
 
@@ -2990,11 +2991,18 @@ func ctlAgentErrorLooksGuestFailure(detail string) bool {
 }
 
 func ctlVMStatusState(sock string, timeout time.Duration) (string, error) {
+	return ctlVMStatusStateUntil(sock, timeout, time.Time{})
+}
+
+func ctlVMStatusStateUntil(sock string, timeout time.Duration, deadline time.Time) (string, error) {
+	if !deadline.IsZero() && !time.Now().Before(deadline) {
+		return "", fmt.Errorf("control status deadline: %w", os.ErrDeadlineExceeded)
+	}
 	req := &controlpb.ControlRequest{
 		Type:      "status",
 		AuthToken: resolveControlTokenForSocket(sock),
 	}
-	resp, err := ctlSendRequest(sock, req, timeout, "status")
+	resp, err := ctlSendRequestUntil(sock, req, timeout, "status", deadline)
 	if err != nil {
 		return "", err
 	}
@@ -3014,36 +3022,44 @@ func ctlVMStatusState(sock string, timeout time.Duration) (string, error) {
 }
 
 func ctlWaitForVMStopped(sock string, wait time.Duration) error {
+	return ctlWaitForVMStoppedWithStatus(sock, wait, func(timeout time.Duration, deadline time.Time) (string, error) {
+		return ctlVMStatusStateUntil(sock, timeout, deadline)
+	})
+}
+
+func ctlWaitForVMStoppedWithStatus(sock string, wait time.Duration, status func(time.Duration, time.Time) (string, error)) error {
 	if wait <= 0 {
 		return nil
 	}
-	start := time.Now()
-	deadline := start.Add(wait)
-	timeout := ctlShutdownPollInterval
-	if timeout < 250*time.Millisecond {
-		timeout = 250 * time.Millisecond
-	}
+	deadline := time.Now().Add(wait)
+	timeout := max(ctlShutdownPollInterval, 250*time.Millisecond)
 	lastState := "unknown"
+	var lastErr error
 	for {
-		state, err := ctlVMStatusState(sock, timeout)
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			if lastErr != nil {
+				return fmt.Errorf("shutdown requested but stop not verified after %s (last state: %s): %w", wait, lastState, lastErr)
+			}
+			return fmt.Errorf("shutdown requested but stop not verified after %s (last state: %s)", wait, lastState)
+		}
+		state, err := status(min(timeout, remaining), deadline)
+		if !time.Now().Before(deadline) && err == nil {
+			err = fmt.Errorf("control status deadline: %w", os.ErrDeadlineExceeded)
+		}
 		if err != nil {
-			fmt.Printf("VM stopped (control socket unavailable after %s)\n", time.Since(start).Round(time.Millisecond))
-			return nil
+			lastErr = err
+		} else {
+			lastErr = nil
+			if state != "" {
+				lastState = state
+			}
+			if state == vmstate.Canonical("stopped") {
+				fmt.Printf("VM state: %s\n", state)
+				return nil
+			}
 		}
-		if state != "" {
-			lastState = state
-		}
-		if state == vmstate.Canonical("stopped") {
-			fmt.Printf("VM state: %s\n", state)
-			return nil
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("shutdown requested but VM still %s after %s; use `cove ctl -socket %s stop` to force stop", lastState, wait, sock)
-		}
-		sleep := ctlShutdownPollInterval
-		if remaining := time.Until(deadline); remaining < sleep {
-			sleep = remaining
-		}
+		sleep := min(ctlShutdownPollInterval, time.Until(deadline))
 		if sleep > 0 {
 			time.Sleep(sleep)
 		}

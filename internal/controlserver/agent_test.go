@@ -133,8 +133,8 @@ func TestAgentBridgeSetHealthStatusTracksDisconnectEdge(t *testing.T) {
 func TestAgentBridgeSummaryWithoutHost(t *testing.T) {
 	var b AgentBridge
 	b.SetHealthStatus("disconnected", "", "vm not running")
-	if got := b.Summary(); got != "Agent: not installed" {
-		t.Fatalf("Summary() = %q, want %q", got, "Agent: not installed")
+	if got := b.Summary(); got != "Agent: unavailable" {
+		t.Fatalf("Summary() = %q, want %q", got, "Agent: unavailable")
 	}
 }
 

@@ -700,23 +700,17 @@ func (b *AgentBridge) Summary() string {
 	return AgentHealthSummaryWithNeverConnected(h, b.agentNeverConnectedSummary())
 }
 
-// agentNeverConnectedSummary describes the pre-first-connect state.
-// It uses the VM's agent config to differentiate "fresh install,
-// agent will appear after first boot" from "agent expected, currently
-// waiting" and "no agent configured for this VM."
+// agentNeverConnectedSummary describes availability before the first successful probe.
 func (b *AgentBridge) agentNeverConnectedSummary() string {
 	if b.host == nil {
-		return "Agent: not installed"
+		return "Agent: unavailable"
 	}
 	cfg, err := vmconfig.Load(b.host.VMDir())
 	if err != nil || cfg == nil || cfg.Agent == nil {
-		return "Agent: not installed"
+		return "Agent: unavailable"
 	}
-	if !cfg.Agent.Requested {
-		return "Agent: not installed"
-	}
-	if !cfg.Agent.Verified {
-		return "Agent: starting (first boot)"
+	if !cfg.Agent.Requested && !cfg.Agent.Verified {
+		return "Agent: unavailable"
 	}
 	return "Agent: connecting..."
 }

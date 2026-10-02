@@ -4,6 +4,14 @@ Source: six verified API-opportunity scans over `github.com/tmc/apple` bindings,
 cross-checked against binding files on 2026-08-15. Claims below were spot-checked
 against the actual generated sources (paths cited inline).
 
+Update (2026-10-01): the private `PGDisplay` traversal proposed below is
+disabled in `cove ctl display`. The command reports bounded explicit
+run-configured geometry with `configuration_source: "run_config"`.
+Live present counts, mode, and cursor are unavailable (`available:false`,
+`live_metrics_available:false`). Configured geometry is not a live mode;
+empty configuration does not infer defaults. The private traversal proposals
+below remain historical plans, not a safe observation API.
+
 ## 1. Executive summary
 
 Four big themes emerged:

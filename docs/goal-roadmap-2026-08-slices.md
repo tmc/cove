@@ -9,13 +9,14 @@ Workflow run: wf_bf205f85-b25 (5 agents, ~509k subagent tokens, ~25 min).
 
 ## Checklist
 
-- [x] Slice 1a: PGDisplay reachability + `display` status command —
-      `cmd/cove/pgdisplay_status_darwin.go` (bounded ivar BFS from vm/vmView,
-      respondsToSelector-gated reads of GuestPresentCount/HostPresentCount/
-      name/serial/port/cursor/size/modes), `control_runtime_status.go`
-      (`DisplayStatus` JSON, structured `available:false` on miss),
-      `control_socket.go` registration, `cove ctl display` verb + help
-      (`ctl.go`).
+- [x] Slice 1a: `display` status command — `control_runtime_status.go`,
+      `control_socket.go`, and `ctl.go`. As of 2026-10-01, private display
+      traversal is disabled. `cove ctl display` reports at most 16 explicit
+      run-configured scanouts with `configuration_source: "run_config"`;
+      empty configuration does not infer defaults. Live present counts,
+      mode, and cursor are unavailable (`available:false`,
+      `live_metrics_available:false`). Configuration is not the guest's
+      current display mode.
 - [x] Slice 1b: disk caching-mode knob — `cmd/cove/disk_caching.go`,
       `-disk-caching auto|cached|uncached` (public
       `VZDiskImageCachingMode`), wired into macOS, Linux, AND Windows
@@ -52,8 +53,8 @@ Workflow run: wf_bf205f85-b25 (5 agents, ~509k subagent tokens, ~25 min).
 
 ## Live-VM gates (external, not code-blockable)
 
-- PGDisplay/VZFramebuffer ivar-walk reachability on macOS 26
-  (`cove ctl display` against a running GUI VM).
+- Live PGDisplay metrics require a safe retained display handle before they
+  can be enabled. `cove ctl display` currently reports configuration only.
 - Framebuffer screenshot: which completion block fires; imageConversionBlock
   ABI (bound void/void — if the framework consumes a return value this can
   crash; path is opt-in only); IOSurface accessor selector; headless

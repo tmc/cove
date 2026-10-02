@@ -123,3 +123,17 @@ func TestSetHealthStatusTracksDisconnectEdge(t *testing.T) {
 		t.Errorf("DisconnectAt = %v, want zero after connected", b.health.DisconnectAt)
 	}
 }
+
+func TestAgentHealthSummaryMissingVersionDoesNotClaimInstallation(t *testing.T) {
+	for _, status := range []string{"", "disconnected"} {
+		t.Run(status, func(t *testing.T) {
+			h := AgentHealthState{DaemonStatus: status, UserStatus: "unknown", LastErr: "connection reset by peer"}
+			if got := AgentHealthSummary(h); got != "Agent: unavailable" {
+				t.Fatalf("summary %q", got)
+			}
+			if !h.LastPing.IsZero() || h.DaemonStatus == "connected" {
+				t.Fatal("summary changed readiness")
+			}
+		})
+	}
+}

@@ -62,11 +62,11 @@ func TestAgentHealthSummaryWithNeverConnectedBranches(t *testing.T) {
 
 func TestAgentHealthSummaryDelegatesToNeverConnectedVariant(t *testing.T) {
 	// AgentHealthSummary is the convenience wrapper; verify it threads the
-	// default "Agent: not installed" label through for the never-connected
+	// default "Agent: unavailable" label through for the never-connected
 	// disconnected branch.
 	got := AgentHealthSummary(AgentHealthState{DaemonStatus: "disconnected"})
-	if got != "Agent: not installed" {
-		t.Errorf("got %q, want %q", got, "Agent: not installed")
+	if got != "Agent: unavailable" {
+		t.Errorf("got %q, want %q", got, "Agent: unavailable")
 	}
 }
 

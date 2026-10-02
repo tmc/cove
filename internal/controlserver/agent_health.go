@@ -44,7 +44,7 @@ type AgentHealthState struct {
 // display. Used by the cove status command path that builds an
 // AgentHealthState by hand and never connects through a bridge.
 func AgentHealthSummary(h AgentHealthState) string {
-	return AgentHealthSummaryWithNeverConnected(h, "Agent: not installed")
+	return AgentHealthSummaryWithNeverConnected(h, "Agent: unavailable")
 }
 
 // AgentHealthSummaryWithNeverConnected is the bridge-aware variant of

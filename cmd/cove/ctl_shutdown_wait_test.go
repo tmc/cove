@@ -81,9 +81,9 @@ func TestCtlRequestStopWaitStops(t *testing.T) {
 	}
 }
 
-func TestCtlAgentShutdownWaitTimeoutReportsForceStop(t *testing.T) {
+func TestCtlAgentShutdownWaitTimeoutReportsUnverifiedStop(t *testing.T) {
 	oldPoll := ctlShutdownPollInterval
-	ctlShutdownPollInterval = time.Millisecond
+	ctlShutdownPollInterval = 500 * time.Millisecond
 	t.Cleanup(func() { ctlShutdownPollInterval = oldPoll })
 
 	vmDir := shortSharedFolderVMDir(t)
@@ -107,11 +107,11 @@ func TestCtlAgentShutdownWaitTimeoutReportsForceStop(t *testing.T) {
 	})
 	defer stop()
 
-	err := ctlCommand([]string{"-socket", GetControlSocketPathForVM(vmDir), "agent-shutdown", "force", "--wait=1ns"})
+	err := ctlCommand([]string{"-socket", GetControlSocketPathForVM(vmDir), "agent-shutdown", "force", "--wait=200ms"})
 	if err == nil {
 		t.Fatal("ctlCommand() succeeded, want timeout")
 	}
-	if got := err.Error(); !strings.Contains(got, "shutdown requested but VM still running after 1ns") || !strings.Contains(got, "cove ctl -socket") || !strings.Contains(got, "stop") {
+	if got := err.Error(); !strings.Contains(got, "stop not verified after 200ms") || !strings.Contains(got, "last state: running") {
 		t.Fatalf("error = %q", got)
 	}
 }

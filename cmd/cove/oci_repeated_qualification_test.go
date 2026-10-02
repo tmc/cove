@@ -413,6 +413,8 @@ func TestTartRepeatedDiskCancellationRetry(t *testing.T) {
 	go func() { done <- tartPullDisk(ctx, plan, pullOptions{RegistryBaseURL: server.URL}) }()
 	select {
 	case <-started:
+	case err := <-done:
+		t.Fatalf("Tart pull ended before fetch: %v", err)
 	case <-time.After(5 * time.Second):
 		t.Fatal("Tart fetch did not start")
 	}
@@ -430,11 +432,12 @@ func TestTartRepeatedDiskCancellationRetry(t *testing.T) {
 			t.Fatalf("canceled Tart pull published %s: %v", name, err)
 		}
 	}
-	registry.mu.Lock()
-	registry.before = nil
-	registry.mu.Unlock()
-	before := registry.count(layers[0].Descriptor.Digest)
-	if err := tartPullDisk(context.Background(), plan, pullOptions{RegistryBaseURL: server.URL, Resume: true}); err != nil {
+	// Client cancellation can finish before the server accounts every canceled
+	// request. Isolate the retry so its count cannot include late arrivals.
+	retryRegistry := &qualificationRegistry{gets: map[string]int{}, blobs: blobs}
+	retryServer := httptest.NewServer(retryRegistry)
+	defer retryServer.Close()
+	if err := tartPullDisk(context.Background(), plan, pullOptions{RegistryBaseURL: retryServer.URL, Resume: true}); err != nil {
 		t.Fatal(err)
 	}
 	assertQualifiedDisk(t, plan.VMDir, want)
@@ -444,7 +447,7 @@ func TestTartRepeatedDiskCancellationRetry(t *testing.T) {
 	if got := mustReadFile(t, filepath.Join(plan.VMDir, "aux.img")); !bytes.Equal(got, nvram) {
 		t.Fatal("Tart firmware bytes not preserved")
 	}
-	if n := registry.count(layers[0].Descriptor.Digest) - before; n != 3 {
+	if n := retryRegistry.count(layers[0].Descriptor.Digest); n != 3 {
 		t.Fatalf("retry repeated fetches=%d, want 3", n)
 	}
 }
