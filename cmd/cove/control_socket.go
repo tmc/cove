@@ -86,6 +86,7 @@ type ControlServer struct {
 	opsReg *operations.OperationRegistry // file-backed at <vmDir>/operations/, lazy
 
 	clipboardMonitor clipboardMonitorStatus
+	agentDial        agentDialGate
 
 	versionWarnMu  sync.Mutex
 	warnedVersions map[string]bool
