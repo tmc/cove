@@ -17,30 +17,32 @@ import (
 type workspaceOptions struct {
 	VM, From, OS, Source, Output, SourceMode, Prepare, Retain string
 	Timeout                                                   time.Duration
+	ReadinessTimeout                                          time.Duration
 	MinFreeGiB                                                uint64
 	Args                                                      []string
 }
 
 type workspacePlan struct {
-	TaskTimeoutSeconds    float64 `json:"task_timeout_seconds"`
-	RuntimeMaxExecSeconds int     `json:"runtime_max_exec_seconds"`
-	recipeData            map[string][]byte
-	Version               int                  `json:"version"`
-	Profile               string               `json:"profile"`
-	VM                    string               `json:"vm"`
-	From                  string               `json:"from,omitempty"`
-	GuestOS               string               `json:"guest_os"`
-	Source                vzscriptPlannedMount `json:"source"`
-	Output                vzscriptPlannedMount `json:"output"`
-	SourceGuestPath       string               `json:"source_guest_path"`
-	OutputGuestPath       string               `json:"output_guest_path"`
-	TaskExecutable        string               `json:"task_executable"`
-	TaskArgCount          int                  `json:"task_arg_count"`
-	GuestRoute            string               `json:"guest_route"`
-	Retention             string               `json:"retention"`
-	MinFreeGiB            uint64               `json:"min_free_gib"`
-	Preparation           vzscriptPlan         `json:"preparation"`
-	Unresolved            []string             `json:"unresolved"`
+	TaskTimeoutSeconds      float64 `json:"task_timeout_seconds"`
+	ReadinessTimeoutSeconds float64 `json:"readiness_timeout_seconds"`
+	RuntimeMaxExecSeconds   int     `json:"runtime_max_exec_seconds"`
+	recipeData              map[string][]byte
+	Version                 int                  `json:"version"`
+	Profile                 string               `json:"profile"`
+	VM                      string               `json:"vm"`
+	From                    string               `json:"from,omitempty"`
+	GuestOS                 string               `json:"guest_os"`
+	Source                  vzscriptPlannedMount `json:"source"`
+	Output                  vzscriptPlannedMount `json:"output"`
+	SourceGuestPath         string               `json:"source_guest_path"`
+	OutputGuestPath         string               `json:"output_guest_path"`
+	TaskExecutable          string               `json:"task_executable"`
+	TaskArgCount            int                  `json:"task_arg_count"`
+	GuestRoute              string               `json:"guest_route"`
+	Retention               string               `json:"retention"`
+	MinFreeGiB              uint64               `json:"min_free_gib"`
+	Preparation             vzscriptPlan         `json:"preparation"`
+	Unresolved              []string             `json:"unresolved"`
 }
 
 const workspaceSourceTag = "cove-workspace-source"
@@ -112,6 +114,7 @@ Flags:
   -retain retain|discard-success  retain failures; discard only a newly owned
                          fork on success (default retain)
   -timeout duration      task timeout (default 10m)
+  -readiness-timeout duration  root/user readiness timeout (default 2m; max 30m)
   -min-free-gib N         required guest/output free GiB (default 1)
   -json                  machine-readable plan or run receipt
 
@@ -133,6 +136,7 @@ func parseWorkspaceOptions(args []string, w io.Writer) (workspaceOptions, bool, 
 	fs.StringVar(&o.Prepare, "prepare", "", "opt-in prerequisite recipes")
 	fs.StringVar(&o.Retain, "retain", "retain", "retain or discard-success")
 	fs.DurationVar(&o.Timeout, "timeout", 10*time.Minute, "task timeout")
+	fs.DurationVar(&o.ReadinessTimeout, "readiness-timeout", 2*time.Minute, "root/user readiness timeout")
 	fs.Uint64Var(&o.MinFreeGiB, "min-free-gib", 1, "free GiB minimum")
 	asJSON := fs.Bool("json", false, "emit JSON")
 	if err := fs.Parse(args); err != nil {
@@ -147,6 +151,7 @@ func parseWorkspaceOptions(args []string, w io.Writer) (workspaceOptions, bool, 
 
 func planGoWorkspace(o workspaceOptions) (workspacePlan, error) {
 	p := workspacePlan{Version: 1, Profile: "go", VM: o.VM, From: o.From, GuestOS: o.OS, GuestRoute: "user", Retention: o.Retain, MinFreeGiB: o.MinFreeGiB, TaskTimeoutSeconds: o.Timeout.Seconds(), RuntimeMaxExecSeconds: 600}
+	p.ReadinessTimeoutSeconds = o.ReadinessTimeout.Seconds()
 	if !workspaceValidName(o.VM) || o.From != "" && (!workspaceValidName(o.From) || o.From == o.VM) {
 		return p, fmt.Errorf("workspace requires distinct valid VM/base names")
 	}
@@ -164,6 +169,9 @@ func planGoWorkspace(o workspaceOptions) (workspacePlan, error) {
 	}
 	if o.Timeout <= 0 || o.Timeout > 10*time.Minute {
 		return p, fmt.Errorf("task timeout must be positive and at most 10m, the runtime execution limit")
+	}
+	if o.ReadinessTimeout <= 0 || o.ReadinessTimeout > 30*time.Minute {
+		return p, fmt.Errorf("readiness timeout must be positive and at most 30m")
 	}
 	if o.MinFreeGiB == 0 || o.MinFreeGiB > 1024 {
 		return p, fmt.Errorf("minimum free space must be between 1 and 1024 GiB")
@@ -273,6 +281,7 @@ func writeWorkspacePlan(w io.Writer, p workspacePlan, asJSON bool) error {
 		return enc.Encode(p)
 	}
 	fmt.Fprintf(w, "Go workspace %s (%s, user route)\n", p.VM, p.GuestOS)
+	fmt.Fprintf(w, "Readiness timeout: %s\nTask timeout: %s\n", time.Duration(p.ReadinessTimeoutSeconds*float64(time.Second)), time.Duration(p.TaskTimeoutSeconds*float64(time.Second)))
 	mode := "rw"
 	if p.Source.ReadOnly {
 		mode = "ro"

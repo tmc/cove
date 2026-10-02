@@ -29,7 +29,7 @@ func workspaceTestOptions(t *testing.T) workspaceOptions {
 	if err := os.Mkdir(source, 0700); err != nil {
 		t.Fatal(err)
 	}
-	return workspaceOptions{VM: "test-workspace", OS: "darwin", Source: source, Output: filepath.Join(dir, "output"), SourceMode: "ro", Retain: "retain", Timeout: time.Minute, MinFreeGiB: 1, Args: []string{"go", "test", "./..."}}
+	return workspaceOptions{VM: "test-workspace", OS: "darwin", Source: source, Output: filepath.Join(dir, "output"), SourceMode: "ro", Retain: "retain", Timeout: time.Minute, ReadinessTimeout: 2 * time.Minute, MinFreeGiB: 1, Args: []string{"go", "test", "./..."}}
 }
 
 func TestWorkspacePlan(t *testing.T) {

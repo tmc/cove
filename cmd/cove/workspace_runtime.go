@@ -302,9 +302,14 @@ func openGoWorkspace(ctx context.Context, o workspaceOptions, p workspacePlan, d
 		return receipt, err
 	}
 	if err := step("readiness", func() error {
-		data, e := d.Ready(ctx, p, dir)
+		readyCtx, cancel := context.WithTimeout(ctx, time.Duration(p.ReadinessTimeoutSeconds*float64(time.Second)))
+		defer cancel()
+		data, e := d.Ready(readyCtx, p, dir)
 		if e != nil {
 			return e
+		}
+		if err := readyCtx.Err(); err != nil {
+			return err
 		}
 		if e := b.RecordArtifact(runs.Artifact{Name: "readiness", Status: "present", Path: "artifacts/readiness.json", ContentType: "application/json"}, data); e != nil {
 			return e
@@ -632,15 +637,13 @@ func workspaceExec(ctx context.Context, dir, route string, args []string, env ma
 }
 
 func waitWorkspaceReady(ctx context.Context, p workspacePlan, dir string) ([]byte, error) {
-	deadline, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
 	var last error
 	for {
-		root, err := workspaceExec(deadline, dir, "agent-exec", []string{"true"}, nil, "", 3*time.Second)
+		root, err := workspaceExec(ctx, dir, "agent-exec", []string{"true"}, nil, "", 3*time.Second)
 		if err == nil && root.ExitCode == 0 {
-			user, e := workspaceExec(deadline, dir, "agent-user-exec", []string{"true"}, nil, "", 3*time.Second)
+			user, e := workspaceExec(ctx, dir, "agent-user-exec", []string{"true"}, nil, "", 3*time.Second)
 			if e == nil && user.ExitCode == 0 {
-				return captureWorkspaceState(deadline, p, dir)
+				return captureWorkspaceState(ctx, p, dir)
 			}
 			last = fmt.Errorf("root is ready; user-session execution is unavailable; log in to the intended guest user")
 		} else {
@@ -648,9 +651,9 @@ func waitWorkspaceReady(ctx context.Context, p workspacePlan, dir string) ([]byt
 		}
 		timer := time.NewTimer(time.Second)
 		select {
-		case <-deadline.Done():
+		case <-ctx.Done():
 			timer.Stop()
-			return nil, fmt.Errorf("workspace readiness: %v: %w", last, deadline.Err())
+			return nil, fmt.Errorf("workspace readiness: %v: %w", last, ctx.Err())
 		case <-timer.C:
 		}
 	}
