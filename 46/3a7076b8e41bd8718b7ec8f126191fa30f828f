@@ -1,0 +1,9 @@
+commit: 463a7076b8e41bd8718b7ec8f126191fa30f828f
+date: 2026-10-02T11:06:48.362254+00:00
+agent: Codex CLI 0.159.3
+model: GPT-6 family
+claude-code: N/A
+tty: not a tty
+pid: 3496
+ITERM_SESSION_ID: unavailable
+qualification: tree97e03e133ec181fb5463c1f741ed29da1b04d2fd full build/test PASS; no physical startup causality claim
