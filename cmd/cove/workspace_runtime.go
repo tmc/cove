@@ -732,7 +732,7 @@ func mountWorkspaceShares(ctx context.Context, p workspacePlan, dir string) erro
 		return fmt.Errorf("apply workspace shares: %w", err)
 	}
 	if _, err := refreshSharedFoldersInGuest(dir, defaultSharedFoldersMountRoot(dir), defaultSharedFolderMountTimeouts(), changed); err != nil {
-		return fmt.Errorf("mount workspace shares for intended user: %w; stop and restart the guest explicitly before retrying", err)
+		return fmt.Errorf("mount workspace shares for intended user: %w", err)
 	}
 	for _, want := range []struct {
 		path     string

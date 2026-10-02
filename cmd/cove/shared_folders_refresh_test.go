@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -104,5 +105,53 @@ func TestRefreshSharedFoldersInGuestWithUnchangedTags(t *testing.T) {
 	}
 	if !mounted {
 		t.Fatalf("mountSharedFoldersInGuestWithTimeouts() = false, want true after remount")
+	}
+}
+
+func TestRefreshSharedFoldersListingFailureRetainsMount(t *testing.T) {
+	for _, tt := range []struct {
+		name, detail string
+		privacy      bool
+	}{
+		{"permission", "Operation not permitted", true},
+		{"permission with stale phrase", "ls: Stale file handle: Operation not permitted", true},
+		{"access", "Permission denied", true},
+		{"other", "unexpected listing failure", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			vmDir := shortSharedFolderVMDir(t)
+			host := t.TempDir()
+			if _, _, err := addSharedFolderEntry(vmDir, host, "alpha", true); err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.ReadFile(filepath.Join(vmDir, "shared_folders.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			execResponse := func(r *controlpb.AgentExecResponse) *controlpb.ControlResponse {
+				return &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_AgentExecResult{AgentExecResult: r}}
+			}
+			verify := serveSharedFolderControlSteps(t, vmDir, "test-token", []sharedFolderControlStep{
+				{wantType: "agent-ping", resp: &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_AgentPing{AgentPing: &controlpb.AgentPingResponse{Version: "test"}}}},
+				{wantType: "agent-exec", wantArgs: []string{"mkdir", "-p", defaultSharedFoldersMountPoint}, resp: execResponse(&controlpb.AgentExecResponse{})},
+				{wantType: "agent-exec-auto", wantArgs: []string{"mount"}, resp: execResponse(&controlpb.AgentExecResponse{Stdout: "virtio-fs on " + defaultSharedFoldersMountPoint + " (AppleVirtIOFS)\n"})},
+				{wantType: "agent-exec-auto", wantArgs: []string{"ls", "-1", defaultSharedFoldersMountPoint}, resp: execResponse(&controlpb.AgentExecResponse{ExitCode: 1, Stderr: tt.detail})},
+			})
+			mounted, err := refreshSharedFoldersInGuest(vmDir, defaultSharedFoldersMountPoint, defaultSharedFolderMountTimeouts(), true)
+			verify()
+			if mounted || err == nil || !strings.Contains(err.Error(), tt.detail) {
+				t.Fatalf("refresh = %v, %v; want original listing error", mounted, err)
+			}
+			if strings.Contains(err.Error(), "Privacy & Security") != tt.privacy {
+				t.Fatalf("unexpected permission guidance: %v", err)
+			}
+			after, readErr := os.ReadFile(filepath.Join(vmDir, "shared_folders.json"))
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if string(after) != string(before) {
+				t.Fatal("shared folder configuration changed")
+			}
+		})
 	}
 }

@@ -961,6 +961,18 @@ func refreshSharedFoldersInGuest(vmDirectory, mountPoint string, timeouts shared
 		if lsRes == nil {
 			return false, fmt.Errorf("inspect mounted shared folders at %q: missing response", mountPoint)
 		}
+		if lsRes.ExitCode != 0 {
+			detail := strings.TrimSpace(lsRes.Stderr + " " + lsRes.Stdout)
+			lower := strings.ToLower(detail)
+			permissionDenied := strings.Contains(lower, "operation not permitted") || strings.Contains(lower, "permission denied")
+			if permissionDenied || !isDeadOrStaleMountError(detail) {
+				hint := ""
+				if permissionDenied {
+					hint = "; inspect guest Privacy & Security permissions for vz-agent"
+				}
+				return false, fmt.Errorf("inspect mounted shared folders at %q: exit %d: %s%s", mountPoint, lsRes.ExitCode, detail, hint)
+			}
+		}
 
 		// Refresh mounted view to pick up newly hotplugged or removed tags,
 		// or recover from a dead/stale mount point.
