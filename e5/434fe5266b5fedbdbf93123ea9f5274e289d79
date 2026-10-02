@@ -1,0 +1,9 @@
+commit: e5434fe5266b5fedbdbf93123ea9f5274e289d79
+date: 2026-10-02T11:10:47.709013+00:00
+agent: Codex CLI 0.159.3
+model: GPT-6 family
+claude-code: N/A
+tty: not a tty
+pid: 4671
+ITERM_SESSION_ID: unavailable
+qualification: tree22c59693e38b30246484c88a9bda2f73bc2a93c2 build/full suite PASS; cmd/cove95.701s; physical guest permission remains denied
