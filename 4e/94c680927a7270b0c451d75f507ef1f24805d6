@@ -1,0 +1,9 @@
+commit: 4e94c680927a7270b0c451d75f507ef1f24805d6
+date: 2026-10-02T10:40:16.369899+00:00
+agent: Codex CLI 0.159.3
+model: GPT-6 family
+claude-code: N/A
+tty: not a tty
+pid: 9591
+ITERM_SESSION_ID: unavailable
+qualification: tree9503f057c918c6ff2e4bf93e3c45324da521d159 build/full suite PASS; cmd/cove121.968s
