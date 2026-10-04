@@ -32,6 +32,7 @@ func printDiskUsage(w io.Writer) {
 Commands:
   cove disk usage [-json] [-scan] <vm>
   cove disk clean [-apply] <vm>
+  cove disk resize-plan [-json] <vm> <size>
   cove disk resize <vm> <size>
   cove -vm <vm> disk resize <size>
 
@@ -47,6 +48,8 @@ func handleDiskCommand(env commandEnv, args []string) error {
 		return runDiskUsage(env, args[1:])
 	case "clean":
 		return runDiskClean(env, args[1:])
+	case "resize-plan":
+		return runDiskResizePlan(env, args[1:])
 	case "resize":
 		if len(args) > 1 && isHelpArg(args[1]) {
 			printDiskResizeUsage(env.Stdout)
