@@ -6,19 +6,24 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+	"unicode/utf8"
+	"unsafe"
 
 	"github.com/tmc/apple/appkit"
-	"github.com/tmc/apple/foundation"
+	"github.com/tmc/apple/applicationservices"
+	"github.com/tmc/apple/corefoundation"
 	"github.com/tmc/apple/objc"
 	agentstate "github.com/tmc/cove/internal/agent"
 )
 
 const clipboardTextLimit = 1 << 20
+const clipboardFlavorPromised applicationservices.PasteboardFlavorFlags = 1 << 9
 
 type clipboardText struct {
 	change    int
 	text      string
 	available bool
+	pending   bool
 }
 
 type clipboardPushState struct {
@@ -27,6 +32,9 @@ type clipboardPushState struct {
 }
 
 func (s *clipboardPushState) sync(text clipboardText, push func(string) error) error {
+	if text.pending {
+		return nil
+	}
 	if s.synced && text.change == s.change {
 		return nil
 	}
@@ -39,17 +47,97 @@ func (s *clipboardPushState) sync(text clipboardText, push func(string) error) e
 	return nil
 }
 
-func hostClipboardText() clipboardText {
-	var text clipboardText
-	objc.AutoreleasePool(func() {
-		board := appkit.GetNSPasteboardClass().GeneralPasteboard()
-		text.change = board.ChangeCount()
-		id := objc.Send[objc.ID](board.ID, objc.Sel("stringForType:"), objc.String("public.utf8-plain-text"))
-		if id != 0 {
-			text.available = true
-			text.text = foundation.NSStringFromID(id).String()
+type hostClipboardReader struct {
+	board applicationservices.PasteboardRef
+}
+
+func (r *hostClipboardReader) close() {
+	DispatchAsyncMain(func() {
+		if r.board != 0 {
+			corefoundation.CFRelease(unsafe.Pointer(r.board))
+			r.board = 0
 		}
 	})
+}
+
+func (r *hostClipboardReader) read(ctx context.Context) (clipboardText, error) {
+	result := make(chan clipboardText, 1)
+	DispatchAsyncMain(func() {
+		if ctx.Err() != nil {
+			return
+		}
+		var text clipboardText
+		objc.AutoreleasePool(func() {
+			board := appkit.GetNSPasteboardClass().GeneralPasteboard()
+			text.change = board.ChangeCount()
+			if r.board == 0 {
+				name := corefoundation.CFStringRef(objc.String("com.apple.pasteboard.clipboard"))
+				if applicationservices.PasteboardCreate(name, &r.board) != 0 || r.board == 0 {
+					text.pending = true
+					return
+				}
+			}
+			text = readClipboardText(r.board, text.change)
+			if board.ChangeCount() != text.change {
+				text.available, text.pending = false, true
+			}
+		})
+		result <- text
+	})
+	select {
+	case text := <-result:
+		return text, nil
+	case <-ctx.Done():
+		return clipboardText{}, ctx.Err()
+	}
+}
+
+func readClipboardText(board applicationservices.PasteboardRef, change int) clipboardText {
+	text := clipboardText{change: change}
+	applicationservices.PasteboardSynchronize(board)
+	var count uint
+	if applicationservices.PasteboardGetItemCount(board, unsafe.Pointer(&count)) != 0 {
+		text.pending = true
+		return text
+	}
+	if count == 0 {
+		return text
+	}
+	var item applicationservices.PasteboardItemID
+	if applicationservices.PasteboardGetItemIdentifier(board, 1, &item) != 0 {
+		text.pending = true
+		return text
+	}
+	typeName := corefoundation.CFStringRef(objc.String("public.utf8-plain-text"))
+	var flags applicationservices.PasteboardFlavorFlags
+	if applicationservices.PasteboardGetItemFlavorFlags(board, item, typeName, &flags) != 0 {
+		return text
+	}
+	// Resolving a promise can reenter Virtualization's SPICE reader and throw
+	// an Objective-C exception. Poll only materialized data on this snapshot.
+	if flags&clipboardFlavorPromised != 0 {
+		text.pending = true
+		return text
+	}
+	var data corefoundation.CFDataRef
+	if applicationservices.PasteboardCopyItemFlavorData(board, item, typeName, &data) != 0 || data == 0 {
+		text.pending = true
+		return text
+	}
+	defer corefoundation.CFRelease(unsafe.Pointer(data))
+	n := int(corefoundation.CFDataGetLength(data))
+	if n < 0 || n > clipboardTextLimit {
+		return text
+	}
+	p := corefoundation.CFDataGetBytePtr(data)
+	if p == nil && n != 0 {
+		text.pending = true
+		return text
+	}
+	value := unsafe.Slice(p, n)
+	if utf8.Valid(value) {
+		text.text, text.available = string(value), true
+	}
 	return text
 }
 
@@ -68,6 +156,8 @@ func (s *ControlServer) monitorHostClipboard() {
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 	var state clipboardPushState
+	var reader hostClipboardReader
+	defer reader.close()
 	for {
 		select {
 		case <-ctx.Done():
@@ -80,7 +170,10 @@ func (s *ControlServer) monitorHostClipboard() {
 		if state.synced && hostClipboardChangeCount() == state.change {
 			continue
 		}
-		text := hostClipboardText()
+		text, err := reader.read(ctx)
+		if err != nil {
+			return
+		}
 		if err := state.sync(text, func(value string) error {
 			callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()

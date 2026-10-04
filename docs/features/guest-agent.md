@@ -63,6 +63,9 @@ against the guest clipboard. If SPICE has not delivered it, Cove sends the text
 through the logged-in user agent. This fallback retries when the user agent
 reconnects, including after suspend/resume. It transfers plain text up to 1 MiB;
 images, files, rich formatting and guest-to-host sharing still depend on SPICE.
+The background fallback reads only text already supplied to the pasteboard.
+It leaves promised data to normal paste operations, since requesting it can
+reenter the native SPICE provider. Pending text is checked again on later polls.
 `-clipboard=false` disables the fallback as well as SPICE sharing.
 
 Check configuration and fallback readiness with `cove ctl clipboard-status`

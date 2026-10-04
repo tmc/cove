@@ -1,12 +1,135 @@
 package main
 
 import (
+	"context"
 	"errors"
+	"runtime"
 	"testing"
 	"time"
+	"unsafe"
+
+	"github.com/ebitengine/purego"
+	"github.com/tmc/apple/applicationservices"
+	"github.com/tmc/apple/corefoundation"
+	"github.com/tmc/apple/objc"
 
 	"github.com/tmc/cove/internal/vmrun"
 )
+
+func TestReadClipboardText(t *testing.T) {
+	lib, err := purego.Dlopen("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices", purego.RTLD_LAZY)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer purego.Dlclose(lib)
+	// The generated binding treats this C function pointer as an ObjC block.
+	var setPromiseKeeper func(applicationservices.PasteboardRef, uintptr, unsafe.Pointer) int32
+	purego.RegisterLibFunc(&setPromiseKeeper, lib, "PasteboardSetPromiseKeeper")
+	parent := t
+	for _, tt := range []struct {
+		name     string
+		value    string
+		promised bool
+	}{
+		{"text", "host text", false},
+		{"empty", "", false},
+		{"unicode", "世界 🌎", false},
+		{"promised", "", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			runtime.LockOSThread()
+			defer runtime.UnlockOSThread()
+			objc.AutoreleasePool(func() {
+				var ref applicationservices.PasteboardRef
+				if status := applicationservices.PasteboardCreate(0, &ref); status != 0 {
+					t.Fatalf("create pasteboard: %d", status)
+				}
+				parent.Cleanup(func() {
+					applicationservices.PasteboardClear(ref)
+					corefoundation.CFRelease(unsafe.Pointer(ref))
+				})
+				if status := applicationservices.PasteboardClear(ref); status != 0 {
+					t.Fatalf("clear pasteboard: %d", status)
+				}
+				calls := 0
+				keeper := purego.NewCallback(func(applicationservices.PasteboardRef, applicationservices.PasteboardItemID, corefoundation.CFStringRef, unsafe.Pointer) int32 {
+					calls++
+					return -1
+				})
+				if status := setPromiseKeeper(ref, keeper, nil); status != 0 {
+					t.Fatalf("set promise keeper: %d", status)
+				}
+				var data corefoundation.CFDataRef
+				if !tt.promised {
+					data = corefoundation.CFDataCreate(0, []byte(tt.value), corefoundation.CFIndex(len(tt.value)))
+					defer corefoundation.CFRelease(unsafe.Pointer(data))
+				}
+				item := applicationservices.PasteboardItemID(unsafe.Pointer(new(byte)))
+				typeName := corefoundation.CFStringRef(objc.String("public.utf8-plain-text"))
+				if status := applicationservices.PasteboardPutItemFlavor(ref, item, typeName, data, 0); status != 0 {
+					t.Fatalf("put clipboard data: %d", status)
+				}
+				got := readClipboardText(ref, 42)
+				if got.change != 42 || got.text != tt.value || got.available == tt.promised || got.pending != tt.promised {
+					t.Fatalf("read clipboard = %+v", got)
+				}
+				if calls != 0 {
+					t.Fatalf("resolved promised data %d times", calls)
+				}
+				if tt.promised {
+					// Prove this fixture invokes the provider when read without the guard.
+					applicationservices.PasteboardCopyItemFlavorData(ref, item, typeName, &data)
+					if calls == 0 {
+						t.Fatal("promise fixture did not invoke its provider")
+					}
+					value := []byte("materialized")
+					data = corefoundation.CFDataCreate(0, value, corefoundation.CFIndex(len(value)))
+					defer corefoundation.CFRelease(unsafe.Pointer(data))
+					if status := applicationservices.PasteboardPutItemFlavor(ref, item, typeName, data, 0); status != 0 {
+						t.Fatalf("materialize promise: %d", status)
+					}
+					got = readClipboardText(ref, 42)
+					if got.text != string(value) || !got.available || got.pending {
+						t.Fatalf("materialized clipboard = %+v", got)
+					}
+				}
+			})
+		})
+	}
+}
+
+func TestClipboardPushPending(t *testing.T) {
+	var state clipboardPushState
+	text := clipboardText{change: 42, pending: true}
+	if err := state.sync(text, func(string) error { t.Fatal("pushed promised text"); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if state.synced {
+		t.Fatal("marked promised text as synced")
+	}
+	text.pending, text.available, text.text = false, true, "materialized"
+	calls := 0
+	if err := state.sync(text, func(string) error { calls++; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("materialized text pushed %d times", calls)
+	}
+}
+
+func TestHostClipboardReadCanceled(t *testing.T) {
+	old := dispatchAsyncMainFn
+	defer func() { dispatchAsyncMainFn = old }()
+	var queued func()
+	dispatchAsyncMainFn = func(fn func()) { queued = fn }
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var reader hostClipboardReader
+	if _, err := reader.read(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("read error = %v", err)
+	}
+	queued()
+}
 
 func TestClipboardPushState(t *testing.T) {
 	for _, tt := range []struct {
