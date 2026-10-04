@@ -12,6 +12,7 @@ import (
 	identityx "github.com/tmc/apple/x/vzkit/identity"
 	networkx "github.com/tmc/apple/x/vzkit/network"
 	platformx "github.com/tmc/apple/x/vzkit/platform"
+	"github.com/tmc/cove/internal/checkpoint"
 	"github.com/tmc/cove/internal/mutationguard"
 	"github.com/tmc/cove/internal/vmconfig"
 	"golang.org/x/sys/unix"
@@ -60,6 +61,12 @@ func cloneVMLocked(guard *mutationguard.Guard, opts CloneOptions) error {
 	if _, err := os.Stat(dstPath); !os.IsNotExist(err) {
 		return fmt.Errorf("%w: %s", ErrCloneTargetExists, opts.Target)
 	}
+
+	release, err := checkpoint.AcquireRead(srcPath)
+	if err != nil {
+		return fmt.Errorf("protect clone source: %w", err)
+	}
+	defer release()
 
 	fmt.Printf("Cloning %s -> %s\n", opts.Source, opts.Target)
 

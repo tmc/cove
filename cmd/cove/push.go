@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/tmc/cove/internal/bytefmt"
+	"github.com/tmc/cove/internal/checkpoint"
 	"github.com/tmc/cove/internal/ociimage"
 	"github.com/tmc/cove/internal/vmconfig"
 )
@@ -78,6 +79,15 @@ func handlePush(args []string) error {
 	if len(pos) != 2 {
 		return fmt.Errorf("usage: cove push [flags] <vm|dir> <ref>")
 	}
+	root := pushSourceDir(pos[0])
+	if !vmconfig.Validate(root) {
+		return fmt.Errorf("vm not found or invalid: %s", root)
+	}
+	release, err := checkpoint.AcquireRead(root)
+	if err != nil {
+		return fmt.Errorf("protect push source: %w", err)
+	}
+	defer release()
 	switch opts.Format {
 	case "", "cove":
 		// fall through
@@ -513,6 +523,13 @@ func validatePushReferences(ref string, opts pushOptions) error {
 }
 
 func ensurePushSourceInactive(vmDirectory string) error {
+	pending, err := checkpoint.New(vmDirectory).Pending()
+	if err != nil {
+		return err
+	}
+	if pending {
+		return fmt.Errorf("checkpoint restore recovery is required before push")
+	}
 	active, err := probeControlSocket(GetControlSocketPathForVM(vmDirectory), pullTargetProbeTimeout)
 	if err != nil {
 		return err

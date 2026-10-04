@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/tmc/cove/internal/checkpoint"
 	"golang.org/x/sys/unix"
 )
 
@@ -32,6 +33,10 @@ type RunLock struct {
 // holds the lock; the returned error message names the holding PID
 // when discoverable.
 func AcquireRunLock(vmDir string) (*RunLock, error) {
+	return acquireRunLock(vmDir, false)
+}
+
+func acquireRunLock(vmDir string, allowCheckpointRecovery bool) (*RunLock, error) {
 	if vmDir == "" {
 		return nil, errors.New("run.lock: vmDir required")
 	}
@@ -52,6 +57,16 @@ func AcquireRunLock(vmDir string) (*RunLock, error) {
 			return nil, fmt.Errorf("run.lock: %s already held%s: %w", path, holder, err)
 		}
 		return nil, fmt.Errorf("run.lock: flock: %w", err)
+	}
+	if !allowCheckpointRecovery {
+		pending, err := checkpoint.New(vmDir).Pending()
+		if err != nil || pending {
+			f.Close()
+			if err != nil {
+				return nil, fmt.Errorf("probe checkpoint recovery: %w", err)
+			}
+			return nil, fmt.Errorf("checkpoint restore recovery is required; run: cove checkpoint recover %s", filepath.Base(vmDir))
+		}
 	}
 	return &RunLock{f: f}, nil
 }
