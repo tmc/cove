@@ -7,7 +7,7 @@ import (
 )
 
 func TestWorkspaceAttachmentInventoryRefusesExternalAndAmbiguous(t *testing.T) {
-	dir := t.TempDir()
+	dir := resolvePath(t.TempDir())
 	local := filepath.Join(dir, "disk.img")
 	os.WriteFile(local, nil, 0600)
 	external := filepath.Join(t.TempDir(), "data.img")

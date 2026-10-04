@@ -96,7 +96,7 @@ func TestWorkspaceRuntimeDiagnosticFailureDoesNotInterruptOwner(t *testing.T) {
 }
 
 func TestWorkspaceRuntimeDiagnosticsRetainAdmittedDirectory(t *testing.T) {
-	root := t.TempDir()
+	root := resolvePath(t.TempDir())
 	t.Setenv("COVE_STATE_DIR", root)
 	path := filepath.Join(root, "vms", "guest.covevm")
 	if err := os.MkdirAll(path, 0700); err != nil {

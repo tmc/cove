@@ -14,7 +14,7 @@ import (
 
 func workspacePinFixture(t *testing.T) (string, *mutationguard.Guard, taskDisposition, []workspaceTaskPinTarget) {
 	t.Helper()
-	root := t.TempDir()
+	root := resolvePath(t.TempDir())
 	runPath := filepath.Join(root, "runs", "run")
 	guestPath := filepath.Join(root, "vms", "workspace.covevm")
 	for _, path := range []string{runPath, guestPath} {

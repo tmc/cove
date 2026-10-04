@@ -104,6 +104,16 @@ func TestVMInfoState(t *testing.T) {
 	t.Run("running", func(t *testing.T) {
 		vmPath := makeTestVMDir(t)
 		sock := GetControlSocketPathForVM(vmPath)
+		if err := os.MkdirAll(filepath.Dir(sock), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if !controlSocketUsesVMDir(vmPath, sock) {
+			t.Cleanup(func() {
+				if err := os.Remove(filepath.Dir(sock)); err != nil {
+					t.Error(err)
+				}
+			})
+		}
 		ln, err := net.Listen("unix", sock)
 		if err != nil {
 			t.Fatalf("Listen(%s) error = %v", sock, err)
