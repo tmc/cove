@@ -100,3 +100,16 @@ func TestPrintMountedVolumeFDAWarning(t *testing.T) {
 		}
 	}
 }
+
+func TestMountedVolumeMissingUserAgent(t *testing.T) {
+	out := captureStdout(t, func() error {
+		printMountedVolumeFDAWarning("/Volumes/work", "user agent unavailable")
+		return nil
+	})
+	if !strings.Contains(out, "read access unverified") || !strings.Contains(out, "cove ctl agent-status") {
+		t.Fatalf("missing readiness guidance: %s", out)
+	}
+	if strings.Contains(out, "COVE_TCC_FDA_REQUIRED") || strings.Contains(out, "doctor tcc-fda") {
+		t.Fatalf("unavailable user agent incorrectly diagnosed as FDA denial: %s", out)
+	}
+}

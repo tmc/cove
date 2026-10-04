@@ -587,6 +587,11 @@ func warnWhenTCCFDABlocked(ctx context.Context, guestPath string) {
 }
 
 func printMountedVolumeFDAWarning(guestPath, detail string) {
+	if detail == "user agent unavailable" {
+		fmt.Printf("Volume %s: read access unverified; user agent unavailable\n", guestPath)
+		fmt.Println("  log into the guest and check: cove ctl agent-status")
+		return
+	}
 	fmt.Printf("COVE_TCC_FDA_REQUIRED path=%s agent=/usr/local/bin/vz-agent detail=%s\n", shellQuote(guestPath), shellQuote(detail))
 	fmt.Printf("Full Disk Access needed for %s: mounted but not readable via user agent (%s)\n", guestPath, detail)
 	fmt.Printf("  guided fix: cove doctor tcc-fda -tcc-path %s -password <guest-admin-password>\n", shellQuote(guestPath))
