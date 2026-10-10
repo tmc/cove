@@ -89,6 +89,8 @@ func handleEarlyCLI(args []string) (handled bool, exitCode int) {
 			printStatusUsage(os.Stdout)
 		case "trace", "traces":
 			printTraceUsage(os.Stdout)
+		case "ui":
+			printUIUsage(os.Stdout)
 		case "user":
 			printUserUsage(os.Stdout)
 		case "daemon":

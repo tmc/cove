@@ -249,3 +249,18 @@ func mcpToolByName(tools []mcpToolDoc, name string) *mcpToolDoc {
 	}
 	return nil
 }
+
+func TestDumpDocsGuestUI(t *testing.T) {
+	command := cliCommandByName(buildCLIDocs().Commands, "ui")
+	if command == nil {
+		t.Fatal("guest ui omitted from CLI docs")
+	}
+	for _, want := range []string{"status|inspect|find", "-generation", "-timeout", "maximum 1024", "No permissions are auto-granted"} {
+		if !strings.Contains(command.Usage, want) {
+			t.Errorf("guest ui usage missing %q", want)
+		}
+	}
+	if len(command.Examples) != 3 {
+		t.Fatalf("guest ui examples=%v", command.Examples)
+	}
+}

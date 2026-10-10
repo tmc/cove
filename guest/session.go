@@ -109,7 +109,13 @@ type Observation struct {
 
 // Ready reads readiness; permission denial is returned as data, without prompting.
 func (s *Session) Ready(ctx context.Context) (Status, error) {
-	observation, err := s.request(ctx, "agent-ui-status", Query{})
+	return s.Status(ctx, Query{})
+}
+
+// Status reads readiness with an explicit timeout and expected session generation.
+// Permission denial and stale generations are returned as data, without prompting.
+func (s *Session) Status(ctx context.Context, query Query) (Status, error) {
+	observation, err := s.request(ctx, "agent-ui-status", query)
 	return observation.Status, err
 }
 

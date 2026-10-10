@@ -146,3 +146,18 @@ func TestHandleEarlyCLINoArgProductSurfaces(t *testing.T) {
 		})
 	}
 }
+
+func TestHelpGuestUI(t *testing.T) {
+	var handled bool
+	var code int
+	out := captureStdout(t, func() error {
+		handled, code = handleEarlyCLI([]string{"help", "ui"})
+		return nil
+	})
+	if !handled || code != 0 {
+		t.Fatalf("help ui: handled=%v code=%d", handled, code)
+	}
+	if !strings.Contains(out, "Usage: cove ui status|inspect|find") {
+		t.Fatalf("guest ui help missing: %s", out)
+	}
+}

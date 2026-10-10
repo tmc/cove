@@ -97,7 +97,7 @@ func handleUICommand(env commandEnv, args []string) error {
 	query := guest.Query{PID: int32(*pid), MaxDepth: uint32(*depth), MaxNodes: uint32(*nodes), MaxBytes: uint32(*bytes), Timeout: *timeout, Role: *role, Identifier: *identifier, Label: *label, ExpectedGeneration: *generation}
 	var observation guest.Observation
 	if action == "status" {
-		observation.Status, err = session.Ready(ctx)
+		observation.Status, err = session.Status(ctx, query)
 	} else if action == "inspect" {
 		observation, err = session.Inspect(ctx, query)
 	} else {

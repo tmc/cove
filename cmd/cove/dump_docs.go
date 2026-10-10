@@ -222,6 +222,11 @@ type cliDocSpec struct {
 }
 
 var cliDocSpecs = []cliDocSpec{
+	{Name: "ui", Summary: "Read bounded guest user-session accessibility without performing actions.", Usage: func() string { return captureWriter(printUIUsage) }, Examples: []string{
+		"cove ui status -vm work -json",
+		"cove ui inspect -vm work -pid 123 -depth 1 -json",
+		"cove ui find -vm work -pid 123 -role AXButton -label Save -generation SESSION -json",
+	}},
 	{Name: "up", Summary: "Install, provision, and boot a VM in one command.", Usage: func() string {
 		return captureWriter(func(w io.Writer) {
 			fs, _, _ := newUpFlagSet(w)

@@ -60,3 +60,15 @@ func ExampleSession_Find() {
 	fmt.Println(observation.MatchState)
 	// Output: transport unavailable
 }
+
+func ExampleSession_Status() {
+	session, _ := NewSession("/path/to/running-vm/control.sock")
+	defer session.Close()
+	status, err := session.Status(context.Background(), Query{ExpectedGeneration: "previous-session"})
+	if err != nil {
+		fmt.Println("transport unavailable")
+		return
+	}
+	fmt.Println(status.State)
+	// Output: transport unavailable
+}

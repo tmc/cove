@@ -18,7 +18,11 @@ import (
 
 func sessionFixture(t *testing.T, handle func(*controlpb.ControlRequest) *controlpb.ControlResponse) *Session {
 	t.Helper()
-	root, err := os.MkdirTemp(filepath.Join(os.Getenv("HOME"), "tmp"), "cove-session-test-")
+	parent := filepath.Join(os.Getenv("HOME"), "tmp", "vz-macos", time.Now().Format("20060102")+"-ui-tests")
+	if err := os.MkdirAll(parent, 0700); err != nil {
+		t.Fatal(err)
+	}
+	root, err := os.MkdirTemp(parent, "session-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,5 +150,21 @@ func TestSessionBoundsResponseBytes(t *testing.T) {
 	_, err := session.Ready(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "response exceeds") {
 		t.Fatalf("oversized response error=%v", err)
+	}
+}
+
+func TestSessionStatusPropagatesQuery(t *testing.T) {
+	requests := make(chan *controlpb.ControlRequest, 1)
+	session := sessionFixture(t, func(request *controlpb.ControlRequest) *controlpb.ControlResponse {
+		requests <- request
+		return &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_AgentUi{AgentUi: &pb.UIResponse{Status: &pb.UIStatus{State: "stale_generation", Generation: "current"}}}}
+	})
+	status, err := session.Status(context.Background(), Query{ExpectedGeneration: "previous", Timeout: 350 * time.Millisecond})
+	if err != nil || status.State != "stale_generation" || status.Generation != "current" {
+		t.Fatalf("status=%+v error=%v", status, err)
+	}
+	request := <-requests
+	if request.Type != "agent-ui-status" || request.GetAgentUi().ExpectedGeneration != "previous" || request.GetAgentUi().TimeoutMs != 350 {
+		t.Fatalf("status query lost: %v", request)
 	}
 }
