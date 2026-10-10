@@ -34,15 +34,28 @@ func TestHostInspectionCancellation(t *testing.T) {
 		want         error
 	}{
 		{"deadline", "echo diagnostic >&2; exec /bin/sleep 30", context.DeadlineExceeded},
-		{"inherited-pipe", "/bin/sleep 30 & echo $!; exit 0", exec.ErrWaitDelay},
+		{"inherited-pipe", `/bin/sleep 30 & echo $!; echo started > "$1"; exit 0`, exec.ErrWaitDelay},
 		{"process-group", "/bin/sleep 30 & echo $!; wait", context.DeadlineExceeded},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			budget := 200 * time.Millisecond
+			marker := filepath.Join(t.TempDir(), "started")
+			args := []string{"-c", tt.script, "inspection-test", marker}
+			if tt.name == "inherited-pipe" {
+				budget = 5 * time.Second
+			}
 			start := time.Now()
-			out, err := runHostInspection(context.Background(), 200*time.Millisecond, "/bin/sh", "-c", tt.script)
+			out, err := runHostInspection(context.Background(), budget, "/bin/sh", args...)
 			if !errors.Is(err, tt.want) {
 				t.Fatalf("error = %v, want %v (output %q)", err, tt.want, out)
+			}
+			if tt.name == "inherited-pipe" {
+				info, err := os.Stat(marker)
+				if err != nil {
+					t.Fatal(err)
+				}
+				start = info.ModTime()
 			}
 			if time.Since(start) > time.Second {
 				t.Fatal("inspection exceeded deadline and pipe cleanup allowance")
