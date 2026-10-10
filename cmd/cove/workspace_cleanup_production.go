@@ -30,6 +30,10 @@ func workspaceCleanupTargets(root string, state taskDisposition) ([]workspaceTas
 }
 
 func workspaceCleanupPins(root string, state taskDisposition) (bool, error) {
+	return workspaceCleanupPinsWithMissing(root, state, false)
+}
+
+func workspaceCleanupPinsWithMissing(root string, state taskDisposition, allowMissing bool) (bool, error) {
 	targets, err := workspaceCleanupTargets(root, state)
 	if err != nil {
 		return false, err
@@ -39,6 +43,7 @@ func workspaceCleanupPins(root string, state taskDisposition) (bool, error) {
 		return false, err
 	}
 	owner := storagepins.TaskOwner{RunID: state.RunID, AttemptID: state.AttemptID, Generation: state.Generation, PID: state.OwnerPID, StartedAt: state.OwnerStartedAt}
+	missing := 0
 	for _, target := range targets {
 		if pins.IsOperatorPinned(target.Category, target.ID) {
 			return true, nil
@@ -55,8 +60,14 @@ func workspaceCleanupPins(root string, state taskDisposition) (bool, error) {
 			found = true
 		}
 		if !found {
-			return false, fmt.Errorf("owned cleanup task pin unavailable")
+			if !allowMissing {
+				return false, fmt.Errorf("owned cleanup task pin unavailable")
+			}
+			missing++
 		}
+	}
+	if missing != 0 && missing != len(targets) {
+		return false, fmt.Errorf("discard recovery task pins partially missing")
 	}
 	return false, nil
 }
@@ -138,6 +149,13 @@ func finalizeDiscardedWorkspaceGuest(state taskDisposition, generation string) e
 		return err
 	}
 	defer guard.Release()
+	return finalizeDiscardedWorkspaceGuestWithGuard(root, guard, state, generation)
+}
+
+func finalizeDiscardedWorkspaceGuestWithGuard(root string, guard *mutationguard.Guard, state taskDisposition, generation string) error {
+	if err := guard.Check(root); err != nil {
+		return err
+	}
 	if state.Guest == nil {
 		return fmt.Errorf("discarded workspace guest unavailable")
 	}
@@ -146,34 +164,52 @@ func finalizeDiscardedWorkspaceGuest(state taskDisposition, generation string) e
 		return err
 	}
 	return releaseWorkspaceTaskPinsWithGuard(root, guard, state, generation, targets, func(guest taskGuestIdentity) error {
-		parent, rootIdentity, parentIdentity, err := openWorkspaceQuarantineParent(root, guard)
-		if err != nil {
+		if _, err := verifyDeletedWorkspaceQuarantine(root, guard, state); err != nil {
 			return err
 		}
-		defer parent.Close()
-		quarantine, err := openWorkspaceQuarantine(parent, false)
-		if err != nil {
-			return err
-		}
-		defer quarantine.Close()
-		receipt, err := readWorkspaceQuarantineReceipt(quarantine, generation+".json")
-		if err != nil {
-			return err
-		}
-		if receipt.Phase != "deleted" || receipt.Task.Generation != generation || *receipt.Task.Guest != guest || receipt.Root != rootIdentity || receipt.Parent != parentIdentity || receipt.Task.RunID != state.RunID || receipt.Task.AttemptID != state.AttemptID || receipt.Task.OwnerPID != state.OwnerPID || receipt.Task.OwnerStartedAt != state.OwnerStartedAt || receipt.Task.Source != state.Source || !reflect.DeepEqual(receipt.Task.SourceGuest, state.SourceGuest) || receipt.Task.Policy != state.Policy || receipt.Task.TaskSucceeded != state.TaskSucceeded || !reflect.DeepEqual(receipt.Task.DiscardRequest, state.DiscardRequest) || !workspaceDiscardAuthorized(state) {
-			return fmt.Errorf("workspace deletion evidence differs")
-		}
-		if err := checkWorkspaceRootIdentity(parent, workspaceQuarantineDirectory, receipt.Quarantine); err != nil {
-			return err
-		}
-		if _, err := quarantine.Lstat(receipt.Name); !os.IsNotExist(err) {
-			return fmt.Errorf("workspace quarantine remains or cannot be observed")
-		}
-		if err := removeDiscardedWorkspaceAliases(root, guard, guest); err != nil {
-			return err
-		}
-		return nil
+		return removeDiscardedWorkspaceAliases(root, guard, guest)
 	})
+}
+
+func verifyDeletedWorkspaceQuarantine(root string, guard *mutationguard.Guard, state taskDisposition) (workspaceQuarantineReceipt, error) {
+	var zero workspaceQuarantineReceipt
+	if err := validateTaskDisposition(state, true); err != nil {
+		return zero, err
+	}
+	if !workspaceDiscardAuthorized(state) {
+		return zero, fmt.Errorf("workspace deletion authority unavailable")
+	}
+	source, err := identifyTaskGuest(state.Source)
+	if err != nil || source != *state.SourceGuest {
+		return zero, fmt.Errorf("workspace source identity differs or unavailable")
+	}
+	if _, err := os.Lstat(state.Guest.Path); !os.IsNotExist(err) {
+		return zero, fmt.Errorf("original workspace guest remains or cannot be observed")
+	}
+	parent, rootIdentity, parentIdentity, err := openWorkspaceQuarantineParent(root, guard)
+	if err != nil {
+		return zero, err
+	}
+	defer parent.Close()
+	quarantine, err := openWorkspaceQuarantine(parent, false)
+	if err != nil {
+		return zero, err
+	}
+	defer quarantine.Close()
+	receipt, err := readWorkspaceQuarantineReceipt(quarantine, state.Generation+".json")
+	if err != nil {
+		return zero, err
+	}
+	if receipt.Phase != "deleted" || receipt.Task.Generation != state.Generation || *receipt.Task.Guest != *state.Guest || receipt.Root != rootIdentity || receipt.Parent != parentIdentity || receipt.Task.RunID != state.RunID || receipt.Task.AttemptID != state.AttemptID || receipt.Task.OwnerPID != state.OwnerPID || receipt.Task.OwnerStartedAt != state.OwnerStartedAt || receipt.Task.Source != state.Source || !reflect.DeepEqual(receipt.Task.SourceGuest, state.SourceGuest) || receipt.Task.Policy != state.Policy || receipt.Task.TaskSucceeded != state.TaskSucceeded || !reflect.DeepEqual(receipt.Task.DiscardRequest, state.DiscardRequest) || receipt.Task.RecoveryRequest != nil {
+		return zero, fmt.Errorf("workspace deletion evidence differs")
+	}
+	if err := checkWorkspaceRootIdentity(parent, workspaceQuarantineDirectory, receipt.Quarantine); err != nil {
+		return zero, err
+	}
+	if _, err := quarantine.Lstat(receipt.Name); !os.IsNotExist(err) {
+		return zero, fmt.Errorf("workspace quarantine remains or cannot be observed")
+	}
+	return receipt, nil
 }
 
 func workspaceGuestFileHolders(dir string) ([]int, error) {

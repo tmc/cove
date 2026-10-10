@@ -136,6 +136,15 @@ func discardWorkspaceRun(ctx context.Context, root, runID string) error {
 		guard.Release()
 		return fmt.Errorf("run identity differs")
 	}
+	if journal.state.DiscardRequest != nil {
+		receiptPath := filepath.Join(root, "vms", workspaceQuarantineDirectory, journal.state.Generation+".json")
+		_, receiptErr := os.Lstat(receiptPath)
+		_, guestErr := os.Lstat(journal.state.Guest.Path)
+		if !os.IsNotExist(receiptErr) || guestErr != nil || journal.state.State == "discarded" || journal.state.RecoveryRequest != nil {
+			err = recoverDeletedWorkspaceRun(ctx, root, guard, journal)
+			return errors.Join(err, guard.Release())
+		}
+	}
 	err = journal.requestDiscard()
 	err = errors.Join(err, guard.Release())
 	if err != nil {

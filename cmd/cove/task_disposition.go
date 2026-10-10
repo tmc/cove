@@ -24,22 +24,23 @@ type taskGuestIdentity struct {
 }
 
 type taskDisposition struct {
-	Version        int                 `json:"version"`
-	RunID          string              `json:"run_id"`
-	AttemptID      string              `json:"attempt_id"`
-	Generation     string              `json:"owner_generation"`
-	OwnerPID       int                 `json:"owner_pid"`
-	OwnerStartedAt string              `json:"owner_started_at"`
-	SourceGuest    *taskGuestIdentity  `json:"source_guest,omitempty"`
-	Source         string              `json:"source"`
-	Policy         string              `json:"policy"`
-	State          string              `json:"state"`
-	Guest          *taskGuestIdentity  `json:"guest,omitempty"`
-	Owned          bool                `json:"owned"`
-	TaskSucceeded  bool                `json:"task_succeeded"`
-	DiscardRequest *taskDiscardRequest `json:"discard_request,omitempty"`
-	Sequence       uint64              `json:"sequence"`
-	UpdatedAt      string              `json:"updated_at"`
+	Version         int                 `json:"version"`
+	RunID           string              `json:"run_id"`
+	AttemptID       string              `json:"attempt_id"`
+	Generation      string              `json:"owner_generation"`
+	OwnerPID        int                 `json:"owner_pid"`
+	OwnerStartedAt  string              `json:"owner_started_at"`
+	SourceGuest     *taskGuestIdentity  `json:"source_guest,omitempty"`
+	Source          string              `json:"source"`
+	Policy          string              `json:"policy"`
+	State           string              `json:"state"`
+	Guest           *taskGuestIdentity  `json:"guest,omitempty"`
+	Owned           bool                `json:"owned"`
+	TaskSucceeded   bool                `json:"task_succeeded"`
+	DiscardRequest  *taskDiscardRequest `json:"discard_request,omitempty"`
+	RecoveryRequest *taskDiscardRequest `json:"discard_recovery_request,omitempty"`
+	Sequence        uint64              `json:"sequence"`
+	UpdatedAt       string              `json:"updated_at"`
 }
 
 type taskDispositionJournal struct {
