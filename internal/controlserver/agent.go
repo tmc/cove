@@ -111,6 +111,15 @@ func AgentUnavailableForVMState(state vz.VZVirtualMachineState) error {
 // GetAgent returns the current daemon agent client, connecting if
 // necessary.
 func (b *AgentBridge) GetAgent() (*agentstate.AgentClient, error) {
+	return b.GetAgentContext(b.defaultContext())
+}
+
+// GetAgentContext bounds lock acquisition and RPCs by the caller budget.
+// Native VM state observation remains synchronous.
+func (b *AgentBridge) GetAgentContext(parent context.Context) (*agentstate.AgentClient, error) {
+	if err := parent.Err(); err != nil {
+		return nil, err
+	}
 	state, err := b.currentVMState()
 	if err != nil {
 		return nil, err
@@ -120,10 +129,12 @@ func (b *AgentBridge) GetAgent() (*agentstate.AgentClient, error) {
 	}
 
 	// Fast path: read lock to check existing connection.
-	b.mu.RLock()
+	if err := b.lockAgentContext(parent, true); err != nil {
+		return nil, err
+	}
 	if a := b.agent; a != nil {
 		b.mu.RUnlock()
-		ctx, cancel := b.timeoutContext(2 * time.Second)
+		ctx, cancel := context.WithTimeout(parent, 2*time.Second)
 		defer cancel()
 		if _, err := a.Ping(ctx); err == nil {
 			return a, nil
@@ -133,18 +144,23 @@ func (b *AgentBridge) GetAgent() (*agentstate.AgentClient, error) {
 	}
 
 	// Slow path: write lock to reconnect.
-	b.mu.Lock()
+	if err := b.lockAgentContext(parent, false); err != nil {
+		return nil, err
+	}
 	defer b.mu.Unlock()
 	if b.agent != nil {
-		ctx, cancel := b.timeoutContext(2 * time.Second)
+		ctx, cancel := context.WithTimeout(parent, 2*time.Second)
 		defer cancel()
 		if _, err := b.agent.Ping(ctx); err == nil {
 			return b.agent, nil
 		}
+		if err := parent.Err(); err != nil {
+			return nil, err
+		}
 		b.agent.Close()
 		b.agent = nil
 	}
-	if err := b.connectAgentLocked(); err != nil {
+	if err := b.connectAgentLockedContext(parent); err != nil {
 		return nil, err
 	}
 	return b.agent, nil
@@ -154,6 +170,15 @@ func (b *AgentBridge) GetAgent() (*agentstate.AgentClient, error) {
 // necessary. On macOS guests, missing LaunchAgents are bootstrapped
 // on demand.
 func (b *AgentBridge) GetUserAgent() (*agentstate.UserAgentClient, error) {
+	return b.GetUserAgentContext(b.defaultContext())
+}
+
+// GetUserAgentContext bounds lock acquisition and RPCs by the caller budget.
+// Native VM state observation remains synchronous.
+func (b *AgentBridge) GetUserAgentContext(parent context.Context) (*agentstate.UserAgentClient, error) {
+	if err := parent.Err(); err != nil {
+		return nil, err
+	}
 	state, err := b.currentVMState()
 	if err != nil {
 		return nil, err
@@ -162,10 +187,12 @@ func (b *AgentBridge) GetUserAgent() (*agentstate.UserAgentClient, error) {
 		return nil, err
 	}
 
-	b.mu.RLock()
+	if err := b.lockAgentContext(parent, true); err != nil {
+		return nil, err
+	}
 	if ua := b.userAgent; ua != nil {
 		b.mu.RUnlock()
-		ctx, cancel := b.timeoutContext(2 * time.Second)
+		ctx, cancel := context.WithTimeout(parent, 2*time.Second)
 		defer cancel()
 		if _, err := ua.UserExec(ctx, []string{"/usr/bin/true"}, nil, ""); err == nil {
 			return ua, nil
@@ -174,18 +201,23 @@ func (b *AgentBridge) GetUserAgent() (*agentstate.UserAgentClient, error) {
 		b.mu.RUnlock()
 	}
 
-	b.mu.Lock()
+	if err := b.lockAgentContext(parent, false); err != nil {
+		return nil, err
+	}
 	defer b.mu.Unlock()
 	if b.userAgent != nil {
-		ctx, cancel := b.timeoutContext(2 * time.Second)
+		ctx, cancel := context.WithTimeout(parent, 2*time.Second)
 		defer cancel()
 		if _, err := b.userAgent.UserExec(ctx, []string{"/usr/bin/true"}, nil, ""); err == nil {
 			return b.userAgent, nil
 		}
+		if err := parent.Err(); err != nil {
+			return nil, err
+		}
 		b.userAgent.Close()
 		b.userAgent = nil
 	}
-	if err := b.connectUserAgentLocked(); err != nil {
+	if err := b.connectUserAgentLockedContext(parent); err != nil {
 		return nil, err
 	}
 	return b.userAgent, nil
@@ -194,19 +226,26 @@ func (b *AgentBridge) GetUserAgent() (*agentstate.UserAgentClient, error) {
 // connectUserAgentLocked establishes the user agent connection on
 // port 1025. Caller must hold b.mu write lock.
 func (b *AgentBridge) connectUserAgentLocked() error {
+	return b.connectUserAgentLockedContext(b.defaultContext())
+}
+
+func (b *AgentBridge) connectUserAgentLockedContext(parent context.Context) error {
 	if b.userAgent != nil {
 		return nil
 	}
-	if err := b.connectUserAgentPortLocked(); err == nil {
+	if err := b.connectUserAgentPortLockedContext(parent); err == nil {
 		return nil
 	} else if b.host != nil && b.host.Linux() {
 		return err
 	} else {
-		repairErr := b.bootstrapUserAgentLocked()
+		if err := parent.Err(); err != nil {
+			return err
+		}
+		repairErr := b.bootstrapUserAgentLockedContext(parent)
 		if repairErr != nil {
 			return fmt.Errorf("%v; bootstrap user agent: %w", err, repairErr)
 		}
-		if retryErr := b.connectUserAgentPortLocked(); retryErr != nil {
+		if retryErr := b.connectUserAgentPortLockedContext(parent); retryErr != nil {
 			return fmt.Errorf("connect user agent after bootstrap: %w", retryErr)
 		}
 		return nil
@@ -214,6 +253,10 @@ func (b *AgentBridge) connectUserAgentLocked() error {
 }
 
 func (b *AgentBridge) connectUserAgentPortLocked() error {
+	return b.connectUserAgentPortLockedContext(b.defaultContext())
+}
+
+func (b *AgentBridge) connectUserAgentPortLockedContext(parent context.Context) error {
 	client, err := agentstate.NewUserAgentClientWithDial(func(ctx context.Context) (net.Conn, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -227,7 +270,7 @@ func (b *AgentBridge) connectUserAgentPortLocked() error {
 	if err != nil {
 		return fmt.Errorf("user agent client: %w", err)
 	}
-	ctx, cancel := b.timeoutContext(5 * time.Second)
+	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
 	defer cancel()
 	if _, err := client.UserExec(ctx, []string{"/usr/bin/true"}, nil, ""); err != nil {
 		client.Close()
@@ -238,24 +281,28 @@ func (b *AgentBridge) connectUserAgentPortLocked() error {
 }
 
 func (b *AgentBridge) bootstrapUserAgentLocked() error {
+	return b.bootstrapUserAgentLockedContext(b.defaultContext())
+}
+
+func (b *AgentBridge) bootstrapUserAgentLockedContext(parent context.Context) error {
 	if b.host == nil {
 		return fmt.Errorf("user agent bootstrap: no host")
 	}
 	if b.host.Linux() {
 		return fmt.Errorf("user agent bootstrap is only supported for macOS guests")
 	}
-	if err := b.connectAgentLocked(); err != nil {
+	if err := b.connectAgentLockedContext(parent); err != nil {
 		return fmt.Errorf("connect daemon agent: %w", err)
 	}
 
-	user, uid, err := b.consoleUserLocked()
+	user, uid, err := b.consoleUserLockedContext(parent)
 	if err != nil {
 		return err
 	}
 
 	label, plist := b.host.LaunchAgentArtifact()
 	plistPath := "/Library/LaunchAgents/" + label + ".plist"
-	ctx, cancel := b.timeoutContext(20 * time.Second)
+	ctx, cancel := context.WithTimeout(parent, 20*time.Second)
 	defer cancel()
 
 	if err := b.agent.WriteFile(ctx, plistPath, []byte(plist), 0644); err != nil {
@@ -291,7 +338,11 @@ launchctl kickstart gui/%d/%s
 }
 
 func (b *AgentBridge) consoleUserLocked() (string, int, error) {
-	ctx, cancel := b.timeoutContext(5 * time.Second)
+	return b.consoleUserLockedContext(b.defaultContext())
+}
+
+func (b *AgentBridge) consoleUserLockedContext(parent context.Context) (string, int, error) {
+	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
 	defer cancel()
 
 	result, err := b.agent.Exec(ctx, []string{"stat", "-f", "%Su %u", "/dev/console"}, nil, "")
@@ -359,6 +410,10 @@ func ParseConsoleOwnerOutput(stdout string) (string, int, error) {
 // connectAgentLocked establishes the daemon agent connection. Caller
 // must hold b.mu.
 func (b *AgentBridge) connectAgentLocked() error {
+	return b.connectAgentLockedContext(b.defaultContext())
+}
+
+func (b *AgentBridge) connectAgentLockedContext(parent context.Context) error {
 	if b.agent != nil {
 		return nil
 	}
@@ -379,7 +434,7 @@ func (b *AgentBridge) connectAgentLocked() error {
 	if err != nil {
 		return fmt.Errorf("agent client: %w", err)
 	}
-	ctx, cancel := b.timeoutContext(5 * time.Second)
+	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
 	defer cancel()
 	version, err := client.Ping(ctx)
 	if err != nil {

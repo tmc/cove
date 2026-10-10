@@ -578,6 +578,9 @@ public struct VZControl_AgentExecCommand: Sendable {
 
   public var workingDir: String = String()
 
+  /// Absolute host deadline; zero preserves the server execution limit.
+  public var deadlineUnixNano: Int64 = 0
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -2116,7 +2119,7 @@ extension VZControl_PortForwardCommand: SwiftProtobuf.Message, SwiftProtobuf._Me
 
 extension VZControl_AgentExecCommand: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".AgentExecCommand"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}args\0\u{1}env\0\u{3}working_dir\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}args\0\u{1}env\0\u{3}working_dir\0\u{3}deadline_unix_nano\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2127,6 +2130,7 @@ extension VZControl_AgentExecCommand: SwiftProtobuf.Message, SwiftProtobuf._Mess
       case 1: try { try decoder.decodeRepeatedStringField(value: &self.args) }()
       case 2: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: &self.env) }()
       case 3: try { try decoder.decodeSingularStringField(value: &self.workingDir) }()
+      case 4: try { try decoder.decodeSingularInt64Field(value: &self.deadlineUnixNano) }()
       default: break
       }
     }
@@ -2142,6 +2146,9 @@ extension VZControl_AgentExecCommand: SwiftProtobuf.Message, SwiftProtobuf._Mess
     if !self.workingDir.isEmpty {
       try visitor.visitSingularStringField(value: self.workingDir, fieldNumber: 3)
     }
+    if self.deadlineUnixNano != 0 {
+      try visitor.visitSingularInt64Field(value: self.deadlineUnixNano, fieldNumber: 4)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2149,6 +2156,7 @@ extension VZControl_AgentExecCommand: SwiftProtobuf.Message, SwiftProtobuf._Mess
     if lhs.args != rhs.args {return false}
     if lhs.env != rhs.env {return false}
     if lhs.workingDir != rhs.workingDir {return false}
+    if lhs.deadlineUnixNano != rhs.deadlineUnixNano {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

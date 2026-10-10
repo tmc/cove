@@ -1305,12 +1305,14 @@ func (x *PortForwardCommand) GetGuestPort() uint32 {
 
 // AgentExecCommand runs a command inside the guest.
 type AgentExecCommand struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Args          []string               `protobuf:"bytes,1,rep,name=args,proto3" json:"args,omitempty"`
-	Env           map[string]string      `protobuf:"bytes,2,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	WorkingDir    string                 `protobuf:"bytes,3,opt,name=working_dir,json=workingDir,proto3" json:"working_dir,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Args       []string               `protobuf:"bytes,1,rep,name=args,proto3" json:"args,omitempty"`
+	Env        map[string]string      `protobuf:"bytes,2,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	WorkingDir string                 `protobuf:"bytes,3,opt,name=working_dir,json=workingDir,proto3" json:"working_dir,omitempty"`
+	// Absolute host deadline; zero preserves the server execution limit.
+	DeadlineUnixNano int64 `protobuf:"varint,4,opt,name=deadline_unix_nano,json=deadlineUnixNano,proto3" json:"deadline_unix_nano,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *AgentExecCommand) Reset() {
@@ -1362,6 +1364,13 @@ func (x *AgentExecCommand) GetWorkingDir() string {
 		return x.WorkingDir
 	}
 	return ""
+}
+
+func (x *AgentExecCommand) GetDeadlineUnixNano() int64 {
+	if x != nil {
+		return x.DeadlineUnixNano
+	}
+	return 0
 }
 
 // AgentFileReadCommand reads a file from the guest.
@@ -2969,12 +2978,13 @@ const file_control_proto_rawDesc = "" +
 	"\x06action\x18\x01 \x01(\tR\x06action\x12\x1b\n" +
 	"\thost_port\x18\x02 \x01(\rR\bhostPort\x12\x1d\n" +
 	"\n" +
-	"guest_port\x18\x03 \x01(\rR\tguestPort\"\xbb\x01\n" +
+	"guest_port\x18\x03 \x01(\rR\tguestPort\"\xe9\x01\n" +
 	"\x10AgentExecCommand\x12\x12\n" +
 	"\x04args\x18\x01 \x03(\tR\x04args\x12:\n" +
 	"\x03env\x18\x02 \x03(\v2(.vz.control.v1.AgentExecCommand.EnvEntryR\x03env\x12\x1f\n" +
 	"\vworking_dir\x18\x03 \x01(\tR\n" +
-	"workingDir\x1a6\n" +
+	"workingDir\x12,\n" +
+	"\x12deadline_unix_nano\x18\x04 \x01(\x03R\x10deadlineUnixNano\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"*\n" +

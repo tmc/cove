@@ -304,18 +304,34 @@ func (s *ControlServer) handleAgentCommand(req *controlpb.ControlRequest) (resp 
 
 func (s *ControlServer) handleAgentUserExec(cmd *controlpb.AgentExecCommand) *controlpb.ControlResponse {
 	s.notePolicyExec()
-	ua, err := s.getUserAgent()
-	if err != nil {
-		return &controlpb.ControlResponse{Error: fmt.Sprintf("user agent unavailable: finish logging into the VM and retry: %v", err)}
-	}
+	ctx, cancel := agentExecBudget(s.lifecycleContext(), cmd.DeadlineUnixNano)
+	defer cancel()
+	id := agentExecSequence.Add(1)
+	started := time.Now()
+	logAgentExecPhase(id, "acquiring", started, nil)
 	if len(cmd.Args) == 0 {
 		return &controlpb.ControlResponse{Error: "args required"}
 	}
-	ctx, cancel := s.timeoutContext(10 * time.Minute)
-	defer cancel()
-	result, err := ua.UserExec(ctx, cmd.Args, cmd.Env, cmd.WorkingDir)
+	result, dispatched, err := acquireAgentExec(ctx, func(ctx context.Context) (func(context.Context) (*pb.ExecResponse, error), error) {
+		ua, err := s.bridge.GetUserAgentContext(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return func(ctx context.Context) (*pb.ExecResponse, error) {
+			logAgentExecPhase(id, "dispatching", started, nil)
+			return ua.UserExec(ctx, cmd.Args, cmd.Env, cmd.WorkingDir)
+		}, nil
+	})
+	phase := "not-dispatched"
+	if dispatched {
+		phase = "completed"
+	}
+	logAgentExecPhase(id, phase, started, err)
 	if err != nil {
-		return &controlpb.ControlResponse{Error: fmt.Sprintf("user exec: %v", err)}
+		if !dispatched {
+			return &controlpb.ControlResponse{Error: fmt.Sprintf("user agent acquisition failed; command not dispatched: %v", err)}
+		}
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("user exec outcome unverified: %v", err)}
 	}
 	data, _ := json.Marshal(map[string]interface{}{
 		"exitCode": result.ExitCode,
@@ -481,15 +497,18 @@ func (s *ControlServer) handleAgentInfo() *controlpb.ControlResponse {
 
 func (s *ControlServer) handleAgentExec(cmd *controlpb.AgentExecCommand) *controlpb.ControlResponse {
 	s.notePolicyExec()
-	a, err := s.getAgent()
+	ctx, cancel := agentExecBudget(s.lifecycleContext(), cmd.DeadlineUnixNano)
+	defer cancel()
+	a, err := s.bridge.GetAgentContext(ctx)
 	if err != nil {
 		return &controlpb.ControlResponse{Error: err.Error()}
 	}
 	if len(cmd.Args) == 0 {
 		return &controlpb.ControlResponse{Error: "args required"}
 	}
-	ctx, cancel := s.timeoutContext(10 * time.Minute)
-	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return &controlpb.ControlResponse{Error: fmt.Sprintf("execution budget expired; command not dispatched: %v", err)}
+	}
 	result, err := a.Exec(ctx, cmd.Args, cmd.Env, cmd.WorkingDir)
 	if err != nil {
 		return &controlpb.ControlResponse{Error: fmt.Sprintf("exec: %v", err)}
@@ -788,38 +807,67 @@ func (s *ControlServer) handleAgentExecStreamConnection(conn net.Conn, req *cont
 		return
 	}
 
-	ctx, cancel := s.timeoutContext(10 * time.Minute)
+	ctx, cancel := agentExecBudget(s.lifecycleContext(), cmd.DeadlineUnixNano)
 	defer cancel()
+
+	id := agentExecSequence.Add(1)
+	started := time.Now()
+	logAgentExecPhase(id, "stream-acquiring", started, nil)
+	if err := ctx.Err(); err != nil {
+		logAgentExecPhase(id, "stream-not-dispatched", started, err)
+		writeResponse(conn, &controlpb.ControlResponse{Error: fmt.Sprintf("stream budget expired; command not dispatched: %v", err)})
+		return
+	}
 
 	var stream agentstate.ExecStreamReceiver
 	var connErr error
 	routeUser := req.Type == "agent-user-exec-stream" ||
 		(req.Type == "agent-exec-stream-auto" && agentstate.RouteForExec(cmd.Args, linuxMode) == agentstate.RouteUser)
 	if routeUser {
-		ua, err := s.getUserAgent()
+		ua, err := s.bridge.GetUserAgentContext(ctx)
 		if err != nil {
-			writeResponse(conn, &controlpb.ControlResponse{Error: err.Error()})
+			logAgentExecPhase(id, "stream-not-dispatched", started, err)
+			writeResponse(conn, &controlpb.ControlResponse{Error: fmt.Sprintf("stream acquisition failed; command not dispatched: %v", err)})
 			return
 		}
+		if err := ctx.Err(); err != nil {
+			logAgentExecPhase(id, "stream-not-dispatched", started, err)
+			writeResponse(conn, &controlpb.ControlResponse{Error: fmt.Sprintf("stream budget expired; command not dispatched: %v", err)})
+			return
+		}
+		logAgentExecPhase(id, "stream-dispatching", started, nil)
 		stream, connErr = ua.UserExecStream(ctx, cmd.Args, cmd.Env, cmd.WorkingDir)
 	} else {
-		a, err := s.getAgent()
+		a, err := s.bridge.GetAgentContext(ctx)
 		if err != nil {
-			writeResponse(conn, &controlpb.ControlResponse{Error: err.Error()})
+			logAgentExecPhase(id, "stream-not-dispatched", started, err)
+			writeResponse(conn, &controlpb.ControlResponse{Error: fmt.Sprintf("stream acquisition failed; command not dispatched: %v", err)})
 			return
 		}
+		if err := ctx.Err(); err != nil {
+			logAgentExecPhase(id, "stream-not-dispatched", started, err)
+			writeResponse(conn, &controlpb.ControlResponse{Error: fmt.Sprintf("stream budget expired; command not dispatched: %v", err)})
+			return
+		}
+		logAgentExecPhase(id, "stream-dispatching", started, nil)
 		stream, connErr = a.ExecStream(ctx, cmd.Args, cmd.Env, cmd.WorkingDir)
 	}
 	err := connErr
 	if err != nil {
-		writeResponse(conn, &controlpb.ControlResponse{Error: fmt.Sprintf("exec stream: %v", err)})
+		logAgentExecPhase(id, "stream-outcome-unverified", started, err)
+		writeResponse(conn, &controlpb.ControlResponse{Error: fmt.Sprintf("exec stream outcome unverified: %v", err)})
 		return
 	}
 
-	forwardAgentExecStream(conn, stream)
+	err = forwardAgentExecStream(conn, stream)
+	phase := "stream-completed"
+	if err != nil {
+		phase = "stream-outcome-unverified"
+	}
+	logAgentExecPhase(id, phase, started, err)
 }
 
-func forwardAgentExecStream(conn net.Conn, stream agentstate.ExecStreamReceiver) {
+func forwardAgentExecStream(conn net.Conn, stream agentstate.ExecStreamReceiver) error {
 	var finalExitCode int32
 	sawExitCode := false
 	for {
@@ -829,7 +877,7 @@ func forwardAgentExecStream(conn net.Conn, stream agentstate.ExecStreamReceiver)
 		}
 		if err != nil {
 			writeResponse(conn, &controlpb.ControlResponse{Error: fmt.Sprintf("recv stream: %v", err)})
-			return
+			return err
 		}
 
 		if len(out.Data) > 0 {
@@ -842,7 +890,7 @@ func forwardAgentExecStream(conn net.Conn, stream agentstate.ExecStreamReceiver)
 				"data":   base64.StdEncoding.EncodeToString(out.Data),
 			})
 			if err := writeResponse(conn, &controlpb.ControlResponse{Success: true, Data: string(chunkPayload)}); err != nil {
-				return
+				return err
 			}
 		}
 
@@ -854,13 +902,13 @@ func forwardAgentExecStream(conn net.Conn, stream agentstate.ExecStreamReceiver)
 
 	if !sawExitCode {
 		writeResponse(conn, &controlpb.ControlResponse{Error: "guest exec stream closed before final exit status; outcome unknown"})
-		return
+		return fmt.Errorf("guest exec stream closed before final exit status; outcome unknown")
 	}
 	donePayload, _ := json.Marshal(map[string]any{
 		"done":     true,
 		"exitCode": finalExitCode,
 	})
-	writeResponse(conn, &controlpb.ControlResponse{Success: true, Data: string(donePayload)})
+	return writeResponse(conn, &controlpb.ControlResponse{Success: true, Data: string(donePayload)})
 }
 
 func isUserPathOrHome(path string) bool {

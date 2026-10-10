@@ -156,6 +156,8 @@ message AgentExecCommand {
   repeated string args = 1;
   map<string, string> env = 2;
   string working_dir = 3;
+  // Absolute host deadline; zero preserves the server execution limit.
+  int64 deadline_unix_nano = 4;
 }
 
 // AgentFileReadCommand reads a file from the guest.

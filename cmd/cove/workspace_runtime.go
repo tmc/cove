@@ -622,11 +622,18 @@ func workspaceExec(ctx context.Context, dir, route string, args []string, env ma
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	client := NewControlClient(GetControlSocketPathForVM(dir))
-	resp, err := client.SendRequestCtx(ctx, &controlpb.ControlRequest{Type: route, Command: &controlpb.ControlRequest_AgentExec{AgentExec: &controlpb.AgentExecCommand{Args: args, Env: env, WorkingDir: workDir}}})
+	command := &controlpb.AgentExecCommand{Args: args, Env: env, WorkingDir: workDir}
+	if deadline, ok := ctx.Deadline(); ok {
+		command.DeadlineUnixNano = deadline.UnixNano()
+	}
+	resp, err := client.SendRequestCtx(ctx, &controlpb.ControlRequest{Type: route, Command: &controlpb.ControlRequest_AgentExec{AgentExec: command}})
 	if err != nil {
 		return nil, err
 	}
 	if !resp.Success {
+		if resp.Error != "" {
+			return nil, fmt.Errorf("guest execution route: %s", resp.Error)
+		}
 		return nil, fmt.Errorf("guest execution route unavailable")
 	}
 	r := resp.GetAgentExecResult()
@@ -839,7 +846,11 @@ func streamWorkspaceTask(ctx context.Context, socket string, args []string, work
 		case <-done:
 		}
 	}()
-	req := &controlpb.ControlRequest{Type: "agent-user-exec-stream", AuthToken: resolveControlTokenForSocket(socket), Command: &controlpb.ControlRequest_AgentExec{AgentExec: &controlpb.AgentExecCommand{Args: args, WorkingDir: workDir}}}
+	command := &controlpb.AgentExecCommand{Args: args, WorkingDir: workDir}
+	if deadline, ok := ctx.Deadline(); ok {
+		command.DeadlineUnixNano = deadline.UnixNano()
+	}
+	req := &controlpb.ControlRequest{Type: "agent-user-exec-stream", AuthToken: resolveControlTokenForSocket(socket), Command: &controlpb.ControlRequest_AgentExec{AgentExec: command}}
 	data, err := protojsonMarshaler.Marshal(req)
 	if err != nil {
 		return result, err
@@ -868,6 +879,9 @@ func streamWorkspaceTask(ctx context.Context, socket string, args []string, work
 			return finish(fmt.Errorf("invalid task stream response"))
 		}
 		if !response.Success {
+			if response.Error != "" {
+				return finish(fmt.Errorf("task stream: %s", response.Error))
+			}
 			return finish(fmt.Errorf("task stream execution unavailable"))
 		}
 		var event struct {
