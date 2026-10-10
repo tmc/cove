@@ -2,12 +2,28 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
 	cf "github.com/tmc/apple/corefoundation"
 )
+
+func TestAXAttributeFailureContext(t *testing.T) {
+	backend := &darwinUIBackend{
+		timeout:       func(uintptr, float32) int32 { return 0 },
+		copyAttribute: func(uintptr, uintptr, *uintptr) int32 { return -25200 },
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_, err := backend.attribute(ctx, 1, "AXIdentifier")
+	var failure *uiReadError
+	if !errors.As(err, &failure) || failure.state != "read_failed" || !strings.Contains(err.Error(), "AXIdentifier") {
+		t.Fatalf("attribute error = %v", err)
+	}
+}
 
 func TestPublicAXTimeoutFloatABI(t *testing.T) {
 	backend := &darwinUIBackend{}

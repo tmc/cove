@@ -180,7 +180,7 @@ func (b *darwinUIBackend) attribute(ctx context.Context, element uintptr, name s
 		return 0, nil
 	}
 	if err := axReadError(code); err != nil {
-		return 0, err
+		return 0, fmt.Errorf("read %s: %w", name, err)
 	}
 	return value, nil
 }
@@ -229,7 +229,7 @@ func (b *darwinUIBackend) children(ctx context.Context, element uintptr, limit i
 		return nil, false, nil
 	}
 	if err := axReadError(code); err != nil {
-		return nil, false, err
+		return nil, false, fmt.Errorf("count AXChildren: %w", err)
 	}
 	if count <= 0 {
 		return nil, false, nil
@@ -246,7 +246,7 @@ func (b *darwinUIBackend) children(ctx context.Context, element uintptr, limit i
 	}
 	var values uintptr
 	if err := axReadError(b.copyChildren(element, uintptr(attribute), 0, count, &values)); err != nil {
-		return nil, false, err
+		return nil, false, fmt.Errorf("read AXChildren: %w", err)
 	}
 	if values == 0 {
 		return nil, truncated, nil
