@@ -9,3 +9,5 @@ pid: 40221
 ITERM_SESSION_ID: w2t4p0:B4D6FB29-34EA-4724-9D2F-D6ED5580D009
 validation: full repository suite PASS404.045s (before reserved quarantine listing tweak); scoped orphan-list regression PASS6.075s; combined focused race5-run PASS19.082s; exact final uncached suite pending.
 physical: e1465149 owned stopped fork discarded, original failed manifest/events preserved, durable deleted receipt before original task pins released; Muse unchanged.
+
+Validation update: final uncached default-concurrency suite failed613.528s at10m harness limit in CLI-help tests, plus intermittent coved5s fixtures. Those receipts are retained; no blanket full-qualification claim. Earlier full suite passed404.045s; reserved quarantine listing regression passed6.075s; combined targeted race5-run passed19.082s; physical stopped owned-fork deletion and exact pin release verified. Serial uncached20m all-suite remains running; unqualified coved fixture patch preserved off-tree, repository fixture restored. User explicitly keeps prepared runner alongside Muse.
