@@ -1,0 +1,9 @@
+commit: 2c54bce95e2ceeffc7f85d2108a5d1b0b71979e6
+date: 2026-10-10T19:23:55.747415+00:00
+model: GPT-6; exact runtime model ID unavailable
+tty: not a tty
+pid: 7998
+ITERM_SESSION_ID: w2t4p0:B4D6FB29-34EA-4724-9D2F-D6ED5580D009
+codex: codex-cli 0.162.1
+claude: 2.1.284 (Claude Code)
+validation: final candidate build and full suite passed; repeated holder race tests passed; physical deep AX remains locked/unqualified
