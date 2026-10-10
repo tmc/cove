@@ -3,6 +3,7 @@ package main
 import (
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/tmc/cove/internal/imagestore"
 )
@@ -46,34 +47,62 @@ func TestGCImages_R2_ConcurrentFork(t *testing.T) {
 	gcTestSetup(t)
 	ref := stageUnreferencedImage(t, "src-r2", "test/r2:v1")
 
-	var wg sync.WaitGroup
-	wg.Add(2)
-	var gcRes ImageGCResult
-	var gcErr error
-	go func() {
-		defer wg.Done()
-		gcRes, gcErr = GCImages(ImageGCOptions{DryRun: false})
-	}()
-	go func() {
-		defer wg.Done()
-		_, err := MaterializeImage(MaterializeImageOptions{Ref: ref, ChildName: "child-r2"})
-		if err != nil {
-			t.Errorf("MaterializeImage: %v", err)
+	locked := make(chan struct{})
+	resume := make(chan struct{})
+	oldAcquire := acquireImageLockHook
+	acquireImageLockHook = func(path string) (*imagestore.Lock, error) {
+		lock, err := oldAcquire(path)
+		if err == nil {
+			close(locked)
+			<-resume
 		}
+		return lock, err
+	}
+	var release sync.Once
+	finished := make(chan struct{})
+	t.Cleanup(func() {
+		release.Do(func() { close(resume) })
+		select {
+		case <-finished:
+		case <-time.After(10 * time.Second):
+			t.Error("materialize worker did not stop")
+		}
+		acquireImageLockHook = oldAcquire
+	})
+	done := make(chan error, 1)
+	go func() {
+		defer close(finished)
+		_, err := MaterializeImage(MaterializeImageOptions{Ref: ref, ChildName: "child-r2"})
+		done <- err
 	}()
-	wg.Wait()
-	if gcErr != nil {
-		t.Fatalf("GCImages: %v", gcErr)
+	select {
+	case <-locked:
+	case err := <-done:
+		t.Fatalf("materialize before lock: %v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("materialize did not acquire image lock")
 	}
-	// Either gc skipped (lock held during materialize) or gc removed
-	// nothing because the recheck saw the child. The forbidden state
-	// is "image removed AND child VM exists referring to it" — a torn
-	// fork. Assert the image still exists OR was never live.
-	if !ImageExists(ref) {
-		// MaterializeImage holds the image lock through the child
-		// config write, so the image must still exist when this point
-		// is reached.
-		t.Fatalf("image %s removed during concurrent fork (R2 regression)", ref)
+	res, err := GCImages(ImageGCOptions{})
+	if err != nil {
+		t.Fatal(err)
 	}
-	_ = gcRes
+	if len(res.Removed) != 0 || !ImageExists(ref) {
+		t.Fatalf("gc removed image during materialization: %+v", res)
+	}
+	release.Do(func() { close(resume) })
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("materialize: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("materialize did not finish")
+	}
+	res, err = GCImages(ImageGCOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Removed) != 0 || !ImageExists(ref) {
+		t.Fatalf("gc removed image after child publication: %+v", res)
+	}
 }
