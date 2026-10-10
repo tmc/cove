@@ -255,7 +255,7 @@ func reconcileAllMounts(ctx context.Context, cs *ControlServer, tagged []vmconfi
 	}
 
 	sharedFolders := effectiveSharedFolders(vmDir)
-	if len(sharedFolders) > 0 {
+	if autoMountSharedFolders && len(sharedFolders) > 0 {
 		mountRoot := defaultSharedFoldersMountRoot(vmDir)
 		mounted, err := mountSharedFoldersInGuest(vmDir, mountRoot)
 		if err != nil {
@@ -322,7 +322,7 @@ func monitorAndReconcileMounts(ctx context.Context, cs *ControlServer, tagged []
 				}
 			}
 
-			if sharedChanged {
+			if autoMountSharedFolders && sharedChanged {
 				_, _ = cs.applySharedFoldersToRunningVM(sharedFolders)
 				mountRoot := defaultSharedFoldersMountRoot(vmDir)
 				_, _ = mountSharedFoldersInGuest(vmDir, mountRoot)

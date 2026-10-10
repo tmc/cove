@@ -125,6 +125,7 @@ cove run [flags]
 | `-apple-log-predicate <pred>` | | Custom NSPredicate for `-apple-log` |
 | `-recover-identity` | false | Reset VM identity files if metadata missing |
 | `-auto-mount-volumes` | true | Auto-mount tagged volumes via agent |
+| `-auto-mount-shared-folders` | true | Auto-mount shared folders via agent |
 | `-auto-upgrade-agent` | false | Auto-upgrade guest agent on version mismatch |
 | `-automation-backend <mode>` | auto | UI automation: auto, framebuffer, or window |
 | `-automation-capture-backend <mode>` | | Override screenshot backend: auto, framebuffer, or window |

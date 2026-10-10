@@ -75,8 +75,12 @@ func runWorkspaceRuntimeCommand(env commandEnv, _ string, args []string) int {
 	defer diagnostic.Close()
 	// This pointer is observation only; receipts provide generation authority.
 	pointerErr := writeWorkspaceRuntimeDiagnostic(guest, "workspace-runtime-diagnostics.json", []byte(fmt.Sprintf("{\"directory\":%q}\n", name)))
-	cmd := exec.Command(exe, "-vm", args[0], "-headless", "run")
+	cmd := exec.Command(exe, workspaceRuntimeArgs(args[0])...)
 	return commandError(env, monitorWorkspaceRuntimeRoot(cmd, diagnostic, args[2], pointerErr))
+}
+
+func workspaceRuntimeArgs(vm string) []string {
+	return []string{"-vm", vm, "-headless", "-auto-mount-shared-folders=false", "run"}
 }
 
 func monitorWorkspaceRuntime(cmd *exec.Cmd, dir, generation string) error {

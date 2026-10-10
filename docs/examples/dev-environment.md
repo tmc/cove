@@ -86,7 +86,7 @@ cove shared-folder add ~/go/src gosrc ro
 cove shared-folder list
 ```
 
-These are stored in `~/.vz/vms/<name>/shared_folders.json` and mounted automatically on each boot when `-auto-mount-volumes` is enabled (the default).
+These are stored in `~/.vz/vms/<name>/shared_folders.json` and mounted automatically on each boot when `-auto-mount-volumes` and `-auto-mount-shared-folders` are enabled (the defaults). Workspace-owned runtimes defer shared-folder mounting until the intended guest user is known.
 
 ## 4. Daily Suspend and Resume
 

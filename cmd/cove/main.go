@@ -152,7 +152,8 @@ var (
 	automationCaptureBackend string
 	automationInputBackend   string
 	// Auto-mount tagged volumes via agent
-	autoMountVolumes bool
+	autoMountVolumes       bool
+	autoMountSharedFolders = true
 	// Auto-upgrade guest agent when version mismatches host
 	autoUpgradeAgent bool
 	// Force install over existing VM
@@ -317,6 +318,7 @@ func init() {
 	flag.StringVar(&automationInputBackend, "automation-input-backend", "", "override input backend: auto, direct, or window")
 	// Auto-mount volumes
 	flag.BoolVar(&autoMountVolumes, "auto-mount-volumes", true, "auto-mount tagged volumes in guest via agent")
+	flag.BoolVar(&autoMountSharedFolders, "auto-mount-shared-folders", true, "auto-mount shared folders in guest via agent")
 	flag.BoolVar(&autoUpgradeAgent, "auto-upgrade-agent", false, "auto-upgrade guest agent when version mismatches host")
 	// Force install (skip existing VM check)
 	flag.BoolVar(&forceInstall, "force", false, "force install even if VM disk already exists (DESTROYS existing data)")
