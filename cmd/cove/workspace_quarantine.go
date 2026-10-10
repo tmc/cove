@@ -32,8 +32,8 @@ func quarantineWorkspaceGuest(storageRoot string, state taskDisposition, generat
 	if err := validateTaskDisposition(state, true); err != nil {
 		return receipt, err
 	}
-	if state.State != "stopping" || !state.Owned || !state.TaskSucceeded || state.Policy != "discard-success" || generation != state.Generation {
-		return receipt, fmt.Errorf("workspace quarantine requires matching stopping owned successful task")
+	if state.State != "stopping" || !workspaceDiscardAuthorized(state) || generation != state.Generation {
+		return receipt, fmt.Errorf("workspace quarantine requires matching stopping owned discard authority")
 	}
 	parent, rootIdentity, parentIdentity, err := openWorkspaceQuarantineParent(storageRoot, guard)
 	if err != nil {
@@ -296,7 +296,7 @@ func validateWorkspaceQuarantineReceipt(receipt workspaceQuarantineReceipt) erro
 	if err := validateTaskDisposition(receipt.Task, true); err != nil {
 		return err
 	}
-	if receipt.Task.State != "stopping" || !receipt.Task.Owned || !receipt.Task.TaskSucceeded || receipt.Task.Policy != "discard-success" || !validTaskGuestIdentity(&receipt.Root) || !validTaskGuestIdentity(&receipt.Parent) || !validTaskGuestIdentity(&receipt.Quarantine) || receipt.Quarantine.Path != filepath.Join(receipt.Parent.Path, workspaceQuarantineDirectory) || receipt.Parent.Path != filepath.Join(receipt.Root.Path, "vms") || filepath.Dir(receipt.Task.Guest.Path) != receipt.Parent.Path {
+	if receipt.Task.State != "stopping" || !workspaceDiscardAuthorized(receipt.Task) || !validTaskGuestIdentity(&receipt.Root) || !validTaskGuestIdentity(&receipt.Parent) || !validTaskGuestIdentity(&receipt.Quarantine) || receipt.Quarantine.Path != filepath.Join(receipt.Parent.Path, workspaceQuarantineDirectory) || receipt.Parent.Path != filepath.Join(receipt.Root.Path, "vms") || filepath.Dir(receipt.Task.Guest.Path) != receipt.Parent.Path {
 		return fmt.Errorf("invalid workspace quarantine ownership")
 	}
 	return nil

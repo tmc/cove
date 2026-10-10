@@ -87,6 +87,9 @@ func TestActiveName(t *testing.T) {
 
 func TestListOrphans(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
+	if err := os.MkdirAll(filepath.Join(BaseDir(), ".workspace-quarantine"), 0700); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(filepath.Join(BaseDir(), "valid"), 0755); err != nil {
 		t.Fatalf("MkdirAll(valid) error = %v", err)
 	}

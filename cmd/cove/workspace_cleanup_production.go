@@ -12,6 +12,7 @@ import (
 	"github.com/tmc/cove/internal/mutationguard"
 	"github.com/tmc/cove/internal/storagepins"
 	"github.com/tmc/cove/internal/vmconfig"
+	"golang.org/x/sys/unix"
 )
 
 func workspaceCleanupTargets(root string, state taskDisposition) ([]workspaceTaskPinTarget, error) {
@@ -68,6 +69,12 @@ func enableWorkspaceProductionCleanup(d *workspaceCleanupDeps, root string) {
 		owner, err := capture(s, generation)
 		if err != nil {
 			return owner, err
+		}
+		if s.DiscardRequest != nil {
+			if unix.Kill(owner.PID, 0) != unix.ESRCH || !workspaceRuntimeExited(owner) {
+				return owner, fmt.Errorf("operator discard requires an exited runtime; retained")
+			}
+			return owner, nil
 		}
 		if err := inspectWorkspaceAttachments(s.Guest.Path); err != nil {
 			return owner, err
@@ -153,7 +160,7 @@ func finalizeDiscardedWorkspaceGuest(state taskDisposition, generation string) e
 		if err != nil {
 			return err
 		}
-		if receipt.Phase != "deleted" || receipt.Task.Generation != generation || *receipt.Task.Guest != guest || receipt.Root != rootIdentity || receipt.Parent != parentIdentity || receipt.Task.RunID != state.RunID || receipt.Task.AttemptID != state.AttemptID || receipt.Task.OwnerPID != state.OwnerPID || receipt.Task.OwnerStartedAt != state.OwnerStartedAt || receipt.Task.Source != state.Source || !reflect.DeepEqual(receipt.Task.SourceGuest, state.SourceGuest) || receipt.Task.Policy != state.Policy || !state.Owned || !state.TaskSucceeded {
+		if receipt.Phase != "deleted" || receipt.Task.Generation != generation || *receipt.Task.Guest != guest || receipt.Root != rootIdentity || receipt.Parent != parentIdentity || receipt.Task.RunID != state.RunID || receipt.Task.AttemptID != state.AttemptID || receipt.Task.OwnerPID != state.OwnerPID || receipt.Task.OwnerStartedAt != state.OwnerStartedAt || receipt.Task.Source != state.Source || !reflect.DeepEqual(receipt.Task.SourceGuest, state.SourceGuest) || receipt.Task.Policy != state.Policy || receipt.Task.TaskSucceeded != state.TaskSucceeded || !reflect.DeepEqual(receipt.Task.DiscardRequest, state.DiscardRequest) || !workspaceDiscardAuthorized(state) {
 			return fmt.Errorf("workspace deletion evidence differs")
 		}
 		if err := checkWorkspaceRootIdentity(parent, workspaceQuarantineDirectory, receipt.Quarantine); err != nil {

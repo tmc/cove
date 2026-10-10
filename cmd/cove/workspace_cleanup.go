@@ -36,8 +36,8 @@ func cleanupWorkspaceGuest(ctx context.Context, state taskDisposition, generatio
 	if generation != state.Generation {
 		return fmt.Errorf("task owner generation differs")
 	}
-	if state.State != "stopping" || !state.Owned || !state.TaskSucceeded || state.Policy != "discard-success" {
-		return fmt.Errorf("workspace cleanup requires a stopping owned successful task")
+	if state.State != "stopping" || !workspaceDiscardAuthorized(state) {
+		return fmt.Errorf("workspace cleanup requires stopping owned discard authority")
 	}
 	if d.CaptureRuntime == nil || d.Identify == nil || d.VerifyOwner == nil || d.PinGuard == nil || d.Stop == nil || d.Stopped == nil || d.Lock == nil || d.LiveRuntime == nil || d.DiskHolders == nil || d.Delete == nil {
 		return fmt.Errorf("workspace cleanup requires coordinated pin and identity-bound deletion gates; guest retained")
@@ -145,6 +145,9 @@ func defaultWorkspaceCleanupDeps() workspaceCleanupDeps {
 		CaptureRuntime: captureWorkspaceRuntimeOwner,
 		StoppedOwned:   waitWorkspaceRuntimeStopped,
 		VerifyOwner: func(state taskDisposition, generation string) error {
+			if state.DiscardRequest != nil {
+				return verifyWorkspaceDiscardActor(state, generation)
+			}
 			if state.OwnerPID != os.Getpid() {
 				return fmt.Errorf("task cleanup owner differs from current process")
 			}

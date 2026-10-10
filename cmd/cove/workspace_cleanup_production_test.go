@@ -17,13 +17,20 @@ func TestWorkspaceProductionDiscardAndFinalize(t *testing.T) {
 		name     string
 		operator bool
 		other    bool
-	}{{"discard", false, false}, {"operator", true, false}, {"other-generation", false, true}} {
+		manual   bool
+	}{{"discard", false, false, false}, {"operator", true, false, false}, {"other-generation", false, true, false}, {"manual-failed", false, false, true}, {"manual-operator", true, false, true}, {"manual-other-generation", false, true, true}} {
 		t.Run(tt.name, func(t *testing.T) {
 			root, guard, state, targets := workspacePinFixture(t)
 			t.Setenv(vmconfig.StateDirEnv, root)
 			state.OwnerStartedAt = processStartedAt(os.Getpid()).UTC().Format(time.RFC3339Nano)
 			state.State = "stopping"
 			state.TaskSucceeded = true
+			if tt.manual {
+				state.TaskSucceeded = false
+				state.Policy = "retain"
+				state.OwnerPID = exitedDiscardPID(t)
+				state.DiscardRequest = &taskDiscardRequest{PID: os.Getpid(), StartedAt: processStartedAt(os.Getpid()).UTC().Format(time.RFC3339Nano), RequestedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+			}
 			writeWorkspacePinDisposition(t, targets[1].Identity.Path, state)
 			if err := updateWorkspaceTaskPins(root, guard, state, state.Generation, targets, false, workspacePinTestOwner, nil); err != nil {
 				t.Fatal(err)
@@ -75,6 +82,17 @@ func TestWorkspaceProductionDiscardAndFinalize(t *testing.T) {
 			}
 			state.State = "discarded"
 			writeWorkspacePinDisposition(t, targets[1].Identity.Path, state)
+			if tt.manual {
+				changed := state
+				request := *state.DiscardRequest
+				request.RequestedAt = time.Now().Add(time.Second).UTC().Format(time.RFC3339Nano)
+				changed.DiscardRequest = &request
+				writeWorkspacePinDisposition(t, targets[1].Identity.Path, changed)
+				if err := finalizeDiscardedWorkspaceGuest(changed, changed.Generation); err == nil {
+					t.Fatal("accepted unrelated quarantine operator request")
+				}
+				writeWorkspacePinDisposition(t, targets[1].Identity.Path, state)
+			}
 			if err := finalizeDiscardedWorkspaceGuest(state, state.Generation); err != nil {
 				t.Fatal(err)
 			}

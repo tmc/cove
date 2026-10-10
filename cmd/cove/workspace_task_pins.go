@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"time"
 
 	"github.com/tmc/cove/internal/mutationguard"
@@ -99,8 +100,11 @@ func updateWorkspaceTaskPins(root string, guard *mutationguard.Guard, state task
 	if durable.RunID != state.RunID || durable.AttemptID != state.AttemptID || durable.Generation != state.Generation || durable.OwnerPID != state.OwnerPID || durable.OwnerStartedAt != state.OwnerStartedAt || durable.State != state.State || durable.Owned != state.Owned || durable.TaskSucceeded != state.TaskSucceeded || durable.Policy != state.Policy || durable.Source != state.Source || durable.SourceGuest == nil || *durable.SourceGuest != *state.SourceGuest || durable.Guest == nil || *durable.Guest != *state.Guest {
 		return fmt.Errorf("task pin authority differs from durable disposition")
 	}
+	if !reflect.DeepEqual(durable.DiscardRequest, state.DiscardRequest) {
+		return fmt.Errorf("operator discard request differs from durable authority")
+	}
 	if release {
-		if state.State != "discarded" || !state.TaskSucceeded || confirmDeleted == nil {
+		if state.State != "discarded" || !workspaceDiscardAuthorized(state) || confirmDeleted == nil {
 			return fmt.Errorf("task pin release requires durable discarded disposition and quarantine deletion confirmation")
 		}
 		if _, err := os.Lstat(state.Guest.Path); !os.IsNotExist(err) {

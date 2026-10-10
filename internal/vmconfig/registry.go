@@ -54,7 +54,7 @@ func ListOrphans() ([]string, error) {
 	}
 	var orphans []string
 	for _, entry := range entries {
-		if !entry.IsDir() {
+		if !entry.IsDir() || entry.Name() == ".workspace-quarantine" {
 			continue
 		}
 		vmPath := filepath.Join(baseDir, entry.Name())

@@ -24,21 +24,22 @@ type taskGuestIdentity struct {
 }
 
 type taskDisposition struct {
-	Version        int                `json:"version"`
-	RunID          string             `json:"run_id"`
-	AttemptID      string             `json:"attempt_id"`
-	Generation     string             `json:"owner_generation"`
-	OwnerPID       int                `json:"owner_pid"`
-	OwnerStartedAt string             `json:"owner_started_at"`
-	SourceGuest    *taskGuestIdentity `json:"source_guest,omitempty"`
-	Source         string             `json:"source"`
-	Policy         string             `json:"policy"`
-	State          string             `json:"state"`
-	Guest          *taskGuestIdentity `json:"guest,omitempty"`
-	Owned          bool               `json:"owned"`
-	TaskSucceeded  bool               `json:"task_succeeded"`
-	Sequence       uint64             `json:"sequence"`
-	UpdatedAt      string             `json:"updated_at"`
+	Version        int                 `json:"version"`
+	RunID          string              `json:"run_id"`
+	AttemptID      string              `json:"attempt_id"`
+	Generation     string              `json:"owner_generation"`
+	OwnerPID       int                 `json:"owner_pid"`
+	OwnerStartedAt string              `json:"owner_started_at"`
+	SourceGuest    *taskGuestIdentity  `json:"source_guest,omitempty"`
+	Source         string              `json:"source"`
+	Policy         string              `json:"policy"`
+	State          string              `json:"state"`
+	Guest          *taskGuestIdentity  `json:"guest,omitempty"`
+	Owned          bool                `json:"owned"`
+	TaskSucceeded  bool                `json:"task_succeeded"`
+	DiscardRequest *taskDiscardRequest `json:"discard_request,omitempty"`
+	Sequence       uint64              `json:"sequence"`
+	UpdatedAt      string              `json:"updated_at"`
 }
 
 type taskDispositionJournal struct {
@@ -258,6 +259,11 @@ func readTaskDisposition(dir string) (taskDisposition, error) {
 		return state, err
 	}
 	defer root.Close()
+	return readTaskDispositionRoot(root)
+}
+
+func readTaskDispositionRoot(root *os.Root) (taskDisposition, error) {
+	var state taskDisposition
 	info, err := root.Lstat("task-disposition.json")
 	if err != nil {
 		return state, err
@@ -351,8 +357,11 @@ func validateTaskDisposition(state taskDisposition, persisted bool) error {
 			return fmt.Errorf("owned guest must differ from source")
 		}
 	}
-	if (state.State == "stopping" || state.State == "discarded") && (!state.Owned || !state.TaskSucceeded || state.Policy != "discard-success") {
-		return fmt.Errorf("task discard requires owned successful guest and discard-success policy")
+	if err := validateTaskDiscardRequest(state); err != nil {
+		return err
+	}
+	if (state.State == "stopping" || state.State == "discarded") && !workspaceDiscardAuthorized(state) {
+		return fmt.Errorf("task discard requires an owned guest and successful-task or explicit operator authority")
 	}
 	if state.TaskSucceeded && (state.State == "resolving" || state.State == "preparing" || state.State == "ready" || state.State == "executing") {
 		return fmt.Errorf("task success requires collected result")

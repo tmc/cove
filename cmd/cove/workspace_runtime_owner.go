@@ -58,6 +58,14 @@ func readWorkspaceRuntimeReceipt(path string, dst any) error {
 }
 
 func captureWorkspaceRuntimeOwner(state taskDisposition, generation string) (workspaceRuntimeOwner, error) {
+	return readWorkspaceRuntimeOwner(state, generation, false)
+}
+
+func captureExitedWorkspaceRuntimeOwner(state taskDisposition, generation string) (workspaceRuntimeOwner, error) {
+	return readWorkspaceRuntimeOwner(state, generation, true)
+}
+
+func readWorkspaceRuntimeOwner(state taskDisposition, generation string, exited bool) (workspaceRuntimeOwner, error) {
 	if state.Guest == nil || generation != state.Generation || !validWorkspaceRuntimeGeneration(generation) {
 		return workspaceRuntimeOwner{}, fmt.Errorf("invalid runtime owner authority")
 	}
@@ -76,7 +84,7 @@ func captureWorkspaceRuntimeOwner(state taskDisposition, generation string) (wor
 	}
 	dir := filepath.Join(identity.Path, pointer.Directory)
 	info, err := os.Lstat(dir)
-	if err != nil || !info.IsDir() {
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return workspaceRuntimeOwner{}, fmt.Errorf("invalid runtime diagnostic directory")
 	}
 	var owner workspaceRuntimeOwner
@@ -87,10 +95,17 @@ func captureWorkspaceRuntimeOwner(state taskDisposition, generation string) (wor
 		return owner, fmt.Errorf("runtime owner generation differs")
 	}
 	expected, err := time.Parse(time.RFC3339Nano, owner.StartedAt)
-	if err != nil || expected.IsZero() || !processStartedAt(owner.PID).Equal(expected) {
+	if err != nil || expected.IsZero() {
 		return owner, fmt.Errorf("runtime owner process differs or unavailable")
 	}
 	owner.Directory = dir
+	if exited {
+		if unix.Kill(owner.PID, 0) != unix.ESRCH || !workspaceRuntimeExited(owner) {
+			return owner, fmt.Errorf("runtime owner is active, reused, or lacks matching clean exit; retained")
+		}
+	} else if !processStartedAt(owner.PID).Equal(expected) {
+		return owner, fmt.Errorf("runtime owner process differs or unavailable")
+	}
 	return owner, nil
 }
 

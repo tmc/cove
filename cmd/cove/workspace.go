@@ -61,6 +61,9 @@ func handleWorkspaceCommand(env commandEnv, args []string) error {
 		printWorkspaceUsage(env.Stdout)
 		return nil
 	}
+	if args[0] == "discard" {
+		return handleWorkspaceDiscard(env, args[1:])
+	}
 	if args[0] != "plan" && args[0] != "open" {
 		return fmt.Errorf("unknown workspace command %q", args[0])
 	}
@@ -102,6 +105,9 @@ func handleWorkspaceCommand(env commandEnv, args []string) error {
 
 func printWorkspaceUsage(w io.Writer) {
 	fmt.Fprintln(w, `Usage: cove workspace plan|open -vm NAME -source DIR -output DIR [flags] [-- command args...]
+
+Discard an owned stopped fork from a finished run:
+  cove workspace discard -run ID [-y]
 
 Go workspace profile. Source defaults to read-only; output must be separate.
 Uses an existing prepared VM, or creates a fresh fork with -from STOPPED_BASE.
