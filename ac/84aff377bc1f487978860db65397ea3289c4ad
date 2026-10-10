@@ -1,0 +1,11 @@
+commit: ac84aff377bc1f487978860db65397ea3289c4ad
+date: 2026-10-10T14:19:07-07:00
+agent: Codex CLI 0.162.1
+claude-code version: 2.1.284
+model: GPT-6
+tty: none (tool pipes)
+pid: 24497 (note helper), parent 24490
+ITERM_SESSION_ID: w2t4p0:B4D6FB29-34EA-4724-9D2F-D6ED5580D009
+validation: combined task-owned source go build ./... passed; go test -count=1 -p=1 -timeout=20m ./... passed (cmd/cove 464.337s)
+receipts: /Users/tmc/tmp/vz-macos/20261010-qualification/combined-readonly-recovery-suite.log
+limits: source/fixture qualification only; cold run8d044ee2 failed fresh root readiness before task and was safely discarded; successful repeated cold/resumed Go and deeper AX remain unproven
