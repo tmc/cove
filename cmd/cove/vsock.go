@@ -6,6 +6,7 @@
 package main
 
 import (
+	"fmt"
 	"net"
 
 	"github.com/tmc/apple/dispatch"
@@ -21,14 +22,33 @@ type VsockDeviceManager struct {
 // NewVsockDeviceManager wraps the VZVirtioSocketDevice from a running VM.
 // The queue parameter is the VM's dispatch queue; Virtualization framework
 // calls must be dispatched on this queue to avoid SIGTRAP crashes.
+// The caller must run outside that queue because device lookup waits for it.
 func NewVsockDeviceManager(vm vz.VZVirtualMachine, queue dispatch.Queue) (*VsockDeviceManager, error) {
-	mgr, err := vsockx.NewManager(vm)
+	if vm.ID == 0 {
+		return nil, fmt.Errorf("vm not initialized")
+	}
+	if queue.Handle() == 0 {
+		return nil, fmt.Errorf("vm queue not initialized")
+	}
+	dispatch := func(fn func()) { DispatchAsyncQueue(queue, fn) }
+	return newVsockDeviceManager(dispatch, func() (*vsockx.Manager, error) {
+		return vsockx.NewManager(vm)
+	})
+}
+
+func newVsockDeviceManager(dispatch func(func()), create func() (*vsockx.Manager, error)) (*VsockDeviceManager, error) {
+	var mgr *vsockx.Manager
+	var err error
+	done := make(chan struct{})
+	dispatch(func() {
+		mgr, err = create()
+		close(done)
+	})
+	<-done
 	if err != nil {
 		return nil, err
 	}
-	mgr.DispatchFunc = func(fn func()) {
-		DispatchAsyncQueue(queue, fn)
-	}
+	mgr.DispatchFunc = dispatch
 	return &VsockDeviceManager{mgr: mgr}, nil
 }
 
