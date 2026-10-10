@@ -22,6 +22,7 @@ import (
 // TestShellCommandRequiresVM confirms invocation with no positional args
 // returns the "vm name required" error and prints usage to stderr.
 func TestShellCommandRequiresVM(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	err := shellCommand(nil)
 	if err == nil || !strings.Contains(err.Error(), "vm name required") {
 		t.Fatalf("shellCommand(nil) error = %v, want vm name required", err)

@@ -73,6 +73,7 @@ func TestShellCommandWindowsQEMUUsesGlobalVM(t *testing.T) {
 // error from flag.Parse, and a missing positional VM argument returns the
 // "vm name required" error.
 func TestShellCommandEarlyBranches(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	t.Run("help flag returns nil", func(t *testing.T) {
 		for _, alias := range []string{"-h", "--help"} {
 			if err := shellCommand([]string{alias}); err != nil {
