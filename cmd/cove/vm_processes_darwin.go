@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -93,8 +94,42 @@ func ensureLibproc() error {
 	return libprocErr
 }
 
+// A native query cannot be canceled. Keep its slot until it returns, even if
+// the caller has timed out, so retries cannot accumulate blocked workers.
+var fileHolderQueries = make(chan struct{}, 1)
+
 func openFileHolderPIDs(path string) ([]int, error) {
-	return darwinFileHolders(path)
+	return boundedFileHolders(path, 10*time.Second, fileHolderQueries, darwinFileHolders)
+}
+
+func boundedFileHolders(path string, timeout time.Duration, queries chan struct{}, query func(string) ([]int, error)) ([]int, error) {
+	deadline := time.Now().Add(timeout)
+	select {
+	case queries <- struct{}{}:
+	default:
+		return nil, fmt.Errorf("file holder observation is still pending; retained")
+	}
+	type result struct {
+		pids []int
+		err  error
+	}
+	ready := make(chan result, 1)
+	go func() {
+		pids, err := query(path)
+		<-queries
+		ready <- result{pids, err}
+	}()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case r := <-ready:
+		if !time.Now().Before(deadline) {
+			return nil, fmt.Errorf("file holder observation timed out after %s; retained", timeout)
+		}
+		return r.pids, r.err
+	case <-timer.C:
+		return nil, fmt.Errorf("file holder observation timed out after %s; retained", timeout)
+	}
 }
 
 func (darwinVMProcessCollector) CollectVMProcesses(baseDir string, knownVMs []vmProcessVMInfo) ([]vmProcessInfo, error) {
