@@ -8,7 +8,48 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	agentstate "github.com/tmc/cove/internal/agent"
 )
+
+func TestAgentDialPortsRemainIndependent(t *testing.T) {
+	server := &ControlServer{}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	defer close(release)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	finished := make(chan error, 1)
+	go func() {
+		_, err := server.dialAgentPort(ctx, agentstate.UserPort, func() (net.Conn, error) {
+			close(started)
+			<-release
+			return nil, nil
+		})
+		finished <- err
+	}()
+	<-started
+	cancel()
+	if err := <-finished; !errors.Is(err, context.Canceled) {
+		t.Fatalf("user dial = %v", err)
+	}
+	rootCtx, rootCancel := context.WithTimeout(context.Background(), time.Second)
+	defer rootCancel()
+	want := errors.New("root connection attempted")
+	_, err := server.dialAgentPort(rootCtx, agentstate.DaemonPort, func() (net.Conn, error) {
+		return nil, want
+	})
+	if !errors.Is(err, want) {
+		t.Fatalf("root dial with pending user connection = %v", err)
+	}
+	_, err = server.dialAgentPort(rootCtx, 9000, func() (net.Conn, error) {
+		t.Error("started an unsupported port connection")
+		return nil, nil
+	})
+	if err == nil {
+		t.Fatal("unsupported agent port accepted")
+	}
+}
 
 type agentDialTestConn struct {
 	net.Conn

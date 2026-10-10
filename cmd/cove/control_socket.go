@@ -87,6 +87,7 @@ type ControlServer struct {
 
 	clipboardMonitor clipboardMonitorStatus
 	agentDial        agentDialGate
+	userAgentDial    agentDialGate
 
 	versionWarnMu  sync.Mutex
 	warnedVersions map[string]bool

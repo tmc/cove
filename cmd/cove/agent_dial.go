@@ -2,9 +2,23 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"sync"
+
+	agentstate "github.com/tmc/cove/internal/agent"
 )
+
+func (s *ControlServer) dialAgentPort(ctx context.Context, port uint32, connect func() (net.Conn, error)) (net.Conn, error) {
+	switch port {
+	case agentstate.DaemonPort:
+		return s.agentDial.dial(ctx, connect)
+	case agentstate.UserPort:
+		return s.userAgentDial.dial(ctx, connect)
+	default:
+		return nil, fmt.Errorf("unsupported agent port %d", port)
+	}
+}
 
 type agentDialGate struct {
 	once sync.Once

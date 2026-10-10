@@ -86,7 +86,7 @@ func (s *ControlServer) DialAgent(ctx context.Context, port uint32) (net.Conn, e
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return s.agentDial.dial(ctx, func() (net.Conn, error) {
+	return s.dialAgentPort(ctx, port, func() (net.Conn, error) {
 		mgr, err := NewVsockDeviceManager(s.vm, s.vmQueue)
 		if err != nil {
 			return nil, fmt.Errorf("vsock device: %w", err)
