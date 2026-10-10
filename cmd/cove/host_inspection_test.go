@@ -33,34 +33,85 @@ func TestHostInspectionCancellation(t *testing.T) {
 		name, script string
 		want         error
 	}{
-		{"deadline", "echo diagnostic >&2; exec /bin/sleep 30", context.DeadlineExceeded},
+		{"deadline", "exec /bin/sleep 30", context.DeadlineExceeded},
+		{"stderr", `echo diagnostic >&2; echo started > "$1"; exec /bin/sleep 30`, context.Canceled},
 		{"inherited-pipe", `/bin/sleep 30 & echo $!; echo started > "$1"; exit 0`, exec.ErrWaitDelay},
-		{"process-group", "/bin/sleep 30 & echo $!; wait", context.DeadlineExceeded},
+		{"process-group", `/bin/sleep 30 & echo $!; echo started > "$1"; wait`, context.Canceled},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			budget := 200 * time.Millisecond
-			marker := filepath.Join(t.TempDir(), "started")
-			args := []string{"-c", tt.script, "inspection-test", marker}
-			if tt.name == "inherited-pipe" {
-				budget = 5 * time.Second
+			budget := 5 * time.Second
+			if tt.name == "deadline" {
+				budget = 200 * time.Millisecond
 			}
+			marker := filepath.Join(t.TempDir(), "started")
+			ctx, cancel := context.WithCancel(context.Background())
+			type result struct {
+				out []byte
+				err error
+			}
+			done := make(chan result, 1)
+			finished := make(chan struct{})
+			go func() {
+				defer close(finished)
+				out, err := runHostInspection(ctx, budget, "/bin/sh", "-c", tt.script, "inspection-test", marker)
+				done <- result{out, err}
+			}()
+			t.Cleanup(func() {
+				cancel()
+				select {
+				case <-finished:
+				case <-time.After(time.Second):
+					t.Error("inspection worker did not stop")
+				}
+			})
 			start := time.Now()
-			out, err := runHostInspection(context.Background(), budget, "/bin/sh", args...)
+			if tt.name != "deadline" {
+				limit := time.Now().Add(5 * time.Second)
+				for {
+					info, err := os.Stat(marker)
+					if err == nil {
+						start = info.ModTime()
+						break
+					}
+					if !os.IsNotExist(err) {
+						t.Fatal(err)
+					}
+					select {
+					case <-finished:
+						if _, err := os.Stat(marker); err != nil {
+							t.Fatal("inspection finished before startup marker")
+						}
+						continue
+					default:
+					}
+					if time.Now().After(limit) {
+						t.Fatal("inspection did not start")
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+				if tt.name != "inherited-pipe" {
+					start = time.Now()
+					cancel()
+				}
+			}
+			var got result
+			select {
+			case got = <-done:
+			case <-time.After(time.Second):
+				t.Fatal("inspection exceeded deadline and pipe cleanup allowance")
+			}
+			out, err := got.out, got.err
 			if !errors.Is(err, tt.want) {
 				t.Fatalf("error = %v, want %v (output %q)", err, tt.want, out)
-			}
-			if tt.name == "inherited-pipe" {
-				info, err := os.Stat(marker)
-				if err != nil {
-					t.Fatal(err)
-				}
-				start = info.ModTime()
 			}
 			if time.Since(start) > time.Second {
 				t.Fatal("inspection exceeded deadline and pipe cleanup allowance")
 			}
 			if tt.name == "deadline" {
+				return
+			}
+			if tt.name == "stderr" {
 				if !strings.Contains(string(out), "diagnostic") {
 					t.Fatalf("stderr lost: %q", out)
 				}
