@@ -5,13 +5,7 @@ icon: book
 ---
 # CLI Reference
 
-cove ships 75 commands. This page gives 50 of them a section of their own and
-lists 19 more under [Other Commands](#other-commands). Six are not covered
-here at all: `9p`, `first-run`, and `support-bundle`, plus three deprecated
-aliases — `inject` for [provision](#provision), `inject-agent` for
-[provision-agent](#provision-agent), and `uiscript` for [vzscript](#vzscript).
-Use their `-h` output; the aliases print a deprecation notice and run the
-current command.
+This page documents command behavior and flags. Use `cove <command> -h` for the installed binary’s authoritative flags.
 
 For the complete list of commands as the installed binary reports it:
 
@@ -1817,6 +1811,58 @@ warning.
 Build compaction modes are step-local: `fast` skips guest cleanup, `targeted`
 clears common churn paths before the diff, and `thorough` runs the full
 agent-aware free-space compactor.
+
+---
+
+## workspace
+
+Plan or run a Go task in a prepared guest. Source is read-only by default;
+output must be a separate directory. Commands run as the guest user.
+
+```sh
+cove workspace plan -vm dev -source ./project -output ./project-output
+cove workspace open -vm dev -source ./project -output ./project-output -- go test ./...
+```
+
+Use `-from STOPPED_BASE` with a new `-vm` name to create an owned fork.
+Prepare the base with `cove up` before using it for a workspace.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-os darwin\|linux` | darwin | Declared guest OS |
+| `-source-mode ro\|rw` | ro | Source access |
+| `-prepare <recipes>` | | Opt-in prerequisite recipes |
+| `-timeout <duration>` | 10m | Task execution budget |
+| `-readiness-timeout <duration>` | 2m | Fresh root/user execution checks; maximum 30m |
+| `-min-free-gib <N>` | 1 | Required guest/output free space |
+| `-retain retain\|discard-success` | retain | Discard a newly owned fork only after task success |
+| `-json` | false | Structured plan or run receipt |
+
+Failures retain the guest and a run receipt. Inspect the reported run directory
+before retrying. To remove an owned, stopped fork from a finished run:
+
+```sh
+cove workspace discard -run RUN_ID -y
+```
+
+Discard checks guest identity, runtime owners and pins. It preserves the run
+receipt and never treats a failed task as successful.
+
+## ui
+
+Read macOS Accessibility state through the logged-in guest user agent:
+
+```sh
+cove ui status -vm dev -json
+cove ui inspect -vm dev -pid GUEST_PID -depth 3 -nodes 128 -json
+cove ui find -vm dev -pid GUEST_PID -role AXButton -json
+```
+
+Inspect/find require an unlocked session and existing Accessibility permission.
+Denied, locked, unavailable and stale results are explicit. These commands do
+not grant permissions or perform actions. Use `-generation ID` to reject a
+changed session. `-timeout` defaults to 2s and is capped at 10s; `-depth`,
+`-nodes` and `-bytes` bound observations. Text values are omitted.
 
 ---
 
