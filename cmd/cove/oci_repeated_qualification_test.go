@@ -369,15 +369,14 @@ func TestLumeRepeatedDiskPartsCancellationRetry(t *testing.T) {
 			t.Fatal("part cache retained after cancellation")
 		}
 	}
-	registry.mu.Lock()
-	registry.before = nil
-	registry.mu.Unlock()
-	before := registry.count(parts[1].Descriptor.Digest)
-	if err := lumePullDisk(context.Background(), plan, pullOptions{RegistryBaseURL: server.URL}); err != nil {
+	retryRegistry := &qualificationRegistry{gets: map[string]int{}, blobs: blobs}
+	retryServer := httptest.NewServer(retryRegistry)
+	defer retryServer.Close()
+	if err := lumePullDisk(context.Background(), plan, pullOptions{RegistryBaseURL: retryServer.URL}); err != nil {
 		t.Fatal(err)
 	}
 	assertQualifiedDisk(t, plan.VMDir, want)
-	if n := registry.count(parts[1].Descriptor.Digest) - before; n != 3 {
+	if n := retryRegistry.count(parts[1].Descriptor.Digest); n != 3 {
 		t.Fatalf("nonadjacent repeated gzip part fetches=%d, want 3", n)
 	}
 }
