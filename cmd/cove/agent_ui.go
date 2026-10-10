@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"time"
 
 	"connectrpc.com/connect"
+	agentstate "github.com/tmc/cove/internal/agent"
 	pb "github.com/tmc/cove/proto/agentpb"
 	controlpb "github.com/tmc/cove/proto/controlpb"
 	"google.golang.org/protobuf/proto"
@@ -37,6 +40,17 @@ func uiControlResponse(result *pb.UIResponse) *controlpb.ControlResponse {
 }
 
 func (s *ControlServer) handleAgentUI(req *controlpb.ControlRequest) *controlpb.ControlResponse {
+	return s.handleAgentUIWithDial(req, func(ctx context.Context, port uint32) (net.Conn, error) {
+		if s.vm.ID == 0 {
+			return nil, fmt.Errorf("vm unavailable")
+		}
+		return s.DialAgent(ctx, port)
+	})
+}
+
+func (s *ControlServer) handleAgentUIWithDial(req *controlpb.ControlRequest, dial func(context.Context, uint32) (net.Conn, error)) *controlpb.ControlResponse {
+	ctx, cancel := s.timeoutContext(12 * time.Second)
+	defer cancel()
 	request := req.GetAgentUi()
 	if request == nil {
 		request = &pb.UIRequest{}
@@ -51,12 +65,11 @@ func (s *ControlServer) handleAgentUI(req *controlpb.ControlRequest) *controlpb.
 		return &controlpb.ControlResponse{Error: err.Error()}
 	}
 	request.HostGeneration = epoch
-	user, err := s.getUserAgent()
+	user, err := agentstate.NewUserAgentClientWithDial(func(callCtx context.Context) (net.Conn, error) { return dial(callCtx, agentstate.UserPort) })
 	if err != nil {
 		return uiControlResponse(&pb.UIResponse{Status: &pb.UIStatus{ProtocolVersion: 1, State: "unavailable", PermissionState: "unknown", SessionState: "unknown", Reason: "user agent unavailable; log into the guest and check agent readiness"}})
 	}
-	ctx, cancel := s.timeoutContext(12 * time.Second)
-	defer cancel()
+	defer user.Close()
 	var result *pb.UIResponse
 	switch req.Type {
 	case "agent-ui-status":
@@ -70,7 +83,13 @@ func (s *ControlServer) handleAgentUI(req *controlpb.ControlRequest) *controlpb.
 		if connect.CodeOf(err) == connect.CodeUnimplemented {
 			return uiControlResponse(&pb.UIResponse{Status: &pb.UIStatus{State: "unsupported_protocol", PermissionState: "unknown", SessionState: "unknown", Reason: "installed guest user agent does not implement accessibility RPCs; upgrade the agent"}})
 		}
-		return &controlpb.ControlResponse{Error: fmt.Sprintf("guest user ui: %v", err)}
+		reason := "user accessibility RPC unavailable; log into the guest and check agent readiness"
+		if ctx.Err() == context.DeadlineExceeded || connect.CodeOf(err) == connect.CodeDeadlineExceeded {
+			reason = "user accessibility RPC timed out within the 12s diagnostic deadline"
+		} else if ctx.Err() == context.Canceled {
+			reason = "user accessibility RPC canceled because the VM runtime stopped"
+		}
+		return uiControlResponse(&pb.UIResponse{Status: &pb.UIStatus{ProtocolVersion: 1, State: "unavailable", PermissionState: "unknown", SessionState: "unknown", Reason: reason}})
 	}
 	return uiControlResponse(result)
 }
