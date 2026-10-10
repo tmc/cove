@@ -816,7 +816,7 @@ func upgradeAgentAt(sock string) error {
 	if err != nil {
 		return fmt.Errorf("upgrade workspace: %w", err)
 	}
-	workRoot := filepath.Join(home, "tmp")
+	workRoot := filepath.Join(home, "tmp", "vz-macos", time.Now().Format("20060102")+"-agent-upgrade")
 	if err := os.MkdirAll(workRoot, 0700); err != nil {
 		return fmt.Errorf("upgrade workspace: %w", err)
 	}
