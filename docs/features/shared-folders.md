@@ -74,10 +74,10 @@ creates `~/<tag>` as a user-session symlink to that system mount path. The
 symlink is created through the user agent, so a fresh desktop VM must complete
 login before the link can be installed. If the user agent is connected but
 macOS still refuses to enumerate the mount, cove prints
-`COVE_TCC_FDA_REQUIRED`. Run `cove doctor tcc-fda -tcc-path
-/Volumes/<tag> -password <guest-password>` to guide Full Disk Access for
-`/usr/local/bin/vz-agent`, then verify with `cove doctor --tcc-path
-/Volumes/<tag>`.
+`COVE_TCC_PATH_UNREADABLE`. That shows path access only; it does not establish
+whether `vz-agent` has Full Disk Access. Check with `cove doctor tcc-fda
+-check`, set up access with `cove doctor tcc-fda -tcc-path /Volumes/<tag>`,
+and recheck the path with `cove doctor --tcc-path /Volumes/<tag>`.
 
 On Linux guests, VirtioFS mounts are explicit unless the guest agent is already
 installed and healthy. Cove prints the manual command when the VM starts:

@@ -179,7 +179,7 @@ cove agent-upgrade
 
 Stock SIP-enabled macOS does not provide a silent local preauthorization path for Full Disk Access without MDM PPPC enrollment. `tccutil` can reset grants, not create them.
 
-Grant access explicitly in guest System Settings, or through a managed PPPC policy. If using the assisted Full Disk Access flow, `cove doctor tcc-fda -tcc-path /Volumes/<tag> -password <guest-admin-password>` guides System Settings and verifies access with a bounded readdir probe. This is not an automated privacy grant. Preserve a timed-out mount until the failed access has been diagnosed; do not infer that a remount will repair it.
+Grant access explicitly in guest System Settings, or through a managed PPPC policy. `cove doctor tcc-fda -check` verifies Full Disk Access by having `vz-agent` open the system TCC database in its own process; a readable path is not FDA evidence. `cove doctor tcc-fda -tcc-path /Volumes/<tag>` drives the Full Disk Access pane from observed screen state: it clicks only controls it identifies, waits for each input's effect before sending more, and hands authentication prompts and unidentified or unobservable states to the user. It never types passwords and is not a silent privacy grant. `cove doctor tcc-fda -export-profile vz-agent.mobileconfig` writes a PPPC profile for the installed agent; it grants nothing unless installed by user-approved MDM, and an ad-hoc signed agent's hash-bound requirement changes with every build. Preserve a timed-out mount until the failed access has been diagnosed; do not infer that a remount will repair it.
 
 ## Network Issues
 

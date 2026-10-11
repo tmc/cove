@@ -1364,7 +1364,7 @@ func controlCapabilityCommands(linuxGuest, windowsGuest bool) []string {
 		"agent-connect", "agent-ping", "agent-info", "agent-exec", "agent-exec-stream",
 		"agent-exec-attach", "agent-exec-resize", "agent-exec-signal",
 		"agent-read", "agent-write", "agent-cp", "agent-shutdown", "agent-reboot",
-		"agent-sshd", "agent-mount-volumes", "agent-status",
+		"agent-sshd", "agent-mount-volumes", "agent-status", "agent-tcc-fda-probe",
 		"agent-ui-status", "agent-ui-inspect", "agent-ui-find",
 	}
 	if !linuxGuest && !windowsGuest {

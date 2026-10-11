@@ -269,7 +269,7 @@ Diagnose host readiness or VM health.
 
 ```sh
 cove doctor host [-json]
-cove doctor tcc-fda -tcc-path /Volumes/<tag> [-password pass]
+cove doctor tcc-fda [-check] [-tcc-path /Volumes/<tag>] [-timeout dur] [-export-profile file]
 cove doctor qemu [-json]
 cove doctor [options]
 ```
@@ -289,14 +289,18 @@ and the local VirtIO driver cache state.
 
 Plain `cove doctor` remains VM-focused. It checks provisioning, guest agent, TCC
 paths, and file ownership for the active VM or `-vm <name>`.
-When a macOS shared folder needs Full Disk Access, `cove doctor tcc-fda`
-guides adding `/usr/local/bin/vz-agent` in System Settings and verifies with
-the same bounded readdir probe.
+`cove doctor tcc-fda` verifies Full Disk Access for `/usr/local/bin/vz-agent`
+by having the agent open the system TCC database in its own process. If access
+is denied, it opens the Full Disk Access pane and adds and enables the agent
+from observed screen state, handing authentication and unidentified controls
+to the user. `-check` verifies without opening System Settings. A readable
+`-tcc-path` is reported separately and is not FDA evidence.
 
 ```bash
 cove doctor host
 cove doctor host -json
-cove doctor tcc-fda -tcc-path /Volumes/work -password <guest-password>
+cove doctor tcc-fda -check
+cove doctor tcc-fda -tcc-path /Volumes/work
 cove doctor qemu
 cove doctor qemu -json
 cove doctor -vm dev -v
@@ -457,7 +461,7 @@ Diagnose VM health: provisioning, agent, and file ownership.
 
 ```sh
 cove doctor [flags]
-cove doctor tcc-fda -tcc-path /Volumes/<tag> [-password pass] [-upgrade-agent]
+cove doctor tcc-fda [-check] [-tcc-path /Volumes/<tag>] [-timeout dur] [-upgrade-agent] [-export-profile file]
 cove doctor qemu [-json]
 cove doctor tcc-preauth
 cove doctor sckit-preauth [-json]
@@ -472,7 +476,7 @@ cove doctor sckit-spike [-n N] [-threshold DUR] [-title-prefix STR] [-owner STR]
 
 | Subcommand | Description |
 |------------|-------------|
-| `tcc-fda -tcc-path PATH [-password PASS] [-upgrade-agent]` | Guide guest Full Disk Access for `/usr/local/bin/vz-agent` and verify by bounded readdir. |
+| `tcc-fda [-check] [-tcc-path PATH] [-upgrade-agent] [-export-profile FILE]` | Verify guest Full Disk Access for `/usr/local/bin/vz-agent` with an in-process open of the system TCC database, and set it up from observed System Settings state. `-export-profile` writes a PPPC profile that applies only through user-approved MDM. |
 | `qemu [-json]` | Check direct QEMU/HVF Windows backend prerequisites. |
 | `tcc-preauth` | Pre-auth Apple Events services cove uses on the host. |
 | `sckit-preauth [-json]` | Report ScreenCaptureKit availability and Screen Recording authorization (design 041). |
@@ -483,7 +487,8 @@ cove doctor
 cove doctor qemu
 cove doctor --fix
 cove doctor --tcc-path /Volumes/work
-cove doctor tcc-fda -tcc-path /Volumes/work -password <guest-password>
+cove doctor tcc-fda -check
+cove doctor tcc-fda -tcc-path /Volumes/work
 cove doctor sckit-preauth
 cove doctor sckit-preauth -json
 ```

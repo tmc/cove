@@ -373,6 +373,14 @@ func (c *AgentClient) ReadFile(ctx context.Context, path string) ([]byte, error)
 	return resp.Msg.Data, nil
 }
 
+// OpenFile asks the agent to open path in its own process and read nothing.
+// It reports whether the agent may open the file without returning contents.
+func (c *AgentClient) OpenFile(ctx context.Context, path string) error {
+	var limit uint64
+	_, err := c.client.ReadFile(ctx, connect.NewRequest(&pb.ReadFileRequest{Path: path, Limit: &limit}))
+	return err
+}
+
 // CopyToGuest streams a local file into the guest at guestPath.
 func (c *AgentClient) CopyToGuest(ctx context.Context, localPath, guestPath string, mode os.FileMode) error {
 	f, err := os.Open(localPath)

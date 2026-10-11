@@ -221,6 +221,8 @@ func (s *ControlServer) handleAgentCommand(req *controlpb.ControlRequest) (resp 
 	switch req.Type {
 	case "agent-ui-status", "agent-ui-inspect", "agent-ui-find":
 		return s.handleAgentUI(req), true
+	case "agent-tcc-fda-probe":
+		return s.handleAgentTCCFDAProbe(), true
 	case "agent-connect":
 		return s.handleAgentConnect(), true
 	case "agent-ping":

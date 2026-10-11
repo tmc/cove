@@ -115,6 +115,7 @@ cove run -auto-upgrade-agent
 
 - The user agent requires a logged-in GUI session to access TCC-protected resources
 - VirtioFS mounts accessed via the daemon agent may be blocked by TCC. If cove
-  prints `COVE_TCC_FDA_REQUIRED`, run `cove doctor tcc-fda -tcc-path
-  /Volumes/<tag> -password <guest-password>` and verify with `cove doctor
-  --tcc-path /Volumes/<tag>`.
+  prints `COVE_TCC_PATH_UNREADABLE`, check the agent's Full Disk Access with
+  `cove doctor tcc-fda -check`, set it up with `cove doctor tcc-fda -tcc-path
+  /Volumes/<tag>`, and recheck the path with `cove doctor --tcc-path
+  /Volumes/<tag>`.

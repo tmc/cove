@@ -90,9 +90,10 @@ func TestPrintMountedVolumeFDAWarning(t *testing.T) {
 		return nil
 	})
 	for _, want := range []string{
-		"COVE_TCC_FDA_REQUIRED path='/Volumes/ml-explore' agent=/usr/local/bin/vz-agent",
-		"Full Disk Access needed for /Volumes/ml-explore",
-		"guided fix: cove doctor tcc-fda -tcc-path '/Volumes/ml-explore' -password <guest-admin-password>",
+		"COVE_TCC_PATH_UNREADABLE path='/Volumes/ml-explore' evidence=user-agent-readdir",
+		"does not establish whether vz-agent has Full Disk Access",
+		"cove doctor tcc-fda -check",
+		"set up Full Disk Access: cove doctor tcc-fda -tcc-path '/Volumes/ml-explore'",
 		"cove doctor --tcc-path '/Volumes/ml-explore'",
 	} {
 		if !strings.Contains(out, want) {
@@ -109,7 +110,7 @@ func TestMountedVolumeMissingUserAgent(t *testing.T) {
 	if !strings.Contains(out, "read access unverified") || !strings.Contains(out, "cove ctl agent-status") {
 		t.Fatalf("missing readiness guidance: %s", out)
 	}
-	if strings.Contains(out, "COVE_TCC_FDA_REQUIRED") || strings.Contains(out, "doctor tcc-fda") {
+	if strings.Contains(out, "COVE_TCC_PATH_UNREADABLE") || strings.Contains(out, "doctor tcc-fda") {
 		t.Fatalf("unavailable user agent incorrectly diagnosed as FDA denial: %s", out)
 	}
 }

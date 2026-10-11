@@ -222,7 +222,7 @@ func printVerifyUsage(w io.Writer, fs *flag.FlagSet) {
 	fmt.Fprintf(w, `Usage: cove doctor [options]
        cove doctor host [-json]
        cove doctor vm-processes
-       cove doctor tcc-fda -tcc-path /Volumes/work [-password pass] [-upgrade-agent]
+       cove doctor tcc-fda [-check] [-tcc-path /Volumes/work] [-export-profile file]
        cove doctor tcc-network-volumes [-vm name] [-enable|-disable]
        cove doctor clear-stale-locks [vm] [-n]
        cove doctor qemu [-json]
@@ -249,7 +249,7 @@ Examples:
   cove doctor host
   cove doctor host -json
   cove doctor vm-processes
-  cove doctor tcc-fda -tcc-path /Volumes/work -password covetest123
+  cove doctor tcc-fda -tcc-path /Volumes/work
   cove doctor clear-stale-locks
   cove doctor qemu
   cove doctor qemu -json

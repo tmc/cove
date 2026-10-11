@@ -970,11 +970,11 @@ Avoiding repeated password dialogs:
 
 Using shared folders:
   - A macOS guest may require Full Disk Access for /usr/local/bin/vz-agent
-    before it can read /Volumes/<tag>. If cove prints COVE_TCC_FDA_REQUIRED,
-    run:
-      cove doctor tcc-fda -tcc-path /Volumes/<tag> -password <guest-password>
-  - Success is verified by:
-      cove doctor --tcc-path /Volumes/<tag>
+    before it can read /Volumes/<tag>. If cove prints COVE_TCC_PATH_UNREADABLE,
+    check and set up Full Disk Access with:
+      cove doctor tcc-fda -tcc-path /Volumes/<tag>
+  - Verify Full Disk Access with: cove doctor tcc-fda -check
+    Check path access with:       cove doctor --tcc-path /Volumes/<tag>
 
 Support:
   cove support bundle

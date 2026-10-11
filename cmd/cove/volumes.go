@@ -592,10 +592,12 @@ func printMountedVolumeFDAWarning(guestPath, detail string) {
 		fmt.Println("  log into the guest and check: cove ctl agent-status")
 		return
 	}
-	fmt.Printf("COVE_TCC_FDA_REQUIRED path=%s agent=/usr/local/bin/vz-agent detail=%s\n", shellQuote(guestPath), shellQuote(detail))
-	fmt.Printf("Full Disk Access needed for %s: mounted but not readable via user agent (%s)\n", guestPath, detail)
-	fmt.Printf("  guided fix: cove doctor tcc-fda -tcc-path %s -password <guest-admin-password>\n", shellQuote(guestPath))
-	fmt.Printf("  verify with: cove doctor --tcc-path %s\n", shellQuote(guestPath))
+	fmt.Printf("COVE_TCC_PATH_UNREADABLE path=%s evidence=user-agent-readdir detail=%s\n", shellQuote(guestPath), shellQuote(detail))
+	fmt.Printf("Volume %s: mounted but not readable via user agent (%s)\n", guestPath, detail)
+	fmt.Println("  this shows path access only; it does not establish whether vz-agent has Full Disk Access")
+	fmt.Println("  check Full Disk Access: cove doctor tcc-fda -check")
+	fmt.Printf("  set up Full Disk Access: cove doctor tcc-fda -tcc-path %s\n", shellQuote(guestPath))
+	fmt.Printf("  recheck path access: cove doctor --tcc-path %s\n", shellQuote(guestPath))
 }
 
 func setupRosettaInGuest(ctx context.Context, cs *ControlServer) {
