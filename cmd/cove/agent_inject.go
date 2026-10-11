@@ -92,7 +92,7 @@ func buildAgentBinaryForOS(outputPath, targetOS string) error {
 	}
 
 	if targetOS == "darwin" {
-		if err := codesignAdHoc(outputPath); err != nil {
+		if err := signAgentBinary(outputPath); err != nil {
 			return fmt.Errorf("codesign agent binary: %w", err)
 		}
 	}
@@ -110,6 +110,31 @@ func agentBuildLDFlagsForOS(targetOS string) string {
 		flags += " -H=windowsgui"
 	}
 	return flags
+}
+
+// COVE_AGENT_SIGN_IDENTITY selects a host keychain signing identity for Darwin
+// guest agents. Reuse the identity across upgrades; signing does not grant FDA.
+func signAgentBinary(path string) error {
+	identity := os.Getenv("COVE_AGENT_SIGN_IDENTITY")
+	if identity == "" {
+		return codesignAdHoc(path)
+	}
+	cmd := agentSigningCommand(path, identity)
+	if verbose {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	}
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("sign agent with identity %q: %w", identity, err)
+	}
+	if verbose {
+		fmt.Printf("Signed: %s (identity %s)\n", path, identity)
+	}
+	return nil
+}
+
+func agentSigningCommand(path, identity string) *exec.Cmd {
+	return exec.Command("codesign", "-s", identity, "-f", "--identifier", agentLaunchDaemonLabel, path)
 }
 
 // codesignAdHoc applies an ad-hoc signature to a Mach-O binary. macOS
