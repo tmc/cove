@@ -20,6 +20,14 @@ func (s *ControlServer) dialAgentPort(ctx context.Context, port uint32, connect 
 	}
 }
 
+type agentDialObserverKey struct{}
+
+func observeAgentDial(ctx context.Context, phase string) {
+	if observe, ok := ctx.Value(agentDialObserverKey{}).(func(string)); ok {
+		observe(phase)
+	}
+}
+
 type agentDialGate struct {
 	once sync.Once
 	slot chan struct{}
@@ -27,6 +35,7 @@ type agentDialGate struct {
 
 func (g *agentDialGate) dial(ctx context.Context, connect func() (net.Conn, error)) (net.Conn, error) {
 	g.once.Do(func() { g.slot = make(chan struct{}, 1) })
+	observeAgentDial(ctx, "native-slot-wait")
 	select {
 	case g.slot <- struct{}{}:
 	case <-ctx.Done():
@@ -36,6 +45,8 @@ func (g *agentDialGate) dial(ctx context.Context, connect func() (net.Conn, erro
 		<-g.slot
 		return nil, err
 	}
+	observeAgentDial(ctx, "native-slot-admitted")
+
 	type result struct {
 		conn net.Conn
 		err  error
@@ -45,12 +56,15 @@ func (g *agentDialGate) dial(ctx context.Context, connect func() (net.Conn, erro
 	// it completes, so retries cannot accumulate pending operations or workers.
 	go func() {
 		defer func() { <-g.slot }()
+		observeAgentDial(ctx, "native-connect-start")
 		conn, err := connect()
+		observeAgentDial(ctx, "native-connect-return")
 		select {
 		case done <- result{conn, err}:
 		case <-ctx.Done():
 			if conn != nil {
 				conn.Close()
+				observeAgentDial(ctx, "native-late-connection-closed")
 			}
 		}
 	}()

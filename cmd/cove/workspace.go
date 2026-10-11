@@ -64,7 +64,7 @@ func handleWorkspaceCommand(env commandEnv, args []string) error {
 	if args[0] == "discard" {
 		return handleWorkspaceDiscard(env, args[1:])
 	}
-	if args[0] != "plan" && args[0] != "open" {
+	if args[0] != "plan" && args[0] != "open" && args[0] != "repair" {
 		return fmt.Errorf("unknown workspace command %q", args[0])
 	}
 	opts, asJSON, err := parseWorkspaceOptions(args[1:], env.Stderr)
@@ -83,6 +83,9 @@ func handleWorkspaceCommand(env commandEnv, args []string) error {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
+	if args[0] == "repair" {
+		return handleWorkspaceRepair(ctx, opts, plan, env)
+	}
 	taskEnv := env
 	if asJSON {
 		taskEnv.Stdout = env.Stderr
@@ -108,6 +111,9 @@ func printWorkspaceUsage(w io.Writer) {
 
 Discard an owned stopped fork from a finished run:
   cove workspace discard -run ID [-y]
+
+Repair an existing macOS user service explicitly, without replaying a task:
+  cove workspace repair -vm NAME -source DIR -output DIR [-readiness-timeout 2m]
 
 Go workspace profile. Source defaults to read-only; output must be separate.
 Uses an existing prepared VM, or creates a fresh fork with -from STOPPED_BASE.
