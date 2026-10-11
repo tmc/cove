@@ -464,7 +464,7 @@ func TestWorkspacePlanFreezesPreparation(t *testing.T) {
 
 func workspaceStreamFixture(t *testing.T, serve func(net.Conn, *controlpb.ControlRequest)) string {
 	t.Helper()
-	root := filepath.Join(os.Getenv("HOME"), "tmp")
+	root := filepath.Join(os.Getenv("HOME"), "tmp", "vz-macos")
 	if err := os.MkdirAll(root, 0700); err != nil {
 		t.Fatal(err)
 	}

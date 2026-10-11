@@ -13,15 +13,18 @@ import (
 )
 
 func TestWorkspaceStreamDeadlineWire(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	want, _ := ctx.Deadline()
+	deadline := make(chan time.Time, 1)
 	socket := workspaceStreamFixture(t, func(conn net.Conn, req *controlpb.ControlRequest) {
+		want := <-deadline
 		if cmd := req.GetAgentExec(); cmd == nil || cmd.DeadlineUnixNano != want.UnixNano() {
 			t.Error("stream caller deadline absent or replaced")
 		}
 		writeResponse(conn, &controlpb.ControlResponse{Error: "command not dispatched"})
 	})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	want, _ := ctx.Deadline()
+	deadline <- want
 	_, err := streamWorkspaceTask(ctx, socket, []string{"true"}, "", time.Minute, io.Discard, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "command not dispatched") {
 		t.Fatalf("stream error %v", err)
