@@ -632,6 +632,21 @@ func TestWindowsClipboardCommandsUseAgentHelper(t *testing.T) {
 	}
 }
 
+func TestCaptureCtlQEMUStdoutLargeOutput(t *testing.T) {
+	want := strings.Repeat("qemu status output\n", 1<<16)
+	old := os.Stdout
+	got := captureCtlQEMUStdout(t, func() error {
+		_, err := io.WriteString(os.Stdout, want)
+		return err
+	})
+	if got != want {
+		t.Fatalf("captured %d bytes, want %d", len(got), len(want))
+	}
+	if os.Stdout != old {
+		t.Fatal("stdout was not restored")
+	}
+}
+
 func captureCtlQEMUStdout(t *testing.T, fn func() error) string {
 	t.Helper()
 	old := os.Stdout
@@ -639,17 +654,35 @@ func captureCtlQEMUStdout(t *testing.T, fn func() error) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer r.Close()
+	defer w.Close()
+	defer func() { os.Stdout = old }()
+	type result struct {
+		data []byte
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		data, err := io.ReadAll(r)
+		done <- result{data, err}
+	}()
 	os.Stdout = w
-	err = fn()
-	w.Close()
+	callErr := fn()
+	closeErr := w.Close()
 	os.Stdout = old
-	if err != nil {
-		t.Fatalf("function returned error: %v", err)
+	captured := <-done
+	readCloseErr := r.Close()
+	if callErr != nil {
+		t.Fatalf("function returned error: %v", callErr)
 	}
-	data, err := io.ReadAll(r)
-	r.Close()
-	if err != nil {
-		t.Fatal(err)
+	if closeErr != nil {
+		t.Fatal(closeErr)
 	}
-	return string(data)
+	if captured.err != nil {
+		t.Fatal(captured.err)
+	}
+	if readCloseErr != nil {
+		t.Fatal(readCloseErr)
+	}
+	return string(captured.data)
 }
