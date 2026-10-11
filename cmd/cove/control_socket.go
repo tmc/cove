@@ -1253,9 +1253,9 @@ func (s *ControlServer) handleNetworkInfo() *controlpb.ControlResponse {
 		info.MacAddress = strings.TrimSpace(string(data))
 	}
 
-	if a, err := s.getAgent(); err == nil {
-		ctx, cancel := s.timeoutContext(5 * time.Second)
-		defer cancel()
+	ctx, cancel := s.timeoutContext(5 * time.Second)
+	defer cancel()
+	if a, err := s.bridge.GetAgentContext(ctx); err == nil {
 		if info.MacAddress == "" && linuxMode {
 			if result, err := a.Exec(ctx, linuxGuestMACProbeArgs(), nil, ""); err == nil && result.ExitCode == 0 {
 				info.MacAddress = parseGuestMAC(responseText(result.Stdout))
