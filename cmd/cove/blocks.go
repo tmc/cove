@@ -9,9 +9,11 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/tmc/apple/dispatch"
 	"github.com/tmc/apple/foundation"
+	"github.com/tmc/apple/objc"
 	"github.com/tmc/apple/x/vzkit"
 )
 
@@ -23,6 +25,14 @@ type nsErrorSnapshot struct {
 	code        int
 	description string
 	reason      string
+	underlying  *nsErrorSnapshot
+}
+
+func (e nsErrorSnapshot) Unwrap() error {
+	if e.underlying == nil {
+		return nil
+	}
+	return *e.underlying
 }
 
 func (e nsErrorSnapshot) Error() string {
@@ -36,6 +46,9 @@ func (e nsErrorSnapshot) Error() string {
 	if e.reason != "" && e.reason != e.description {
 		parts = append(parts, e.reason)
 	}
+	if e.underlying != nil {
+		parts = append(parts, "underlying: "+e.underlying.Error())
+	}
 	if len(parts) == 0 {
 		return "virtualization error"
 	}
@@ -48,14 +61,61 @@ func snapshotNSError(err error) error {
 	}
 	var nsErr *foundation.NSError
 	if errors.As(err, &nsErr) && nsErr != nil && nsErr.ID != 0 {
-		return nsErrorSnapshot{
-			domain:      nsErr.Domain(),
-			code:        nsErr.Code(),
-			description: strings.TrimSpace(nsErr.LocalizedDescription()),
-			reason:      strings.TrimSpace(nsErr.LocalizedFailureReason()),
-		}
+		current := *nsErr
+		return snapshotNSErrorChain(func() (uintptr, nsErrorSnapshot, bool) {
+			if current.ID == 0 {
+				return 0, nsErrorSnapshot{}, false
+			}
+			id := uintptr(current.ID)
+			entry := nsErrorSnapshot{domain: current.Domain(), code: current.Code(), description: current.LocalizedDescription(), reason: current.LocalizedFailureReason()}
+			info := current.UserInfo()
+			current = foundation.NSError{}
+			if info != nil {
+				next := info.ObjectForKey(foundation.NewStringWithString("NSUnderlyingError"))
+				if next != nil && objc.Send[bool](next.GetID(), objc.Sel("isKindOfClass:"), foundation.GetNSErrorClass().Class()) {
+					current = foundation.NSErrorFromID(next.GetID())
+				}
+			}
+			return id, entry, true
+		})
 	}
 	return errors.New(err.Error())
+}
+
+func snapshotNSErrorChain(next func() (uintptr, nsErrorSnapshot, bool)) nsErrorSnapshot {
+	var root nsErrorSnapshot
+	tail := &root
+	seen := make(map[uintptr]bool)
+	for depth := 0; depth < 4; depth++ {
+		id, entry, ok := next()
+		if !ok || seen[id] {
+			break
+		}
+		seen[id] = true
+		entry.domain = boundedNSErrorText(entry.domain)
+		entry.description = boundedNSErrorText(entry.description)
+		entry.reason = boundedNSErrorText(entry.reason)
+		entry.underlying = nil
+		if depth == 0 {
+			*tail = entry
+		} else {
+			tail.underlying = &entry
+			tail = &entry
+		}
+	}
+	return root
+}
+
+func boundedNSErrorText(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) > 1024 {
+		end := 1024
+		for end > 0 && !utf8.RuneStart(value[end]) {
+			end--
+		}
+		return value[:end] + "..."
+	}
+	return value
 }
 
 func isVZAlreadyStoppedStopError(err error) bool {

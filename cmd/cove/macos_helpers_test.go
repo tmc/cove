@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/tmc/cove/internal/vmrun"
@@ -108,25 +109,38 @@ func TestMoveAsideSuspendState(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	moveAsideSuspendStateForVM(dir, "test reason")
+	if err := moveAsideSuspendStateForVM(dir, "test reason"); err != nil {
+		t.Fatal(err)
+	}
 
 	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
 		t.Fatalf("expected suspend state moved aside, stat err = %v", err)
 	}
 	if _, err := os.Stat(cfgPath); !os.IsNotExist(err) {
-		t.Fatalf("expected suspend config removed, stat err = %v", err)
+		t.Fatalf("expected suspend config quarantined, stat err = %v", err)
 	}
 
 	matches, err := filepath.Glob(statePath + ".broken-*")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(matches) != 1 {
+	var states []string
+	for _, path := range matches {
+		if !strings.HasSuffix(path, ".config.json") {
+			states = append(states, path)
+		}
+	}
+	if len(states) != 1 {
 		t.Fatalf("expected exactly one .broken-<ts> backup, got %v", matches)
+	}
+	if data, err := os.ReadFile(states[0] + ".config.json"); err != nil || string(data) != "{}" {
+		t.Fatalf("preserved config %q: %v", data, err)
 	}
 
 	// Second call when no state exists must be a clean no-op.
-	moveAsideSuspendStateForVM(dir, "no-state")
+	if err := moveAsideSuspendStateForVM(dir, "no-state"); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestShouldRunGUIAutomationForRun(t *testing.T) {

@@ -119,7 +119,11 @@ func bootVMToRecovery(source string, vm vz.VZVirtualMachine, queue dispatch.Queu
 		}
 		if hasSuspendStateForVM(vmDirectory) {
 			fmt.Printf("%s: recovery mode requires a cold boot; moving aside saved suspend state...\n", label)
-			moveAsideSuspendStateForVM(vmDirectory, "recovery-mode")
+			if err := moveAsideSuspendStateForVM(vmDirectory, "recovery-mode"); err != nil {
+				reportBootTransitionFailure(label, "quarantine suspend before recovery", vm, queue, err)
+				reportGUIError(window, "VM Recovery Error", err)
+				return
+			}
 		}
 		setActiveBootSessionMode(bootSessionModeRecovery)
 		err := startVMAfterStop(vm, queue, func(handler func(error)) {

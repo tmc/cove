@@ -1175,7 +1175,10 @@ func (s *ControlServer) rebootToRecovery() *controlpb.ControlResponse {
 			return
 		}
 		if hasSuspendStateForVM(s.vmDir) {
-			moveAsideSuspendStateForVM(s.vmDir, "recovery-mode")
+			if err := moveAsideSuspendStateForVM(s.vmDir, "recovery-mode"); err != nil {
+				done <- err
+				return
+			}
 		}
 		setActiveBootSessionMode(bootSessionModeRecovery)
 		done <- startVMAfterStop(vm, queue, func(handler func(error)) {

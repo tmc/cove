@@ -101,20 +101,26 @@ func removeCorruptSuspendState(path string) {
 
 // moveAsideSuspendState renames suspend.vmstate to suspend.vmstate.broken-<timestamp>
 // so the next boot cold-starts without auto-restoring the bad state. The saved
-// config fingerprint is removed unconditionally — it only matches a state file
-// that no longer exists. reason is used in the log line.
-func moveAsideSuspendStateForVM(vmDirectory, reason string) {
+// config fingerprint is preserved beside the quarantined state for diagnosis.
+func moveAsideSuspendStateForVM(vmDirectory, reason string) error {
+	return quarantineSuspendState(vmDirectory, reason, os.Rename)
+}
+
+func quarantineSuspendState(vmDirectory, reason string, rename func(string, string) error) error {
 	path := suspendStatePathForVM(vmDirectory)
-	backup := fmt.Sprintf("%s.broken-%s", path, time.Now().UTC().Format("20060102T150405Z"))
-	if err := os.Rename(path, backup); err != nil {
+	backup := fmt.Sprintf("%s.broken-%s", path, time.Now().UTC().Format("20060102T150405.000000000Z"))
+	if err := rename(path, backup); err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
-			fmt.Fprintf(os.Stderr, "warning: could not move aside suspend state (%s): %v\n", reason, err)
-			os.Remove(path)
+			return fmt.Errorf("quarantine suspend state (%s): %w", reason, err)
 		}
+		return nil
 	} else {
 		fmt.Fprintf(os.Stderr, "warning: suspend state moved aside (%s): %s\n", reason, backup)
+		if err := rename(suspendConfigPathForVM(vmDirectory), backup+".config.json"); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("preserve suspend config beside %s: %w", backup, err)
+		}
 	}
-	os.Remove(suspendConfigPathForVM(vmDirectory))
+	return nil
 }
 
 // suspendConfigFingerprint captures the VM config params that must match between save and restore.
@@ -1164,14 +1170,18 @@ func startConfiguredVM(vm vz.VZVirtualMachine, queue dispatch.Queue, pumpRunLoop
 	if hasSuspendStateForVM(hc.VMDir) && !rc.SkipResume && runRequiresColdBootForRun(rc) {
 		reason := coldBootReasonForRun(rc)
 		fmt.Printf("%s requires a cold boot; moving aside saved suspend state...\n", reason)
-		moveAsideSuspendStateForVM(hc.VMDir, reason)
+		if err := moveAsideSuspendStateForVM(hc.VMDir, reason); err != nil {
+			return err
+		}
 	}
 	if canSaveRestore && !runRequiresColdBootForRun(rc) && hasSuspendStateForVM(hc.VMDir) {
 		stateFile := suspendStatePathForVM(hc.VMDir)
 		if err := checkSuspendConfigMatchForRun(rc, hc); err != nil {
 			fmt.Printf("Cannot restore suspend state: %v\n", err)
 			fmt.Println("Performing cold boot...")
-			moveAsideSuspendStateForVM(hc.VMDir, "config-mismatch")
+			if err := moveAsideSuspendStateForVM(hc.VMDir, "config-mismatch"); err != nil {
+				return err
+			}
 		} else {
 			if info, err := os.Stat(stateFile); err == nil {
 				fmt.Printf("Restoring VM from suspended state (%s)...\n", bytefmt.Size(info.Size()))
@@ -1186,7 +1196,9 @@ func startConfiguredVM(vm vz.VZVirtualMachine, queue dispatch.Queue, pumpRunLoop
 			} else {
 				fmt.Printf("Suspend restore failed: %v\n", err)
 				fmt.Println("Performing cold boot...")
-				moveAsideSuspendStateForVM(hc.VMDir, "restore-failed")
+				if err := moveAsideSuspendStateForVM(hc.VMDir, "restore-failed"); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -1813,7 +1825,11 @@ func restoreAndResumeVM(vm vz.VZVirtualMachine, queue dispatch.Queue, hc vmrun.H
 	select {
 	case err := <-errCh:
 		if err != nil {
-			return fmt.Errorf("restore state: %w", err)
+			info, statErr := os.Lstat(stateFile)
+			if statErr == nil {
+				return fmt.Errorf("restore state (file mode=%s size=%d): %w", info.Mode(), info.Size(), err)
+			}
+			return fmt.Errorf("restore state (file metadata unavailable): %w", err)
 		}
 	case <-restoreTimer.C:
 		return fmt.Errorf("restore state timed out")
