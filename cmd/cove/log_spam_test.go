@@ -166,6 +166,9 @@ func TestAgentRouteLogsAtDebug(t *testing.T) {
 }
 
 func TestAgentVersionMismatchLoggedOnce(t *testing.T) {
+	restore := saveVersionState()
+	defer restore()
+	commit = "0123456789ab"
 	var stdLogBuf bytes.Buffer
 	prevLogWriter := log.Writer()
 	log.SetOutput(&stdLogBuf)

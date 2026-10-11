@@ -14,6 +14,9 @@ import (
 )
 
 func TestVerifyImagePassesOnFreshImage(t *testing.T) {
+	restore := saveVersionState()
+	defer restore()
+	commit = "0123456789ab"
 	t.Setenv("HOME", t.TempDir())
 	stageMacOSVMForImage(t, "src")
 	ref, err := ParseImageRef("fresh:v1")
@@ -92,6 +95,9 @@ func TestVerifyImageWarnsOnUnknownDiskFormat(t *testing.T) {
 }
 
 func TestVerifyImageReportsSourceManifestDigest(t *testing.T) {
+	restore := saveVersionState()
+	defer restore()
+	commit = "0123456789ab"
 	t.Setenv("HOME", t.TempDir())
 	srcDir := stageMacOSVMForImage(t, "src")
 	if err := os.WriteFile(filepath.Join(srcDir, "disk.provenance"), []byte(imageTestManifestDigest+"\n"), 0o644); err != nil {
@@ -118,6 +124,9 @@ func TestVerifyImageReportsSourceManifestDigest(t *testing.T) {
 }
 
 func TestVerifyImagePassesOnLinuxImage(t *testing.T) {
+	restore := saveVersionState()
+	defer restore()
+	commit = "0123456789ab"
 	t.Setenv("HOME", t.TempDir())
 	stageLinuxVMForImage(t, "linux-src")
 	ref, err := ParseImageRef("linux:v1")
