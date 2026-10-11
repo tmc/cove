@@ -171,18 +171,15 @@ cove agent-upgrade
 
 ### Guest Agent Can't Access Shared-Folder Contents
 
-**Symptom:** vz-agent fails to read files on a VirtioFS mount even as root, while the GUI user session reads them fine.
+**Symptom:** vz-agent cannot enumerate a VirtioFS mount, reports `Operation not permitted`, or times out after dispatch. Both the root daemon and the user agent can be affected, including after saved-state resume.
 
-**Cause:** TCC (macOS privacy) blocks the launchd daemon — vz-agent runs as a LaunchDaemon — from Full Disk Access.
+**Possible causes:** guest privacy permissions or a locked user session can block access. A listing timeout leaves the command outcome unknown; it does not establish a permission failure or a broken VirtioFS device. A denied Full Disk Access preflight also does not establish which permission caused a network-volume access failure.
 
-**Fix:** run `cove doctor` while the VM is running. It probes the first non-system `/Volumes` mount through the user agent and reports the Full Disk Access grant path if directory enumeration is blocked. You can also probe a specific path with `cove doctor --tcc-path /Volumes/<tag>`.
+**Next step:** unlock the guest and run `cove doctor` while the VM is running. It probes the first non-system `/Volumes` mount through the user agent. For the shared-folder root, use `cove doctor --tcc-path "/Volumes/My Shared Files"`. Inspect guest System Settings → Privacy & Security permissions for the agent, including Files and Folders / Network Volumes and Full Disk Access. Running through the user agent does not bypass these permissions.
 
 Stock SIP-enabled macOS does not provide a silent local preauthorization path for Full Disk Access without MDM PPPC enrollment. `tccutil` can reset grants, not create them.
 
-If the probe fails, use `cove doctor tcc-fda -tcc-path /Volumes/<tag> -password <guest-admin-password>` to guide System Settings, add `/usr/local/bin/vz-agent`, and verify success with the same bounded readdir probe. Alternatives:
-
-- Disable SIP on the guest.
-- Proxy commands through a logged-in user session via `cove ctl agent-user-exec`.
+Grant access explicitly in guest System Settings, or through a managed PPPC policy. If using the assisted Full Disk Access flow, `cove doctor tcc-fda -tcc-path /Volumes/<tag> -password <guest-admin-password>` guides System Settings and verifies access with a bounded readdir probe. This is not an automated privacy grant. Preserve a timed-out mount until the failed access has been diagnosed; do not infer that a remount will repair it.
 
 ## Network Issues
 

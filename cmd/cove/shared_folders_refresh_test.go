@@ -1,14 +1,62 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/tmc/cove/internal/vmconfig"
+
 	controlpb "github.com/tmc/cove/proto/controlpb"
 )
+
+func TestSharedFolderListingErrorGuidance(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		linux bool
+		err   error
+		guide bool
+	}{
+		{"mac deadline", false, context.DeadlineExceeded, true},
+		{"mac canceled", false, context.Canceled, false},
+		{"linux deadline", true, context.DeadlineExceeded, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := sharedFolderListingError("/vms/test.covevm", defaultSharedFoldersMountPoint, tt.linux, tt.err)
+			if !errors.Is(got, tt.err) || strings.Contains(got.Error(), "cove doctor") != tt.guide {
+				t.Fatalf("listing error %v", got)
+			}
+		})
+	}
+}
+
+func TestRefreshSharedFoldersListingTimeoutRetainsMount(t *testing.T) {
+	t.Setenv(controlTokenEnvVar, "")
+	dir := shortSharedFolderVMDir(t)
+	if err := vmconfig.Save(dir, &vmconfig.Config{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "hw.model"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	verify := serveSharedFolderControlSteps(t, dir, "token", []sharedFolderControlStep{
+		{wantType: "agent-ping", resp: &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_AgentPing{AgentPing: &controlpb.AgentPingResponse{Version: "test"}}}},
+		{wantType: "agent-exec", wantArgs: []string{"mkdir", "-p", defaultSharedFoldersMountPoint}, resp: workspaceMountResult("", 0)},
+		{wantType: "agent-exec-auto", wantArgs: []string{"mount"}, resp: workspaceMountResult("virtio-fs on "+defaultSharedFoldersMountPoint+" (AppleVirtIOFS)\n", 0)},
+		{wantType: "agent-exec-auto", wantArgs: []string{"ls", "-1", defaultSharedFoldersMountPoint}, delay: 300 * time.Millisecond},
+	})
+	timeouts := defaultSharedFolderMountTimeouts()
+	timeouts.listTags = 100 * time.Millisecond
+	mounted, err := refreshSharedFoldersInGuest(dir, defaultSharedFoldersMountPoint, timeouts, true)
+	verify()
+	if mounted || !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), `cove doctor --tcc-path "/Volumes/My Shared Files"`) || !strings.Contains(err.Error(), "outcome is unknown") {
+		t.Fatalf("refresh %v: %v", mounted, err)
+	}
+}
 
 func TestRefreshSharedFoldersInGuestWithUnchangedTags(t *testing.T) {
 	t.Setenv(controlTokenEnvVar, "")

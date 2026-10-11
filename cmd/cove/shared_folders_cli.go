@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -956,7 +957,7 @@ func refreshSharedFoldersInGuest(vmDirectory, mountPoint string, timeouts shared
 			return false, nil
 		}
 		if lsErr != nil {
-			return false, fmt.Errorf("inspect mounted shared folders at %q: %w", mountPoint, lsErr)
+			return false, sharedFolderListingError(vmDirectory, mountPoint, linuxGuest, lsErr)
 		}
 		if lsRes == nil {
 			return false, fmt.Errorf("inspect mounted shared folders at %q: missing response", mountPoint)
@@ -1004,6 +1005,14 @@ func refreshSharedFoldersInGuest(vmDirectory, mountPoint string, timeouts shared
 		return false, fmt.Errorf("%s exit %d: %s", mountArgs[0], res.ExitCode, msg)
 	}
 	return true, nil
+}
+
+func sharedFolderListingError(vmDirectory, mountPoint string, linuxGuest bool, err error) error {
+	hint := ""
+	if !linuxGuest && errors.Is(err, context.DeadlineExceeded) {
+		hint = "; listing outcome is unknown; mount retained; unlock the guest and inspect access with cove doctor --tcc-path " + strconv.Quote(mountPoint) + " -vm " + strconv.Quote(vmconfig.NameForPath(vmDirectory))
+	}
+	return fmt.Errorf("inspect mounted shared folders at %q: %w%s", mountPoint, err, hint)
 }
 
 func mountSharedFolderTagsInGuestWithTimeouts(vmDirectory string, timeouts sharedFolderMountTimeouts) (bool, error) {
