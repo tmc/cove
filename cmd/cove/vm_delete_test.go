@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tmc/cove/internal/mutationguard"
 	"github.com/tmc/cove/internal/vmconfig"
 )
 
@@ -21,7 +22,7 @@ func TestDeleteVM_RefusesParentWithChildren(t *testing.T) {
 	writeTreeVM(t, "child-a", vmconfig.Config{ParentVM: "parent-a"})
 	writeTreeVM(t, "child-b", vmconfig.Config{ParentVM: "parent-a"})
 
-	err := DeleteVMWithOptions("parent-a", DeleteVMOptions{})
+	err := deleteFixtureVM(t, "parent-a", DeleteVMOptions{})
 	if err == nil {
 		t.Fatal("DeleteVMWithOptions(parent-a, {}) returned nil; want refusal")
 	}
@@ -49,7 +50,7 @@ func TestDeleteVM_CascadeRemovesChildrenFirst(t *testing.T) {
 	writeTreeVM(t, "kid", vmconfig.Config{ParentVM: "ancestor"})
 	writeTreeVM(t, "grandkid", vmconfig.Config{ParentVM: "kid"})
 
-	if err := DeleteVMWithOptions("ancestor", DeleteVMOptions{Cascade: true}); err != nil {
+	if err := deleteFixtureVM(t, "ancestor", DeleteVMOptions{Cascade: true}); err != nil {
 		t.Fatalf("DeleteVMWithOptions(ancestor, Cascade) error = %v", err)
 	}
 	for _, name := range []string{"ancestor", "kid", "grandkid"} {
@@ -69,7 +70,7 @@ func TestDeleteVM_ParentlessDeletesClean(t *testing.T) {
 		t.Fatalf("EnsurePackageAlias(solo) error = %v", err)
 	}
 
-	if err := DeleteVMWithOptions("solo", DeleteVMOptions{}); err != nil {
+	if err := deleteFixtureVM(t, "solo", DeleteVMOptions{}); err != nil {
 		t.Fatalf("DeleteVMWithOptions(solo, {}) error = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(vmconfig.BaseDir(), "solo")); !os.IsNotExist(err) {
@@ -107,7 +108,7 @@ func TestChildVMNames_SortsAndExcludesSelf(t *testing.T) {
 
 func TestDeleteVMWithOptionsNotFound(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	err := DeleteVMWithOptions("ghost-vm-r302", DeleteVMOptions{})
+	err := deleteFixtureVM(t, "ghost-vm-r302", DeleteVMOptions{})
 	if err == nil {
 		t.Fatal("DeleteVMWithOptions(ghost) = nil, want not-found error")
 	}
@@ -131,7 +132,7 @@ func TestDeleteVMWithOptionsRunningGuidance(t *testing.T) {
 	}
 	defer listener.Close()
 
-	err = DeleteVMWithOptions("busy-vm", DeleteVMOptions{})
+	err = deleteFixtureVM(t, "busy-vm", DeleteVMOptions{})
 	if err == nil {
 		t.Fatal("DeleteVMWithOptions(busy-vm) = nil, want running refusal")
 	}
@@ -165,7 +166,7 @@ func TestDeleteVMWithOptionsWaitsForSocketTeardown(t *testing.T) {
 		listener.Close()
 	}()
 
-	if err := DeleteVMWithOptions("stopping-vm", DeleteVMOptions{}); err != nil {
+	if err := deleteFixtureVM(t, "stopping-vm", DeleteVMOptions{}); err != nil {
 		t.Fatalf("DeleteVMWithOptions(stopping-vm) error = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(vmconfig.BaseDir(), "stopping-vm")); !os.IsNotExist(err) {
@@ -182,11 +183,39 @@ func TestDeleteVMWithOptionsRejectsNonDir(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(base, "file-vm"), nil, 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	err := DeleteVMWithOptions("file-vm", DeleteVMOptions{})
+	err := deleteFixtureVM(t, "file-vm", DeleteVMOptions{})
 	if err == nil {
 		t.Fatal("DeleteVMWithOptions(file) = nil, want non-dir error")
 	}
 	if !strings.Contains(err.Error(), "not a VM directory") {
 		t.Fatalf("err = %v, want 'not a VM directory'", err)
 	}
+}
+
+// Deletion policy tests use real fixture storage and guards. Runtime ownership
+// and file holders are modeled so unrelated live VMs cannot affect the tests.
+func deleteFixtureVM(t *testing.T, name string, opts DeleteVMOptions) error {
+	t.Helper()
+	root := coveRoot()
+	guard, err := mutationguard.Acquire(root)
+	if err != nil {
+		return err
+	}
+	defer guard.Release()
+	fixtureRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return err
+	}
+	checkPath := func(path string) {
+		t.Helper()
+		rel, err := filepath.Rel(fixtureRoot, path)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			t.Fatalf("ownership observation escaped fixture root: %s", path)
+		}
+	}
+	deps := vmDeletionDeps{
+		live:    func(dir string) (bool, error) { checkPath(dir); return false, nil },
+		holders: func(path string) ([]int, error) { checkPath(path); return nil, nil },
+	}
+	return deleteVMWithOptionsGuarded(guard, name, opts, deps)
 }

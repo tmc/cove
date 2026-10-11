@@ -312,7 +312,7 @@ func TestRMCascadeAfterPositional(t *testing.T) {
 	}
 
 	// Deleting with cascade=true removes both
-	if err := DeleteVMWithOptions(delFS.Arg(0), DeleteVMOptions{Cascade: *delCascade}); err != nil {
+	if err := deleteFixtureVM(t, delFS.Arg(0), DeleteVMOptions{Cascade: *delCascade}); err != nil {
 		t.Fatalf("DeleteVMWithOptions with cascade error = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(vmconfig.BaseDir(), "parent-node")); !os.IsNotExist(err) {
