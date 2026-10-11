@@ -619,25 +619,32 @@ func (c *Client) AgentUserExecTypedTimeout(args []string, env map[string]string,
 }
 
 func (c *Client) agentExecTypedTimeout(reqType string, args []string, env map[string]string, workDir string, timeout time.Duration) (*controlpb.AgentExecResponse, error) {
+	return c.agentExecTypedContext(context.Background(), reqType, args, env, workDir, timeout)
+}
+
+func (c *Client) agentExecTypedContext(parent context.Context, reqType string, args []string, env map[string]string, workDir string, timeout time.Duration) (*controlpb.AgentExecResponse, error) {
+	if timeout <= 0 {
+		timeout = 10 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	deadline, _ := ctx.Deadline()
 	req := &controlpb.ControlRequest{
 		Type: reqType,
 		Command: &controlpb.ControlRequest_AgentExec{
 			AgentExec: &controlpb.AgentExecCommand{
-				Args:       args,
-				Env:        env,
-				WorkingDir: workDir,
+				Args:             args,
+				Env:              env,
+				WorkingDir:       workDir,
+				DeadlineUnixNano: deadline.UnixNano(),
 			},
 		},
 	}
 
-	oldTimeout := c.timeout
-	if timeout <= 0 {
-		timeout = 10 * time.Minute
-	}
-	c.timeout = timeout
-	defer func() { c.timeout = oldTimeout }()
-
-	resp, err := c.sendRequest(req)
+	resp, err := c.SendRequestCtx(ctx, req)
 	if err != nil {
 		return nil, err
 	}
