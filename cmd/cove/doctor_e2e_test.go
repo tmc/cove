@@ -24,6 +24,7 @@ import (
 var (
 	doctorE2EBinaryOnce   sync.Once
 	doctorE2EBinaryPath   string
+	doctorE2EBinaryDir    string
 	doctorE2EBinaryErr    error
 	doctorE2EProcessSlots = make(chan struct{}, 8)
 )
@@ -42,6 +43,7 @@ func doctorE2EBinary(t *testing.T) string {
 			doctorE2EBinaryErr = err
 			return
 		}
+		doctorE2EBinaryDir = dir
 		path := filepath.Join(dir, "cove-doctor-e2e")
 		cmd := exec.Command("go", "build", "-o", path, ".")
 		if out, err := cmd.CombinedOutput(); err != nil {

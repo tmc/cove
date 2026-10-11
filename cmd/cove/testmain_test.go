@@ -29,5 +29,12 @@ func TestMain(m *testing.M) {
 			}
 		}
 	}
-	os.Exit(m.Run())
+	code := m.Run()
+	if doctorE2EBinaryDir != "" {
+		if err := os.RemoveAll(doctorE2EBinaryDir); err != nil {
+			os.Stderr.WriteString("remove CLI test binary: " + err.Error() + "\n")
+			code = 1
+		}
+	}
+	os.Exit(code)
 }
