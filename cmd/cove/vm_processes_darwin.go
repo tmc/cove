@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"syscall"
@@ -103,7 +104,19 @@ func openFileHolderPIDs(path string) ([]int, error) {
 }
 
 func boundedFileHolders(path string, timeout time.Duration, queries chan struct{}, query func(string) ([]int, error)) ([]int, error) {
-	deadline := time.Now().Add(timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return boundedFileHoldersContext(ctx, path, queries, query)
+}
+
+func openFileHolderPIDsContext(ctx context.Context, path string) ([]int, error) {
+	return boundedFileHoldersContext(ctx, path, fileHolderQueries, darwinFileHolders)
+}
+
+func boundedFileHoldersContext(ctx context.Context, path string, queries chan struct{}, query func(string) ([]int, error)) ([]int, error) {
+	if err := contextBudgetErr(ctx); err != nil {
+		return nil, fmt.Errorf("file holder observation timed out or canceled; retained: %w", err)
+	}
 	select {
 	case queries <- struct{}{}:
 	default:
@@ -115,20 +128,23 @@ func boundedFileHolders(path string, timeout time.Duration, queries chan struct{
 	}
 	ready := make(chan result, 1)
 	go func() {
+		if err := contextBudgetErr(ctx); err != nil {
+			<-queries
+			ready <- result{nil, err}
+			return
+		}
 		pids, err := query(path)
 		<-queries
 		ready <- result{pids, err}
 	}()
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
 	select {
 	case r := <-ready:
-		if !time.Now().Before(deadline) {
-			return nil, fmt.Errorf("file holder observation timed out after %s; retained", timeout)
+		if err := contextBudgetErr(ctx); err != nil {
+			return nil, fmt.Errorf("file holder observation timed out or canceled; retained: %w", err)
 		}
 		return r.pids, r.err
-	case <-timer.C:
-		return nil, fmt.Errorf("file holder observation timed out after %s; retained", timeout)
+	case <-ctx.Done():
+		return nil, fmt.Errorf("file holder observation timed out or canceled; retained: %w", contextBudgetErr(ctx))
 	}
 }
 
@@ -218,7 +234,7 @@ func darwinFileHolders(path string) ([]int, error) {
 	}
 	n := procListPIDsPath(procAllPIDs, 0, cpath, procListPIDsPathExcludeOnly, nil, 0)
 	if n < 0 {
-		return nil, fmt.Errorf("list file holders for %s", path)
+		return nil, fmt.Errorf("list file holders for %s: native sizing failed", path)
 	}
 	count := int(n)/4 + 16
 	if count < 32 {
@@ -228,7 +244,7 @@ func darwinFileHolders(path string) ([]int, error) {
 		pids := make([]int32, count)
 		got := procListPIDsPath(procAllPIDs, 0, cpath, procListPIDsPathExcludeOnly, unsafe.Pointer(&pids[0]), int32(len(pids)*4))
 		if got < 0 {
-			return nil, fmt.Errorf("list file holders for %s", path)
+			return nil, fmt.Errorf("list file holders for %s: native scan failed", path)
 		}
 		used := int(got) / 4
 		if used < len(pids) {

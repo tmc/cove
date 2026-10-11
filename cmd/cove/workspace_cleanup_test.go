@@ -48,7 +48,7 @@ func workspaceCleanupFixture(t *testing.T) (taskDisposition, workspaceCleanupDep
 			return workspaceCleanupTestGuard{held: &runHeld}, nil
 		},
 		LiveRuntime: func(string) (bool, error) { record("live"); return false, nil },
-		DiskHolders: func(string) ([]int, error) { record("holders"); return nil, nil },
+		DiskHolders: func(context.Context, string) ([]int, error) { record("holders"); return nil, nil },
 		Delete: func(identity taskGuestIdentity) error {
 			record("delete")
 			if !pinHeld || !runHeld || identity != guest {
@@ -132,8 +132,12 @@ func TestWorkspaceCleanupGateFailures(t *testing.T) {
 		}},
 		{"live-pid", func(d *workspaceCleanupDeps) { d.LiveRuntime = func(string) (bool, error) { return true, nil } }},
 		{"unknown-pid", func(d *workspaceCleanupDeps) { d.LiveRuntime = func(string) (bool, error) { return false, failure } }},
-		{"open-disk", func(d *workspaceCleanupDeps) { d.DiskHolders = func(string) ([]int, error) { return []int{123}, nil } }},
-		{"unknown-disk", func(d *workspaceCleanupDeps) { d.DiskHolders = func(string) ([]int, error) { return nil, failure } }},
+		{"open-disk", func(d *workspaceCleanupDeps) {
+			d.DiskHolders = func(context.Context, string) ([]int, error) { return []int{123}, nil }
+		}},
+		{"unknown-disk", func(d *workspaceCleanupDeps) {
+			d.DiskHolders = func(context.Context, string) ([]int, error) { return nil, failure }
+		}},
 		{"identity-replaced-during-stop", func(d *workspaceCleanupDeps) {
 			identify := d.Identify
 			stopped := false

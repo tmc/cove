@@ -18,6 +18,7 @@ import (
 func handleWorkspaceDiscard(env commandEnv, args []string) error {
 	fs := flag.NewFlagSet("workspace discard", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
+	holderTimeout := fs.Duration("holder-timeout", 10*time.Second, "whole holder inventory timeout (maximum 5m)")
 	run := fs.String("run", "", "finished run ID owning the stopped fork")
 	yes := fs.Bool("y", false, "skip deletion confirmation")
 	fs.BoolVar(yes, "yes", false, "skip deletion confirmation")
@@ -26,6 +27,9 @@ func handleWorkspaceDiscard(env commandEnv, args []string) error {
 			return nil
 		}
 		return err
+	}
+	if *holderTimeout <= 0 || *holderTimeout > 5*time.Minute {
+		return fmt.Errorf("holder timeout must be positive and at most 5m")
 	}
 	if fs.NArg() != 0 || *run == "" {
 		return fmt.Errorf("workspace discard requires -run ID")
@@ -44,7 +48,7 @@ func handleWorkspaceDiscard(env commandEnv, args []string) error {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
-	if err := discardWorkspaceRun(ctx, coveRoot(), *run); err != nil {
+	if err := discardWorkspaceRunWithHolderTimeout(ctx, coveRoot(), *run, *holderTimeout); err != nil {
 		return err
 	}
 	fmt.Fprintf(env.Stdout, "Discarded owned guest for run %s; task result preserved\n", *run)
@@ -118,6 +122,10 @@ func (j *taskDispositionJournal) requestDiscard() error {
 }
 
 func discardWorkspaceRun(ctx context.Context, root, runID string) error {
+	return discardWorkspaceRunWithHolderTimeout(ctx, root, runID, 10*time.Second)
+}
+
+func discardWorkspaceRunWithHolderTimeout(ctx context.Context, root, runID string, holderTimeout time.Duration) error {
 	if _, _, err := storagepins.ParseRef("run:" + runID); err != nil {
 		return err
 	}
@@ -159,6 +167,9 @@ func discardWorkspaceRun(ctx context.Context, root, runID string) error {
 		return unix.Kill(owner.PID, 0) == unix.ESRCH && workspaceRuntimeExited(owner), nil
 	}
 	enableWorkspaceProductionCleanup(&deps, root)
+	deps.DiskHolders = func(ctx context.Context, dir string) ([]int, error) {
+		return workspaceGuestFileHoldersBudget(ctx, dir, holderTimeout)
+	}
 	if err := cleanupWorkspaceGuest(ctx, state, state.Generation, deps); err != nil {
 		persistErr := journal.transition("cleanup_unknown", state.Guest, state.Owned, state.TaskSucceeded)
 		return errors.Join(err, persistErr)

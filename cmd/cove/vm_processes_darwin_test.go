@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -92,4 +94,57 @@ func TestDarwinFileHoldersIncludesOpenFile(t *testing.T) {
 		}
 	}
 	t.Fatalf("file holders for %s = %v, want current pid %d", path, holders, pid)
+}
+
+func TestFileHolderContextLateEmptyKeepsSlot(t *testing.T) {
+	queries := make(chan struct{}, 1)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan struct{})
+	defer func() {
+		close(release)
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Error("native worker did not finish")
+		}
+	}()
+	ctx, cancel := context.WithCancel(context.Background())
+	ready := make(chan error, 1)
+	go func() {
+		_, err := boundedFileHoldersContext(ctx, "disk.img", queries, func(string) ([]int, error) { close(started); <-release; defer close(done); return nil, nil })
+		ready <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("worker did not start")
+	}
+	cancel()
+	select {
+	case err := <-ready:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("err=%v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("caller did not cancel")
+	}
+	_, err := boundedFileHoldersContext(context.Background(), "disk.img", queries, func(string) ([]int, error) { t.Error("second query started"); return nil, nil })
+	if err == nil || !strings.Contains(err.Error(), "still pending") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestFileHolderWallClockDeadline(t *testing.T) {
+	queries := make(chan struct{}, 1)
+	ctx := delayedHolderDeadline{context.Background(), time.Now().Add(-time.Second)}
+	_, err := boundedFileHoldersContext(ctx, "disk.img", queries, func(string) ([]int, error) { t.Error("expired query admitted"); return nil, nil })
+	if !errors.Is(err, context.DeadlineExceeded) || len(queries) != 0 {
+		t.Fatalf("err=%v slot=%d", err, len(queries))
+	}
+	ctx = delayedHolderDeadline{context.Background(), time.Now().Add(30 * time.Millisecond)}
+	_, err = boundedFileHoldersContext(ctx, "disk.img", queries, func(string) ([]int, error) { time.Sleep(60 * time.Millisecond); return nil, nil })
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("late empty accepted: %v", err)
+	}
 }

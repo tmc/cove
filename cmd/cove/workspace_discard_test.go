@@ -116,7 +116,7 @@ func TestWorkspaceOperatorDiscardCleanupFailure(t *testing.T) {
 	state.Policy = "retain"
 	state.DiscardRequest = &taskDiscardRequest{PID: os.Getpid(), StartedAt: processStartedAt(os.Getpid()).UTC().Format(time.RFC3339Nano), RequestedAt: time.Now().UTC().Format(time.RFC3339Nano)}
 	deps.VerifyOwner = verifyWorkspaceDiscardActor
-	deps.DiskHolders = func(string) ([]int, error) { return []int{123}, nil }
+	deps.DiskHolders = func(context.Context, string) ([]int, error) { return []int{123}, nil }
 	if err := cleanupWorkspaceGuest(context.Background(), state, state.Generation, deps); err == nil {
 		t.Fatal("deleted held guest")
 	}

@@ -25,7 +25,7 @@ type workspaceCleanupDeps struct {
 	Stopped     func(context.Context, string) (bool, error)
 	Lock        func(string) (workspaceCleanupGuard, error)
 	LiveRuntime func(string) (bool, error)
-	DiskHolders func(string) ([]int, error)
+	DiskHolders func(context.Context, string) ([]int, error)
 	Delete      func(taskGuestIdentity) error
 }
 
@@ -123,7 +123,7 @@ func cleanupWorkspaceGuest(ctx context.Context, state taskDisposition, generatio
 	if live {
 		return fmt.Errorf("workspace runtime still has a live owner; guest retained")
 	}
-	holders, err := d.DiskHolders(state.Guest.Path)
+	holders, err := d.DiskHolders(ctx, state.Guest.Path)
 	if err != nil {
 		return fmt.Errorf("inspect workspace disk holders: %w", err)
 	}
@@ -183,7 +183,11 @@ func defaultWorkspaceCleanupDeps() workspaceCleanupDeps {
 			_, live, err := liveVMProcessForDirectory(dir, defaultVMProcessCollector())
 			return live, err
 		},
-		DiskHolders: func(dir string) ([]int, error) { return openFileHolderPIDs(vmPrimaryDiskPath(dir)) },
+		DiskHolders: func(ctx context.Context, dir string) ([]int, error) {
+			queryCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+			return openFileHolderPIDsContext(queryCtx, vmPrimaryDiskPath(dir))
+		},
 	}
 }
 

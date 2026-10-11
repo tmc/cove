@@ -110,7 +110,7 @@ func printWorkspaceUsage(w io.Writer) {
 	fmt.Fprintln(w, `Usage: cove workspace plan|open -vm NAME -source DIR -output DIR [flags] [-- command args...]
 
 Discard an owned stopped fork from a finished run:
-  cove workspace discard -run ID [-y]
+  cove workspace discard -run ID [-y] [-holder-timeout 10s]
 
 Repair an existing macOS user service explicitly, without replaying a task:
   cove workspace repair -vm NAME -source DIR -output DIR [-readiness-timeout 2m]

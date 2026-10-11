@@ -59,7 +59,7 @@ func TestWorkspaceProductionDiscardAndFinalize(t *testing.T) {
 			d.Stop = func(context.Context, string) error { return nil }
 			d.StoppedOwned = func(context.Context, string, workspaceRuntimeOwner) (bool, error) { return true, nil }
 			d.LiveRuntime = func(string) (bool, error) { return false, nil }
-			d.DiskHolders = func(string) ([]int, error) { return nil, nil }
+			d.DiskHolders = func(context.Context, string) ([]int, error) { return nil, nil }
 			err := cleanupWorkspaceGuest(context.Background(), state, state.Generation, d)
 			if tt.operator || tt.other {
 				if err == nil {

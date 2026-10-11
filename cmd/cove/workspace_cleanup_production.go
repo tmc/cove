@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/tmc/cove/internal/mutationguard"
 	"github.com/tmc/cove/internal/storagepins"
@@ -212,21 +214,47 @@ func verifyDeletedWorkspaceQuarantine(root string, guard *mutationguard.Guard, s
 	return receipt, nil
 }
 
-func workspaceGuestFileHolders(dir string) ([]int, error) {
-	return workspaceGuestFileHoldersWith(dir, openFileHolderPIDs)
+func workspaceGuestFileHolders(ctx context.Context, dir string) ([]int, error) {
+	return workspaceGuestFileHoldersBudget(ctx, dir, 10*time.Second)
+}
+
+func workspaceGuestFileHoldersBudget(parent context.Context, dir string, timeout time.Duration) ([]int, error) {
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
+	started := time.Now()
+	pids, err := workspaceGuestFileHoldersContext(ctx, dir, openFileHolderPIDsContext)
+	if err != nil {
+		return nil, fmt.Errorf("holder inventory elapsed %s (budget %s): %w", time.Since(started).Round(time.Millisecond), timeout, err)
+	}
+	return pids, nil
 }
 
 func workspaceGuestFileHoldersWith(dir string, holders func(string) ([]int, error)) ([]int, error) {
+	return workspaceGuestFileHoldersContext(context.Background(), dir, func(_ context.Context, path string) ([]int, error) { return holders(path) })
+}
+
+func workspaceGuestFileHoldersContext(ctx context.Context, dir string, holders func(context.Context, string) ([]int, error)) ([]int, error) {
+	if err := contextBudgetErr(ctx); err != nil {
+		return nil, fmt.Errorf("inventory before open; retained: %w", err)
+	}
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return nil, err
 	}
 	defer root.Close()
 	seen := map[int]bool{}
+	type file struct {
+		path string
+		info os.FileInfo
+	}
+	var files []file
 	entries := 0
 	err = fs.WalkDir(root.FS(), ".", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+		if err := contextBudgetErr(ctx); err != nil {
+			return fmt.Errorf("inventory stage: %w", err)
 		}
 		if path != "." {
 			entries++
@@ -255,17 +283,40 @@ func workspaceGuestFileHoldersWith(dir string, holders func(string) ([]int, erro
 		if err != nil || !os.SameFile(info, observed) {
 			return fmt.Errorf("workspace holder inventory path identity changed")
 		}
-		pids, err := holders(absolute)
-		if err != nil {
-			return err
-		}
-		for _, pid := range pids {
-			seen[pid] = true
-		}
+		files = append(files, file{path, info})
 		return nil
 	})
 	if err != nil {
 		return nil, err
+	}
+	for i, file := range files {
+		stage := fmt.Sprintf("holder file %q (%d/%d)", file.path, i+1, len(files))
+		if err := contextBudgetErr(ctx); err != nil {
+			return nil, fmt.Errorf("%s before native query; retained: %w", stage, err)
+		}
+		absolute := filepath.Join(dir, filepath.FromSlash(file.path))
+		observed, err := os.Lstat(absolute)
+		if err != nil || !os.SameFile(file.info, observed) {
+			return nil, fmt.Errorf("%s identity changed; retained", stage)
+		}
+		pids, err := holders(ctx, absolute)
+		if err != nil {
+			return nil, fmt.Errorf("%s native query; retained: %w", stage, err)
+		}
+		if err := contextBudgetErr(ctx); err != nil {
+			return nil, fmt.Errorf("%s after native query; retained: %w", stage, err)
+		}
+		observed, err = os.Lstat(absolute)
+		if err != nil || !os.SameFile(file.info, observed) {
+			return nil, fmt.Errorf("%s identity changed; retained", stage)
+		}
+		for _, pid := range pids {
+			seen[pid] = true
+		}
+	}
+
+	if err := contextBudgetErr(ctx); err != nil {
+		return nil, fmt.Errorf("inventory completion; retained: %w", err)
 	}
 	var pids []int
 	for pid := range seen {
