@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -506,7 +507,15 @@ func TestFleetWorkerRunsWarmPoolAssignment(t *testing.T) {
 	t.Setenv("COVE_TEST_ARGS", argsPath)
 	t.Setenv("COVE_TEST_RELEASE", release)
 	store := fleetcontrol.NewMemoryStore(time.Minute)
-	server := httptest.NewServer(fleetcontrol.Handler(store))
+	changed := make(chan struct{}, 1)
+	handler := fleetcontrol.Handler(store)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler.ServeHTTP(w, r)
+		select {
+		case changed <- struct{}{}:
+		default:
+		}
+	}))
 	defer server.Close()
 	coveBin := writeExecutable(t, `#!/bin/sh
 	if [ "$1" = "shell" ]; then
@@ -528,7 +537,11 @@ func TestFleetWorkerRunsWarmPoolAssignment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer func() {
+		_ = os.WriteFile(release, []byte("done\n"), 0644)
+		cancel()
+	}()
 	if err := worker.Register(ctx); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
@@ -544,10 +557,11 @@ func TestFleetWorkerRunsWarmPoolAssignment(t *testing.T) {
 	go func() {
 		done <- worker.PollAssignment(ctx)
 	}()
-	waitUntil(t, fleetWorkerTestTimeout, func() bool {
+	waitFleetChange(t, changed, func() bool {
 		assignment, ok := store.GetAssignment(assignmentID)
 		return ok && assignment.Status == "ready" && assignment.LastReport != nil && assignment.LastReport.Status == "ready"
-	})
+	}, func() any { assignment, _ := store.GetAssignment(assignmentID); return assignment.LastReport })
+
 	if err := os.WriteFile(release, []byte("done\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -578,6 +592,8 @@ func TestFleetWorkerRunsWarmPoolAssignment(t *testing.T) {
 
 func TestFleetWorkerMarksSandboxReady(t *testing.T) {
 	argsPath := filepath.Join(t.TempDir(), "args.txt")
+	release := filepath.Join(t.TempDir(), "release")
+	t.Setenv("COVE_TEST_RELEASE", release)
 	t.Setenv("COVE_TEST_ARGS", argsPath)
 	store := fleetcontrol.NewMemoryStore(time.Minute)
 	server := httptest.NewServer(fleetcontrol.Handler(store))
@@ -587,7 +603,9 @@ if [ "$1" = "shell" ]; then
   exit 0
 fi
 printf '%s\n' "$*" > "$COVE_TEST_ARGS"
-sleep 0.2
+while [ ! -f "$COVE_TEST_RELEASE" ]; do
+ sleep 0.02
+done
 exit 0
 `)
 
@@ -600,7 +618,11 @@ exit 0
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer func() {
+		_ = os.WriteFile(release, []byte("done\n"), 0644)
+		cancel()
+	}()
 	if err := worker.Register(ctx); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
@@ -612,10 +634,11 @@ exit 0
 	go func() {
 		done <- worker.PollAssignment(ctx)
 	}()
-	waitUntil(t, fleetWorkerTestTimeout, func() bool {
-		assignment, ok := store.GetAssignment(sandbox.Assignment.ID)
-		return ok && assignment.Status == "ready" && assignment.LastReport != nil && assignment.LastReport.Status == "ready"
-	})
+	waitFleetAssignmentReady(t, store, sandbox.Assignment.ID, done)
+	if err := os.WriteFile(release, []byte("done\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
 	select {
 	case err := <-done:
 		if err != nil {
@@ -735,12 +758,15 @@ exit 0
 		ID:                 "worker-1",
 		CoveBin:            coveBin,
 		AssignmentInterval: 20 * time.Millisecond,
-		AssignmentTimeout:  time.Second,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer func() {
+		_ = os.WriteFile(release, []byte("done\n"), 0644)
+		cancel()
+	}()
 	if err := worker.Register(ctx); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
@@ -753,10 +779,7 @@ exit 0
 	go func() {
 		warmDone <- worker.PollAssignment(ctx)
 	}()
-	waitUntil(t, fleetWorkerTestTimeout, func() bool {
-		assignment, ok := store.GetAssignment(slotID)
-		return ok && assignment.Status == "ready"
-	})
+	waitFleetAssignmentReady(t, store, slotID, warmDone)
 	claim, err := store.ClaimWarmPool(fleetcontrol.WarmPoolClaimRequest{Name: "runner", Command: []string{"/bin/echo", "ok"}})
 	if err != nil {
 		t.Fatal(err)
@@ -965,7 +988,15 @@ func TestFleetWorkerRunPollsWhileCoveAssignmentRuns(t *testing.T) {
 	release := filepath.Join(t.TempDir(), "release")
 	t.Setenv("COVE_TEST_RELEASE", release)
 	store := fleetcontrol.NewMemoryStore(time.Minute)
-	server := httptest.NewServer(fleetcontrol.Handler(store))
+	changed := make(chan struct{}, 1)
+	handler := fleetcontrol.Handler(store)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler.ServeHTTP(w, r)
+		select {
+		case changed <- struct{}{}:
+		default:
+		}
+	}))
 	defer server.Close()
 	coveBin := writeExecutable(t, `#!/bin/sh
 while [ ! -f "$COVE_TEST_RELEASE" ]; do
@@ -980,48 +1011,50 @@ exit 0
 		CoveBin:            coveBin,
 		HeartbeatInterval:  20 * time.Millisecond,
 		AssignmentInterval: 20 * time.Millisecond,
-		AssignmentTimeout:  time.Second,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	defer func() {
+		_ = os.WriteFile(release, []byte("done\n"), 0644)
+		cancel()
+	}()
 	go worker.Run(ctx)
-	waitUntil(t, fleetWorkerTestTimeout, func() bool {
+	waitFleetChange(t, changed, func() bool {
 		_, ok := store.Get("worker-1")
 		return ok
-	})
+	}, func() any { assignment, _ := store.GetAssignment("long"); return assignment.LastReport })
 	if _, err := store.CreateAssignment(fleetcontrol.Assignment{ID: "long", WorkerID: "worker-1", Verb: "cove"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.CreateAssignment(fleetcontrol.Assignment{ID: "second", WorkerID: "worker-1", Verb: "noop"}); err != nil {
 		t.Fatal(err)
 	}
-	waitUntil(t, fleetWorkerTestTimeout, func() bool {
+	waitFleetChange(t, changed, func() bool {
 		assignment, ok := store.GetAssignment("long")
 		return ok && assignment.Status == "running"
-	})
+	}, func() any { assignment, _ := store.GetAssignment("long"); return assignment.LastReport })
 	record, ok := store.Get("worker-1")
 	if !ok {
 		t.Fatal("worker missing")
 	}
 	seenWhileRunning := record.LastSeen
-	waitUntil(t, fleetWorkerTestTimeout, func() bool {
+	waitFleetChange(t, changed, func() bool {
 		record, ok := store.Get("worker-1")
 		return ok && record.LastSeen.After(seenWhileRunning)
-	})
-	waitUntil(t, fleetWorkerTestTimeout, func() bool {
+	}, func() any { assignment, _ := store.GetAssignment("long"); return assignment.LastReport })
+	waitFleetChange(t, changed, func() bool {
 		assignment, ok := store.GetAssignment("second")
 		return ok && assignment.Status == "complete"
-	})
+	}, func() any { assignment, _ := store.GetAssignment("long"); return assignment.LastReport })
 	if err := os.WriteFile(release, []byte("done\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	waitUntil(t, fleetWorkerTestTimeout, func() bool {
+	waitFleetChange(t, changed, func() bool {
 		assignment, ok := store.GetAssignment("long")
 		return ok && assignment.Status == "complete"
-	})
+	}, func() any { assignment, _ := store.GetAssignment("long"); return assignment.LastReport })
 }
 
 func TestFleetWorkerReportsCoveAssignmentFailure(t *testing.T) {
@@ -1115,4 +1148,46 @@ func waitUntil(t *testing.T, timeout time.Duration, ok func() bool) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("condition not met before timeout")
+}
+
+func waitFleetAssignmentReady(t *testing.T, store *fleetcontrol.Store, id string, done <-chan error) {
+	t.Helper()
+	deadline := time.NewTimer(fleetWorkerTestTimeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		assignment, ok := store.GetAssignment(id)
+		if ok && assignment.Status == "ready" && assignment.LastReport != nil && assignment.LastReport.Status == "ready" {
+			return
+		}
+		select {
+		case err := <-done:
+			assignment, ok := store.GetAssignment(id)
+			t.Fatalf("worker finished before ready: error=%v assignment=%+v report=%+v present=%v", err, assignment, assignment.LastReport, ok)
+		case <-deadline.C:
+			assignment, ok := store.GetAssignment(id)
+			t.Fatalf("assignment did not become ready: assignment=%+v report=%+v present=%v", assignment, assignment.LastReport, ok)
+		case <-ticker.C:
+		}
+	}
+}
+
+func waitFleetChange(t *testing.T, changed <-chan struct{}, condition func() bool, diagnostic func() any) {
+	t.Helper()
+	timer := time.NewTimer(fleetWorkerTestTimeout)
+	defer timer.Stop()
+	for {
+		if condition() {
+			return
+		}
+		select {
+		case <-changed:
+		case <-timer.C:
+			if condition() {
+				return
+			}
+			t.Fatalf("fleet state did not change before timeout: report=%+v", diagnostic())
+		}
+	}
 }
