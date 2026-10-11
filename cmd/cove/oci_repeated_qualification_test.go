@@ -16,6 +16,7 @@ import (
 
 	"github.com/tmc/cove/internal/ociimage"
 	"github.com/tmc/cove/internal/store"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 type qualificationRegistry struct {
@@ -62,6 +63,7 @@ func (q *qualificationRegistry) count(digest string) int {
 func TestPullRepeatedChunksColdWarmAndStaleCache(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("HOME", root)
+	t.Setenv(vmconfig.StateDirEnv, filepath.Join(root, ".vz"))
 	want := []byte("aaaabbbbaaaaccccaaaa")
 	manifest, blobs, digests := pullCompressedChunkedTestManifest(t, want, 4)
 	data, digest := pullTestManifestData(t, manifest)
@@ -240,6 +242,7 @@ func TestTartCompressedDescriptorIntegrity(t *testing.T) {
 func TestPullRepeatedChunksCancellationResume(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("HOME", root)
+	t.Setenv(vmconfig.StateDirEnv, filepath.Join(root, ".vz"))
 	want := []byte("aaaabbbbaaaaccccaaaa")
 	manifest, blobs, diskDigests := pullCompressedChunkedTestManifest(t, want, 4)
 	data, digest := pullTestManifestData(t, manifest)
@@ -263,11 +266,7 @@ func TestPullRepeatedChunksCancellationResume(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() { done <- pullDisk(ctx, plan, opts) }()
-	select {
-	case <-started:
-	case <-time.After(5 * time.Second):
-		t.Fatal("fetch did not start")
-	}
+	waitQualificationFetch(t, started, done)
 	cancel()
 	select {
 	case err := <-done:
@@ -327,6 +326,9 @@ func qualifiedLumeDiskParts(t *testing.T, want []byte) ([]ociimage.LumeLayer, ma
 }
 
 func TestLumeRepeatedDiskPartsCancellationRetry(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", root)
+	t.Setenv(vmconfig.StateDirEnv, filepath.Join(root, ".vz"))
 	want := []byte("aaaabbbbaaaaccccaaaa")
 	parts, blobs := qualifiedLumeDiskParts(t, want)
 	registry := &qualificationRegistry{gets: map[string]int{}, blobs: blobs}
@@ -341,11 +343,7 @@ func TestLumeRepeatedDiskPartsCancellationRetry(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() { done <- lumePullDisk(ctx, plan, pullOptions{RegistryBaseURL: server.URL}) }()
-	select {
-	case <-started:
-	case <-time.After(5 * time.Second):
-		t.Fatal("part fetch did not start")
-	}
+	waitQualificationFetch(t, started, done)
 	cancel()
 	select {
 	case err := <-done:
@@ -382,6 +380,9 @@ func TestLumeRepeatedDiskPartsCancellationRetry(t *testing.T) {
 }
 
 func TestTartRepeatedDiskCancellationRetry(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", root)
+	t.Setenv(vmconfig.StateDirEnv, filepath.Join(root, ".vz"))
 	want := []byte("aaaabbbbaaaaccccaaaa")
 	bodies := [][]byte{want[:4], want[4:8], want[8:12], want[12:16], want[16:]}
 	layers, blobs := qualifiedTartLayers(t, bodies)
@@ -410,13 +411,7 @@ func TestTartRepeatedDiskCancellationRetry(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() { done <- tartPullDisk(ctx, plan, pullOptions{RegistryBaseURL: server.URL}) }()
-	select {
-	case <-started:
-	case err := <-done:
-		t.Fatalf("Tart pull ended before fetch: %v", err)
-	case <-time.After(5 * time.Second):
-		t.Fatal("Tart fetch did not start")
-	}
+	waitQualificationFetch(t, started, done)
 	cancel()
 	select {
 	case err := <-done:
@@ -452,6 +447,9 @@ func TestTartRepeatedDiskCancellationRetry(t *testing.T) {
 }
 
 func TestLumePullWaitsForAllPartVerification(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", root)
+	t.Setenv(vmconfig.StateDirEnv, filepath.Join(root, ".vz"))
 	want := []byte("disk data")
 	var archive bytes.Buffer
 	gz := gzip.NewWriter(&archive)
@@ -494,6 +492,7 @@ func TestPullRepeatedChunksRejectBadDescriptor(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			root := t.TempDir()
 			t.Setenv("HOME", root)
+			t.Setenv(vmconfig.StateDirEnv, filepath.Join(root, ".vz"))
 			manifest, blobs, _ := pullCompressedChunkedTestManifest(t, []byte("aaaabbbbaaaa"), 4)
 			if kind == "digest" {
 				old := manifest.Layers[0].Digest
@@ -525,6 +524,9 @@ func TestPullRepeatedChunksRejectBadDescriptor(t *testing.T) {
 }
 
 func TestLumePullRejectsGzipTrailerFailure(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", root)
+	t.Setenv(vmconfig.StateDirEnv, filepath.Join(root, ".vz"))
 	for _, kind := range []string{"checksum", "truncated"} {
 		t.Run(kind, func(t *testing.T) {
 			parts, blobs := qualifiedLumeDiskParts(t, []byte("aaaabbbbaaaa"))
@@ -550,5 +552,32 @@ func TestLumePullRejectsGzipTrailerFailure(t *testing.T) {
 				t.Fatalf("invalid gzip published disk: %v", err)
 			}
 		})
+	}
+}
+
+func waitQualificationFetch(t *testing.T, started <-chan struct{}, done <-chan error) {
+	t.Helper()
+	// Admission includes native owner observation; cancellation timing begins
+	// only after the registry confirms that the download is in flight.
+	budget := 60 * time.Second
+	if deadline, ok := t.Deadline(); ok {
+		remaining := time.Until(deadline) - 10*time.Second
+		if remaining < budget {
+			budget = remaining
+		}
+	}
+	if budget <= 0 {
+		t.Fatal("test deadline leaves no pull admission budget")
+	}
+	timer := time.NewTimer(budget)
+	defer timer.Stop()
+	began := time.Now()
+	select {
+	case <-started:
+		t.Logf("pull admission reached blocked registry fetch after %s", time.Since(began))
+	case err := <-done:
+		t.Fatalf("pull ended during admission before registry fetch after %s (state directory %s): %v", time.Since(began), vmconfig.StateDir(), err)
+	case <-timer.C:
+		t.Fatalf("pull admission did not reach registry fetch within %s (state directory %s)", budget, vmconfig.StateDir())
 	}
 }
