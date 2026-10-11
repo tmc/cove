@@ -65,19 +65,30 @@ func (s *ControlServer) handleAgentUIWithDial(req *controlpb.ControlRequest, dia
 		return &controlpb.ControlResponse{Error: err.Error()}
 	}
 	request.HostGeneration = epoch
-	user, err := agentstate.NewUserAgentClientWithDial(func(callCtx context.Context) (net.Conn, error) { return dial(callCtx, agentstate.UserPort) })
-	if err != nil {
-		return uiControlResponse(&pb.UIResponse{Status: &pb.UIStatus{ProtocolVersion: 1, State: "unavailable", PermissionState: "unknown", SessionState: "unknown", Reason: "user agent unavailable; log into the guest and check agent readiness"}})
-	}
-	defer user.Close()
 	var result *pb.UIResponse
-	switch req.Type {
-	case "agent-ui-status":
-		result, err = user.UIStatus(ctx, request)
-	case "agent-ui-inspect":
-		result, err = user.InspectUI(ctx, request)
-	case "agent-ui-find":
-		result, err = user.FindUI(ctx, request)
+	call := func(user *agentstate.UserAgentClient) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		var err error
+		switch req.Type {
+		case "agent-ui-status":
+			result, err = user.UIStatus(ctx, request)
+		case "agent-ui-inspect":
+			result, err = user.InspectUI(ctx, request)
+		case "agent-ui-find":
+			result, err = user.FindUI(ctx, request)
+		}
+		return err
+	}
+	used, err := s.bridge.WithCachedUserAgent(ctx, call)
+	if err == nil && !used {
+		var user *agentstate.UserAgentClient
+		user, err = agentstate.NewUserAgentClientWithDial(func(callCtx context.Context) (net.Conn, error) { return dial(callCtx, agentstate.UserPort) })
+		if err == nil {
+			defer user.Close()
+			err = call(user)
+		}
 	}
 	if err != nil {
 		if connect.CodeOf(err) == connect.CodeUnimplemented {
