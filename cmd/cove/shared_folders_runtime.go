@@ -61,6 +61,10 @@ func (s *ControlServer) sharedFoldersRuntimeStatus() sharedFoldersRuntimeStatus 
 }
 
 func (s *ControlServer) handleSharedFoldersApply() *controlpb.ControlResponse {
+	return s.handleSharedFoldersApplyMode(true)
+}
+
+func (s *ControlServer) handleSharedFoldersApplyMode(reconcileGuest bool) *controlpb.ControlResponse {
 	folders := LoadSharedFolders(s.effectiveVMDir())
 	applied, absent, changed, err := s.applySharedFoldersToRunningVMWithChanges(folders)
 	if err != nil {
@@ -68,7 +72,7 @@ func (s *ControlServer) handleSharedFoldersApply() *controlpb.ControlResponse {
 	}
 
 	mountRoot := defaultSharedFoldersMountRoot(s.effectiveVMDir())
-	remountMsg := refreshAppliedSharedFolders(changed, func(force bool) (bool, error) {
+	remountMsg := reconcileAppliedSharedFolders(reconcileGuest, changed, func(force bool) (bool, error) {
 		return refreshSharedFoldersInGuest(s.effectiveVMDir(), mountRoot, defaultSharedFolderMountTimeouts(), force)
 	})
 
@@ -88,6 +92,13 @@ func (s *ControlServer) handleSharedFoldersApply() *controlpb.ControlResponse {
 		Data:    msg,
 		Result:  &controlpb.ControlResponse_Message{Message: &controlpb.MessageResponse{Message: msg}},
 	}
+}
+
+func reconcileAppliedSharedFolders(enabled, changed bool, refresh func(bool) (bool, error)) string {
+	if !enabled {
+		return ""
+	}
+	return refreshAppliedSharedFolders(changed, refresh)
 }
 
 func refreshAppliedSharedFolders(changed bool, refresh func(bool) (bool, error)) string {

@@ -738,8 +738,19 @@ func mountWorkspaceShares(ctx context.Context, p workspacePlan, dir string) erro
 	if !status.VirtioFS {
 		return fmt.Errorf("guest lacks its shared-folder device; shares are saved; stop and restart explicitly before retrying")
 	}
-	if _, err := client.SharedFoldersApply(); err != nil {
+	resp, err := client.SendRequestCtx(ctx, &controlpb.ControlRequest{Type: "shared-folders-apply-native"})
+	if err != nil {
 		return fmt.Errorf("apply workspace shares: %w", err)
+	}
+	if resp == nil || !resp.Success {
+		detail := "missing response"
+		if resp != nil {
+			detail = resp.Error
+		}
+		return fmt.Errorf("apply workspace shares: %s", detail)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	if _, err := refreshSharedFoldersInGuest(dir, defaultSharedFoldersMountRoot(dir), defaultSharedFolderMountTimeouts(), changed); err != nil {
 		return fmt.Errorf("mount workspace shares for intended user: %w", err)

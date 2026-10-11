@@ -553,6 +553,8 @@ func (s *ControlServer) handleRequest(req *controlpb.ControlRequest) *controlpb.
 		return s.rebootToRecovery()
 	case "shared-folders-apply":
 		return s.handleSharedFoldersApply()
+	case "shared-folders-apply-native":
+		return s.handleSharedFoldersApplyMode(false)
 	case "shared-folders-runtime-status":
 		return s.handleSharedFoldersRuntimeStatus()
 	case "iterm2-proxy-stop":
@@ -1355,7 +1357,7 @@ func controlCapabilityCommands(linuxGuest, windowsGuest bool) []string {
 	commands := []string{
 		"ping", "status", "capabilities", "screenshot", "key", "mouse", "text",
 		"pause", "resume", "stop", "request-stop", "snapshot", "memory", "network-info",
-		"shared-folders-apply", "shared-folders-runtime-status", "gui-open", "gui-close", "gui-status", "port-forward",
+		"shared-folders-apply", "shared-folders-apply-native", "shared-folders-runtime-status", "gui-open", "gui-close", "gui-status", "port-forward",
 		"vnc-status", "debug-stub-status", "server-info", "display", "disk", "pit", "usb",
 		"agent-connect", "agent-ping", "agent-info", "agent-exec", "agent-exec-stream",
 		"agent-exec-attach", "agent-exec-resize", "agent-exec-signal",

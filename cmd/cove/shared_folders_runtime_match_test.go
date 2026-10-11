@@ -43,6 +43,18 @@ func TestRefreshAppliedSharedFolders(t *testing.T) {
 	}
 }
 
+func TestNativeSharedFolderApplySkipsGuestReconciliation(t *testing.T) {
+	for _, changed := range []bool{false, true} {
+		got := reconcileAppliedSharedFolders(false, changed, func(bool) (bool, error) {
+			t.Fatal("native apply reconciled guest mount")
+			return false, nil
+		})
+		if got != "" {
+			t.Fatalf("native apply warning %q", got)
+		}
+	}
+}
+
 func TestSharedFolderNativeShareMatches(t *testing.T) {
 	path := t.TempDir()
 	other := t.TempDir()
