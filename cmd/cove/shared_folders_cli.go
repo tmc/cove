@@ -881,7 +881,13 @@ func mountSharedFoldersInGuest(vmDirectory, mountPoint string) (bool, error) {
 func unmountGuestMountPointWithTimeouts(client *ControlClient, mountPoint string, linuxGuest bool, timeout time.Duration) error {
 	// First attempt standard unmount
 	res, err := client.AgentDaemonExecTypedTimeout([]string{"umount", mountPoint}, nil, "", timeout)
-	if err == nil && res.ExitCode == 0 {
+	if err != nil {
+		return err
+	}
+	if res == nil {
+		return fmt.Errorf("unmount returned no result")
+	}
+	if res.ExitCode == 0 {
 		return nil
 	}
 	stderr := ""
@@ -893,8 +899,17 @@ func unmountGuestMountPointWithTimeouts(client *ControlClient, mountPoint string
 	}
 
 	// Retry with force unmount (-f) for stuck / stale / dead mounts
+	if strings.Contains(stderr, "operation not permitted") || strings.Contains(stderr, "permission denied") || (!strings.Contains(stderr, "busy") && !isDeadOrStaleMountError(stderr)) {
+		return fmt.Errorf("exit %d: %s", res.ExitCode, stderr)
+	}
 	forceRes, forceErr := client.AgentDaemonExecTypedTimeout([]string{"umount", "-f", mountPoint}, nil, "", timeout)
-	if forceErr == nil && forceRes.ExitCode == 0 {
+	if forceErr != nil {
+		return forceErr
+	}
+	if forceRes == nil {
+		return fmt.Errorf("force unmount returned no result")
+	}
+	if forceRes.ExitCode == 0 {
 		return nil
 	}
 	if forceRes != nil {
@@ -902,20 +917,26 @@ func unmountGuestMountPointWithTimeouts(client *ControlClient, mountPoint string
 		if strings.Contains(forceStderr, "not currently mounted") || strings.Contains(forceStderr, "not mounted") {
 			return nil
 		}
+		if strings.Contains(forceStderr, "operation not permitted") || strings.Contains(forceStderr, "permission denied") || (!strings.Contains(forceStderr, "busy") && !isDeadOrStaleMountError(forceStderr)) {
+			return fmt.Errorf("exit %d: %s", forceRes.ExitCode, forceStderr)
+		}
 	}
 
 	// On Linux, try lazy unmount (-l) to detach from hierarchy
 	if linuxGuest {
 		lazyRes, lazyErr := client.AgentDaemonExecTypedTimeout([]string{"umount", "-l", mountPoint}, nil, "", timeout)
-		if lazyErr == nil && lazyRes.ExitCode == 0 {
+		if lazyErr != nil {
+			return lazyErr
+		}
+		if lazyRes == nil {
+			return fmt.Errorf("lazy unmount returned no result")
+		}
+		if lazyRes.ExitCode == 0 {
 			return nil
 		}
 	}
 
-	if err != nil {
-		return err
-	}
-	if res != nil && res.ExitCode != 0 {
+	if res.ExitCode != 0 {
 		msg := strings.TrimSpace(res.Stderr)
 		if msg == "" {
 			msg = strings.TrimSpace(res.Stdout)

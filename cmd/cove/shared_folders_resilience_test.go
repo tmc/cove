@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +11,35 @@ import (
 
 	controlpb "github.com/tmc/cove/proto/controlpb"
 )
+
+func TestUnmountUnknownOrDeniedDoesNotRetry(t *testing.T) {
+	t.Setenv(controlTokenEnvVar, "")
+	for _, tt := range []struct {
+		name   string
+		delay  time.Duration
+		detail string
+	}{
+		{"timeout", 300 * time.Millisecond, ""},
+		{"permission", 0, "Operation not permitted"},
+		{"other", 0, "unexpected failure"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := shortSharedFolderVMDir(t)
+			resp := &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_AgentExecResult{AgentExecResult: &controlpb.AgentExecResponse{ExitCode: 1, Stderr: tt.detail}}}
+			if tt.delay != 0 {
+				resp = nil
+			}
+			verify := serveSharedFolderControlSteps(t, dir, "token", []sharedFolderControlStep{
+				{wantType: "agent-exec", wantArgs: []string{"umount", defaultSharedFoldersMountPoint}, delay: tt.delay, resp: resp},
+			})
+			err := unmountGuestMountPointWithTimeouts(NewControlClient(GetControlSocketPathForVM(dir)), defaultSharedFoldersMountPoint, true, 100*time.Millisecond)
+			verify()
+			if err == nil || (tt.delay != 0 && !errors.Is(err, context.DeadlineExceeded)) {
+				t.Fatalf("unmount error %v", err)
+			}
+		})
+	}
+}
 
 func TestDeadOrStaleMountDetection(t *testing.T) {
 	tests := []struct {
