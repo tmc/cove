@@ -31,11 +31,12 @@ Flags:
   -depth N              maximum tree depth (default 5, maximum 16)
   -nodes N              maximum nodes (default 256, maximum 1024)
   -bytes N              maximum reply bytes (default 65536, maximum 262144)
-  -timeout DURATION     read budget (default 2s, maximum 10s)
+  -timeout DURATION     guest read budget (default 2s, maximum 10s)
   -generation ID        refuse if the observed session generation changed
   -json                 emit structured status/observation
 
 Denied, unavailable, unsupported, stale and ambiguous results are explicit.
+Host diagnostics have a separate 12s budget, with a 13s transport allowance.
 Inspection never invokes a coordinate fallback or performs an action.`)
 }
 
@@ -92,7 +93,7 @@ func handleUICommand(env commandEnv, args []string) error {
 		return err
 	}
 	defer session.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), *timeout+time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 13*time.Second)
 	defer cancel()
 	query := guest.Query{PID: int32(*pid), MaxDepth: uint32(*depth), MaxNodes: uint32(*nodes), MaxBytes: uint32(*bytes), Timeout: *timeout, Role: *role, Identifier: *identifier, Label: *label, ExpectedGeneration: *generation}
 	var observation guest.Observation

@@ -139,7 +139,7 @@ func (s *Session) request(ctx context.Context, kind string, query Query) (Observ
 		return Observation{}, errors.New("guest session is closed")
 	}
 	s.mu.Unlock()
-	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 13*time.Second)
 	defer cancel()
 	stop := context.AfterFunc(s.ctx, cancel)
 	defer stop()

@@ -1863,6 +1863,10 @@ Denied, locked, unavailable and stale results are explicit. These commands do
 not grant permissions or perform actions. Use `-generation ID` to reject a
 changed session. `-timeout` defaults to 2s and is capped at 10s; `-depth`,
 `-nodes` and `-bytes` bound observations. Text values are omitted.
+The guest read budget is separate from the host diagnostic budget (12s).
+The CLI allows 13s for transport so a slow connection can return a structured
+`unavailable` result. Native queue waits and blocked response writes are not
+guaranteed to finish within these budgets.
 
 ---
 

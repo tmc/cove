@@ -45,16 +45,16 @@ func TestUIStatusCommandPropagatesReadBounds(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer listener.Close()
-	requests := make(chan *controlpb.ControlRequest, 5)
+	requests := make(chan *controlpb.ControlRequest, 6)
 	serverDone := make(chan error, 1)
 	go func() {
-		for _, state := range []string{"ready", "locked", "permission_denied", "unsupported_protocol", "stale_generation"} {
+		for _, state := range []string{"ready", "locked", "permission_denied", "unsupported_protocol", "stale_generation", "unavailable"} {
 			conn, err := listener.Accept()
 			if err != nil {
 				serverDone <- err
 				return
 			}
-			conn.SetDeadline(time.Now().Add(3 * time.Second))
+			conn.SetDeadline(time.Now().Add(10 * time.Second))
 			data, err := bufio.NewReader(conn).ReadBytes('\n')
 			if err != nil {
 				conn.Close()
@@ -68,6 +68,9 @@ func TestUIStatusCommandPropagatesReadBounds(t *testing.T) {
 				return
 			}
 			requests <- request
+			if state == "unavailable" {
+				time.Sleep(3100 * time.Millisecond)
+			}
 			response := &controlpb.ControlResponse{Success: true, Result: &controlpb.ControlResponse_AgentUi{AgentUi: &pb.UIResponse{Status: &pb.UIStatus{State: state, Generation: "current", PermissionState: "unknown", SessionState: "locked"}}}}
 			reply, err := protojsonMarshaler.Marshal(response)
 			if err == nil {
@@ -81,9 +84,15 @@ func TestUIStatusCommandPropagatesReadBounds(t *testing.T) {
 		}
 		serverDone <- nil
 	}()
-	for _, state := range []string{"ready", "locked", "permission_denied", "unsupported_protocol", "stale_generation"} {
+	for _, state := range []string{"ready", "locked", "permission_denied", "unsupported_protocol", "stale_generation", "unavailable"} {
 		var out, stderr bytes.Buffer
-		err := handleUICommand(commandEnv{Stdout: &out, Stderr: &stderr}, []string{"status", "-vm", "ui", "-timeout", "350ms", "-generation", "previous", "-json"})
+		args := []string{"status", "-vm", "ui", "-timeout", "350ms", "-generation", "previous", "-json"}
+		wantTimeout := uint32(350)
+		if state == "unavailable" {
+			args = []string{"status", "-vm", "ui", "-generation", "previous", "-json"}
+			wantTimeout = 2000
+		}
+		err := handleUICommand(commandEnv{Stdout: &out, Stderr: &stderr}, args)
 		if err != nil {
 			t.Fatalf("status %s: %v stderr=%s", state, err, stderr.String())
 		}
@@ -96,7 +105,7 @@ func TestUIStatusCommandPropagatesReadBounds(t *testing.T) {
 		}
 		select {
 		case request := <-requests:
-			if request.Type != "agent-ui-status" || request.GetAgentUi().ExpectedGeneration != "previous" || request.GetAgentUi().TimeoutMs != 350 {
+			if request.Type != "agent-ui-status" || request.GetAgentUi().ExpectedGeneration != "previous" || request.GetAgentUi().TimeoutMs != wantTimeout {
 				t.Fatalf("read bounds lost or fallback request: %v", request)
 			}
 		case <-time.After(time.Second):
