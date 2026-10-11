@@ -23,6 +23,31 @@ func TestWorkspaceRuntimeMountOrdering(t *testing.T) {
 	}
 }
 
+func TestWorkspaceCwdFailurePreventsTaskDispatch(t *testing.T) {
+	t.Setenv(controlTokenEnvVar, "")
+	dir := shortSharedFolderVMDir(t)
+	verify := serveSharedFolderControlSteps(t, dir, "token", []sharedFolderControlStep{
+		{wantType: "agent-user-exec", wantArgs: []string{"/bin/pwd", "-P"}, resp: workspaceMountResult("", 1)},
+	})
+	o := workspaceTestOptions(t)
+	p, _ := planGoWorkspace(o)
+	p.SourceGuestPath = "/source"
+	var steps []string
+	d := workspaceTestDeps(t, &steps)
+	d.Mount = func(ctx context.Context, p workspacePlan, _ string) error {
+		return checkWorkspaceSourceDirectory(ctx, p, dir)
+	}
+	d.Task = func(context.Context, workspaceOptions, workspacePlan, string, commandEnv) (*controlpb.AgentExecResponse, error) {
+		t.Fatal("task dispatched")
+		return nil, nil
+	}
+	receipt, err := openGoWorkspace(context.Background(), o, p, d, commandEnv{})
+	verify()
+	if receipt.FailedStep != "mount" || receipt.Outcome != "prerequisite_failure" || err == nil || !strings.Contains(err.Error(), "task not dispatched") || !strings.Contains(err.Error(), "filesystem cause unknown") {
+		t.Fatalf("receipt %+v: %v", receipt, err)
+	}
+}
+
 func TestWorkspaceDefersSharedFolderReconciliation(t *testing.T) {
 	t.Setenv(controlTokenEnvVar, "")
 	dir := shortSharedFolderVMDir(t)

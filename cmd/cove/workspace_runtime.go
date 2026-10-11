@@ -764,7 +764,7 @@ func mountWorkspaceShares(ctx context.Context, p workspacePlan, dir string) erro
 			return fmt.Errorf("workspace share %s is unavailable or has incorrect access: %s", want.path, result.Detail)
 		}
 	}
-	return nil
+	return checkWorkspaceSourceDirectory(ctx, p, dir)
 }
 
 func captureWorkspaceState(ctx context.Context, p workspacePlan, dir string) ([]byte, error) {
@@ -823,6 +823,17 @@ func workspaceSourceProvenance(ctx context.Context, path string) []byte {
 	}
 	data, _ := json.Marshal(record)
 	return data
+}
+
+func checkWorkspaceSourceDirectory(ctx context.Context, p workspacePlan, dir string) error {
+	cwd, err := workspaceExec(ctx, dir, "agent-user-exec", []string{"/bin/pwd", "-P"}, nil, p.SourceGuestPath, 5*time.Second)
+	if err != nil {
+		return fmt.Errorf("workspace source working directory unavailable; filesystem cause unknown; mount retained; task not dispatched: %w", err)
+	}
+	if cwd == nil || cwd.ExitCode != 0 || strings.TrimSpace(cwd.Stdout) == "" {
+		return fmt.Errorf("workspace source working directory unavailable; filesystem cause unknown; mount retained; task not dispatched")
+	}
+	return nil
 }
 
 func executeWorkspaceTask(ctx context.Context, o workspaceOptions, p workspacePlan, dir string, env commandEnv) (*controlpb.AgentExecResponse, error) {
