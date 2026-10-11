@@ -9,30 +9,109 @@ import (
 	"testing"
 )
 
-func TestPrintManualElevationManifestLeadsWithUserPath(t *testing.T) {
-	out := captureStderrString(t, func() {
-		printManualElevationManifest([]byte(`{"op":"test"}`), "Do the privileged thing.")
-	})
-	for _, field := range strings.Fields(out) {
-		if strings.HasPrefix(field, os.TempDir()+"/cove-elev-manifest-") {
-			_ = os.Remove(field)
-		}
-	}
-	for _, want := range []string{
-		"Cannot show password dialog in this environment",
-		"Open a normal Terminal window and rerun the cove command there.",
-		"sudo cove helper install",
-		"Advanced manual recovery",
-		elevatedOpArg,
-	} {
+func TestManualElevationGuidanceDoesNotRetainManifest(t *testing.T) {
+	temp := t.TempDir()
+	t.Setenv("TMPDIR", temp)
+	out := captureStderrString(t, func() { printManualElevationGuidance("Install the guest agent.") })
+	for _, want := range []string{"rerun the full cove command", "recreates temporary files and mounts", "sudo cove helper install", "COVE_USE_HELPER=1"} {
 		if !strings.Contains(out, want) {
-			t.Fatalf("manual elevation output missing %q:\n%s", want, out)
+			t.Fatalf("output missing %q: %s", want, out)
 		}
 	}
-	helperAt := strings.Index(out, "sudo cove helper install")
-	rawAt := strings.Index(out, elevatedOpArg)
-	if rawAt < helperAt {
-		t.Fatalf("raw elevated command appears before helper guidance:\n%s", out)
+	for _, stale := range []string{elevatedOpArg, "cove-elev-manifest-", "Advanced manual recovery"} {
+		if strings.Contains(out, stale) {
+			t.Fatalf("advertised stale recovery %q: %s", stale, out)
+		}
+	}
+	entries, err := os.ReadDir(temp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("guidance left temporary files: %v", entries)
+	}
+}
+
+func TestRestrictedElevationLeavesNoRecoveryManifest(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("requires unprivileged process")
+	}
+	t.Setenv(appleAppSandboxContainerEnv, "")
+	t.Setenv("COVE_USE_HELPER", "")
+	t.Setenv("COVE_FORCE_MANUAL_ELEVATION", "1")
+	temp := t.TempDir()
+	t.Setenv("TMPDIR", temp)
+	old := runElevatedManifestNativeHook
+	defer func() { runElevatedManifestNativeHook = old }()
+	runElevatedManifestNativeHook = func(string, string, string) error { t.Fatal("restricted path called native authorization"); return nil }
+	out := captureStderrString(t, func() {
+		err := runElevatedOnCurrentThread(&elevatedManifest{MkdirAll: []string{"/Library/CoveTest"}}, "Install test files.")
+		if !errors.Is(err, errRestrictedNoElevation) {
+			t.Fatalf("error = %v", err)
+		}
+	})
+	entries, err := os.ReadDir(temp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("restricted elevation retained files: %v", entries)
+	}
+	if strings.Contains(out, elevatedOpArg) {
+		t.Fatalf("advertised low-level recovery: %s", out)
+	}
+	if !strings.Contains(out, "COVE_USE_HELPER=1") {
+		t.Fatalf("missing helper opt-in: %s", out)
+	}
+}
+
+func TestNativeElevationNoTTYCleansManifest(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("requires unprivileged process")
+	}
+	for _, name := range []string{appleAppSandboxContainerEnv, "COVE_USE_HELPER", "CLAUDECODE", "IS_SANDBOX", "COVE_FORCE_MANUAL_ELEVATION"} {
+		t.Setenv(name, "")
+	}
+	temp := t.TempDir()
+	t.Setenv("TMPDIR", temp)
+	old := runElevatedManifestNativeHook
+	defer func() { runElevatedManifestNativeHook = old }()
+	var manifestPath string
+	runElevatedManifestNativeHook = func(path, hash, prompt string) error {
+		manifestPath = path
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(data) == 0 || hash == "" {
+			t.Fatal("native child missing authenticated manifest")
+		}
+		return ErrAuthorizationNoTTY
+	}
+	out := captureStderrString(t, func() {
+		err := runElevatedOnCurrentThread(&elevatedManifest{MkdirAll: []string{"/Library/CoveTest"}}, "Install test files.")
+		if !errors.Is(err, ErrAuthorizationNoTTY) {
+			t.Fatalf("error = %v", err)
+		}
+	})
+	if manifestPath == "" {
+		t.Fatal("native path not called")
+	}
+	if _, err := os.Stat(manifestPath); !os.IsNotExist(err) {
+		t.Fatalf("manifest retained: %v", err)
+	}
+	entries, err := os.ReadDir(temp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("failed elevation retained files: %v", entries)
+	}
+	if strings.Contains(out, elevatedOpArg) || strings.Contains(out, manifestPath) {
+		t.Fatalf("output advertises discarded manifest: %s", out)
+	}
+	if !strings.Contains(out, "rerun the full cove command") {
+		t.Fatalf("missing supported recovery: %s", out)
 	}
 }
 

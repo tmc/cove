@@ -13,9 +13,8 @@
 // and we'd rather make users pick "always-on" deliberately. Set
 // COVE_USE_HELPER=1 to route through the helper when installed.
 //
-// In restricted environments (Claude Code, sandboxed shells), the dialog
-// cannot appear; the user is told how to run the equivalent command by hand
-// and errRestrictedNoElevation is returned.
+// When administrator authentication is unavailable, callers are directed
+// to rerun their full command in Terminal so temporary inputs are recreated.
 
 package main
 
@@ -69,7 +68,7 @@ func runElevatedOnCurrentThread(m *elevatedManifest, prompt string) error {
 	}
 
 	if restrictedEnvironment() {
-		printManualElevationManifest(body, prompt)
+		printManualElevationGuidance(prompt)
 		return errRestrictedNoElevation
 	}
 
@@ -97,7 +96,7 @@ func runElevatedOnCurrentThread(m *elevatedManifest, prompt string) error {
 
 	if err := runElevatedManifestNativeHook(tmp.Name(), hash, prompt); err != nil {
 		if errors.Is(err, ErrAuthorizationNoTTY) {
-			printManualElevationManifest(body, prompt)
+			printManualElevationGuidance(prompt)
 		}
 		return err
 	}
@@ -133,43 +132,19 @@ func runOffUIThread(fn func() error) error {
 	}
 }
 
-// printManualElevationManifest tells the user how to apply the manifest by
-// hand from a real terminal. We can't dump the JSON usefully, so we point
-// them at `cove __elevated-op <path> <hash>` and leave the file in place
-// for them to reuse.
-func printManualElevationManifest(body []byte, prompt string) {
-	tmp, err := os.CreateTemp("", "cove-elev-manifest-*.json")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "cannot stage manifest for manual elevation: %v\n", err)
-		return
-	}
-	tmp.Write(body)
-	tmp.Close()
-	os.Chmod(tmp.Name(), 0600)
-	sum := sha256.Sum256(body)
-	hash := hex.EncodeToString(sum[:])
-
-	exe, _ := os.Executable()
-	if exe == "" {
-		exe = "cove"
-	}
-
+func printManualElevationGuidance(prompt string) {
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "Cannot show password dialog in this environment (sandboxed).")
+	fmt.Fprintln(os.Stderr, "Administrator authentication is unavailable in this environment.")
 	if prompt != "" {
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, "  "+prompt)
 	}
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "Open a normal Terminal window and rerun the cove command there.")
-	fmt.Fprintln(os.Stderr, "That lets macOS show the administrator approval dialog.")
+	fmt.Fprintln(os.Stderr, "Open a normal Terminal window and rerun the full cove command there.")
+	fmt.Fprintln(os.Stderr, "That recreates temporary files and mounts before requesting administrator approval.")
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "For future hands-off provisioning, install the helper once:")
-	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "For future hands-off provisioning, install the helper once from Terminal:")
 	fmt.Fprintln(os.Stderr, "  sudo cove helper install")
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "Advanced manual recovery, if the dialog still cannot appear:")
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintf(os.Stderr, "  sudo %s %s %s %s\n", exe, elevatedOpArg, tmp.Name(), hash)
+	fmt.Fprintln(os.Stderr, "Then rerun the full command with COVE_USE_HELPER=1.")
 	fmt.Fprintln(os.Stderr)
 }
