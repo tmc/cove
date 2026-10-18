@@ -44,7 +44,7 @@ import (
 
 const (
 	helperSocketPath = "/var/run/cove-helper.sock"
-	helperUIDPath    = "/var/run/cove-helper.uid"
+	helperUIDPath    = "/usr/local/libexec/cove-helper.uid"
 	helperPlistPath  = "/Library/LaunchDaemons/com.tmc.cove.helper.plist"
 	helperBinaryPath = "/usr/local/libexec/cove-helper"
 	helperLabel      = "com.tmc.cove.helper"
@@ -499,9 +499,12 @@ func helperInstall() error {
 	}
 
 	fmt.Println("Installing cove privileged helper.")
-	fmt.Println("You will be prompted once for your admin password. After this, cove")
-	fmt.Println("operations that need root (e.g. provisioning a new VM) will not")
-	fmt.Println("require further prompts.")
+	if os.Geteuid() == 0 {
+		fmt.Println("Already running with administrator privileges; no further approval is needed.")
+	} else {
+		fmt.Println("Administrator approval may be requested to install the helper.")
+	}
+	fmt.Println("After installation, set COVE_USE_HELPER=1 to use it for operations that need root.")
 	fmt.Println()
 
 	if err := runElevated(manifest,
