@@ -1,0 +1,10 @@
+commit: 8dad6f9abe6a3c5de68b32f09ffb3875a3a6651e
+date: 2026-10-18T03:59:05.375033+00:00
+agent: Codex CLI
+claude-code-version: not invoked
+model: GPT-6
+tty: none
+pid: 83662
+ITERM_SESSION_ID: w10t0p0:44CD47F4-0272-4F0E-93C6-71095B1DABDE
+validation: build, focused helper tests and full suite passed; cmd/cove278.322s
+physical: corrected helper installation and reboot durability unqualified
