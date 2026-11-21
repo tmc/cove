@@ -244,11 +244,13 @@ Export the full identity string in your shell, e.g.
 Match it character-for-character against the second column of
 `security find-identity -v -p codesigning`.
 
-### `error: notarytool keychain profile 'cove-notarytool' is missing`
+### Notarytool preflight fails
 
-Run the `xcrun notarytool store-credentials` command from the one-time
-setup above. If the password rotates, re-run the same command — it
-overwrites the existing entry.
+Read the error printed by `notarytool`. If the profile is missing or its
+credentials have changed, run the `xcrun notarytool store-credentials`
+command from the one-time setup above. If Apple reports a missing or
+expired developer agreement, an authorized team member needs to review
+the agreement in the developer account.
 
 ### Notarization hangs
 

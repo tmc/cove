@@ -50,10 +50,8 @@ if ! security find-identity -v -p codesigning | grep -F "$DEVELOPER_ID" >/dev/nu
     exit 1
 fi
 
-if ! xcrun notarytool history --keychain-profile cove-notarytool >/dev/null 2>&1; then
-    echo "error: notarytool keychain profile 'cove-notarytool' is missing or invalid" >&2
-    echo "       set it up with: xcrun notarytool store-credentials cove-notarytool \\" >&2
-    echo "                         --apple-id <apple-id> --team-id <TEAMID> --password <app-specific-pw>" >&2
+if ! xcrun notarytool history --keychain-profile cove-notarytool >/dev/null; then
+    echo "error: notarytool preflight failed for keychain profile 'cove-notarytool'" >&2
     exit 1
 fi
 
