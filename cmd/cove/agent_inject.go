@@ -75,11 +75,7 @@ func buildAgentBinaryForOS(outputPath, targetOS string) error {
 
 	cmd := exec.Command("go", "build", "-buildvcs=false", "-ldflags", agentBuildLDFlagsForOS(targetOS), "-o", outputPath, agentPkg)
 	cmd.Dir = moduleDir
-	cmd.Env = append(os.Environ(),
-		"CGO_ENABLED=0",
-		"GOOS="+targetOS,
-		"GOARCH=arm64",
-	)
+	cmd.Env = agentBuildEnv(targetOS, "arm64", os.Getenv("COVE_SRC") == "" && coveModuleVersion() != "")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
@@ -157,17 +153,8 @@ func codesignAdHoc(path string) error {
 	return nil
 }
 
-// findCoveModuleDir locates the vz-macos module source directory so the
-// guest agent can be cross-compiled from any working directory.
-//
-// Resolution order:
-//  1. $COVE_SRC env var (explicit override)
-//  2. `go list -m -f {{.Dir}} github.com/tmc/cove` from the working dir
-//  3. `go list -m -f {{.Dir}} github.com/tmc/cove` from $GOPATH/src/github.com/tmc/cove
-//  4. $GOPATH/src/github.com/tmc/cove if it contains go.mod
-//
-// Returns the directory containing go.mod, or an error if none of the above
-// resolve to a valid module root.
+// findCoveModuleDir locates the guest agent source. COVE_SRC overrides the
+// version used to build Cove, the current module, and the GOPATH checkout.
 func findCoveModuleDir() (string, error) {
 	if env := os.Getenv("COVE_SRC"); env != "" {
 		if _, err := os.Stat(filepath.Join(env, "go.mod")); err == nil {
@@ -176,8 +163,8 @@ func findCoveModuleDir() (string, error) {
 		return "", fmt.Errorf("COVE_SRC=%s does not contain go.mod", env)
 	}
 
-	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Path == "github.com/tmc/cove" && info.Main.Version != "" && info.Main.Version != "(devel)" {
-		return downloadCoveModuleDir(info.Main.Version)
+	if version := coveModuleVersion(); version != "" {
+		return downloadCoveModuleDir(version)
 	}
 
 	if dir, err := goListModuleDir(""); err == nil {
@@ -201,6 +188,22 @@ func findCoveModuleDir() (string, error) {
 	}
 
 	return "", fmt.Errorf("cove module not found in working directory, GOPATH, or COVE_SRC")
+}
+
+func coveModuleVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok || info.Main.Path != "github.com/tmc/cove" || info.Main.Version == "(devel)" {
+		return ""
+	}
+	return info.Main.Version
+}
+
+func agentBuildEnv(targetOS, targetArch string, versioned bool) []string {
+	env := append(os.Environ(), "CGO_ENABLED=0", "GOOS="+targetOS, "GOARCH="+targetArch)
+	if versioned {
+		env = append(env, "GOWORK=off")
+	}
+	return env
 }
 
 func downloadCoveModuleDir(version string) (string, error) {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -246,6 +247,32 @@ func TestGoListModuleDirReturnsModuleRoot(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "go.mod")); err != nil {
 		t.Fatalf("module dir %q lacks go.mod: %v", dir, err)
+	}
+}
+
+func TestAgentBuildEnvWorkspace(t *testing.T) {
+	workspace := filepath.Join(t.TempDir(), "go.work")
+	t.Setenv("GOWORK", workspace)
+	tests := []struct {
+		name      string
+		versioned bool
+		want      string
+	}{
+		{name: "checkout", want: workspace},
+		{name: "versioned", versioned: true, want: "off"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := exec.Command("go", "env", "GOWORK")
+			cmd.Env = agentBuildEnv("linux", "arm64", tt.versioned)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("go env GOWORK: %v\n%s", err, out)
+			}
+			if got := strings.TrimSpace(string(out)); got != tt.want {
+				t.Fatalf("GOWORK = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 

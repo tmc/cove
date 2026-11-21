@@ -1231,15 +1231,11 @@ func buildAgentBinaryTo(outputPath, targetOS, targetArch string) error {
 	agentPkg := "github.com/tmc/cove/cmd/vz-agent"
 	moduleDir, err := findCoveModuleDir()
 	if err != nil {
-		return fmt.Errorf("locate vz-macos module: %w (run cove from a checkout, or set COVE_SRC=<path-to-vz-macos>)", err)
+		return fmt.Errorf("locate cove module: %w (run cove from a checkout, or set COVE_SRC to the checkout directory)", err)
 	}
 	cmd := exec.Command("go", "build", "-o", outputPath, agentPkg)
 	cmd.Dir = moduleDir
-	cmd.Env = append(os.Environ(),
-		"CGO_ENABLED=0",
-		"GOOS="+targetOS,
-		"GOARCH="+targetArch,
-	)
+	cmd.Env = agentBuildEnv(targetOS, targetArch, os.Getenv("COVE_SRC") == "" && coveModuleVersion() != "")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	fmt.Printf("Building vz-agent (%s/%s) from %s...\n", targetOS, targetArch, moduleDir)
