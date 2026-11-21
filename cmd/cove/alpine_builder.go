@@ -11,7 +11,7 @@ import (
 	controlpb "github.com/tmc/cove/proto/controlpb"
 )
 
-const alpineMinirootfsURL = "https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/aarch64/alpine-minirootfs-3.23.4-aarch64.tar.gz"
+const alpineMinirootfsURL = alpineARM64ReleaseURL + "alpine-minirootfs-3.23.4-aarch64.tar.gz"
 
 func installAlpineWithBuilderVM(diskPath string, config LinuxProvisionConfig) error {
 	helper := strings.TrimSpace(os.Getenv("COVE_ALPINE_BUILDER_VM"))

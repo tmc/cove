@@ -542,9 +542,10 @@ func createLinuxStorageDeviceWithAttachment(attachment vz.VZStorageDeviceAttachm
 const (
 	UbuntuServerARM64URL  = "https://cdimage.ubuntu.com/releases/24.04.3/release/ubuntu-24.04.3-live-server-arm64.iso"
 	UbuntuDesktopARM64URL = "https://cdimage.ubuntu.com/releases/24.04.3/release/ubuntu-24.04.3-desktop-arm64.iso"
-	DebianARM64URL        = "https://cdimage.debian.org/debian-cd/current/arm64/iso-cd/debian-13.5.0-arm64-netinst.iso"
+	DebianARM64URL        = "https://cdimage.debian.org/cdimage/archive/13.5.0/arm64/iso-cd/debian-13.5.0-arm64-netinst.iso"
 	FedoraARM64URL        = "https://download.fedoraproject.org/pub/fedora/linux/releases/43/Server/aarch64/iso/Fedora-Server-netinst-aarch64-43-1.6.iso"
-	AlpineARM64URL        = "https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/aarch64/alpine-virt-3.23.4-aarch64.iso"
+	alpineARM64ReleaseURL = "https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/aarch64/"
+	AlpineARM64URL        = alpineARM64ReleaseURL + "alpine-virt-3.23.4-aarch64.iso"
 )
 
 type linuxISODescriptor struct {
