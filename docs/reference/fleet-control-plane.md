@@ -22,8 +22,15 @@ policy, or keep a fork warm-pool quota active.
 Start a private controller:
 
 ```bash
-cove-fleetd -addr 127.0.0.1:9758
+cd cmd/cove-fleetd
+GOWORK=off go run . -addr 127.0.0.1:9758
 ```
+
+The controller module uses sibling checkouts of `cove-marina` and
+`cove-ocispec`. With those checkouts present, run the worker-controller
+integration tests from the Cove root with
+`./cmd/cove-fleetd/test-worker.sh`. The public Cove module includes its
+own SSH fleet client and worker HTTP contract.
 
 Options:
 

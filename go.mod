@@ -26,27 +26,15 @@ require (
 )
 
 require (
-	github.com/beevik/etree v1.6.0 // indirect
-	github.com/russellhaering/goxmldsig v1.6.0 // indirect
-)
-
-require (
 	9fans.net/go v0.0.7 // indirect
 	github.com/Plan9-Archive/libauth v0.0.0-20180917063427-d1ca9e94969d // indirect
 	github.com/emersion/go-sasl v0.0.0-20200509203442-7bfe0ed36a21 // indirect
 	github.com/fhs/mux9p v0.3.1 // indirect
-	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
-	github.com/tmc/cove-marina v0.0.0
-	github.com/tmc/cove-ocispec v0.0.0
 	golang.org/x/image v0.38.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
 )
-
-replace github.com/tmc/cove-marina => ../cove-marina
-
-replace github.com/tmc/cove-ocispec => ../cove-ocispec

@@ -239,7 +239,7 @@ cove/
 │   └── main.go                 # CLI entry point, subcommand routing
 ├── cmd/vz-agent/               # In-guest agent daemon (vsock gRPC)
 ├── cmd/coved/                  # Host-side cove coordinator daemon
-├── cmd/cove-fleetd/            # Private fleet control-plane daemon
+├── cmd/cove-fleetd/            # Separate module for the fleet controller
 ├── vzscripts/                  # Built-in recipes (.vzscript)
 ├── templates/                  # Embedded launchd and provisioning templates
 ├── proto/                      # Protobuf definitions (agent + control)
@@ -279,9 +279,8 @@ TPM device — the install bypasses the TPM requirement instead. See the
 ## Contributing
 
 ```bash
-# From a Cove checkout with cove-marina and cove-ocispec next to it.
-GOWORK=off make build sign
-./cove version
+go run ./cmd/cove version
+make build sign
 ```
 
 Run tests:

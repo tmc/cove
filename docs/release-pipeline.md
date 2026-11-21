@@ -34,11 +34,9 @@ secrets are configured on the repository.
 
 ## Build dependencies
 
-The current Cove module resolves `cove-marina` and `cove-ocispec` from
-sibling directories. A workstation needs both modules beside the Cove
-checkout. Running `make release-check` with those directories present
-exercises local packaging. A GitHub checkout of Cove alone cannot run the
-current tag workflow until it can obtain those dependencies.
+Run `make release-check` from the Cove checkout to test the module and
+rehearse packaging. GitHub's tag workflow builds and tests the checkout
+with the Go version in `go.mod`.
 
 ## One-time keychain setup
 

@@ -10,7 +10,7 @@ import (
 	"os/exec"
 	"strings"
 
-	fleetpkg "github.com/tmc/cove-marina/fleet"
+	fleetpkg "github.com/tmc/cove/internal/fleet"
 )
 
 type fleetRunner interface {

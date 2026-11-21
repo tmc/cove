@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	fleetpkg "github.com/tmc/cove-marina/fleet"
+	fleetpkg "github.com/tmc/cove/internal/fleet"
 )
 
 func TestFleetRemoteByNameMissing(t *testing.T) {

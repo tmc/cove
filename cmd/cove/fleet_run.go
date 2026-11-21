@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	fleetpkg "github.com/tmc/cove-marina/fleet"
+	fleetpkg "github.com/tmc/cove/internal/fleet"
 	"github.com/tmc/cove/internal/ociimage"
 )
 

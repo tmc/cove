@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	fleetpkg "github.com/tmc/cove-marina/fleet"
+	fleetpkg "github.com/tmc/cove/internal/fleet"
 )
 
 func TestIsLocalFleetRemote(t *testing.T) {

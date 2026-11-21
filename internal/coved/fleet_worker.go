@@ -19,8 +19,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tmc/cove-marina/fleetcontrol"
 	"github.com/tmc/cove/internal/diskimages2"
+	"github.com/tmc/cove/internal/fleetwire"
 	"github.com/tmc/cove/internal/vmquota"
 )
 
@@ -181,7 +181,7 @@ func (w *FleetWorker) Heartbeat(ctx context.Context) error {
 	return err
 }
 
-func (w *FleetWorker) AwaitAssignment(ctx context.Context) (*fleetcontrol.Assignment, error) {
+func (w *FleetWorker) AwaitAssignment(ctx context.Context) (*fleetwire.Assignment, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, w.endpoint("/v1/workers/"+url.PathEscape(w.id)+"/assignments"), nil)
 	if err != nil {
 		return nil, fmt.Errorf("create await-assignment request: %w", err)
@@ -195,7 +195,7 @@ func (w *FleetWorker) AwaitAssignment(ctx context.Context) (*fleetcontrol.Assign
 	case http.StatusNoContent:
 		return nil, nil
 	case http.StatusOK:
-		var assignment fleetcontrol.Assignment
+		var assignment fleetwire.Assignment
 		if err := json.NewDecoder(resp.Body).Decode(&assignment); err != nil {
 			return nil, fmt.Errorf("decode assignment: %w", err)
 		}
@@ -205,26 +205,26 @@ func (w *FleetWorker) AwaitAssignment(ctx context.Context) (*fleetcontrol.Assign
 	}
 }
 
-func (w *FleetWorker) Assignment(ctx context.Context, id string) (fleetcontrol.Assignment, error) {
+func (w *FleetWorker) Assignment(ctx context.Context, id string) (fleetwire.Assignment, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
-		return fleetcontrol.Assignment{}, fmt.Errorf("assignment id required")
+		return fleetwire.Assignment{}, fmt.Errorf("assignment id required")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, w.endpoint("/v1/assignments/"+url.PathEscape(id)), nil)
 	if err != nil {
-		return fleetcontrol.Assignment{}, fmt.Errorf("create assignment request: %w", err)
+		return fleetwire.Assignment{}, fmt.Errorf("create assignment request: %w", err)
 	}
 	resp, err := w.httpClient.Do(req)
 	if err != nil {
-		return fleetcontrol.Assignment{}, fmt.Errorf("get assignment: %w", err)
+		return fleetwire.Assignment{}, fmt.Errorf("get assignment: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fleetcontrol.Assignment{}, responseError("get assignment", resp)
+		return fleetwire.Assignment{}, responseError("get assignment", resp)
 	}
-	var assignment fleetcontrol.Assignment
+	var assignment fleetwire.Assignment
 	if err := json.NewDecoder(resp.Body).Decode(&assignment); err != nil {
-		return fleetcontrol.Assignment{}, fmt.Errorf("decode assignment: %w", err)
+		return fleetwire.Assignment{}, fmt.Errorf("decode assignment: %w", err)
 	}
 	return assignment, nil
 }
@@ -250,8 +250,8 @@ func (w *FleetWorker) PollAssignmentAsync(ctx context.Context) error {
 	return nil
 }
 
-func (w *FleetWorker) HandleAssignment(ctx context.Context, assignment fleetcontrol.Assignment) error {
-	report := fleetcontrol.WorkerReport{
+func (w *FleetWorker) HandleAssignment(ctx context.Context, assignment fleetwire.Assignment) error {
+	report := fleetwire.WorkerReport{
 		AssignmentID: assignment.ID,
 		Status:       "unsupported",
 		Error:        fmt.Sprintf("unsupported assignment verb %q", assignment.Verb),
@@ -276,14 +276,14 @@ func (w *FleetWorker) HandleAssignment(ctx context.Context, assignment fleetcont
 	return nil
 }
 
-func assignmentRefreshesImageRefs(assignment fleetcontrol.Assignment) bool {
+func assignmentRefreshesImageRefs(assignment fleetwire.Assignment) bool {
 	if strings.TrimSpace(assignment.ImageRef) != "" {
 		return true
 	}
 	return assignment.Verb == "cove" && len(assignment.Args) >= 2 && assignment.Args[0] == "image" && assignment.Args[1] == "gc"
 }
 
-func (w *FleetWorker) assignmentRunTimeout(assignment fleetcontrol.Assignment) (time.Duration, error) {
+func (w *FleetWorker) assignmentRunTimeout(assignment fleetwire.Assignment) (time.Duration, error) {
 	raw := strings.TrimSpace(assignment.RunTimeout)
 	if raw == "" {
 		return w.assignmentTimeout, nil
@@ -295,8 +295,8 @@ func (w *FleetWorker) assignmentRunTimeout(assignment fleetcontrol.Assignment) (
 	return timeout, nil
 }
 
-func (w *FleetWorker) runCoveAssignment(ctx context.Context, assignment fleetcontrol.Assignment) fleetcontrol.WorkerReport {
-	report := fleetcontrol.WorkerReport{
+func (w *FleetWorker) runCoveAssignment(ctx context.Context, assignment fleetwire.Assignment) fleetwire.WorkerReport {
+	report := fleetwire.WorkerReport{
 		AssignmentID: assignment.ID,
 		Status:       "failed",
 		ExitCode:     -1,
@@ -375,8 +375,8 @@ func (w *FleetWorker) assignmentCanceled(ctx context.Context, id string) bool {
 	return strings.TrimSpace(assignment.Status) == "canceled"
 }
 
-func (w *FleetWorker) runControlAssignment(ctx context.Context, assignment fleetcontrol.Assignment) fleetcontrol.WorkerReport {
-	report := fleetcontrol.WorkerReport{
+func (w *FleetWorker) runControlAssignment(ctx context.Context, assignment fleetwire.Assignment) fleetwire.WorkerReport {
+	report := fleetwire.WorkerReport{
 		AssignmentID: assignment.ID,
 		Status:       "failed",
 		ExitCode:     -1,
@@ -539,7 +539,7 @@ func (w *FleetWorker) controlToken(vmName string) (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
-func (w *FleetWorker) finishCoveAssignment(ctx context.Context, assignment fleetcontrol.Assignment, report fleetcontrol.WorkerReport) fleetcontrol.WorkerReport {
+func (w *FleetWorker) finishCoveAssignment(ctx context.Context, assignment fleetwire.Assignment, report fleetwire.WorkerReport) fleetwire.WorkerReport {
 	if assignment.WarmPoolSlot != "" && warmPoolClaimVMName(assignment.Args) != "" {
 		if err := w.stopClaimedWarmPoolVM(ctx, assignment); err != nil {
 			if report.Error != "" {
@@ -552,7 +552,7 @@ func (w *FleetWorker) finishCoveAssignment(ctx context.Context, assignment fleet
 	return report
 }
 
-func (w *FleetWorker) stopClaimedWarmPoolVM(ctx context.Context, assignment fleetcontrol.Assignment) error {
+func (w *FleetWorker) stopClaimedWarmPoolVM(ctx context.Context, assignment fleetwire.Assignment) error {
 	vmName := warmPoolClaimVMName(assignment.Args)
 	if vmName == "" {
 		return fmt.Errorf("claim assignment vm name missing")
@@ -591,14 +591,14 @@ func warmPoolClaimVMName(args []string) string {
 	return ""
 }
 
-func assignmentNeedsReadyProbe(assignment fleetcontrol.Assignment) bool {
+func assignmentNeedsReadyProbe(assignment fleetwire.Assignment) bool {
 	return assignment.WarmPool != "" || (assignment.SandboxID != "" && assignment.SandboxRole == "run")
 }
 
-func (w *FleetWorker) warmPoolReady(ctx context.Context, assignment fleetcontrol.Assignment) bool {
-	vmName := fleetcontrol.WarmPoolAssignmentVMName(assignment)
+func (w *FleetWorker) warmPoolReady(ctx context.Context, assignment fleetwire.Assignment) bool {
+	vmName := fleetwire.WarmPoolAssignmentVMName(assignment)
 	if assignment.SandboxID != "" {
-		vmName = fleetcontrol.SandboxAssignmentVMName(assignment)
+		vmName = fleetwire.SandboxAssignmentVMName(assignment)
 	}
 	if vmName == "" {
 		return false
@@ -617,7 +617,7 @@ func (w *FleetWorker) warmPoolReady(ctx context.Context, assignment fleetcontrol
 }
 
 func (w *FleetWorker) reportAssignmentStatus(ctx context.Context, assignmentID, status string) {
-	_, err := w.ReportStatus(ctx, fleetcontrol.WorkerReport{
+	_, err := w.ReportStatus(ctx, fleetwire.WorkerReport{
 		AssignmentID: assignmentID,
 		Status:       status,
 	})
@@ -626,19 +626,19 @@ func (w *FleetWorker) reportAssignmentStatus(ctx context.Context, assignmentID, 
 	}
 }
 
-func (w *FleetWorker) ReportStatus(ctx context.Context, report fleetcontrol.WorkerReport) (fleetcontrol.HostRecord, error) {
+func (w *FleetWorker) ReportStatus(ctx context.Context, report fleetwire.WorkerReport) (fleetwire.HostRecord, error) {
 	report.ID = w.id
-	var record fleetcontrol.HostRecord
+	var record fleetwire.HostRecord
 	if err := w.postJSON(ctx, "/v1/workers/"+url.PathEscape(w.id)+"/reports", report, &record); err != nil {
-		return fleetcontrol.HostRecord{}, err
+		return fleetwire.HostRecord{}, err
 	}
 	return record, nil
 }
 
-func (w *FleetWorker) postHeartbeat(ctx context.Context, path string) (fleetcontrol.HostRecord, error) {
-	var record fleetcontrol.HostRecord
+func (w *FleetWorker) postHeartbeat(ctx context.Context, path string) (fleetwire.HostRecord, error) {
+	var record fleetwire.HostRecord
 	if err := w.postJSON(ctx, path, w.heartbeat(), &record); err != nil {
-		return fleetcontrol.HostRecord{}, err
+		return fleetwire.HostRecord{}, err
 	}
 	return record, nil
 }
@@ -670,10 +670,10 @@ func (w *FleetWorker) postJSON(ctx context.Context, path string, in, out any) er
 	return nil
 }
 
-func (w *FleetWorker) heartbeat() fleetcontrol.WorkerHeartbeat {
+func (w *FleetWorker) heartbeat() fleetwire.WorkerHeartbeat {
 	imageDetails := listImageInventory(w.imageRoot)
 	imageRefs := imageRefsFromInventory(imageDetails)
-	return fleetcontrol.WorkerHeartbeat{
+	return fleetwire.WorkerHeartbeat{
 		ID:           w.id,
 		Host:         w.host,
 		Version:      w.version,
@@ -685,8 +685,8 @@ func (w *FleetWorker) heartbeat() fleetcontrol.WorkerHeartbeat {
 	}
 }
 
-func (w *FleetWorker) capacity(images int) fleetcontrol.Capacity {
-	return fleetcontrol.Capacity{
+func (w *FleetWorker) capacity(images int) fleetwire.Capacity {
+	return fleetwire.Capacity{
 		CPUs:   runtime.NumCPU(),
 		VMs:    countDirEntries(w.vmRoot),
 		MaxVMs: runtime.NumCPU(),
@@ -738,11 +738,11 @@ func listImageRefs(root string) []string {
 	return imageRefsFromInventory(listImageInventory(root))
 }
 
-func listImageInventory(root string) []fleetcontrol.WorkerImage {
+func listImageInventory(root string) []fleetwire.WorkerImage {
 	if strings.TrimSpace(root) == "" {
 		return nil
 	}
-	seen := make(map[string]fleetcontrol.WorkerImage)
+	seen := make(map[string]fleetwire.WorkerImage)
 	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil
@@ -750,7 +750,7 @@ func listImageInventory(root string) []fleetcontrol.WorkerImage {
 		if !d.IsDir() && filepath.Base(path) == "manifest.json" {
 			ref, ok := imageRefForManifest(root, path)
 			if ok {
-				seen[ref] = fleetcontrol.WorkerImage{
+				seen[ref] = fleetwire.WorkerImage{
 					Ref:                  ref,
 					SourceManifestDigest: imageSourceManifestDigest(path),
 				}
@@ -758,7 +758,7 @@ func listImageInventory(root string) []fleetcontrol.WorkerImage {
 		}
 		return nil
 	})
-	images := make([]fleetcontrol.WorkerImage, 0, len(seen))
+	images := make([]fleetwire.WorkerImage, 0, len(seen))
 	for _, image := range seen {
 		images = append(images, image)
 	}
@@ -768,7 +768,7 @@ func listImageInventory(root string) []fleetcontrol.WorkerImage {
 	return images
 }
 
-func imageRefsFromInventory(images []fleetcontrol.WorkerImage) []string {
+func imageRefsFromInventory(images []fleetwire.WorkerImage) []string {
 	if len(images) == 0 {
 		return nil
 	}
