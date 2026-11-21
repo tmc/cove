@@ -7,15 +7,16 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	cf "github.com/tmc/apple/corefoundation"
 )
 
 func TestAXAttributeFailureContext(t *testing.T) {
-	backend := &darwinUIBackend{
-		timeout:       func(uintptr, float32) int32 { return 0 },
-		copyAttribute: func(uintptr, uintptr, *uintptr) int32 { return -25200 },
+	backend := &darwinUIBackend{}
+	backend.load()
+	if backend.err != nil {
+		t.Fatal(backend.err)
 	}
+	backend.timeout = func(uintptr, float32) int32 { return 0 }
+	backend.copyAttribute = func(uintptr, uintptr, *uintptr) int32 { return -25200 }
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	_, err := backend.attribute(ctx, 1, "AXIdentifier")
@@ -35,7 +36,7 @@ func TestPublicAXTimeoutFloatABI(t *testing.T) {
 	if element == 0 {
 		t.Fatal("create own application accessibility reference")
 	}
-	defer cf.CFRelease(cf.CFTypeRef(element))
+	defer backend.release(element)
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	if err := backend.prepare(ctx, element); err != nil {

@@ -28,45 +28,61 @@ type darwinUIBackend struct {
 	timeout       func(uintptr, float32) int32
 	value         func(uintptr, int32, unsafe.Pointer) bool
 	session       func() uintptr
+	retain        func(uintptr) uintptr
+	release       func(uintptr)
+	typeID        func(uintptr) uintptr
+	dictionaryGet func(uintptr, uintptr) uintptr
 }
 
 func newPlatformUIBackend() userUIBackend { return &darwinUIBackend{} }
 
 func (b *darwinUIBackend) load() {
 	b.once.Do(func() {
-		library, err := purego.Dlopen("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices", purego.RTLD_LAZY|purego.RTLD_LOCAL)
-		if err != nil {
-			b.err = err
-			return
-		}
-		symbols := []struct {
+		type symbol struct {
 			name     string
 			function any
-		}{
-			{"AXIsProcessTrusted", &b.trusted}, {"AXUIElementCreateApplication", &b.create},
-			{"AXUIElementCopyAttributeValue", &b.copyAttribute}, {"AXUIElementGetAttributeValueCount", &b.count},
-			{"AXUIElementCopyAttributeValues", &b.copyChildren}, {"AXUIElementSetMessagingTimeout", &b.timeout},
-			{"AXValueGetValue", &b.value}, {"AXUIElementGetTypeID", &b.elementType}, {"AXValueGetTypeID", &b.valueType},
 		}
-		for _, symbol := range symbols {
-			address, err := purego.Dlsym(library, symbol.name)
+		libraries := []struct {
+			name    string
+			symbols []symbol
+		}{
+			{"ApplicationServices", []symbol{
+				{"AXIsProcessTrusted", &b.trusted},
+				{"AXUIElementCreateApplication", &b.create},
+				{"AXUIElementCopyAttributeValue", &b.copyAttribute},
+				{"AXUIElementGetAttributeValueCount", &b.count},
+				{"AXUIElementCopyAttributeValues", &b.copyChildren},
+				{"AXUIElementSetMessagingTimeout", &b.timeout},
+				{"AXValueGetValue", &b.value},
+				{"AXUIElementGetTypeID", &b.elementType},
+				{"AXValueGetTypeID", &b.valueType},
+			}},
+			{"CoreGraphics", []symbol{
+				{"CGSessionCopyCurrentDictionary", &b.session},
+			}},
+			{"CoreFoundation", []symbol{
+				{"CFRetain", &b.retain},
+				{"CFRelease", &b.release},
+				{"CFGetTypeID", &b.typeID},
+				{"CFDictionaryGetValue", &b.dictionaryGet},
+			}},
+		}
+		for _, library := range libraries {
+			path := "/System/Library/Frameworks/" + library.name + ".framework/" + library.name
+			handle, err := purego.Dlopen(path, purego.RTLD_LAZY|purego.RTLD_LOCAL)
 			if err != nil {
-				b.err = fmt.Errorf("load %s: %w", symbol.name, err)
+				b.err = fmt.Errorf("load %s: %w", library.name, err)
 				return
 			}
-			purego.RegisterFunc(symbol.function, address)
+			for _, symbol := range library.symbols {
+				address, err := purego.Dlsym(handle, symbol.name)
+				if err != nil {
+					b.err = fmt.Errorf("load %s: %w", symbol.name, err)
+					return
+				}
+				purego.RegisterFunc(symbol.function, address)
+			}
 		}
-		graphics, err := purego.Dlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", purego.RTLD_LAZY|purego.RTLD_LOCAL)
-		if err != nil {
-			b.err = err
-			return
-		}
-		address, err := purego.Dlsym(graphics, "CGSessionCopyCurrentDictionary")
-		if err != nil {
-			b.err = err
-			return
-		}
-		purego.RegisterFunc(&b.session, address)
 	})
 }
 
@@ -93,15 +109,15 @@ func (b *darwinUIBackend) Status(ctx context.Context) *pb.UIStatus {
 		status.SessionState = "none"
 		return status
 	}
-	defer cf.CFRelease(cf.CFTypeRef(session))
+	defer b.release(session)
 	boolean := func(name string) (bool, bool) {
 		key := cf.CFStringCreateWithCString(0, name, cf.CFStringEncoding(cf.KCFStringEncodingUTF8))
-		defer cf.CFRelease(cf.CFTypeRef(key))
-		value := cf.CFDictionaryGetValue(cf.CFDictionaryRef(session), unsafe.Pointer(uintptr(key)))
-		if value == nil || cf.CFGetTypeID(cf.CFTypeRef(uintptr(value))) != cf.CFBooleanGetTypeID() {
+		defer b.release(uintptr(key))
+		value := b.dictionaryGet(session, uintptr(key))
+		if value == 0 || b.typeID(value) != uintptr(cf.CFBooleanGetTypeID()) {
 			return false, false
 		}
-		return cf.CFBooleanGetValue(cf.CFBooleanRef(uintptr(value))), true
+		return cf.CFBooleanGetValue(cf.CFBooleanRef(value)), true
 	}
 	onConsole, onConsoleKnown := boolean("kCGSSessionOnConsoleKey")
 	loggedIn, loginKnown := boolean("kCGSessionLoginDoneKey")
@@ -173,7 +189,7 @@ func (b *darwinUIBackend) attribute(ctx context.Context, element uintptr, name s
 		return 0, err
 	}
 	attribute := cf.CFStringCreateWithCString(0, name, cf.CFStringEncoding(cf.KCFStringEncodingUTF8))
-	defer cf.CFRelease(cf.CFTypeRef(attribute))
+	defer b.release(uintptr(attribute))
 	var value uintptr
 	code := b.copyAttribute(element, uintptr(attribute), &value)
 	if code == -25205 || code == -25212 {
@@ -190,8 +206,8 @@ func (b *darwinUIBackend) stringAttribute(ctx context.Context, element uintptr, 
 	if err != nil || value == 0 {
 		return "", err
 	}
-	defer cf.CFRelease(cf.CFTypeRef(value))
-	if cf.CFGetTypeID(cf.CFTypeRef(value)) != cf.CFStringGetTypeID() {
+	defer b.release(value)
+	if b.typeID(value) != uintptr(cf.CFStringGetTypeID()) {
 		return "", nil
 	}
 	if cf.CFStringGetLength(cf.CFStringRef(value)) > 1024 {
@@ -209,8 +225,8 @@ func (b *darwinUIBackend) boolAttribute(ctx context.Context, element uintptr, na
 	if err != nil || value == 0 {
 		return nil, err
 	}
-	defer cf.CFRelease(cf.CFTypeRef(value))
-	if cf.CFGetTypeID(cf.CFTypeRef(value)) != cf.CFBooleanGetTypeID() {
+	defer b.release(value)
+	if b.typeID(value) != uintptr(cf.CFBooleanGetTypeID()) {
 		return nil, nil
 	}
 	boolean := cf.CFBooleanGetValue(cf.CFBooleanRef(value))
@@ -222,7 +238,7 @@ func (b *darwinUIBackend) children(ctx context.Context, element uintptr, limit i
 		return nil, false, err
 	}
 	attribute := cf.CFStringCreateWithCString(0, "AXChildren", cf.CFStringEncoding(cf.KCFStringEncodingUTF8))
-	defer cf.CFRelease(cf.CFTypeRef(attribute))
+	defer b.release(uintptr(attribute))
 	var count int64
 	code := b.count(element, uintptr(attribute), &count)
 	if code == -25205 || code == -25212 {
@@ -251,8 +267,8 @@ func (b *darwinUIBackend) children(ctx context.Context, element uintptr, limit i
 	if values == 0 {
 		return nil, truncated, nil
 	}
-	defer cf.CFRelease(cf.CFTypeRef(values))
-	if cf.CFGetTypeID(cf.CFTypeRef(values)) != cf.CFArrayGetTypeID() {
+	defer b.release(values)
+	if b.typeID(values) != uintptr(cf.CFArrayGetTypeID()) {
 		return nil, false, fmt.Errorf("children attribute is not an array")
 	}
 	actual := int(cf.CFArrayGetCount(cf.CFArrayRef(values)))
@@ -264,13 +280,13 @@ func (b *darwinUIBackend) children(ctx context.Context, element uintptr, limit i
 	for i := 0; i < actual; i++ {
 		value := uintptr(cf.CFArrayGetValueAtIndex(cf.CFArrayRef(values), cf.CFIndex(i)))
 		if value != 0 {
-			if uintptr(cf.CFGetTypeID(cf.CFTypeRef(value))) != b.elementType() {
+			if b.typeID(value) != b.elementType() {
 				for _, child := range children {
-					cf.CFRelease(cf.CFTypeRef(child))
+					b.release(child)
 				}
 				return nil, false, fmt.Errorf("child is not an accessibility element")
 			}
-			cf.CFRetain(cf.CFTypeRef(value))
+			b.retain(value)
 			children = append(children, value)
 		}
 	}
@@ -294,7 +310,7 @@ func (b *darwinUIBackend) Inspect(ctx context.Context, request *pb.UIRequest) ([
 	queue := []pending{{ref: application}}
 	defer func() {
 		for _, item := range queue {
-			cf.CFRelease(cf.CFTypeRef(item.ref))
+			b.release(item.ref)
 		}
 	}()
 	var nodes []*pb.UINode
@@ -343,10 +359,10 @@ func (b *darwinUIBackend) Inspect(ctx context.Context, request *pb.UIRequest) ([
 					continue
 				}
 				valid := false
-				if uintptr(cf.CFGetTypeID(cf.CFTypeRef(value))) == b.valueType() {
+				if b.typeID(value) == b.valueType() {
 					valid = b.value(value, attribute.kind, unsafe.Pointer(attribute.target))
 				}
-				cf.CFRelease(cf.CFTypeRef(value))
+				b.release(value)
 				if !valid {
 					hasBounds = false
 				}
@@ -372,7 +388,7 @@ func (b *darwinUIBackend) Inspect(ctx context.Context, request *pb.UIRequest) ([
 			return nil
 		}
 		err := read()
-		cf.CFRelease(cf.CFTypeRef(item.ref))
+		b.release(item.ref)
 		if err != nil {
 			return nil, false, "", err
 		}
