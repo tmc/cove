@@ -68,15 +68,15 @@ fi
 echo ">>> building $TAG via goreleaser (skip publish)"
 GOWORK=off GORELEASER_CURRENT_TAG="$TAG" goreleaser release --clean --skip=publish
 
-binaries=(release-dist/cove_darwin_arm64*/cove)
+binaries=(.release-dist/cove_darwin_arm64*/cove)
 if [[ ${#binaries[@]} -ne 1 || ! -f "${binaries[0]}" ]]; then
     echo "error: expected one GoReleaser cove binary" >&2
     exit 1
 fi
 BINARY="${binaries[0]}"
-ARCHIVE="release-dist/cove_${VERSION}_darwin_arm64.tar.gz"
-AGENT_DARWIN="release-dist/vz-agent_${VERSION}_darwin_arm64.tar.gz"
-AGENT_LINUX="release-dist/vz-agent_${VERSION}_linux_arm64.tar.gz"
+ARCHIVE=".release-dist/cove_${VERSION}_darwin_arm64.tar.gz"
+AGENT_DARWIN=".release-dist/vz-agent_${VERSION}_darwin_arm64.tar.gz"
+AGENT_LINUX=".release-dist/vz-agent_${VERSION}_linux_arm64.tar.gz"
 for artifact in "$ARCHIVE" "$AGENT_DARWIN" "$AGENT_LINUX"; do
     if [[ ! -f "$artifact" ]]; then
         echo "error: GoReleaser did not produce $artifact" >&2
@@ -98,7 +98,7 @@ codesign --verify --strict --verbose=2 "$BINARY"
 
 # --- Notarize the binary (zip submission) ----------------------------------
 
-ZIP="release-dist/cove-${VERSION}-binary.zip"
+ZIP=".release-dist/cove-${VERSION}-binary.zip"
 echo ">>> packaging binary for notarization at $ZIP"
 ditto -c -k --keepParent "$BINARY" "$ZIP"
 
@@ -113,7 +113,7 @@ xcrun notarytool submit "$ZIP" \
 
 # --- Build the DMG against the signed+notarized binary ---------------------
 
-DMG="release-dist/cove-${VERSION}.dmg"
+DMG=".release-dist/cove-${VERSION}.dmg"
 echo ">>> building $DMG"
 ./scripts/build-dmg.sh "$BINARY" "$VERSION" "$DMG"
 
@@ -144,13 +144,13 @@ cp "$ENTITLEMENTS" "$TMP_STAGE/"
 ( cd "$TMP_STAGE" && tar czf "$REPO_ROOT/$ARCHIVE" . )
 
 # Refresh checksums against the rebuilt artifacts.
-CHECKSUMS="release-dist/checksums.txt"
+CHECKSUMS=".release-dist/checksums.txt"
 echo ">>> refreshing $CHECKSUMS"
-( cd release-dist && shasum -a 256 \
+( cd .release-dist && shasum -a 256 \
     "cove_${VERSION}_darwin_arm64.tar.gz" \
     "cove-${VERSION}.dmg" \
-    "${AGENT_DARWIN#release-dist/}" \
-    "${AGENT_LINUX#release-dist/}" \
+    "${AGENT_DARWIN#.release-dist/}" \
+    "${AGENT_LINUX#.release-dist/}" \
     > checksums.txt )
 
 # --- Verification ----------------------------------------------------------
@@ -161,7 +161,7 @@ spctl -a -vv -t install "$DMG"
 
 cat <<EOF
 
-Release artifacts ready at $REPO_ROOT/release-dist:
+Release artifacts ready at $REPO_ROOT/.release-dist:
 
   $ARCHIVE
   $DMG

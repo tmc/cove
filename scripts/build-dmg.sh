@@ -2,9 +2,9 @@
 # Build a drag-install DMG for the signed + notarized cove binary.
 #
 # Usage: scripts/build-dmg.sh <signed-binary> <version> <output-dmg>
-#   <signed-binary>   path to the post-notarize cove binary (e.g. release-dist/cove_darwin_arm64_v8.0/cove)
+#   <signed-binary>   path to the post-notarize cove binary (e.g. .release-dist/cove_darwin_arm64_v8.0/cove)
 #   <version>         release version (e.g. 0.2.0); the DMG volume name uses this
-#   <output-dmg>      path to write the .dmg to (e.g. release-dist/cove-0.2.0.dmg)
+#   <output-dmg>      path to write the .dmg to (e.g. .release-dist/cove-0.2.0.dmg)
 #
 # The DMG contains:
 #   /cove                          the signed binary

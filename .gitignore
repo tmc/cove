@@ -12,7 +12,7 @@ cache/
 *.log
 build_errors.txt
 dist/
-/release-dist/
+/.release-dist/
 
 # Go workspace (local)
 go.work

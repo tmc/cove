@@ -104,11 +104,11 @@ make release-local
 gh release create v0.1.4 \
     --title "cove v0.1.4" \
     --notes-file RELEASE-NOTES-next.md \
-    release-dist/cove_0.1.4_darwin_arm64.tar.gz \
-    release-dist/cove-0.1.4.dmg \
-    release-dist/checksums.txt \
-    release-dist/vz-agent_0.1.4_darwin_arm64.tar.gz \
-    release-dist/vz-agent_0.1.4_linux_arm64.tar.gz
+    .release-dist/cove_0.1.4_darwin_arm64.tar.gz \
+    .release-dist/cove-0.1.4.dmg \
+    .release-dist/checksums.txt \
+    .release-dist/vz-agent_0.1.4_darwin_arm64.tar.gz \
+    .release-dist/vz-agent_0.1.4_linux_arm64.tar.gz
 
 # 6. Bump the Homebrew formula manually (see "Manual Homebrew bump" below).
 
@@ -130,7 +130,7 @@ to start if its precondition is not met.
 2. **Build.** `goreleaser release --clean --skip=publish`
    uses the release tag for the binary version and archive names. It produces
    unsigned archives plus the unsigned `cove` binary at
-   `release-dist/cove_darwin_arm64*/cove`.
+   `.release-dist/cove_darwin_arm64*/cove`.
 3. **Codesign the binary.** `codesign --sign "$DEVELOPER_ID"
    --options runtime --timestamp --force --entitlements
    cmd/cove/vz.entitlements <binary>`. Hardened runtime + a
@@ -144,7 +144,7 @@ to start if its precondition is not met.
    recorded by hash and Gatekeeper looks it up online when the binary
    first runs.
 5. **Build, sign, notarize, and staple the DMG.** `scripts/build-dmg.sh`
-   produces `release-dist/cove-<version>.dmg`; `codesign` signs it with the
+   produces `.release-dist/cove-<version>.dmg`; `codesign` signs it with the
    same identity; `xcrun notarytool submit --wait` notarizes it; and
    `xcrun stapler staple` attaches the ticket so an offline downloader
    can verify the DMG without contacting Apple.
@@ -165,7 +165,7 @@ the maintainer opens the PR against `tmc/homebrew-tap` by hand:
 
 ```bash
 # 1. Compute the SHA256 of the published tar.gz.
-shasum -a 256 release-dist/cove_0.1.4_darwin_arm64.tar.gz
+shasum -a 256 .release-dist/cove_0.1.4_darwin_arm64.tar.gz
 # Or pull from the published checksums.txt:
 gh release view v0.1.4 -R tmc/cove --json assets \
     --jq '.assets[] | select(.name=="checksums.txt").url' \
