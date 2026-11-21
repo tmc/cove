@@ -13,7 +13,7 @@ agent:
 	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o cmd/vz-agent/vz-agent ./cmd/vz-agent
 
 sign:
-	codesign -s - -f --entitlements internal/autosign/vz.entitlements ./$(BINARY)
+	codesign -s - -f --entitlements cmd/cove/vz.entitlements ./$(BINARY)
 
 test:
 	go test -v ./...

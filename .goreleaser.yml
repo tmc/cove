@@ -1,10 +1,7 @@
 version: 2
 
 project_name: cove
-
-before:
-  hooks:
-    - go mod tidy
+dist: release-dist
 
 builds:
   - id: cove
@@ -23,7 +20,7 @@ builds:
       - -X main.date={{.Date}}
 
   - id: vz-agent
-    dir: cmd/vz-agent
+    main: ./cmd/vz-agent
     binary: vz-agent
     goos:
       - darwin
@@ -52,7 +49,7 @@ archives:
     formats:
       - tar.gz
     files:
-      - internal/autosign/vz.entitlements
+      - cmd/cove/vz.entitlements
       - LICENSE*
       - README*
 
@@ -77,12 +74,6 @@ changelog:
       - "^ci:"
       - "Merge pull request"
 
-# Homebrew cask publishing was removed when signing moved off CI. The cask
-# at tmc/homebrew-tap is now bumped manually after each release; see
-# docs/release-pipeline.md for the procedure. Bump from the newest cask in
-# dist/Casks/ so its `depends_on formula: "qemu"` (the Windows backend
-# prerequisite) survives the copy.
-
 release:
   github:
     owner: tmc
@@ -90,15 +81,10 @@ release:
   draft: false
   prerelease: auto
   name_template: "{{.Tag}}"
-  # The DMG is built and uploaded by a workflow step running after goreleaser.
-  # If you add a manually-built DMG to ./dist/ before invoking goreleaser, this
-  # block will pick it up; otherwise it is a no-op.
-  extra_files:
-    - glob: ./dist/cove-*.dmg
   header: |
     ## cove {{ .Tag }}
 
-    macOS and Linux VM management using Apple's Virtualization framework.
+    Manage macOS and Linux VMs with Apple Virtualization and Windows ARM64 VMs with QEMU/HVF.
 
     ### Installation
 
@@ -116,8 +102,8 @@ release:
     ```
 
     ### Requirements
-    - Apple Silicon Mac (M1/M2/M3/M4)
-    - macOS 12.0+ (Monterey or later)
+    - Apple Silicon Mac (arm64)
+    - macOS 14.0+ (Sonoma or later)
     - Windows guests only: `brew install qemu` (the QEMU/HVF backend runs
       `qemu-system-aarch64` and `qemu-img` and uses that formula's EDK2
       firmware). Verify with `cove doctor qemu`.

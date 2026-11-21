@@ -32,6 +32,14 @@ that releases on a human cadence, the trade is worth it.
 CI is only used to verify that a tag still builds and tests pass. No
 secrets are configured on the repository.
 
+## Build dependencies
+
+The current Cove module resolves `cove-marina` and `cove-ocispec` from
+sibling directories. A workstation needs both modules beside the Cove
+checkout. Running `make release-check` with those directories present
+exercises local packaging. A GitHub checkout of Cove alone cannot run the
+current tag workflow until it can obtain those dependencies.
+
 ## One-time keychain setup
 
 These steps run once per workstation, before the first release.
@@ -80,7 +88,7 @@ a non-tag commit, so the order matters: commit first, tag second, run
 the script third.
 
 ```bash
-# 1. Land the changelog and version bump on main.
+# 1. Land the release notes and candidate commit on main.
 # 2. Sign and push the tag.
 git tag -s v0.1.4 -m "cove v0.1.4"
 git push origin v0.1.4
@@ -95,12 +103,12 @@ make release-local
 # 5. Upload the artifacts to the GitHub release.
 gh release create v0.1.4 \
     --title "cove v0.1.4" \
-    --notes-file CHANGELOG.md \
-    dist/cove_0.1.4_darwin_arm64.tar.gz \
-    dist/cove-0.1.4.dmg \
-    dist/checksums.txt \
-    dist/vz-agent_0.1.4_darwin_arm64.tar.gz \
-    dist/vz-agent_0.1.4_linux_arm64.tar.gz
+    --notes-file RELEASE-NOTES-next.md \
+    release-dist/cove_0.1.4_darwin_arm64.tar.gz \
+    release-dist/cove-0.1.4.dmg \
+    release-dist/checksums.txt \
+    release-dist/vz-agent_0.1.4_darwin_arm64.tar.gz \
+    release-dist/vz-agent_0.1.4_linux_arm64.tar.gz
 
 # 6. Bump the Homebrew formula manually (see "Manual Homebrew bump" below).
 
@@ -119,9 +127,10 @@ to start if its precondition is not met.
    `HEAD` is not on a tag matching `v*`, if `$DEVELOPER_ID` is unset or
    missing from the keychain, or if the `cove-notarytool` keychain
    profile is invalid.
-2. **Build.** `goreleaser release --snapshot --clean --skip=publish`
-   produces unsigned archives plus the unsigned `cove` binary at
-   `dist/cove_darwin_arm64*/cove`.
+2. **Build.** `goreleaser release --clean --skip=publish`
+   uses the release tag for the binary version and archive names. It produces
+   unsigned archives plus the unsigned `cove` binary at
+   `release-dist/cove_darwin_arm64*/cove`.
 3. **Codesign the binary.** `codesign --sign "$DEVELOPER_ID"
    --options runtime --timestamp --force --entitlements
    cmd/cove/vz.entitlements <binary>`. Hardened runtime + a
@@ -135,7 +144,7 @@ to start if its precondition is not met.
    recorded by hash and Gatekeeper looks it up online when the binary
    first runs.
 5. **Build, sign, notarize, and staple the DMG.** `scripts/build-dmg.sh`
-   produces `dist/cove-<version>.dmg`; `codesign` signs it with the
+   produces `release-dist/cove-<version>.dmg`; `codesign` signs it with the
    same identity; `xcrun notarytool submit --wait` notarizes it; and
    `xcrun stapler staple` attaches the ticket so an offline downloader
    can verify the DMG without contacting Apple.
@@ -156,7 +165,7 @@ the maintainer opens the PR against `tmc/homebrew-tap` by hand:
 
 ```bash
 # 1. Compute the SHA256 of the published tar.gz.
-shasum -a 256 dist/cove_0.1.4_darwin_arm64.tar.gz
+shasum -a 256 release-dist/cove_0.1.4_darwin_arm64.tar.gz
 # Or pull from the published checksums.txt:
 gh release view v0.1.4 -R tmc/cove --json assets \
     --jq '.assets[] | select(.name=="checksums.txt").url' \

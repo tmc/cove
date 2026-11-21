@@ -79,7 +79,7 @@ Then run a live fork-backed smoke against a stopped parent VM:
 ```bash
 python -m pip install -e adapters/openai-agents-python[agents]
 go build -o cove ./cmd/cove
-codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove
+codesign -s - -f --entitlements cmd/cove/vz.entitlements ./cove
 COVE_PARENT_VM=macos-base \
 COVE_CHILD_VM=openai-agents-smoke-$(date +%s) \
 COVE_BIN=./cove \

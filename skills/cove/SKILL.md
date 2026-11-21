@@ -109,7 +109,7 @@ cove run -no-resume   # Cold boot instead
 
 **sudo is required for inject** — launchd requires LaunchDaemon plists to be owned by root:wheel. Without sudo, the provision script never runs and the user isn't created.
 
-**Auto-signing** — cove signs itself with virtualization entitlements on first launch. If you rebuild from source, re-sign: `codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove`
+**Auto-signing** — cove signs itself with virtualization entitlements on first launch. If you rebuild from source, re-sign: `codesign -s - -f --entitlements cmd/cove/vz.entitlements ./cove`
 
 **VM directory** — VMs live in `~/.vz/vms/<name>/`. Each has: `disk.img`, `control.sock`, `control.token`, `suspend.vmstate`.
 
@@ -125,7 +125,7 @@ cove run -no-resume   # Cold boot instead
 
 | Error | Fix |
 |-------|-----|
-| "sandbox preferences" | Binary needs signing: `codesign -s - -f --entitlements internal/autosign/vz.entitlements ./cove` |
+| "sandbox preferences" | Binary needs signing: `codesign -s - -f --entitlements cmd/cove/vz.entitlements ./cove` |
 | "Resource temporarily unavailable" on inject | Stop the VM first — can't write to disk while running |
 | "could not find Data partition" | Check `cove inject -verbose` output |
 | User not created on boot | Run `inject` with `sudo` — LaunchDaemon needs root:wheel ownership |

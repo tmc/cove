@@ -9,18 +9,17 @@
 #     xcrun notarytool store-credentials cove-notarytool \
 #       --apple-id <apple-id> --team-id <TEAMID> --password <app-specific-pw>
 #
-# After this script succeeds, upload the printed artifacts with:
-#
-#     gh release create v<version> dist/cove_<version>_darwin_arm64.tar.gz \
-#       dist/cove-<version>.dmg dist/checksums.txt
-#
-# and bump the Homebrew formula manually in tmc/homebrew-tap.
+# The script prints the artifact paths and upload command after verification.
 
 set -euo pipefail
 
+REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
+cd "$REPO_ROOT"
+
 # --- Guards ----------------------------------------------------------------
 
-if ! git diff-index --quiet HEAD --; then
+STATUS=$(git status --porcelain)
+if [[ -n "$STATUS" ]]; then
     echo "error: uncommitted changes in working tree; commit or stash first" >&2
     exit 1
 fi
@@ -58,10 +57,7 @@ if ! xcrun notarytool history --keychain-profile cove-notarytool >/dev/null 2>&1
     exit 1
 fi
 
-REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
-cd "$REPO_ROOT"
-
-ENTITLEMENTS="internal/autosign/vz.entitlements"
+ENTITLEMENTS="cmd/cove/vz.entitlements"
 if [[ ! -f "$ENTITLEMENTS" ]]; then
     echo "error: entitlements file not found at $ENTITLEMENTS" >&2
     exit 1
@@ -69,15 +65,24 @@ fi
 
 # --- Build -----------------------------------------------------------------
 
-echo ">>> building $TAG via goreleaser snapshot (skip publish)"
-GOWORK=off goreleaser release --snapshot --clean --skip=publish
+echo ">>> building $TAG via goreleaser (skip publish)"
+GOWORK=off GORELEASER_CURRENT_TAG="$TAG" goreleaser release --clean --skip=publish
 
-BINARY=$(ls dist/cove_darwin_arm64*/cove 2>/dev/null | head -1 || true)
-if [[ -z "$BINARY" ]]; then
-    echo "error: goreleaser did not produce dist/cove_darwin_arm64*/cove" >&2
-    find dist -maxdepth 2 -type f | head -20 >&2
+binaries=(release-dist/cove_darwin_arm64*/cove)
+if [[ ${#binaries[@]} -ne 1 || ! -f "${binaries[0]}" ]]; then
+    echo "error: expected one GoReleaser cove binary" >&2
     exit 1
 fi
+BINARY="${binaries[0]}"
+ARCHIVE="release-dist/cove_${VERSION}_darwin_arm64.tar.gz"
+AGENT_DARWIN="release-dist/vz-agent_${VERSION}_darwin_arm64.tar.gz"
+AGENT_LINUX="release-dist/vz-agent_${VERSION}_linux_arm64.tar.gz"
+for artifact in "$ARCHIVE" "$AGENT_DARWIN" "$AGENT_LINUX"; do
+    if [[ ! -f "$artifact" ]]; then
+        echo "error: GoReleaser did not produce $artifact" >&2
+        exit 1
+    fi
+done
 
 # --- Codesign --------------------------------------------------------------
 
@@ -93,7 +98,7 @@ codesign --verify --strict --verbose=2 "$BINARY"
 
 # --- Notarize the binary (zip submission) ----------------------------------
 
-ZIP="dist/cove-${VERSION}-binary.zip"
+ZIP="release-dist/cove-${VERSION}-binary.zip"
 echo ">>> packaging binary for notarization at $ZIP"
 ditto -c -k --keepParent "$BINARY" "$ZIP"
 
@@ -108,7 +113,7 @@ xcrun notarytool submit "$ZIP" \
 
 # --- Build the DMG against the signed+notarized binary ---------------------
 
-DMG="dist/cove-${VERSION}.dmg"
+DMG="release-dist/cove-${VERSION}.dmg"
 echo ">>> building $DMG"
 ./scripts/build-dmg.sh "$BINARY" "$VERSION" "$DMG"
 
@@ -129,7 +134,6 @@ xcrun stapler validate "$DMG"
 # goreleaser produced an archive against the *unsigned* binary; rebuild it
 # now that the binary on disk is signed+notarized so users get a signed
 # binary out of the tar.gz too.
-ARCHIVE="dist/cove_${VERSION}_darwin_arm64.tar.gz"
 echo ">>> rebuilding $ARCHIVE against signed binary"
 TMP_STAGE=$(mktemp -d -t cove-archive)
 trap 'rm -rf "$TMP_STAGE"' EXIT
@@ -140,13 +144,13 @@ cp "$ENTITLEMENTS" "$TMP_STAGE/"
 ( cd "$TMP_STAGE" && tar czf "$REPO_ROOT/$ARCHIVE" . )
 
 # Refresh checksums against the rebuilt artifacts.
-CHECKSUMS="dist/checksums.txt"
+CHECKSUMS="release-dist/checksums.txt"
 echo ">>> refreshing $CHECKSUMS"
-( cd dist && shasum -a 256 \
+( cd release-dist && shasum -a 256 \
     "cove_${VERSION}_darwin_arm64.tar.gz" \
     "cove-${VERSION}.dmg" \
-    vz-agent_*_darwin_arm64.tar.gz \
-    vz-agent_*_linux_arm64.tar.gz \
+    "${AGENT_DARWIN#release-dist/}" \
+    "${AGENT_LINUX#release-dist/}" \
     > checksums.txt )
 
 # --- Verification ----------------------------------------------------------
@@ -157,22 +161,22 @@ spctl -a -vv -t install "$DMG"
 
 cat <<EOF
 
-Release artifacts ready at $REPO_ROOT/dist:
+Release artifacts ready at $REPO_ROOT/release-dist:
 
   $ARCHIVE
   $DMG
   $CHECKSUMS
-  dist/vz-agent_${VERSION}_darwin_arm64.tar.gz
-  dist/vz-agent_${VERSION}_linux_arm64.tar.gz
+  $AGENT_DARWIN
+  $AGENT_LINUX
 
 Next steps:
 
-  gh release create $TAG --title "$TAG" --notes-file <changelog> \\
+  gh release create $TAG --title "$TAG" --notes-file RELEASE-NOTES-next.md \\
       "$ARCHIVE" \\
       "$DMG" \\
       "$CHECKSUMS" \\
-      dist/vz-agent_${VERSION}_darwin_arm64.tar.gz \\
-      dist/vz-agent_${VERSION}_linux_arm64.tar.gz
+      "$AGENT_DARWIN" \\
+      "$AGENT_LINUX"
 
 Then bump the Homebrew formula manually in tmc/homebrew-tap (no auto-PR
 from CI any more — see docs/release-pipeline.md).
