@@ -155,6 +155,9 @@ func (s Store) StoreManifest(digest string, data []byte) error {
 	if err != nil {
 		return err
 	}
+	if fmt.Sprintf("%x", sha256.Sum256(data)) != hexDigest {
+		return fmt.Errorf("manifest digest mismatch: want %s", digest)
+	}
 	dir := filepath.Join(s.Dir, "manifests", "sha256")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("create manifest dir: %w", err)
@@ -195,6 +198,9 @@ func (s Store) LoadManifest(digest string) (ociimage.Manifest, bool, error) {
 			return manifest, false, nil
 		}
 		return manifest, false, err
+	}
+	if fmt.Sprintf("%x", sha256.Sum256(data)) != hexDigest {
+		return manifest, false, fmt.Errorf("stored manifest digest mismatch: want %s", digest)
 	}
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		return manifest, false, fmt.Errorf("parse stored manifest %s: %w", digest, err)
@@ -413,20 +419,12 @@ func (s Store) markBuildLayer(reachable map[string]bool, digest string) error {
 }
 
 func (s Store) markManifest(reachable map[string]bool, digest string) error {
-	_, hexDigest, err := splitDigest(digest)
-	if err != nil {
+	if _, _, err := splitDigest(digest); err != nil {
 		return nil
 	}
-	data, err := os.ReadFile(filepath.Join(s.Dir, "manifests", "sha256", hexDigest+".json"))
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
+	manifest, found, err := s.LoadManifest(digest)
+	if err != nil || !found {
 		return err
-	}
-	var manifest ociimage.Manifest
-	if err := json.Unmarshal(data, &manifest); err != nil {
-		return fmt.Errorf("parse stored manifest %s: %w", digest, err)
 	}
 	for _, desc := range manifest.Layers {
 		if desc.Digest != "" {

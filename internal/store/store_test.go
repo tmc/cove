@@ -217,6 +217,29 @@ func TestStoreManifestRejectsInvalidDigest(t *testing.T) {
 	}
 }
 
+func TestManifestDigestMismatch(t *testing.T) {
+	s := New(t.TempDir())
+	data := []byte(`{"schemaVersion":2}`)
+	digest := testDigest(data)
+	other := []byte(`{"schemaVersion":1}`)
+	if err := s.StoreManifest(digest, other); err == nil {
+		t.Fatal("StoreManifest accepted content with a different digest")
+	}
+	if err := s.StoreManifest(digest, data); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(s.Dir, "manifests", "sha256", strings.TrimPrefix(digest, "sha256:")+".json")
+	if err := os.WriteFile(path, other, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := s.LoadManifest(digest); err == nil || found {
+		t.Fatalf("LoadManifest accepted corrupt content: found=%v err=%v", found, err)
+	}
+	if err := s.markManifest(map[string]bool{}, digest); err == nil {
+		t.Fatal("reachability check accepted corrupt content")
+	}
+}
+
 func TestLoadManifest(t *testing.T) {
 	s := New(t.TempDir())
 	manifest := ociimage.Manifest{
