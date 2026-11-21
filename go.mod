@@ -5,7 +5,6 @@ go 1.25.5
 require (
 	connectrpc.com/connect v1.19.1
 	github.com/anthropics/anthropic-sdk-go v1.37.0
-	github.com/beevik/etree v1.6.0
 	github.com/creack/pty v1.1.24
 	github.com/ebitengine/purego v0.11.0-alpha.6
 	github.com/fsnotify/fsnotify v1.9.0
@@ -14,8 +13,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/pierrec/lz4/v4 v4.1.26
-	github.com/russellhaering/goxmldsig v1.6.0
-	github.com/tmc/apple v0.6.19-0.20260907023617-4c51c1664813
+	github.com/tmc/apple v0.6.19-0.20260907025924-bed23a46e6c7
 	github.com/tmc/macgo v0.1.4-0.20260527192223-4bb97879961e
 	golang.org/x/crypto v0.49.0
 	golang.org/x/net v0.52.0
@@ -25,6 +23,11 @@ require (
 	google.golang.org/protobuf v1.36.11
 	oras.land/oras-go/v2 v2.6.0
 	rsc.io/script v0.0.2
+)
+
+require (
+	github.com/beevik/etree v1.6.0 // indirect
+	github.com/russellhaering/goxmldsig v1.6.0 // indirect
 )
 
 require (
