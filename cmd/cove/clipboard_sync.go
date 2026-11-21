@@ -5,10 +5,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 	"unicode/utf8"
 	"unsafe"
 
+	"github.com/ebitengine/purego"
 	"github.com/tmc/apple/appkit"
 	"github.com/tmc/apple/applicationservices"
 	"github.com/tmc/apple/corefoundation"
@@ -47,20 +49,40 @@ func (s *clipboardPushState) sync(text clipboardText, push func(string) error) e
 	return nil
 }
 
+var loadClipboardRelease = sync.OnceValues(func() (func(uintptr), error) {
+	library, err := purego.Dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", purego.RTLD_LAZY)
+	if err != nil {
+		return nil, err
+	}
+	address, err := purego.Dlsym(library, "CFRelease")
+	if err != nil {
+		purego.Dlclose(library)
+		return nil, err
+	}
+	var release func(uintptr)
+	purego.RegisterFunc(&release, address)
+	return release, nil
+})
+
 type hostClipboardReader struct {
-	board applicationservices.PasteboardRef
+	board   applicationservices.PasteboardRef
+	release func(uintptr)
 }
 
 func (r *hostClipboardReader) close() {
 	DispatchAsyncMain(func() {
 		if r.board != 0 {
-			corefoundation.CFRelease(unsafe.Pointer(r.board))
+			r.release(uintptr(r.board))
 			r.board = 0
 		}
 	})
 }
 
 func (r *hostClipboardReader) read(ctx context.Context) (clipboardText, error) {
+	release, err := loadClipboardRelease()
+	if err != nil {
+		return clipboardText{}, err
+	}
 	result := make(chan clipboardText, 1)
 	DispatchAsyncMain(func() {
 		if ctx.Err() != nil {
@@ -71,13 +93,14 @@ func (r *hostClipboardReader) read(ctx context.Context) (clipboardText, error) {
 			board := appkit.GetNSPasteboardClass().GeneralPasteboard()
 			text.change = board.ChangeCount()
 			if r.board == 0 {
+				r.release = release
 				name := corefoundation.CFStringRef(objc.String("com.apple.pasteboard.clipboard"))
 				if applicationservices.PasteboardCreate(name, &r.board) != 0 || r.board == 0 {
 					text.pending = true
 					return
 				}
 			}
-			text = readClipboardText(r.board, text.change)
+			text = readClipboardText(r.board, text.change, release)
 			if board.ChangeCount() != text.change {
 				text.available, text.pending = false, true
 			}
@@ -92,7 +115,7 @@ func (r *hostClipboardReader) read(ctx context.Context) (clipboardText, error) {
 	}
 }
 
-func readClipboardText(board applicationservices.PasteboardRef, change int) clipboardText {
+func readClipboardText(board applicationservices.PasteboardRef, change int, release func(uintptr)) clipboardText {
 	text := clipboardText{change: change}
 	applicationservices.PasteboardSynchronize(board)
 	var count uint
@@ -124,7 +147,7 @@ func readClipboardText(board applicationservices.PasteboardRef, change int) clip
 		text.pending = true
 		return text
 	}
-	defer corefoundation.CFRelease(unsafe.Pointer(data))
+	defer release(uintptr(data))
 	n := int(corefoundation.CFDataGetLength(data))
 	if n < 0 || n > clipboardTextLimit {
 		return text

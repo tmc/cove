@@ -17,6 +17,10 @@ import (
 )
 
 func TestReadClipboardText(t *testing.T) {
+	release, err := loadClipboardRelease()
+	if err != nil {
+		t.Fatal(err)
+	}
 	lib, err := purego.Dlopen("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices", purego.RTLD_LAZY)
 	if err != nil {
 		t.Fatal(err)
@@ -46,7 +50,7 @@ func TestReadClipboardText(t *testing.T) {
 				}
 				parent.Cleanup(func() {
 					applicationservices.PasteboardClear(ref)
-					corefoundation.CFRelease(unsafe.Pointer(ref))
+					release(uintptr(ref))
 				})
 				if status := applicationservices.PasteboardClear(ref); status != 0 {
 					t.Fatalf("clear pasteboard: %d", status)
@@ -62,14 +66,14 @@ func TestReadClipboardText(t *testing.T) {
 				var data corefoundation.CFDataRef
 				if !tt.promised {
 					data = corefoundation.CFDataCreate(0, []byte(tt.value), corefoundation.CFIndex(len(tt.value)))
-					defer corefoundation.CFRelease(unsafe.Pointer(data))
+					defer release(uintptr(data))
 				}
 				item := applicationservices.PasteboardItemID(unsafe.Pointer(new(byte)))
 				typeName := corefoundation.CFStringRef(objc.String("public.utf8-plain-text"))
 				if status := applicationservices.PasteboardPutItemFlavor(ref, item, typeName, data, 0); status != 0 {
 					t.Fatalf("put clipboard data: %d", status)
 				}
-				got := readClipboardText(ref, 42)
+				got := readClipboardText(ref, 42, release)
 				if got.change != 42 || got.text != tt.value || got.available == tt.promised || got.pending != tt.promised {
 					t.Fatalf("read clipboard = %+v", got)
 				}
@@ -84,11 +88,11 @@ func TestReadClipboardText(t *testing.T) {
 					}
 					value := []byte("materialized")
 					data = corefoundation.CFDataCreate(0, value, corefoundation.CFIndex(len(value)))
-					defer corefoundation.CFRelease(unsafe.Pointer(data))
+					defer release(uintptr(data))
 					if status := applicationservices.PasteboardPutItemFlavor(ref, item, typeName, data, 0); status != 0 {
 						t.Fatalf("materialize promise: %d", status)
 					}
-					got = readClipboardText(ref, 42)
+					got = readClipboardText(ref, 42, release)
 					if got.text != string(value) || !got.available || got.pending {
 						t.Fatalf("materialized clipboard = %+v", got)
 					}
