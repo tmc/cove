@@ -6,9 +6,10 @@ is macOS 14 or later.
 
 ## VM images and builds
 
-- Build a VM from a local VM directory or a registry image with `cove build`.
-  Builds can reuse cached steps, import and export caches through OCI
-  registries, and push a tagged result.
+- Build from a local macOS or Linux VM directory or a macOS registry image
+  with `cove build`. Builds can import and export step caches through OCI
+  registries. macOS VM images can be pushed and pulled as bootable bundles.
+  Keep the local VM directory to reuse a bootable Linux base.
 - Use host environment variables for build secrets. The build mounts the
   declared secrets in memory inside the guest for the recipe step.
 

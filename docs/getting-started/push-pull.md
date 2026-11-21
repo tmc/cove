@@ -1,11 +1,14 @@
 ---
 title: Push & Pull Images
-description: Push and pull macOS and Linux VM images to any OCI-compatible registry.
+description: Push and pull macOS VM images through an OCI-compatible registry.
 icon: rocket
 ---
 # Push & Pull Images
 
-Cove pushes and pulls macOS and Linux VM images to any OCI-compatible registry -- ghcr.io, AWS ECR, Docker Hub, a self-hosted Harbor, anything that speaks OCI distribution v2.
+Cove pushes and pulls macOS VM images through registries that implement
+OCI Distribution, including GitHub Container Registry. Cove can export a Linux
+disk, but the pull path does not restore the Linux boot files required to boot
+it as a Cove VM. Keep the Linux VM directory for reuse with `cove build`.
 
 ```bash
 # Pull a prebuilt macOS image
