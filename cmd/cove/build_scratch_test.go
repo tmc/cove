@@ -14,8 +14,20 @@ import (
 
 	"github.com/tmc/cove/internal/buildscratch"
 	"github.com/tmc/cove/internal/store"
+	"github.com/tmc/cove/internal/vmconfig"
 	controlpb "github.com/tmc/cove/proto/controlpb"
 )
+
+func TestBuildStateDir(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(vmconfig.StateDirEnv, root)
+	if got, want := defaultBuildScratchRoot(), filepath.Join(root, "build-scratch"); got != want {
+		t.Errorf("build scratch = %q, want %q", got, want)
+	}
+	if got, want := store.New("").Dir, filepath.Join(root, "store"); got != want {
+		t.Errorf("build store = %q, want %q", got, want)
+	}
+}
 
 func TestBuildScratchCreateWritesMetadata(t *testing.T) {
 	root := t.TempDir()

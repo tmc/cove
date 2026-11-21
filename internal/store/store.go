@@ -15,6 +15,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/tmc/cove/internal/ociimage"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 const GCGrace = time.Hour
@@ -36,8 +37,7 @@ type GCOptions struct {
 }
 
 func DefaultDir() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".vz", "store")
+	return filepath.Join(vmconfig.StateDir(), "store")
 }
 
 func New(dir string) Store {

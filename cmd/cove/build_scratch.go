@@ -11,16 +11,13 @@ import (
 	"time"
 
 	"github.com/tmc/cove/internal/buildscratch"
+	"github.com/tmc/cove/internal/vmconfig"
 )
 
 const pruneBuildScratchSanityFloor = buildscratch.PruneSanityFloor
 
 func defaultBuildScratchRoot() string {
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return filepath.Join(os.TempDir(), "cove-build-scratch")
-	}
-	return filepath.Join(home, ".vz", "build-scratch")
+	return filepath.Join(vmconfig.StateDir(), "build-scratch")
 }
 
 func (e *buildExecutor) createScratch(parentDisk string) (buildscratch.Scratch, error) {
