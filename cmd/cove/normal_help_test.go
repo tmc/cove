@@ -11,13 +11,29 @@ func TestUsageIsNormalUserFirst(t *testing.T) {
 	var buf bytes.Buffer
 	usage(&buf)
 	out := buf.String()
-	for _, want := range []string{"first-run", "doctor host", "up -user <name>", "support bundle", "help advanced"} {
+	for _, want := range []string{
+		"cove [global flags] <command> [arguments]",
+		"first-run",
+		"doctor host",
+		"up -user <name>",
+		"run",
+		"list",
+		"status",
+		"exec",
+		"logs",
+		"snapshot",
+		"support bundle",
+		`cove help <command>`,
+		"help advanced",
+	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("usage missing %q:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "softreset") || strings.Contains(out, "GDB debug stub") {
-		t.Fatalf("normal usage includes advanced commands:\n%s", out)
+	for _, unwanted := range []string{"softreset", "GDB debug stub", "advanced VM aliases"} {
+		if strings.Contains(out, unwanted) {
+			t.Fatalf("normal usage includes %q:\n%s", unwanted, out)
+		}
 	}
 }
 

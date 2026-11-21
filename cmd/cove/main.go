@@ -926,23 +926,27 @@ Commands:
 }
 
 func usage(w io.Writer) {
-	fmt.Fprintf(w, `cove - macOS and Linux VMs on Apple Silicon
+	fmt.Fprintf(w, `cove is a tool for managing macOS and Linux VMs on Apple Silicon.
 
 Usage:
-  cove [flags] [command]
 
-Common commands:
-  first-run        Show the safest first-run path
-  doctor host      Check this Mac before creating a VM
-  up -user <name>  Install, provision, and boot a first VM
-  list             List local VMs
-  run              Start the active VM
-  status           Show VM and guest-agent status
-  support bundle   Create a redacted support archive
-  config/export/import/rename are advanced VM aliases
+	cove [global flags] <command> [arguments]
 
-Use 'cove help advanced' for the full command list.
-Use 'cove <command> -h' for command-specific help.
+The commands are:
+
+	first-run        show the safest first-run path
+	doctor host      check this Mac before creating a VM
+	up -user <name>  install, provision, and boot a first VM
+	run              start a VM
+	list             list local VMs
+	status           show VM and guest-agent status
+	exec             run a command in a running VM
+	logs             show guest logs from a running VM
+	snapshot         save or restore VM snapshots
+	support bundle   create a redacted support archive
+
+Use "cove help <command>" or "cove <command> -h" for more information about a command.
+Use "cove help advanced" for the full command list.
 `)
 }
 
