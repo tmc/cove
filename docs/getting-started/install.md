@@ -1,13 +1,13 @@
 ---
 title: Installation
-description: Install cove from source, put it on PATH, and check the host before building a VM.
+description: Install the cove CLI and check the host before building a VM.
 icon: rocket
 ---
 # Installation
 
 ## Requirements
 
-- Apple Silicon Mac (M1/M2/M3/M4)
+- Apple Silicon Mac
 - macOS 14.0+ (Sonoma or later)
 - Xcode Command Line Tools (`xcode-select --install`)
 - Disk space for the guest. `cove up` creates a 64 GB disk image by default,
@@ -39,57 +39,25 @@ UTM and Homebrew data directories. Set `COVE_QEMU_SYSTEM_AARCH64`,
 the file directly when QEMU is installed anywhere else — the Nix flake and the
 nix-darwin module set the two firmware variables for you.
 
+## Install a release
+
+Download the Apple Silicon archive or DMG from
+[GitHub Releases](https://github.com/tmc/cove/releases). Put the extracted
+`cove` binary on `PATH` and run `cove version`.
+
 ## Build from a checkout
 
-Building from a checkout is the only current install path.
+Place the `cove-marina` and `cove-ocispec` source trees beside your Cove
+checkout. The module resolves them through relative replacements. Run these
+commands from the Cove checkout:
 
 ```bash
-git clone https://github.com/tmc/cove
-cd cove
-go build -o cove ./cmd/cove
+GOWORK=off make build sign
+./cove version
 ```
 
-Put the resulting binary on `PATH`, then verify it:
-
-```bash
-cove version
-cove doctor host
-```
-
-> [!WARNING]
-> The build needs an unreleased `github.com/tmc/apple` that provides
-> `x/codesign` and `x/guest/portfwd`. No tagged version supplies them, so the
-> checkout carries a `go.work` overlay pointing at a local
-> `github.com/tmc/apple` checkout. Without that checkout the build stops at:
->
-> ```text
-> cmd/cove/autosign.go:8:2: no required module provides package github.com/tmc/apple/x/codesign
-> internal/controlserver/port_forward.go:19:2: no required module provides package github.com/tmc/apple/x/guest/portfwd
-> ```
->
-> We have not verified a clean-machine build, because the overlay checkout is
-> the only configuration we can currently build in.
-
-`go install` does not work yet. The published module is `v0.6.0`, which
-predates both the rename to `github.com/tmc/cove` and the move of the binary
-to `cmd/cove`, so neither spelling resolves:
-
-```text
-$ go install github.com/tmc/cove/cmd/cove@latest
-module github.com/tmc/cove@latest found (v0.6.0), but does not contain package github.com/tmc/cove/cmd/cove
-
-$ go install github.com/tmc/cove@v0.6.0
-module declares its path as: github.com/tmc/vz-macos
-        but was required as: github.com/tmc/cove
-```
-
-`go install github.com/tmc/cove/cmd/cove@latest` starts working once a release
-is tagged after the rename. The Homebrew formula is not a recommended path
-either. Guest account setup remains explicit: the first VM asks for a username
-and prompts for a password when `-password` is omitted. Cove does not create
-fixed default guest credentials.
-
-The Go module path is `github.com/tmc/cove`.
+Versioned `go install` cannot use the relative module replacements. For
+packaging a build, see the [release pipeline](../release-pipeline.md).
 
 ### Entitlements
 
@@ -181,9 +149,9 @@ For source builds, rebuild from the checkout:
 
 ```bash
 git pull
-go build -o cove ./cmd/cove
-cove doctor host
-cove helper status
+GOWORK=off make build sign
+./cove doctor host
+./cove helper status
 ```
 
 If the helper is stale after an upgrade:

@@ -11,25 +11,10 @@ cove runs on Apple Silicon Macs and uses Apple's Virtualization.framework.
 
 ## Install the CLI
 
-Install from source for now:
-
-```bash
-go install github.com/tmc/cove/cmd/cove@latest
-```
-
-The Go module path is `github.com/tmc/cove`.
-
-On first launch, cove signs the local binary with the Virtualization.framework
-entitlements it needs. If autosigning fails, sign the binary manually:
-
-```bash
-codesign -s - -f --entitlements cmd/cove/vz.entitlements "$(command -v cove)"
-```
-
-The Homebrew formula is not the recommended first-run path yet. Packaged
-installs should eventually feel like a normal macOS CLI install: they provide
-the `cove` binary, and cove asks for guest account details only when you create
-or provision a VM. There are no built-in guest credentials.
+Download a Cove archive or DMG from
+[GitHub Releases](https://github.com/tmc/cove/releases) and put the extracted
+binary on `PATH`. To build from source, see
+[Build from a checkout](docs/getting-started/install.md#build-from-a-checkout).
 
 ## First VM
 
@@ -65,14 +50,6 @@ write root-owned launchd files into the guest, or install/update the optional
 helper. Those prompts authorize local disk preparation only; cove does not send
 credentials to a remote service.
 
-Each provision that runs as your normal user triggers one of these admin
-dialogs. Installing the privileged helper once (`sudo cove helper install`)
-elevates through the helper instead, so subsequent provisions run without any
-dialog. A non-interactive shell (tmux, ssh, sandboxed, or CI) cannot display
-the native dialog at all, so the helper is required there: without it,
-`cove up` stops early and tells you to install it or re-run from a normal
-terminal. See [Helper Daemon](#helper-daemon).
-
 When a VM runs with the native GUI, cove also adds a macOS status item for that
 VM. The status item shows the VM state and provides quick menu actions such as
 opening or closing the window and requesting a clean stop. It is a per-run UI
@@ -90,17 +67,12 @@ This section is a product disclosure, not legal advice.
 
 Most cove commands run as your normal user. Some disk-injection operations need root-owned files inside a mounted guest disk because launchd requires LaunchDaemon plists to be `root:wheel`.
 
-Without the helper, every such operation prompts for administrator approval via
-the native macOS admin dialog — one prompt per provision. With the helper
-installed, those operations elevate through it and prompt zero times. The helper
-is therefore optional in an interactive terminal but required in any shell that
-cannot show the native dialog (tmux, ssh, sandboxed, or CI).
-
 cove supports an optional privileged helper:
 
 ```bash
 cove helper status
 sudo cove helper install
+export COVE_USE_HELPER=1
 ```
 
 `cove helper status` reports whether the installed helper binary is stale (its
@@ -124,10 +96,10 @@ tokens, passwords, usernames, and home-directory paths are redacted.
 
 ## Update
 
-For source builds:
+Install the newer binary from GitHub Releases or rebuild it from your source
+checkout. Then check the host and helper:
 
 ```bash
-go install github.com/tmc/cove/cmd/cove@latest
 cove doctor host
 cove helper status
 ```
@@ -137,9 +109,6 @@ If `cove helper status` reports a stale helper, reinstall it:
 ```bash
 sudo cove helper install
 ```
-
-When packaged installs become the recommended path, use the package manager's
-upgrade command and then run the same doctor/helper checks.
 
 ## Uninstall
 

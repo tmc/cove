@@ -26,19 +26,9 @@ it, snapshots it, and deletes it in about 15 minutes.
 
 ## Install
 
-Build from a checkout — the only current install path:
-
-```bash
-git clone https://github.com/tmc/cove
-cd cove
-go build -o cove ./cmd/cove
-```
-
-The build needs an unreleased `github.com/tmc/apple`, supplied by the
-checkout's `go.work` overlay; `go install ...@latest` does not resolve until a
-release is tagged after the module rename. See
-[Install cove](docs/getting-started/install.md) for the exact errors and what
-they mean. The Homebrew formula is not a recommended path either.
+Download the Apple Silicon archive or DMG from
+[GitHub Releases](https://github.com/tmc/cove/releases). See
+[Installation](docs/getting-started/install.md) for source builds and host setup.
 
 After installing, check the host before creating a VM:
 
@@ -289,10 +279,9 @@ TPM device — the install bypasses the TPM requirement instead. See the
 ## Contributing
 
 ```bash
-git clone https://github.com/tmc/cove
-cd cove
-go build -o cove ./cmd/cove
-./cove run
+# From a Cove checkout with cove-marina and cove-ocispec next to it.
+GOWORK=off make build sign
+./cove version
 ```
 
 Run tests:
