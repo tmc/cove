@@ -39,6 +39,9 @@ jobs:
       - name: Build
         run: go build ./...
 
+      - name: Smoke-test Go run
+        run: go run ./cmd/cove version
+
       - name: Vet
         run: go vet ./...
 

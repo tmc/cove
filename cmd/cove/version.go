@@ -50,7 +50,7 @@ func resolvedVersion() buildversion.Info {
 	}
 
 	info := buildversion.Resolve(version, commit, date)
-	if info.Commit == "unknown" {
+	if info.Version == "dev" && info.Commit == "unknown" {
 		if c := gitCommitNearExecutable(); c != "" {
 			info.Commit = c
 		}

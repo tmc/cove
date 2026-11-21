@@ -27,6 +27,9 @@ func Resolve(version, commit, date string) Info {
 	if !ok {
 		return info
 	}
+	if build.Main.Version != "" && build.Main.Version != "(devel)" {
+		info.Version = build.Main.Version
+	}
 	for _, setting := range build.Settings {
 		if setting.Key == "vcs.revision" && len(setting.Value) >= 8 {
 			info.Commit = setting.Value[:8]

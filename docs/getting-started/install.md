@@ -47,17 +47,28 @@ Download the Apple Silicon archive or DMG from
 
 ## Build from a checkout
 
-Place the `cove-marina` and `cove-ocispec` source trees beside your Cove
-checkout. The module resolves them through relative replacements. Run these
-commands from the Cove checkout:
+From the Cove checkout, run the CLI directly with Go.
 
 ```bash
-GOWORK=off make build sign
+go run ./cmd/cove version
+go run ./cmd/cove doctor host
+```
+
+To produce a reusable executable, build and sign it from the same checkout.
+
+```bash
+make build sign
 ./cove version
 ```
 
-Versioned `go install` cannot use the relative module replacements. For
-packaging a build, see the [release pipeline](../release-pipeline.md).
+To run from another directory, use a version that includes the standalone
+module changes. Replace `<version>` with the tag or commit you want to run.
+
+```bash
+go run github.com/tmc/cove/cmd/cove@<version> version
+```
+
+For packaging a build, see the [release pipeline](../release-pipeline.md).
 
 ### Entitlements
 

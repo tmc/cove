@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -26,6 +27,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -68,7 +70,7 @@ func buildAgentBinaryForOS(outputPath, targetOS string) error {
 
 	moduleDir, err := findCoveModuleDir()
 	if err != nil {
-		return fmt.Errorf("locate vz-macos module: %w (run cove from a checkout, or set COVE_SRC=<path-to-vz-macos>)", err)
+		return fmt.Errorf("locate cove module: %w (run cove from a checkout, or set COVE_SRC to the checkout directory)", err)
 	}
 
 	cmd := exec.Command("go", "build", "-buildvcs=false", "-ldflags", agentBuildLDFlagsForOS(targetOS), "-o", outputPath, agentPkg)
@@ -174,6 +176,10 @@ func findCoveModuleDir() (string, error) {
 		return "", fmt.Errorf("COVE_SRC=%s does not contain go.mod", env)
 	}
 
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Path == "github.com/tmc/cove" && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return downloadCoveModuleDir(info.Main.Version)
+	}
+
 	if dir, err := goListModuleDir(""); err == nil {
 		return dir, nil
 	}
@@ -184,17 +190,41 @@ func findCoveModuleDir() (string, error) {
 			gopath = filepath.Join(home, "go")
 		}
 	}
-	if gopath != "" {
-		candidate := filepath.Join(gopath, "src", "github.com", "tmc", "vz-macos")
-		if _, err := os.Stat(filepath.Join(candidate, "go.mod")); err == nil {
-			return candidate, nil
+	for _, name := range []string{"cove", "vz-macos"} {
+		if gopath == "" {
+			break
 		}
+		candidate := filepath.Join(gopath, "src", "github.com", "tmc", name)
 		if dir, err := goListModuleDir(candidate); err == nil {
 			return dir, nil
 		}
 	}
 
-	return "", fmt.Errorf("vz-macos module not found in working dir, GOPATH, or COVE_SRC")
+	return "", fmt.Errorf("cove module not found in working directory, GOPATH, or COVE_SRC")
+}
+
+func downloadCoveModuleDir(version string) (string, error) {
+	const module = "github.com/tmc/cove"
+	cmd := exec.Command("go", "mod", "download", "-json", module+"@"+version)
+	cmd.Env = append(os.Environ(), "GOWORK=off")
+	out, err := cmd.Output()
+	var result struct {
+		Dir   string
+		Error string
+	}
+	if err != nil {
+		if json.Unmarshal(out, &result) == nil && result.Error != "" {
+			return "", fmt.Errorf("download cove %s: %s", version, result.Error)
+		}
+		return "", fmt.Errorf("download cove %s: %w", version, err)
+	}
+	if err := json.Unmarshal(out, &result); err != nil {
+		return "", fmt.Errorf("read cove module location: %w", err)
+	}
+	if _, err := os.Stat(filepath.Join(result.Dir, "cmd", "vz-agent", "main.go")); result.Dir == "" || err != nil {
+		return "", fmt.Errorf("cove %s module has no guest agent source", version)
+	}
+	return result.Dir, nil
 }
 
 func goListModuleDir(workingDir string) (string, error) {
