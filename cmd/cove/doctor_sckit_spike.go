@@ -37,6 +37,10 @@ func runSCKitSpike(args []string) error {
 		return err
 	}
 
+	if *iterations <= 0 {
+		return fmt.Errorf("capture iterations must be positive")
+	}
+
 	ctx := context.Background()
 	content, err := screencapturekit.GetSCShareableContentClass().GetShareableContentExcludingDesktopWindowsOnScreenWindowsOnly(ctx, true, true)
 	if err != nil {
@@ -86,14 +90,19 @@ func runSCKitSpike(args []string) error {
 	fmt.Printf("iterations=%d min=%s p50=%s p95=%s max=%s threshold=%s\n",
 		len(samples), min, p50, p95, max, *threshold)
 
-	out := fmt.Sprintf("/tmp/sckit-spike-%d.png", time.Now().Unix())
-	f, err := os.Create(out)
+	f, err := os.CreateTemp("", "cove-sckit-spike-*.png")
 	if err != nil {
-		return fmt.Errorf("create %s: %w", out, err)
+		return fmt.Errorf("create screenshot: %w", err)
 	}
-	defer f.Close()
+	out := f.Name()
 	if err := png.Encode(f, lastImg); err != nil {
-		return fmt.Errorf("encode %s: %w", out, err)
+		_ = f.Close()
+		_ = os.Remove(out)
+		return fmt.Errorf("encode screenshot: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(out)
+		return fmt.Errorf("close screenshot: %w", err)
 	}
 	fmt.Printf("saved last frame: %s\n", out)
 
